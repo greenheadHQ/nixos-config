@@ -42,6 +42,46 @@ def read_status(path: str) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
+def read_freshness(path: str) -> dict[str, Any]:
+    """Capture the host's recorded sync boundary before reading collection data.
+
+    This is one local file read, without a helper request or a sync trigger.
+    A later failed/running attempt never replaces the last successful timestamp.
+    Do not use summarize(): malformed optional counts must not break a read.
+    """
+    state = read_status(path) or {}
+
+    def timestamp(key: str) -> str | None:
+        value = state.get(key)
+        if not isinstance(value, str):
+            return None
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+        return value if parsed.utcoffset() is not None else None
+
+    # Unknown producer vocabulary is unknown, not a successful sync.
+    results = {
+        "running", "no-credentials", "bootstrap-pending", "collection-empty", "success", "busy-deferred",
+        "helper-unreachable", "login-failed", "full-sync-required", "local-loss-suspected", "schema-blocked", "error",
+    }
+    result = state.get("result")
+    return {
+        "source": "host_collection",
+        "last_successful_sync_at": timestamp("lastSuccessAt"),
+        "last_attempt_at": timestamp("lastAttemptAt"),
+        "last_attempt_result": result if isinstance(result, str) and result in results else None,
+        "mobile_upload_confirmed": False,
+        "notice": (
+            "Sync metadata was captured before this read; null means unknown. The last attempt result is a recorded "
+            "state, not proof a sync is still running. A successful host-AnkiWeb sync does not prove the phone "
+            "uploaded its changes. If a recent phone edit is missing, sync AnkiMobile first, then call "
+            "anki_sync_now and query again. This read does not trigger sync."
+        ),
+    }
+
+
 def summarize(state: dict[str, Any] | None) -> dict[str, Any]:
     """상태 사본을 도구 응답용으로 요약한다 — 어휘는 anki-host-sync.sh 상단 표."""
     if not state:

@@ -64,6 +64,20 @@ ID 없이 보낸 요청의 응답을 잃었으면 최근 작업부터 확인한�
 미완료 본문도 만료 정리 시 제거한다. 원장과 복구점에는 별도의 삭제 정책을 적용한다.
 원장 내부의 `applying`도 공개 조회에서는 `unknown`으로 반환되므로 실행 완료로 해석하지 않는다.
 
+MCP 변경 알림은 한국어 작업명과 처리 결과, AnkiWeb 동기화 상태를 먼저 보여 준다. 대상 수를 실제
+변경 수로 단정하지 않는다. 노트 추가에서 확인된 추가 수는 `result.added`로 따로 표시한다.
+덱 삭제는 사용자 선택에 따라 **덱 이름과 실제로 함께 삭제된 카드 수**를 표시한다.
+helper가 삭제 전후의 덱·카드 ID를 대조해 `result.deleted_decks`, `retained_decks`, `deleted_cards`,
+`retained_cards`를 기록한다. 하위 덱·필터 덱의 원래 소속을 포함하고, 유지되는 기본 덱이나 원래 덱으로
+돌아간 카드를 삭제했다고 말하지 않는다. 과거 영수증에 실제 삭제 수가 없으면 미확인으로 안내한다.
+알림 마지막의 **문제 문의용 작업 번호**는 전체 `operation_id`이며, 비슷한 작업이 여러 건이거나 시간이
+지난 뒤에도 `anki_operation_status`로 정확한 결과를 찾는 데 사용한다. 카드 ID와 다르다.
+덱 삭제 이름 외의 개인 본문·이름·오류 상세는 알림에 넣지 않는다. 이름의 제어 문자는 눈에 보이게
+이스케이프하며, 긴 이름·다수 이름은 Pushover 본문 1,024자 한도 안에서 일부를 보여 주고 생략을 표시한다.
+전체 이름은 작업 번호로 조회할 수 있고 작업 번호 자체는 생략하지 않는다.
+AnkiWeb 동기화 완료는 다른 기기의 수신 완료를
+보장하지 않는다. 구조 변경·일반 동기화·백업의 별도 운영 알림은 기존 경로를 유지한다.
+
 일반 동기화는 백그라운드 미디어 전송의 완료·오류도 확인한 뒤 성공으로 기록한다. 미디어 저장 작업은
 `sync.media_state=synced`까지 확인해야 전달 완료다. 미디어 설정이 꺼져 있거나 결과를 확인하지 못하면
 `sync.state=pending`을 유지한다. 같은 요청으로 다시 호출하면 파일을 재저장하지 않고 동기화만 재개한다.
@@ -71,20 +85,50 @@ ID 없이 보낸 요청의 응답을 잃었으면 최근 작업부터 확인한�
 시간 초과 시 성공 기준점을 갱신하지 않으며, 아직 실행 중인 callback의 lock은 완료될 때까지 유지한다.
 MCP의 결과 대기는 별도 3분이므로 호출이 먼저 끝날 수 있다. 이 경우 같은 요청 ID의 전달 상태를 다시 확인한다.
 
+## 조회 결과의 동기화 경계
+
+노트·카드 검색/상세·복습 기록, 덱·노트 타입·태그·미디어·덱 옵션 조회는 `freshness`를 함께 반환한다.
+`last_successful_sync_at`은 **조회 시작 전에 관측한 호스트↔AnkiWeb의 마지막 성공 시각**이다.
+`last_attempt_at`과 `last_attempt_result`는 가장 최근 회차의 마지막 기록이며, 그 회차가 실패했어도 이전 성공 시각은 유지된다.
+`running` 기록만으로 현재도 실행 중이라고 판단하지 않는다. 실제 실행 여부는 호스트의 서비스 상태와 로그로 구분한다.
+상태 사본이 없거나 손상됐고 시각을 확인할 수 없으면 `null`이다. 조회 시각이나 마지막 시도 시각을 성공 시각으로 대신하지 않는다.
+
+이 값은 휴대폰에서 아직 AnkiWeb으로 보내지 않은 변경을 확인하지 못하므로 `mobile_upload_confirmed`는 항상 `false`다.
+휴대폰에서 방금 바꾼 내용이 조회되지 않으면 **AnkiMobile 동기화 → `anki_sync_now` 결과 확인 → 다시 조회** 순서로 확인한다.
+조회 자체는 동기화를 실행하지 않으며, 기존 상태 사본을 한 번 읽는 것 외에 HTTP·systemd 호출을 추가하지 않는다.
+노트 본문 절단·페이지네이션과 `anki_status`/`anki_sync_now`의 기존 응답·동작은 유지한다.
+
+## 여러 노트의 필드 일괄 수정
+
+`anki_update_notes_fields`는 `{note_id, fields}` 목록을 하나의 작업으로 처리한다. 기존 필드 전체를 먼저 읽고,
+바꿀 필드만 전달하며 중복 note ID는 거절한다. 전체 대상·필드·예상 생성 카드 수를 실행 전에 검증한다.
+사전/사후 동기화 한 쌍, 검증된 미디어 제외 복구점 하나, 결과 알림 하나를 사용한다.
+단일 노트의 `anki_update_note_fields`도 매번 같은 복구점 보호를 적용하지만, 20건 이하 변경에 새 확인 단계를 추가하지 않는다.
+
+입력별 결과는 `applied`, `unknown`, `not-attempted`로 구분한다. 저장 결과가 불명확하면 이후 항목을 중단하고
+전체를 `partial`로 반환한다. 자동으로 되돌리지 않으며 새 request ID로 전체를 반복하지 않는다.
+알림에는 요청 노트 수와 실제 확인된 수정 수를 따로 표시한다. 이전 필드의 회수는 아래 복구 절차를 따른다.
+
 ## 지원표
 
 소스 핀: Anki **26.08**, AnkiConnect **25.11.9.0**, helper **2.0.0**, MCP SDK **1.29.0**.
 Anki 본체를 별도 overlay로 다시 만들지 않고, AnkiConnect 애드온에만 인증·내부 호출 연결 패치를 적용한다.
-핀 변경 시 아래 실제 API 테스트를 다시 실행한다.
+핀 변경 시 아래 실제 API 테스트를 다시 실행한다. nixpkgs 쪽 세 값의 재검증(helper는 `addons.nix`의 `version`):
+
+```bash
+nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).inputs.nixpkgs.legacyPackages.x86_64-linux;
+  in "anki=${p.anki.version} anki-connect=${p.ankiAddons.anki-connect.version} mcp=${p.python3Packages.mcp.version}"'
+```
 
 | MCP 도구 | 실제 API / 주의점 |
 |---|---|
-| `anki_add_notes`, `anki_update_note_fields` | `canAddNotesWithErrorDetail`, `addNotes`, `updateNoteFields`; 추가는 `mcp::added`, 입력별 결과. 필드 변경은 새 카드 생성 가능. |
+| `anki_add_notes`, `anki_update_note_fields`, `anki_update_notes_fields` | `canAddNotesWithErrorDetail`, `addNotes`, `updateNoteFields`; 추가는 `mcp::added`, 입력별 결과. 필드 변경은 새 카드 생성 가능. |
 | `anki_add_tags`, `anki_remove_tags`, `anki_create_deck` | `addTags`, `removeTags`, `createDeck`; 공통 변경 원장 적용. |
 | `anki_move_cards` | `changeDeck`; 존재하는 일반 덱으로 이동. 대상 카드 수에 따라 확인. |
 | `anki_delete_notes` | `deleteNotes`; 해당 노트의 모든 카드에 영향, 항상 확인·복구점. |
 | `anki_delete_decks` | `deleteDecks(cardsToo=True)`; 하위 덱 포함. 다른 덱의 형제 카드는 유지, 고아 노트는 삭제. filtered/default 덱 경고는 preview에서 확인. |
 | `anki_suspend_cards` | `suspend` + `areSuspended` readback; 정지와 해제 모두 지원. |
+| `anki_find_cards`, `anki_set_card_flags` | `flag:N` 검색과 응답 `flag`(0–7, 조회 불가 시 null). 설정은 Anki `set_user_flag_for_cards` + readback; 1–7 설정/변경, 0 해제. 지정 카드만 변경하며 노트·형제 카드·일정·복습 기록을 보존. 20건 초과 확인·복구점 적용. |
 | `anki_set_due_date` | `setDueDate`; `2`, `2-5`, `2!` 문법. 범위는 무작위, 수동 복습 기록 추가·정지 해제 가능. |
 | `anki_forget_cards` | `forgetCards`; 새 카드 학습 상태로 돌아가며 과거 복습 기록 전체를 지우지 않는다. |
 | `anki_store_media`, `anki_media` | base64 신규 저장·이름 목록/조회. decoded 5 MiB, 안전한 NFC 파일명. 같은 내용은 no-op, 다른 내용의 덮어쓰기·삭제·URL/path 입력은 없음. |
@@ -97,6 +141,64 @@ Anki 본체를 별도 overlay로 다시 만들지 않고, AnkiConnect 애드온�
 `new.perDay`, `new.order`, `new.initialFactor`, `rev.perDay`, `rev.maxIvl`, `rev.ease4`,
 `rev.ivlFct`, `rev.hardFactor`, `lapse.mult`, `lapse.minInt`, `lapse.leechFails`, `lapse.leechAction`.
 현 버전에서 없는 키·범위 밖 값·프리셋 ID/name 교체는 거부한다. FSRS 설정 전체 편집은 지원하지 않는다.
+
+## 카드 ID 복사
+
+복습 화면의 `카드 ID 복사` 버튼은 현재 카드의 `{{CardID}}`를 문자열로 받아 `cid:<ID>`를 복사한다.
+같은 카드의 문제·정답 화면에서는 같은 값이고, 같은 노트에서 만든 형제 카드는 각각 다른 값이다.
+`anki_find_cards(query="cid:<ID>")` 응답의 `noteId`로 원본 노트와 검토 메모를 찾을 수 있다.
+번호를 별도 필드에 저장하거나 노트 ID로 오표기하지 않는다.
+
+조각의 정본은 `sync-addon/card-id-button.html`, 순수 계획 생성기는 `sync-addon/card_id.py`의
+`build_plan(model)`이다. 현재 Anki native model의 `flds`, `tmpls`, `req`를 받아 원본과 변경안 쌍을 반환하며
+컬렉션을 직접 읽거나 바꾸지 않는다. 원래 ALL/ANY 카드 생성 조건 안에만 버튼을 넣고, `FrontSide`가 있는
+뒷면은 앞면의 버튼을 상속한다. 기존 CSS·필드·템플릿 본문은 유지하며, 불명확한 HTML이나 중복 설치는 거절한다.
+실제 적용은 각 변경안을 `anki_prepare_model_change(action="model_template_update", ...)`로 준비한 뒤
+아래 root 승인·복구점 경로를 따른다. `original` 쌍은 같은 경로의 원복 입력이다.
+
+적용된 타입의 기존 카드와 이후 생성 카드는 같은 버튼을 사용한다. 새로 만들거나 가져온 **다른 노트 타입**에는
+자동 설치하지 않는다. 이 경우 원본을 확인하고 같은 준비·기기 검증 절차를 거친다.
+카드 ID를 렌더하지 못하는 클라이언트에서는 복사를 비활성화한다. 자동 복사가 거절되면 선택 가능한 번호를
+보여 주며 성공으로 표시하지 않는다. 복사 자체는 서버 조회를 하지 않지만, LLM이 해당 카드를 찾으려면
+클라이언트와 호스트의 AnkiWeb 동기화가 끝나 있어야 한다.
+
+검증은 `tests/anki-runtime/test_card_id_templates.py`의 실제 카드 생성·렌더링·보존·원복 검사와,
+Mac/iPhone에서 문제·정답·형제 카드의 버튼을 누른 뒤 실제로 붙여넣은 값의 대조를 구분한다.
+버튼 클릭으로 정답이 열리거나 평가되지 않는지도 확인한다. API 성공 반환이나 성공 문구만으로
+실기기의 클립보드 호환성을 확정하지 않는다.
+
+## 검토 표시와 메모
+
+이 개인용 환경의 검토 대기열은 사용자 결정에 따라 **별표**를 사용한다.
+별표는 노트의 `marked` 태그이며, `anki_find_notes(query="tag:marked")`의 모든 페이지를 모은 뒤
+`anki_note_info`로 검토 메모와 본문 전체를 읽는다. 검토가 끝난 노트는 `anki_remove_tags`로
+`marked`만 해제하고 메모는 유지한다. 같은 노트에서 나온 여러 카드는 함께 검토한다.
+깃발은 카드 단위이며 `anki_find_cards(query="flag:N")`으로 모으고 `anki_set_card_flags(..., flag=0)`으로 해제한다.
+깃발은 별도로 사용할 수 있지만 특정 색을 검토 대기열로 해석하지 않는다.
+
+질문 이유·수정 방향은 선택적인 **`검토 메모` 필드**에 남긴다. 한 줄 제한 없이 여러 문단·질문·예시를 저장하며,
+기존 설명·Extra·Comments 필드와 섞지 않는다. 이 필드는 노트 단위로, 같은 노트의 역방향·여러 빈칸 카드가 공유한다.
+특정 카드만의 질문은 방향·빈칸을 메모에서 구분한다.
+
+- 준비: `anki_models`/`anki_model_info`로 필드 존재와 템플릿 참조를 확인한다. 없는 타입에만
+  `anki_prepare_model_change(action="model_field_add", params={"model_name": "...", "field_name": "검토 메모"})`로
+  끝에 필드를 추가하는 미리보기를 만든다. 기존 필드를 덮어쓰거나 형식을 바꾸지 않는다.
+  아래 구조 변경 승인·복구점 경로로 실행하며, 문제·정답 템플릿에는 메모 필드를 넣지 않는다.
+- 적용 범위: 준비된 타입의 기존 노트와 이후 생성 노트에 같은 입력칸이 생긴다.
+  새 타입·외부 덱에서 가져온 타입에는 자동 추가되지 않는다. 누락을 확인하고 같은 준비 절차를 거친다.
+  이미지 가리기·제3자 편집기/템플릿은 해당 클라이언트에서 별도 확인한다.
+- 입력: AnkiMobile 복습 중 편집 화면에서 메모를 쓰고 저장한다. 입력 동선과 단락 표시의 실제 동작은
+  기기·노트 타입별로 확인한다. 표시만 남기기는 빠르지만 메모 입력까지 한두 번 탭을 보장하지 않는다.
+  **메모에 Anki 빈칸 생성 구문(`{{c1::정답}}` 등)을 그대로 붙여넣지 않는다.**
+  `c1: 정답`처럼 풀어 적거나 일반 문장으로 설명한다. Cloze·이미지 가리기에서는 Anki가
+  템플릿에서 참조하지 않는 메모 필드까지 검사해 실제 카드를 추가한다. 필드를 숨겨도 막히지 않는다.
+  이는 입력 규칙이며 자동 차단 기능이 아니다. HTML entity 표현도 모바일 재편집까지의 보장을 대신하지 않는다.
+- 조회: 검색 응답은 필드당 기본 400자로 잘릴 수 있으므로, 검토 전에 `anki_note_info`의
+  기본 전체 조회로 **메모 전체**를 읽는다. HTML 문단/줄바꿈을 보존하고, 표시 해제만으로 메모를 지우거나 다시 쓰지 않는다.
+  모바일과 호스트의 AnkiWeb 동기화가 모두 끝나야 모바일 메모가 호스트 조회에 반영된다.
+- 검증: 필드 준비·메모 편집 전후 기존 필드, 카드 ID/수, 일정, 복습 기록, 템플릿/렌더링을 대조한다.
+  일반 장문·여러 문단의 보존과, 빈칸 생성 구문을 그대로 쓰면 카드가 추가되는 제한을 각각 실엔진에서 검증한다.
+  메모 수정 중 예상 카드 수가 늘면 구문을 확인하고, 확인·복구점 절차를 생략하지 않는다.
 
 ## 권한과 동시 실행
 
@@ -155,11 +257,53 @@ MCP의 상태/최근 작업 응답을 우선 사용한다. 로그에 키·본문
 복구점 이름을 기존 운영 프로필에 바로 import하지 않는다. AnkiWeb에 연결된 main에는 helper import route가 없다.
 다른 기기에 아직 동기화하지 않은 학습은 이 호스트가 알 수 없으며 자동 rollback도 제공하지 않는다.
 
+### 이전 필드 값만 회수하기
+
+단일·일괄 필드 수정은 건수와 관계없이 변경 직전 미디어 제외 복구점을 만들고 HDD 사본까지 검증한다.
+20건 이하의 필드 수정에 복구점을 만든다는 이유만으로 추가 확인을 요구하지는 않는다.
+원장에는 변경 전후 본문을 남기지 않는다. 기존 복구점 보존 정책(SSD 최신 5개, HDD 무기한)을 유지하며,
+작업마다 컬렉션 크기에 비례하는 HDD 사본이 하나 늘어난다(현재 규모의 실측은 약 1.4MB/작업).
+
+`anki_operation_status`의 `backup`으로 해당 수정 **직전** 복구점을 선택한다. 이전 작업이나 플러그인 밖에서
+수정한 내용에는 아래 두 종류의 백업도 사용할 수 있지만, 그 백업 이후·다음 백업 이전의 중간 값은 보장하지 않는다.
+
+| 백업 | 위치·보존 |
+|---|---|
+| Anki 자체 자동 백업 | `<state>/<instance>/Anki2/<instance>/backups/`. Anki가 5분마다 생성 여부를 확인하고 컬렉션의 `get_preferences().backups` 간격·일/주/월 정책을 적용한다. `prefs21.db`의 구형 `numBackups` 값은 26.08에서 이 정책을 정하지 않는다. |
+| 일일 미디어 포함 백업 | `<state>/<instance>/backups/` 최신 2개, HDD `<mediaData>/backups/anki-host/<instance>/` 기본 14일. 기본 04:15에 최대 5분 지연을 더해 생성한다. |
+
+2026-09-19 운영 백업 사본에서 확인한 자체 백업 설정은 최소 10분, 일/주/월 각각 30개였다.
+이는 고정 10분 주기나 최근 30개라는 뜻이 아니다. 변경된 컬렉션만 백업하며 오늘·어제의 사본은 모두 유지하고,
+그보다 오래된 서로 다른 날짜·주·월의 대표 사본을 순차적으로 남긴다. 실제 설정은 이후 변경될 수 있다.
+상세 알고리즘은 [Anki 26.08 백업 구현](https://github.com/ankitects/anki/blob/26.08/rslib/src/collection/backup.rs)을 따른다.
+
+필드 회수 명령은 MiniPC의 root 전용 `anki-host-recover-fields`다. 입력은 해당 인스턴스의 위 백업 또는
+복구점 디렉터리 바로 아래 `.colpkg`만 허용하며, 라이브 DB·심볼릭 링크를 거부한다. 예시의 경로·ID는 실제 대상으로 바꾼다.
+
+```bash
+sudo install -d -m 0700 /root/anki-field-recovery
+sudo anki-host-recover-fields --instance main \
+  --backup /mnt/data/backups/anki-host-restore-points/main/OPERATION_ID.colpkg \
+  --note-id NOTE_ID --output /root/anki-field-recovery/selected-fields.json
+```
+
+여러 노트는 `--note-id`를 반복한다(중복 없이 최대 100개). 출력 디렉터리는 root 소유이고 다른 사용자에게
+권한이 없어야 하며, 기존 출력 파일은 덮어쓰지 않는다. 성공 stdout에는 건수와 백업 hash만 나오고,
+0600 JSON 파일에 선택한 노트의 ID·GUID·당시 노트 타입·필드 이름과 원문이 저장된다. 이 파일을 로그·이슈·PR에
+붙이지 않는다. 필요한 원문을 확인한 뒤 사용이 끝난 비공개 추출 파일은 운영자가 정리한다.
+
+명령은 네트워크가 분리된 프로세스에서 공식 Anki importer로 **0700 임시 사본만** 열고 자동 폐기한다.
+신규 패키지의 실제 DB는 `collection.anki21b`이고 `collection.anki2`는 더미일 수 있으므로 직접 골라 읽지 않는다.
+운영 컬렉션·AnkiWeb·원장에는 쓰지 않고 MCP 서비스의 파일 접근 권한도 늘리지 않는다.
+회수된 값은 **자동 적용하지 않는다**. 현재 노트의 GUID·타입·필드 이름과 비교해 사용자가 되돌릴 필드를 선택한 뒤
+기존 MCP 필드 수정 경로로 적용한다. 노트나 필드가 삭제·이름 변경된 경우에는 그 차이를 먼저 검토하며,
+예전 필드 순서로 현재 노트에 덮어쓰거나 운영 프로필 전체를 가져오지 않는다.
+
 ## 검증과 배포
 
 - `nix develop --command bash tests/run-anki-mcp-tests.sh`: 원장·확인·역할 인증·sync/알림·root 미러/승인·셸 상태 기록의 격리 테스트.
 - `nix develop --command bash tests/run-eval-tests.sh`: 일반/no-IFD 모듈·권한·상수 배선 검사.
-- `tests/anki-runtime/test_real_collection.py`: Anki/aqt 26.8 환경에서 `ANKICONNECT_SOURCE`를 실제 빌드한 애드온 디렉터리로
+- `tests/anki-runtime/`: Anki/aqt 26.8 환경에서 `ANKICONNECT_SOURCE`를 실제 빌드한 애드온 디렉터리로
   지정해 pytest 실행. 합성 임시 컬렉션과 실제 AnkiConnect/Rust backend를 사용한다. GUI 콜백은 대체하고 포트·계정은 열지 않는다.
 - root→일반 sync 셸 fixture는 실제 JSON/파일/lock과 chown 호출을 검사하지만 실제 Linux UID 전환을 대신하지 않는다.
 - 배포 시 `nrs`를 사용한다. 새 로컬 키가 필요한 모든 consumer가 함께 전환돼야 한다.

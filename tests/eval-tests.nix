@@ -754,12 +754,46 @@ let
               && !nixpkgsLib.hasInfix "DARWIN_USER_TEMP_DIR" cleanupData
             );
         }
+        {
+          # MagicDNS 이름 우회 방지 (2026-09 관측): 에이전트가 `ssh greenhead-minipc`로
+          # 접속하자 ssh config에 해당 Host가 없어 `Host *`의 1Password agent로 샜고,
+          # dispatcher도 목적지를 글자 그대로 거르므로 raw ssh로 넘겨 승인 대기로 실패했다.
+          # MiniPC로 가며 1Password agent를 쓰는 블록의 Host 패턴은 전부 dispatcher 관리
+          # 대상이어야 하고, MagicDNS 짧은 이름·FQDN은 그런 블록에 반드시 묶여 있어야 한다.
+          name = "Test D35 ${hostName}: MiniPC 1Password SSH Host 패턴은 MagicDNS 이름을 포함하고 모두 headless dispatcher 관리 대상이어야 함";
+          cond =
+            hasHost
+            && (
+              let
+                sshSettings = hm.programs.ssh.settings;
+                agentMinipcPatterns = nixpkgsLib.concatMap (
+                  block:
+                  if
+                    (block.data.HostName or "") == constants.network.minipcTailscaleIP
+                    && (block.data.IdentityAgent or "") != "none"
+                  then
+                    builtins.tail (nixpkgsLib.splitString " " block.data.header)
+                  else
+                    [ ]
+                ) (builtins.attrValues sshSettings);
+                dispatcherFile = hm.home.file.${constants.paths.headlessSshDispatcherRelPath} or null;
+                managed = if dispatcherFile == null then [ ] else dispatcherFile.source.managedDestinations;
+              in
+              if isPersonalHost then
+                builtins.elem constants.network.minipcTailnetHostName agentMinipcPatterns
+                && builtins.elem constants.network.minipcTailnetFqdn agentMinipcPatterns
+                && builtins.all (pattern: builtins.elem pattern managed) agentMinipcPatterns
+              else
+                true
+            );
+        }
       ]
     ) expectedDarwinHosts
   );
 
   # ── headless Anki (#1306): loopback 전용·인스턴스 격리·sync/backup 타이머 계약 고정
   ankiHostCfg = nixosCfg.homeserver.ankiHost;
+  ankiRuntimeCheck = flake.checks.x86_64-linux.anki-host-runtime;
   ankiHostLab = nixosCfg.systemd.services."anki-host-lab";
   ankiHostMain = nixosCfg.systemd.services."anki-host-main";
   ankiHostSyncMain = nixosCfg.systemd.services."anki-host-sync-main";
@@ -1248,6 +1282,15 @@ let
         && ankiHostCfg.instances.lab.helperPort == constants.network.ports.ankiHelperLab
         && ankiHostCfg.instances.main.port == constants.network.ports.ankiConnectMain
         && ankiHostCfg.instances.main.helperPort == constants.network.ports.ankiHelperMain;
+    }
+    {
+      name = "Test AH2a: Linux Anki 런타임 검사가 CI와 시스템 빌드에 동일하게 연결되고 Darwin 검사에는 노출되지 않아야 함";
+      cond =
+        builtins.elem ankiRuntimeCheck.drvPath (map (check: check.drvPath) nixosCfg.system.checks)
+        && builtins.elem ankiRuntimeCheck.outPath (
+          nixpkgsLib.splitString " " nixosCfg.system.build.toplevel.passedChecks
+        )
+        && !((flake.checks.aarch64-darwin or { }) ? anki-host-runtime);
     }
     {
       name = "Test AH3: AnkiConnect·헬퍼가 127.0.0.1에만 바인딩되고 인스턴스가 offscreen Qt로 뜨며, single-instance 키가 인스턴스별로 달라야 함 (같은 유저의 두 anki가 서로 명령을 넘기는 사고 방지)";

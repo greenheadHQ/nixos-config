@@ -94,6 +94,7 @@ def fields(value: Any) -> dict[str, str]:
 PARAMETERS = {
     "add_notes": ({"notes", "allow_duplicate"}, set()),
     "update_fields": ({"note_id", "fields"}, set()),
+    "update_fields_bulk": ({"notes"}, set()),
     "add_tags": ({"note_ids", "tags"}, set()),
     "remove_tags": ({"note_ids", "tags"}, set()),
     "create_deck": ({"name"}, set()),
@@ -101,6 +102,7 @@ PARAMETERS = {
     "delete_notes": ({"note_ids"}, set()),
     "delete_decks": ({"deck_names"}, set()),
     "suspend_cards": ({"card_ids", "suspended"}, set()),
+    "set_card_flags": ({"card_ids", "flag"}, set()),
     "set_due_date": ({"card_ids", "days"}, set()),
     "forget_cards": ({"card_ids"}, set()),
     "store_media": ({"filename", "data"}, set()),
@@ -118,6 +120,7 @@ SCHEMA_ACTIONS = frozenset({"model_field_add", "model_field_remove", "model_fiel
                             "model_field_reposition", "model_template_add", "model_template_remove",
                             "model_template_update"})
 DESTRUCTIVE_ACTIONS = frozenset({"delete_notes", "delete_decks", "set_due_date", "forget_cards"})
+FIELD_UPDATE_ACTIONS = frozenset({"update_fields", "update_fields_bulk"})
 
 
 def validate_spec(action: Any, params: Any, media_limit: int) -> dict[str, Any]:
@@ -148,6 +151,8 @@ def validate_spec(action: Any, params: Any, media_limit: int) -> dict[str, Any]:
             raise OperationError("invalid-boolean")
     if "index" in p and (type(p["index"]) is not int or p["index"] < 0):
         raise OperationError("invalid-index")
+    if "flag" in p and (type(p["flag"]) is not int or not 0 <= p["flag"] <= 7):
+        raise OperationError("flag-must-be-an-integer-from-0-to-7")
     if "days" in p and (not isinstance(p["days"], str) or re.fullmatch(r"[0-9]+(-[0-9]+)?!?", p["days"]) is None):
         raise OperationError("days-must-be-N-or-N-M-with-optional-exclamation-mark")
     if "deck_names" in p:
@@ -165,6 +170,20 @@ def validate_spec(action: Any, params: Any, media_limit: int) -> dict[str, Any]:
                 raise OperationError("invalid-new-note")
             normalized.append({"deck_name": text(note["deck_name"]), "model_name": text(note["model_name"]),
                                "fields": fields(note["fields"]), "tags": tags([*tags(note.get("tags", [])), "mcp::added"])})
+        p["notes"] = normalized
+    if action == "update_fields_bulk":
+        if not isinstance(p["notes"], list) or not p["notes"]:
+            raise OperationError("notes-must-not-be-empty")
+        normalized = []
+        seen = set()
+        for note in p["notes"]:
+            if not isinstance(note, dict) or set(note) != {"note_id", "fields"}:
+                raise OperationError("invalid-note-field-update")
+            nid = ids([note["note_id"]])[0]
+            if nid in seen:
+                raise OperationError("duplicate-note-id")
+            seen.add(nid)
+            normalized.append({"note_id": nid, "fields": fields(note["fields"])})
         p["notes"] = normalized
     if action == "store_media":
         p["filename"] = filename(p["filename"])
@@ -299,7 +318,11 @@ class Operations:
             "spec_digest": digest(spec), "spec": spec, "snapshot_digest": digest(inspected["snapshot"]),
             "state": "prepared", "created_at": self.clock(), "expires_at": self.clock() + self.ttl,
             "preview_token": secrets.token_hex(32), "confirmation_required": bool(requires),
-            "backup_required": bool(requires), "schema_required": schema, "summary": summary,
+            # Small field edits also need their exact previous content. Anki's
+            # periodic backups cannot promise a point immediately before them.
+            # Recovery protection does not add a user confirmation requirement.
+            "backup_required": bool(requires or action in FIELD_UPDATE_ACTIONS),
+            "schema_required": schema, "summary": summary,
             "sync": {"state": "not-started"}, "notification": {"state": "not-started"},
         }
         self._save(record)
@@ -327,7 +350,9 @@ class Operations:
             return self._public(record)
         if record["schema_required"] and not schema_authorized:
             raise OperationError("root-schema-approval-required")
-        if record["backup_required"]:
+        if record["backup_required"] or record["action"] in FIELD_UPDATE_ACTIONS:
+            # Prepared receipts may predate the stronger field-edit policy.
+            record["backup_required"] = True
             # Keep a successful restore point when apply is refused after export.
             # The restore callback verifies HDD durability before returning.
             if not record.get("backup"):

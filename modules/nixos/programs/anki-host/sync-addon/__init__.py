@@ -188,7 +188,7 @@ def _ensure_login() -> dict[str, Any]:
     자격 파일을 나중에 채웠다면 서비스 재시작으로 이 훅을 다시 태운다.
     """
     _require_col()
-    # 계정 식별자(username)는 _state에 두지 않는다 — /status·/status/full은 무인증 응답이다
+    # 계정 식별자(username)는 _state에 두지 않는다 — /status·/status/full은 모든 역할 키(MCP의 read 포함)에 열려 있다
     pm = aqt.mw.pm
     if pm.sync_auth() is not None:
         return {"status": "already-logged-in"}

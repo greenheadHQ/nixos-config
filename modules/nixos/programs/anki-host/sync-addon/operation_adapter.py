@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import re
+import unicodedata
 from typing import Any
 
 from .operations import OperationError, decode_media, filename
@@ -188,15 +189,28 @@ class AnkiAdapter:
     @staticmethod
     def _anticipated_ordinals(model: dict[str, Any], values: dict[str, str]) -> set[int]:
         if model["type"] == 1:
-            return {int(n) - 1 for n in re.findall(r"\{\{c([1-9][0-9]*)::", " ".join(values.values()))}
+            # Control removal occurs before Anki generates cards, even with NFC
+            # disabled, and can make a formerly interrupted cloze marker valid.
+            stored = AnkiAdapter._stored_field_value(" ".join(values.values()), False)
+            return {int(n) - 1 for n in re.findall(r"\{\{c([1-9][0-9]*)::", stored)}
         # Include every template, even when conditions currently hide its card.
         return set(range(len(model["tmpls"])))
+
+    @staticmethod
+    def _stored_field_value(value: str, normalize_text: bool) -> str:
+        # Anki's normalize_field removes ASCII controls except tab/newline,
+        # then conditionally normalizes to NFC. Compare against its save rules,
+        # without rewriting the submitted payload or changing collection config.
+        value = "".join(c for c in value if c in "\t\n" or (ord(c) >= 32 and ord(c) != 127))
+        return unicodedata.normalize("NFC", value) if normalize_text else value
 
     def inspect(self, spec: dict[str, Any]) -> dict[str, Any]:
         action, p = spec["action"], spec["params"]
         note_ids, card_ids = list(p.get("note_ids", [])), list(p.get("card_ids", []))
         if "note_id" in p:
             note_ids = [p["note_id"]]
+        if action == "update_fields_bulk":
+            note_ids = sorted(n["note_id"] for n in p["notes"])
         snapshot: dict[str, Any] = {}
         warnings: list[str] = []
         summary: dict[str, Any] = {"notes": 0, "cards": 0, "new_notes": 0, "warnings": warnings}
@@ -292,16 +306,28 @@ class AnkiAdapter:
         if note_ids:
             notes = self._notes(note_ids)
             card_ids = sorted(set(card_ids) | {cid for n in notes for cid in n.card_ids()})
-            if action == "update_fields":
-                if set(p["fields"]) - set(notes[0].keys()):
-                    raise OperationError("unknown-note-field")
-                model = copy.deepcopy(notes[0].note_type())
-                snapshot["model"] = model
-                changed_fields = {**dict(notes[0].items()), **p["fields"]}
-                # Old cloze cards remain until the user removes empty cards; a
-                # disjoint new set of cloze ordinals is additive, not a swap.
-                ordinals = {c.ord for c in self._cards(card_ids)} | self._anticipated_ordinals(model, changed_fields)
-                summary["cards"] = max(len(card_ids), len(ordinals))
+            if action in ("update_fields", "update_fields_bulk"):
+                updates = p["notes"] if action == "update_fields_bulk" else [p]
+                by_id = {n.id: n for n in notes}
+                models = {}
+                anticipated = 0
+                for update in updates:
+                    note = by_id[update["note_id"]]
+                    if set(update["fields"]) - set(note.keys()):
+                        raise OperationError("unknown-note-field")
+                    model = copy.deepcopy(note.note_type())
+                    models[str(model["id"])] = model
+                    changed_fields = {**dict(note.items()), **update["fields"]}
+                    # Count ordinals per note: identical ordinals on different
+                    # notes are different cards. Old cloze cards are retained.
+                    existing_cards = self._cards(note.card_ids())
+                    ordinals = {c.ord for c in existing_cards} | self._anticipated_ordinals(model, changed_fields)
+                    anticipated += max(len(existing_cards), len(ordinals))
+                if action == "update_fields":
+                    snapshot["model"] = next(iter(models.values()))
+                else:
+                    snapshot["models"] = models
+                summary["cards"] = anticipated
                 summary["anticipated_cards"] = True
                 warnings.append("Updating fields may activate templates or cloze deletions and generate new cards.")
         if card_ids:
@@ -316,6 +342,8 @@ class AnkiAdapter:
         summary["note_ids"] = note_ids[:100]
         summary["card_ids"] = card_ids[:100]
         summary["ids_truncated"] = len(note_ids) > 100 or len(card_ids) > 100
+        if action == "set_card_flags":
+            summary["flag"] = p["flag"]
         if action in ("delete_notes", "delete_decks"):
             summary["affected_review_rows"] = len(snapshot.get("reviews", []))
             warnings.append("Deletion may remove cards and their review history; a verified restore point is required.")
@@ -360,6 +388,32 @@ class AnkiAdapter:
         elif action == "update_fields":
             ac.updateNoteFields(note={"id": p["note_id"], "fields": p["fields"]})
             result["note_id"] = p["note_id"]
+        elif action == "update_fields_bulk":
+            results = []
+            stopped = False
+            normalize_text = self.col.get_config("normalize_note_text", True) is not False
+            for update in p["notes"]:
+                nid = update["note_id"]
+                if stopped:
+                    results.append({"note_id": nid, "state": "not-attempted"})
+                    continue
+                try:
+                    ac.updateNoteFields(note={"id": nid, "fields": update["fields"]})
+                    note = self.col.get_note(nid)
+                    # Anki skips normalization when the whole note is unchanged,
+                    # so an exact original value is also a valid saved result.
+                    if any(note[name] not in (value, self._stored_field_value(value, normalize_text))
+                           for name, value in update["fields"].items()):
+                        raise OperationError("field-update-readback-mismatch")
+                    results.append({"note_id": nid, "state": "applied"})
+                except Exception:
+                    # The write may have happened before an exception. Stop,
+                    # preserve confirmed outcomes, and never claim rollback.
+                    results.append({"note_id": nid, "state": "unknown", "error": "field-update-result-unknown"})
+                    stopped = True
+            result.update(state="partial" if stopped else "applied", results=results,
+                          updated=sum(item["state"] == "applied" for item in results),
+                          attempted=sum(item["state"] != "not-attempted" for item in results))
         elif action == "add_tags":
             ac.addTags(notes=p["note_ids"], tags=" ".join(p["tags"]))
         elif action == "remove_tags":
@@ -373,7 +427,27 @@ class AnkiAdapter:
         elif action == "delete_decks":
             # Passing only topmost selected roots avoids removing a subdeck twice.
             roots = [n for n in p["deck_names"] if not any(n.startswith(parent + "::") for parent in p["deck_names"] if parent != n)]
+            affected = {int(d["id"]): d for name, d in self._decks().items()
+                        if any(name == root or name.startswith(root + "::") for root in roots)}
+            dids = sorted(affected)
+            # Use complete live membership, not the preview's capped ID lists.
+            before = {row[0] for row in self._rows("cards", "did", dids) + self._rows("cards", "odid", dids)}
+            ordinary = {did for did, deck in affected.items() if not deck.get("dyn")}
+            expected_deleted = {card.id for card in self._cards(sorted(before))
+                                if card.did in ordinary or card.odid in ordinary}
             ac.deleteDecks(decks=roots, cardsToo=True)
+            after_dids = {int(d["id"]) for d in self._decks().values()}
+            retained = set(affected) & after_dids
+            remaining = {row[0] for row in self._rows("cards", "id", sorted(before))}
+            result.update(
+                deleted_decks=sorted(deck["name"] for did, deck in affected.items() if did not in retained),
+                retained_decks=sorted(affected[did]["name"] for did in retained),
+                deleted_cards=len(before - remaining), retained_cards=len(remaining),
+            )
+            # Anki keeps the Default deck (ID 1). Other retained target decks
+            # mean the request was only partially fulfilled, even without an API error.
+            if retained - {1} or before - remaining != expected_deleted:
+                result["state"] = "partial"
         elif action == "suspend_cards":
             ac.suspend(cards=list(p["card_ids"]), suspend=p["suspended"])
             states = ac.areSuspended(cards=p["card_ids"])
@@ -382,6 +456,13 @@ class AnkiAdapter:
         elif action == "set_due_date":
             if ac.setDueDate(cards=p["card_ids"], days=p["days"]) is not True:
                 raise OperationError("schedule-update-failed")
+        elif action == "set_card_flags":
+            # The collection API changes only the user flag (low three bits),
+            # preserves other flag bits, and records the change for AnkiWeb.
+            self.col.set_user_flag_for_cards(p["flag"], list(p["card_ids"]))
+            if any(card.user_flag() != p["flag"] for card in self._cards(p["card_ids"])):
+                raise OperationError("flag-readback-mismatch")
+            result.update(card_ids=p["card_ids"], flag=p["flag"])
         elif action == "forget_cards":
             ac.forgetCards(cards=p["card_ids"])
         elif action == "store_media":

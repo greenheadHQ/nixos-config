@@ -5,12 +5,21 @@
   # ═══════════════════════════════════════════════════════════════
   # 네트워크
   # ═══════════════════════════════════════════════════════════════
-  network = {
+  network = rec {
     # Tailscale IP (tailscale ip -4 로 확인)
     minipcTailscaleIP = "100.79.80.95";
     macbookTailscaleIP = "100.65.50.98";
-    # MiniPC의 MagicDNS FQDN — tailnet 전용 MCP 승인 화면의 HTTPS 이름
-    minipcTailnetFqdn = "greenhead-minipc.tail420ece.ts.net";
+    # MiniPC의 MagicDNS 짧은 이름과 FQDN — FQDN은 tailnet 전용 MCP 승인 화면의 HTTPS 이름
+    minipcTailnetHostName = "greenhead-minipc";
+    minipcTailnetFqdn = "${minipcTailnetHostName}.tail420ece.ts.net";
+    # macOS에서 MiniPC를 가리키는 SSH 목적지 이름 — ssh config의 minipc Host 블록과
+    # headless SSH dispatcher 관리 대상이 함께 쓴다. MagicDNS 이름이 빠지면 에이전트가
+    # `ssh greenhead-minipc`로 접속할 때 dispatcher를 지나쳐 1Password agent 승인 대기로 실패한다.
+    minipcSshHostAliases = [
+      "minipc"
+      minipcTailnetHostName
+      minipcTailnetFqdn
+    ];
 
     # 서비스 포트
     ports = {

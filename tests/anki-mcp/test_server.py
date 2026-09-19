@@ -195,8 +195,13 @@ async def test_split_apps_metadata_and_full_oauth_flow(tmp_path, auth_method):
             listed = {t["name"]: t for t in r.json()["result"]["tools"]}
             names = set(listed)
             assert {"anki_find_notes", "anki_add_notes", "anki_sync_now", "anki_delete_notes", "anki_operation_status"} <= names
-            for name in ("anki_add_notes", "anki_update_note_fields"):
+            for name in ("anki_add_notes", "anki_update_note_fields", "anki_update_notes_fields"):
                 assert AUTHORING_GUIDANCE in listed[name]["description"]
+                assert "검토 메모" in listed[name]["description"]
+                assert "never literal cloze markup" in listed[name]["description"]
+            assert "multiple paragraphs" in listed["anki_update_note_fields"]["description"]
+            assert "Do not silently rewrite" in listed["anki_update_note_fields"]["description"]
+            assert listed["anki_set_card_flags"]["inputSchema"]["required"] == ["card_ids", "flag"]
             assert AUTHORING_GUIDANCE not in listed["anki_find_notes"]["description"]
             assert listed["anki_add_notes"]["inputSchema"]["required"] == ["notes"]
             assert listed["anki_update_note_fields"]["inputSchema"]["required"] == ["note_id", "fields"]

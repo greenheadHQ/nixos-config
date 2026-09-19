@@ -20,7 +20,8 @@
 #     죽여 MiniPC가 매 배포마다 소스 빌드로 과열된 이력, PR #183).
 #   - v1과 값이 다른 항목과 이유: MemoryMax 512M→1G (v1 운영에서 OOMKill 실측 이력이 troubleshooting에
 #     남아 있고, 이번엔 실제 이력 컬렉션의 .colpkg export가 205MB peak를 쓴 실측 + 인스턴스 2개 동시 기동);
-#     numBackups 50→30 (Anki 자체 자동 백업은 프로필 아래 쌓이는 SSD 비용이고, 일일 HDD 백업이 따로 있다);
+#     numBackups 50→30 (당시 설정; 26.08에서는 미사용 호환 값이다. 실제 보존·간격은
+#     컬렉션의 get_preferences().backups가 소유하며 README의 백업 절을 따른다);
 #     autoSync True→False (Anki의 열고/닫을 때 GUI sync 경로를 끄고 헬퍼 애드온만 sync한다).
 #     — v2 당시 numBackups·autoSync는 프로필 최초 생성 시 prefs21.db에 쓰는 값이었다(prefsBootstrap 가드 참조);
 #     tailscale-wait 미복원 (v1은 tailnet IP 바인딩 때문에 필요했고 loopback 전용인 지금은 근거가 없다).
@@ -208,9 +209,14 @@ in
     ./sync.nix
     ./backup.nix
     ./operations.nix
+    ./recovery.nix
   ];
 
   config = lib.mkIf cfg.enable {
+    # A failed addon/backend check must stop the system build before activation.
+    # system.checks does not retain the test runtime in the deployed closure.
+    system.checks = [ (import ./runtime-check.nix { inherit pkgs addons; }) ];
+
     assertions = [
       {
         assertion =

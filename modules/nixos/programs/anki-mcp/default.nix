@@ -39,7 +39,8 @@ let
   statusFile = "${constants.paths.ankiHostStatusRun}/${cfg.instance}.json";
   oauthCredPath = config.age.secrets.anki-mcp-oauth.path;
 
-  # 핀된 nixpkgs의 mcp SDK(1.27.x)와 그 의존만 쓴다 — overlay 없음(PR #183 캐시 사고 재발 방지)
+  # 핀된 nixpkgs의 mcp SDK와 그 의존만 쓴다 — overlay 없음(PR #183 캐시 사고 재발 방지).
+  # 버전 정본은 anki-host/README.md의 "소스 핀"이다 (여기에 숫자를 복제하지 않는다).
   python = pkgs.python3.withPackages (
     ps: with ps; [
       mcp

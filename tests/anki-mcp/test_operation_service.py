@@ -65,6 +65,8 @@ def setup(tmp_path, outcomes=(), notify=None):
 
 
 PARAMS = {"note_ids": [1], "tags": ["t"]}
+MUTATIONS = [("add_tags", PARAMS), ("set_card_flags", {"card_ids": [10], "flag": 4}),
+             ("update_fields_bulk", {"notes": [{"note_id": 1, "fields": {"Front": "bulk change"}}]})]
 
 
 @pytest.mark.anyio
@@ -83,19 +85,21 @@ async def test_unready_status_stops_before_sync_or_mutation(tmp_path, monkeypatc
 
 
 @pytest.mark.anyio
-async def test_presync_failure_does_not_prepare_or_apply(tmp_path):
+@pytest.mark.parametrize("action,params", MUTATIONS)
+async def test_presync_failure_does_not_prepare_or_apply(tmp_path, action, params):
     service, helper, syncer, adapter = setup(tmp_path, ["blocked"])
-    result = await service.run("add_tags", PARAMS, request_id="presync01")
+    result = await service.run(action, params, request_id="presync01")
     assert result["state"] == "not-applied" and not adapter.calls
     assert "/operations/prepare" not in helper.calls and "/operations/apply" not in helper.calls
 
 
 @pytest.mark.anyio
-async def test_postsync_retry_never_repeats_mutation(tmp_path):
+@pytest.mark.parametrize("action,params", MUTATIONS)
+async def test_postsync_retry_never_repeats_mutation(tmp_path, action, params):
     service, helper, syncer, adapter = setup(tmp_path, ["synced", "timeout", "synced"])
-    result = await service.run("add_tags", PARAMS, request_id="postsync1")
+    result = await service.run(action, params, request_id="postsync1")
     assert result["state"] == "applied" and result["sync"]["state"] == "pending"
-    again = await service.run("add_tags", PARAMS, request_id="postsync1")
+    again = await service.run(action, params, request_id="postsync1")
     assert again["sync"]["state"] == "synced" and len(adapter.calls) == 1
     assert syncer.calls == [None, 1000, 1000]
 
@@ -112,24 +116,26 @@ async def test_first_confirm_true_does_not_skip_preview(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_lost_apply_response_is_reconciled_by_same_id(tmp_path):
+@pytest.mark.parametrize("action,params", MUTATIONS)
+async def test_lost_apply_response_is_reconciled_by_same_id(tmp_path, action, params):
     service, helper, syncer, adapter = setup(tmp_path)
     helper.lose_apply_response = True
-    result = await service.run("add_tags", PARAMS, request_id="lostresp1")
+    result = await service.run(action, params, request_id="lostresp1")
     assert result["state"] == "unknown" and len(adapter.calls) == 1
     assert len(syncer.calls) == 1
-    result = await service.run("add_tags", PARAMS, request_id="lostresp1")
+    result = await service.run(action, params, request_id="lostresp1")
     assert result["state"] == "applied" and len(adapter.calls) == 1
     assert helper.calls.count("/operations/apply") == 1
 
 
 @pytest.mark.anyio
-async def test_unknown_journal_result_is_not_synced_or_reapplied(tmp_path):
+@pytest.mark.parametrize("action,params", MUTATIONS)
+async def test_unknown_journal_result_is_not_synced_or_reapplied(tmp_path, action, params):
     service, helper, syncer, adapter = setup(tmp_path)
     adapter.fail = True
-    result = await service.run("add_tags", PARAMS, request_id="unknown01")
+    result = await service.run(action, params, request_id="unknown01")
     assert result["state"] == "unknown"
-    again = await service.run("add_tags", PARAMS, request_id="unknown01")
+    again = await service.run(action, params, request_id="unknown01")
     assert again["state"] == "unknown" and len(adapter.calls) == len(syncer.calls) == 1
 
 
@@ -156,10 +162,11 @@ async def test_delivery_record_failure_keeps_applied_result(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_concurrent_same_request_applies_only_once(tmp_path):
+@pytest.mark.parametrize("action,params", MUTATIONS)
+async def test_concurrent_same_request_applies_only_once(tmp_path, action, params):
     service, helper, syncer, adapter = setup(tmp_path)
     first, second = await asyncio.gather(*[
-        service.run("add_tags", PARAMS, request_id="parallel1") for _ in range(2)])
+        service.run(action, params, request_id="parallel1") for _ in range(2)])
     assert first["state"] == second["state"] == "applied" and len(adapter.calls) == 1
 
 
