@@ -113,10 +113,12 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 
 ## 검토 표시와 메모
 
-검토 대기열 표시는 사용자와 정한다. 별표는 노트의 `marked` 태그이며
-`anki_find_notes(query="tag:marked")`와 `anki_remove_tags`를 사용한다.
+이 개인용 환경의 검토 대기열은 사용자 결정에 따라 **별표**를 사용한다.
+별표는 노트의 `marked` 태그이며, `anki_find_notes(query="tag:marked")`의 모든 페이지를 모은 뒤
+`anki_note_info`로 검토 메모와 본문 전체를 읽는다. 검토가 끝난 노트는 `anki_remove_tags`로
+`marked`만 해제하고 메모는 유지한다. 같은 노트에서 나온 여러 카드는 함께 검토한다.
 깃발은 카드 단위이며 `anki_find_cards(query="flag:N")`으로 모으고 `anki_set_card_flags(..., flag=0)`으로 해제한다.
-깃발 기능을 제공한다는 이유로 기존 별표나 특정 색을 임의로 검토 대기열로 해석하지 않는다.
+깃발은 별도로 사용할 수 있지만 특정 색을 검토 대기열로 해석하지 않는다.
 
 질문 이유·수정 방향은 선택적인 **`검토 메모` 필드**에 남긴다. 한 줄 제한 없이 여러 문단·질문·예시를 저장하며,
 기존 설명·Extra·Comments 필드와 섞지 않는다. 이 필드는 노트 단위로, 같은 노트의 역방향·여러 빈칸 카드가 공유한다.
