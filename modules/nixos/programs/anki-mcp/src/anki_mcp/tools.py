@@ -17,7 +17,7 @@ import unicodedata
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .ankiconnect import AnkiConnect
 from .authoring import AUTHORING_GUIDANCE
@@ -48,6 +48,12 @@ class NewNote(BaseModel):
     model_name: str = Field(description="Note type name, e.g. 'Basic' or 'Cloze' (see anki_models)")
     fields: dict[str, str] = Field(description="Field values by field name; HTML allowed")
     tags: list[str] = Field(default_factory=list, description="Tags to add; 'mcp::added' is always appended")
+
+
+class NoteFieldUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    note_id: Annotated[int, Field(strict=True, gt=0)]
+    fields: dict[str, str] = Field(min_length=1, description="Only fields to replace; other fields remain unchanged")
 
 
 @dataclass
@@ -195,6 +201,7 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         "Replace the given fields of a note (other fields unchanged). Card ids, scheduling and review "
         "history are preserved for existing cards. Changed templates/cloze fields may generate new cards. "
         "Returns an operation receipt; use anki_note_info for readback. Reuse request_id for retries. "
+        "A verified media-free restore point is created before every field edit, including one note. "
         "검토 메모 can contain multiple paragraphs. Describe cloze examples as 'c1: answer', never literal "
         "cloze markup: it can generate cards even in a hidden memo field. Do not silently rewrite an existing memo.\n\n"
         + AUTHORING_GUIDANCE
@@ -202,6 +209,26 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     async def anki_update_note_fields(note_id: int, fields: dict[str, str], request_id: str | None = None,
                                      preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
         return await operations.run("update_fields", {"note_id": note_id, "fields": fields},
+                                    request_id=request_id, preview_token=preview_token, confirm=confirm)
+
+    @mcp.tool(name="anki_update_notes_fields", annotations=UPDATE, description=(
+        "Replace selected fields on multiple existing notes in one operation. Each note_id must occur\n"
+        "once; read all original fields first with anki_note_info. Other fields and existing cards'\n"
+        "scheduling/history remain unchanged; changed templates/cloze fields can generate new cards.\n"
+        "Creates one verified media-free restore point and uses one pre/post sync pair and notification.\n"
+        "More than 20 affected notes/cards, including anticipated new cards, requires preview/confirmation.\n"
+        "Results list each note as applied, unknown or not-attempted. An uncertain write stops the batch;\n"
+        "no automatic rollback. Inspect partial/unknown receipts instead of repeating with a new request_id.\n"
+        "Reuse the same request_id for retries. 검토 메모 supports multiple paragraphs: describe cloze\n"
+        "examples as 'c1: answer', never literal cloze markup, and do not silently rewrite an existing memo.\n"
+        "\n"
+        + AUTHORING_GUIDANCE
+    ))
+    async def anki_update_notes_fields(
+        notes: Annotated[list[NoteFieldUpdate], Field(min_length=1)],
+        request_id: str | None = None, preview_token: str | None = None, confirm: bool = False,
+    ) -> dict[str, Any]:
+        return await operations.run("update_fields_bulk", {"notes": [n.model_dump() for n in notes]},
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
 
     @mcp.tool(name="anki_add_tags", annotations=UPDATE)

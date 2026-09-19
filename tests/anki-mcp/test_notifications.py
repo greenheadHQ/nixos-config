@@ -409,3 +409,19 @@ async def test_disabled_notification_makes_no_request(tmp_path):
     async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
         outcome = await Notifications(str(tmp_path / "missing-credentials"), client).send(operation())
     assert outcome == "disabled"
+
+
+@pytest.mark.parametrize("state,updated", [("applied", 3), ("partial", 1), ("partial", 0)])
+async def test_bulk_fields_reports_scope_and_confirmed_success(credentials, state, updated):
+    _, payload = await send_payload(credentials, operation(
+        action="update_fields_bulk", state=state,
+        summary={"notes": 3, "cards": 5},
+        result={"state": state, "updated": updated,
+                "results": [{"note_id": 998877, "fields": {"Front": "private-content"}}]},
+    ))
+    assert "카드 내용 일괄 수정" in payload["title"]
+    assert "대상: 노트 3개" in payload["message"]
+    assert f"노트 {updated}개 수정을 확인했습니다." in payload["message"]
+    assert "private-content" not in payload["message"] and "998877" not in payload["message"]
+    assert ("완료" in payload["title"]) == (state == "applied")
+    assert ("다시 실행하기 전에" in payload["message"]) == (state != "applied")
