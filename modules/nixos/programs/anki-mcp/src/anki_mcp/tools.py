@@ -123,7 +123,8 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     ) -> dict[str, Any]:
         """Search notes with Anki search syntax passed through verbatim (e.g. 'deck:"CS 재활" tag:mcp::added',
         'added:7', 'is:due', 'front:*css*'). Paginated; field values are truncated to max_field_chars
-        (0 = no truncation). Use anki_note_info for full fields of specific notes. Check freshness for the host's
+        (0 = no truncation). The user's review queue is starred notes: query 'tag:marked'. Collect all pages
+        when reviewing the entire queue. Use anki_note_info for full fields of specific notes. Check freshness for the host's
         recorded sync boundary; phone edits may still be absent even after a successful host sync."""
         freshness = read_freshness(deps.sync_status_file)
         ids: list[int] = await anki.invoke("findNotes", query=query)
@@ -151,6 +152,8 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         max_chars: int = deps.field_chars,
     ) -> dict[str, Any]:
         """Search cards (scheduling view: queue/type/due/interval/ease/reps/lapses) with Anki search syntax.
+        Use a supplied cid:<ID> as the exact query. The returned noteId identifies its parent note;
+        use anki_note_info for full note fields.
         Search flags with flag:1 through flag:7 (flag:0 means no flag). The response's flag is 0–7,
         or null if unavailable. Rendered question/answer are truncated to max_chars.
         Check freshness for the host's recorded sync boundary; phone edits may still be absent even after
@@ -233,7 +236,8 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     @mcp.tool(name="anki_remove_tags", annotations=UPDATE)
     async def anki_remove_tags(note_ids: list[int], tags: list[str], request_id: str | None = None,
                                preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
-        """Remove tags from notes (each tag must not contain spaces)."""
+        """Remove tags from notes (each tag must not contain spaces).
+        When completing review-queue items, remove only 'marked' from the notes whose review is complete."""
         check_tags(tags)
         return await operations.run("remove_tags", {"note_ids": note_ids, "tags": tags},
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
