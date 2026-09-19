@@ -12,7 +12,6 @@ let
     name = "anki-host-recover-fields";
     runtimeInputs = [ pkgs.util-linux ];
     runtimeEnv = {
-      ANKI_RECOVERY_INSTANCES = builtins.toJSON (builtins.attrNames cfg.instances);
       ANKI_RECOVERY_STATE_ROOT = constants.paths.ankiHostState;
       ANKI_RECOVERY_DAILY_ROOT = "${constants.paths.mediaData}/${constants.paths.ankiHostBackupsRelPath}";
       ANKI_RECOVERY_RESTORE_ROOT = "${constants.paths.mediaData}/${constants.paths.ankiHostRestorePointsRelPath}";
@@ -20,6 +19,8 @@ let
     # Anki's cached lib output contains its official Python wheels and their
     # dependencies. -I ignores caller Python paths; no Anki derivation override.
     text = ''
+      # This is JSON data parsed by Python, never a shell command or argument list.
+      export ANKI_RECOVERY_INSTANCES=${lib.escapeShellArg (builtins.toJSON (builtins.attrNames cfg.instances))}
       if [ "$EUID" -ne 0 ]; then
         echo '{"ok":false,"error":"root-required"}' >&2
         exit 1
