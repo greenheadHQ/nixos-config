@@ -101,6 +101,7 @@ PARAMETERS = {
     "delete_notes": ({"note_ids"}, set()),
     "delete_decks": ({"deck_names"}, set()),
     "suspend_cards": ({"card_ids", "suspended"}, set()),
+    "set_card_flags": ({"card_ids", "flag"}, set()),
     "set_due_date": ({"card_ids", "days"}, set()),
     "forget_cards": ({"card_ids"}, set()),
     "store_media": ({"filename", "data"}, set()),
@@ -148,6 +149,8 @@ def validate_spec(action: Any, params: Any, media_limit: int) -> dict[str, Any]:
             raise OperationError("invalid-boolean")
     if "index" in p and (type(p["index"]) is not int or p["index"] < 0):
         raise OperationError("invalid-index")
+    if "flag" in p and (type(p["flag"]) is not int or not 0 <= p["flag"] <= 7):
+        raise OperationError("flag-must-be-an-integer-from-0-to-7")
     if "days" in p and (not isinstance(p["days"], str) or re.fullmatch(r"[0-9]+(-[0-9]+)?!?", p["days"]) is None):
         raise OperationError("days-must-be-N-or-N-M-with-optional-exclamation-mark")
     if "deck_names" in p:
