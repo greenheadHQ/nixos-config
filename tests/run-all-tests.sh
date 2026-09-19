@@ -25,12 +25,14 @@ cd "$REPO_ROOT" || exit 1
 
 PASSED=()
 SKIPPED=()
+NOT_APPLICABLE=()
 FAILED=()
 
 # 드라이버를 실행하고 통과/SKIP/실패로 분류한다. SKIP은 드라이버가 환경/도구 미가용 시
 # stdout/stderr에 canonical "SKIP:" 마커를 출력하고 exit 0으로 종료하는 경우(예:
 # precommit-staged-snapshot)를 가리킨다. nested parallel fixture도 이 marker를 상위 로그로
-# 전파하며, 플랫폼상 적용 불가능한 테스트는 "N/A:"로 구분해 미실행을 PASS로 오인하지 않는다.
+# 전파한다. 드라이버 출력 전체가 "N/A:"인 경우는 플랫폼상 적용 불가능으로 따로 집계한다.
+# 일부 하위 fixture만 N/A인 드라이버는 실제 실행한 나머지 검사의 결과를 유지한다.
 run_driver() {
   local name="$1"
   shift
@@ -41,6 +43,9 @@ run_driver() {
     if grep -q '^SKIP:' "$log"; then
       printf '⊘ %s (skipped — 환경/도구 미가용)\n' "$name"
       SKIPPED+=("$name")
+    elif grep -q '^N/A:' "$log" && ! grep -qv '^N/A:' "$log"; then
+      printf '⊘ %s (not applicable — 대상 플랫폼 아님)\n' "$name"
+      NOT_APPLICABLE+=("$name")
     else
       printf '✓ %s\n' "$name"
       PASSED+=("$name")
@@ -111,7 +116,10 @@ run_driver "statusline-bats" \
 run_driver "precommit-staged-snapshot" bash tests/test-precommit-staged-snapshot.sh
 
 printf '\n━━━ 요약 ━━━\n'
-printf '통과 %d · SKIP %d · 실패 %d\n' "${#PASSED[@]}" "${#SKIPPED[@]}" "${#FAILED[@]}"
+printf '통과 %d · N/A %d · SKIP %d · 실패 %d\n' "${#PASSED[@]}" "${#NOT_APPLICABLE[@]}" "${#SKIPPED[@]}" "${#FAILED[@]}"
+if (( ${#NOT_APPLICABLE[@]} )); then
+  printf '⊘ N/A(대상 플랫폼 아님): %s\n' "${NOT_APPLICABLE[*]}"
+fi
 if (( ${#SKIPPED[@]} )); then
   printf '⊘ SKIP(미실행): %s\n' "${SKIPPED[*]}"
 fi
