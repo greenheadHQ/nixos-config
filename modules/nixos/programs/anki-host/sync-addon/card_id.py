@@ -32,7 +32,9 @@ import re
 
 MARKER = "anki-cid-copy"
 _TOKEN = re.compile(r"\{\{([^{}]+)\}\}")
-_RAW_TAGS = {"script", "style", "textarea", "title", "xmp", "plaintext"}
+# Review webviews enable scripting, so noscript also consumes raw text.
+_RAW_TAGS = {"script", "style", "textarea", "title", "xmp", "plaintext",
+             "iframe", "noembed", "noframes", "noscript"}
 
 
 class _Boundary(HTMLParser):

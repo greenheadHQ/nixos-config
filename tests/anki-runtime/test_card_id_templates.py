@@ -255,6 +255,42 @@ def test_unsupported_html_and_ambiguous_frontside_fail_closed(runtime, side, htm
         planner.build_plan(model)
 
 
+@pytest.mark.parametrize("tag", ["iframe", "noembed", "noframes", "noscript"])
+@pytest.mark.parametrize("side", ["qfmt", "afmt"])
+@pytest.mark.parametrize("ending", [">unfinished", "/>"])
+def test_raw_text_tail_cannot_swallow_control(runtime, tag, side, ending):
+    model = _model(runtime, "Basic")
+    model["tmpls"][0][side] = "{{Front}}<" + tag + ending
+    original = copy.deepcopy(model)
+    with pytest.raises(ValueError, match="card-id-unfinished-"):
+        planner.build_plan(model)
+    assert model == original
+
+
+@pytest.mark.parametrize("tag", ["iframe", "noembed", "noframes", "noscript"])
+def test_raw_text_frontside_is_not_inherited(runtime, tag):
+    model = _model(runtime, "Basic")
+    model["tmpls"][0]["afmt"] = "<" + tag + ">{{FrontSide}}</" + tag + ">"
+    with pytest.raises(ValueError, match="card-id-frontside-outside-html-content"):
+        planner.build_plan(model)
+
+
+@pytest.mark.parametrize("tag", ["iframe", "noembed", "noframes", "noscript"])
+def test_closed_raw_text_keeps_control_outside(runtime, tag):
+    r = runtime
+    model = _model(r, "Basic")
+    model["tmpls"][0]["qfmt"] = "{{Front}}<" + tag + ">fallback</" + tag + ">"
+    model["tmpls"][0]["afmt"] = "{{Back}}<" + tag + ">fallback</" + tag + ">"
+    r.col.models.save(model)
+    model = _model(r, model["name"])
+    nid = add(r, model["name"], {"Front": "synthetic question", "Back": "synthetic answer"})
+    plan = planner.build_plan(model)
+    assert plan["changes"][0]["change"]["front"].startswith(model["tmpls"][0]["qfmt"])
+    assert plan["changes"][0]["change"]["back"].startswith(model["tmpls"][0]["afmt"])
+    _apply(r, plan)
+    _assert_controls(r, nid)
+
+
 def test_double_installation_is_rejected_without_mutation(runtime):
     r = runtime
     plan = planner.build_plan(_model(r, "Basic"))
