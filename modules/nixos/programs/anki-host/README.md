@@ -99,6 +99,32 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 `rev.ivlFct`, `rev.hardFactor`, `lapse.mult`, `lapse.minInt`, `lapse.leechFails`, `lapse.leechAction`.
 현 버전에서 없는 키·범위 밖 값·프리셋 ID/name 교체는 거부한다. FSRS 설정 전체 편집은 지원하지 않는다.
 
+## 카드 ID 복사
+
+복습 화면의 `카드 ID 복사` 버튼은 현재 카드의 `{{CardID}}`를 문자열로 받아 `cid:<ID>`를 복사한다.
+같은 카드의 문제·정답 화면에서는 같은 값이고, 같은 노트에서 만든 형제 카드는 각각 다른 값이다.
+`anki_find_cards(query="cid:<ID>")` 응답의 `noteId`로 원본 노트와 검토 메모를 찾을 수 있다.
+번호를 별도 필드에 저장하거나 노트 ID로 오표기하지 않는다.
+[CIR/ADR: 카드 ID 직접 복사를 선택한 이유](https://github.com/greenheadHQ/nixos-config/issues/1328#issuecomment-5742567599).
+
+조각의 정본은 `sync-addon/card-id-button.html`, 순수 계획 생성기는 `sync-addon/card_id.py`의
+`build_plan(model)`이다. 현재 Anki native model의 `flds`, `tmpls`, `req`를 받아 원본과 변경안 쌍을 반환하며
+컬렉션을 직접 읽거나 바꾸지 않는다. 원래 ALL/ANY 카드 생성 조건 안에만 버튼을 넣고, `FrontSide`가 있는
+뒷면은 앞면의 버튼을 상속한다. 기존 CSS·필드·템플릿 본문은 유지하며, 불명확한 HTML이나 중복 설치는 거절한다.
+실제 적용은 각 변경안을 `anki_prepare_model_change(action="model_template_update", ...)`로 준비한 뒤
+아래 root 승인·복구점 경로를 따른다. `original` 쌍은 같은 경로의 원복 입력이다.
+
+적용된 타입의 기존 카드와 이후 생성 카드는 같은 버튼을 사용한다. 새로 만들거나 가져온 **다른 노트 타입**에는
+자동 설치하지 않는다. 이 경우 원본을 확인하고 같은 준비·기기 검증 절차를 거친다.
+카드 ID를 렌더하지 못하는 클라이언트에서는 복사를 비활성화한다. 자동 복사가 거절되면 선택 가능한 번호를
+보여 주며 성공으로 표시하지 않는다. 복사 자체는 서버 조회를 하지 않지만, LLM이 해당 카드를 찾으려면
+클라이언트와 호스트의 AnkiWeb 동기화가 끝나 있어야 한다.
+
+검증은 `tests/anki-runtime/test_card_id_templates.py`의 실제 카드 생성·렌더링·보존·원복 검사와,
+Mac/iPhone에서 문제·정답·형제 카드의 버튼을 누른 뒤 실제로 붙여넣은 값의 대조를 구분한다.
+버튼 클릭으로 정답이 열리거나 평가되지 않는지도 확인한다. API 성공 반환이나 성공 문구만으로
+실기기의 클립보드 호환성을 확정하지 않는다.
+
 ## 검토 표시와 메모
 
 이 개인용 환경의 검토 대기열은 사용자 결정에 따라 **별표**를 사용한다.
