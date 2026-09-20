@@ -107,6 +107,30 @@ def test_new_child_deck_after_preview_is_stale(tmp_path):
         ops.apply(p["operation_id"], p["preview_token"], True)
 
 
+@pytest.mark.parametrize("action", ["delete_notes", "delete_decks"])
+@pytest.mark.parametrize("change", ["preserved", "removed", "changed", "added"])
+def test_deletion_review_receipt_is_read_back_and_mismatch_is_partial(tmp_path, action, change):
+    ops, adapter, col = adapter_fixture(tmp_path)
+    params = {"note_ids": [1]} if action == "delete_notes" else {"deck_names": ["A"]}
+    preview = ops.prepare(action, params)
+    assert preview["summary"]["affected_review_rows"] == 1
+    assert any("before deletion, not rows removed" in warning for warning in preview["summary"]["warnings"])
+
+    def delete(**_):
+        col.db.db.execute("delete from cards where id=10")
+        col.db.db.execute("delete from notes where id=1")
+        if change == "removed":
+            col.db.db.execute("delete from revlog where cid=10")
+        elif change == "changed":
+            col.db.db.execute("update revlog set ease=1 where cid=10")
+        elif change == "added":
+            col.db.db.execute("insert into revlog values(101, 10, 2)")
+    adapter.mw._anki_host_connect = SimpleNamespace(deleteNotes=delete, deleteDecks=delete)
+    outcome = ops.apply(preview["operation_id"], preview["preview_token"], True)
+    assert outcome["result"]["retained_review_rows"] == {"removed": 0, "added": 2}.get(change, 1)
+    assert outcome["state"] == ("applied" if change == "preserved" else "partial")
+
+
 @pytest.mark.parametrize("returned", [[None], [], [42, 43], None])
 def test_add_notes_never_marks_malformed_or_null_ids_as_success(returned):
     ac = SimpleNamespace(canAddNotesWithErrorDetail=lambda **_: [{"canAdd": True}], addNotes=lambda **_: returned)

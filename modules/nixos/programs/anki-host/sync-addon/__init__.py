@@ -215,6 +215,9 @@ def _snapshot() -> dict[str, Any]:
     _require_col()
     col = aqt.mw.col
     cutoff_ms = (col.sched.day_cutoff - 86400) * 1000
+    # Total revlog rows include deleted cards and manual scheduling entries.
+    # Deck totals can only attribute rows whose card still exists. Do not infer
+    # missing history from the difference, or report this as unique cards studied.
     by_deck: dict[str, int] = {}
     for did, count in col.db.all(
         "select c.did, count() from revlog r join cards c on c.id = r.cid where r.id > ? group by c.did",
