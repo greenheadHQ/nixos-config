@@ -204,3 +204,51 @@ def test_literal_cloze_markup_in_hidden_memo_really_generates_cards(runtime, kin
     assert all(row in after['cards'] for row in before['cards'])
     assert after['reviews'] == before['reviews']
     _readback(r, nid, memo)
+
+
+@pytest.mark.parametrize('kind', ['basic', 'reversed', 'cloze', 'image-occlusion', 'custom'])
+@pytest.mark.parametrize('clear_memo', [False, True], ids=['star-only', 'star-and-memo'])
+def test_selected_review_cleanup_preserves_other_notes_and_card_state(runtime, kind, clear_memo):
+    """Exercise existing mutations after a simulated explicit choice, not LLM consent enforcement."""
+    r = runtime
+    name, fields, card_count = _case(r, kind)
+    r.apply('model_field_add', {'model_name': name, 'field_name': MEMO_FIELD}, schema=True)
+    selected = [add(r, name, {**fields, MEMO_FIELD: LONG_MEMO}) for _ in range(2)]
+    unfinished = add(r, name, {**fields, MEMO_FIELD: LONG_MEMO + '\n\n아직 해결하지 않은 질문'})
+    all_notes = [*selected, unfinished]
+    all_cards = [cid for nid in all_notes for cid in r.col.get_note(nid).card_ids()]
+    assert len(all_cards) == card_count * 3
+    r.apply('add_tags', {'note_ids': all_notes, 'tags': ['marked', 'keep::context']})
+    r.apply('set_card_flags', {'card_ids': all_cards, 'flag': 4})
+    r.apply('set_due_date', {'card_ids': all_cards, 'days': '3'})
+    before_cards = {nid: _card_state(r, nid) for nid in all_notes}
+    assert all(state['reviews'] for state in before_cards.values())
+    before_fields = {nid: dict(r.col.get_note(nid).items()) for nid in all_notes}
+    before_tags = {nid: set(r.col.get_note(nid).tags) for nid in all_notes}
+    untouched = r.col.db.all('select * from notes where id=?', unfinished)
+    model_before = copy.deepcopy(r.adapter.model_info(name))
+    backup_count = len(r.restored)
+
+    if clear_memo:
+        preview, outcome = r.apply('update_fields_bulk', {
+            'notes': [{'note_id': nid, 'fields': {MEMO_FIELD: ''}} for nid in selected],
+        })
+        assert preview['backup_required']
+        for nid in selected:
+            _readback(r, nid, '')
+            assert 'marked' in r.col.get_note(nid).tags
+        # Retrying the same operation cannot add another backup or replay changes.
+        replay = r.ops.apply(preview['operation_id'], preview['preview_token'], True)
+        assert replay['state'] == outcome['state'] == 'applied'
+        assert len(r.restored) == backup_count + 1
+
+    r.apply('remove_tags', {'note_ids': selected, 'tags': ['marked']})
+    for nid in selected:
+        expected_fields = {**before_fields[nid], MEMO_FIELD: ''} if clear_memo else before_fields[nid]
+        assert dict(r.col.get_note(nid).items()) == expected_fields
+        assert set(r.col.get_note(nid).tags) == before_tags[nid] - {'marked'}
+        _readback(r, nid, expected_fields[MEMO_FIELD])
+    assert r.col.db.all('select * from notes where id=?', unfinished) == untouched
+    assert {nid: _card_state(r, nid) for nid in all_notes} == before_cards
+    assert r.adapter.model_info(name) == model_before
+    assert len(r.restored) == backup_count + int(clear_memo)

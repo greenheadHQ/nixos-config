@@ -69,6 +69,7 @@ class Deps:
 
 
 def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 정의 나열
+    """Register Anki tools with their dependencies and client-facing usage guidance."""
     anki = deps.anki
 
     operations = deps.operations
@@ -125,7 +126,8 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         """Search notes with Anki search syntax passed through verbatim (e.g. 'deck:"CS 재활" tag:mcp::added',
         'added:7', 'is:due', 'front:*css*'). Paginated; field values are truncated to max_field_chars
         (0 = no truncation). The user's review queue is starred notes: query 'tag:marked'. Collect all pages
-        when reviewing the entire queue. Use anki_note_info for full fields of specific notes. Check freshness for the host's
+        when reviewing the entire queue. Use anki_note_info for full fields and the review cleanup choices;
+        never automatically unmark completed items. Check freshness for the host's
         recorded sync boundary; phone edits may still be absent even after a successful host sync."""
         freshness = read_freshness(deps.sync_status_file)
         ids: list[int] = await anki.invoke("findNotes", query=query)
@@ -138,6 +140,17 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         """Full note details for the given note ids (fields untruncated by default).
         Before reviewing a note with a 검토 메모 field, read its complete memo here, including all paragraphs.
         The memo is shared by sibling cards. Do not clear or rewrite it merely because a review mark is removed.
+        After completing the requested review work and necessary readback, report results and ask once for
+        the completed notes: clear both star and memo, clear only the star, or keep both. Merely listing or
+        reading notes is not completion. Keep both unchanged while awaiting the choice; do not ask again
+        if the user already explicitly authorized that cleanup choice for those notes.
+        Exclude notes with unfinished work or unresolved memo questions, including those about sibling cards.
+        Before clearing, reread the current full memo; if it changed since the choice was offered, preserve it
+        and reconfirm. Rereading does not atomically guard edits arriving before the mutation tool prepares
+        its snapshot. Clear only the approved notes' existing 검토 메모 field to an empty string and/or their
+        marked tag, according to the choice. Preserve other fields, tags, flags and scheduling. For both,
+        clear the memo and verify it first, then remove marked. On partial/unknown results, inspect and
+        report the remaining state instead of claiming cleanup complete or retrying with a new request_id.
         Check freshness for the host's recorded sync boundary; phone edits may still be absent even after
         a successful host sync."""
         freshness = read_freshness(deps.sync_status_file)
@@ -206,7 +219,8 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         "Returns an operation receipt; use anki_note_info for readback. Reuse request_id for retries. "
         "A verified media-free restore point is created before every field edit, including one note. "
         "검토 메모 can contain multiple paragraphs. Describe cloze examples as 'c1: answer', never literal "
-        "cloze markup: it can generate cards even in a hidden memo field. Do not silently rewrite an existing memo.\n\n"
+        "cloze markup: it can generate cards even in a hidden memo field. Do not silently rewrite an existing memo.\n"
+        "Clearing 검토 메모 requires the user's explicit cleanup choice for those notes; follow anki_note_info.\n\n"
         + AUTHORING_GUIDANCE
     ))
     async def anki_update_note_fields(note_id: int, fields: dict[str, str], request_id: str | None = None,
@@ -224,7 +238,7 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         "no automatic rollback. Inspect partial/unknown receipts instead of repeating with a new request_id.\n"
         "Reuse the same request_id for retries. 검토 메모 supports multiple paragraphs: describe cloze\n"
         "examples as 'c1: answer', never literal cloze markup, and do not silently rewrite an existing memo.\n"
-        "\n"
+        "Clearing 검토 메모 requires the user's explicit cleanup choice for those notes; follow anki_note_info.\n\n"
         + AUTHORING_GUIDANCE
     ))
     async def anki_update_notes_fields(
@@ -246,7 +260,9 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     async def anki_remove_tags(note_ids: list[int], tags: list[str], request_id: str | None = None,
                                preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
         """Remove tags from notes (each tag must not contain spaces).
-        When completing review-queue items, remove only 'marked' from the notes whose review is complete."""
+        For review cleanup, follow anki_note_info: ask once whether to clear both star and memo, only the star,
+        or neither, unless that choice was already explicitly authorized. Without a choice, change neither.
+        Remove only 'marked' from the approved, fully completed notes; preserve all other tags."""
         check_tags(tags)
         return await operations.run("remove_tags", {"note_ids": note_ids, "tags": tags},
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
