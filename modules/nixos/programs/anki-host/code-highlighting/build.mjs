@@ -23,7 +23,8 @@ for (const dependency of dependencies) {
 }
 const upstream = lock.packages["node_modules/highlight.js"];
 const license = await readFile(join(directory, "node_modules/highlight.js/LICENSE"));
-const licenseFilename = `_anki-syntax-hljs-${upstream.version}.LICENSE.txt`;
+// Anki canonicalizes media filenames to lowercase; the on-disk/readback name must match.
+const licenseFilename = `_anki-syntax-hljs-${upstream.version}.license.txt`;
 const result = await build({
   absWorkingDir: directory,
   entryPoints: ["library.js"],

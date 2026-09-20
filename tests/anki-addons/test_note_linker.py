@@ -96,8 +96,13 @@ class NoteLinkerLiteralTest(unittest.TestCase):
         self.assertEqual(render(source), source)
 
     def test_unknown_malformed_declaration_does_not_break_card(self):
-        source = f"<![unsupported]>{MARKER}"
-        self.assertEqual(render(source), source)
+        literal = f"<pre><code>{MARKER}</code></pre>"
+        prefix = "<![unsupported]>" + literal
+        source = prefix + MARKER
+        # Python versions either reject this declaration (plaintext fallback)
+        # or accept it as a bogus comment (normal outside-link rendering).
+        # In both cases the card stays readable and code remains byte-identical.
+        self.assertIn(render(source), (source, prefix + "<LINK>예제 &amp; 제목</LINK>"))
 
     def test_comments_do_not_open_literal_contexts(self):
         source = f"<!-- <pre> -->{MARKER}<!-- </pre> -->"
