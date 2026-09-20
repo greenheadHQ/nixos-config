@@ -206,6 +206,19 @@ async def test_tool_annotations_mark_read_and_write(tmp_path):
 
 
 @pytest.mark.anyio
+async def test_deletion_tools_explain_retained_history_and_pre_deletion_scope(tmp_path):
+    tools = {t.name: t for t in await make_mcp(FakeAnki(), tmp_path).list_tools()}
+    status_description = " ".join(tools["anki_status"].description.split())
+    assert "including deleted cards and manual scheduling entries" in status_description
+    assert "not unique cards or only answered reviews" in status_description
+    for name in ("anki_delete_notes", "anki_delete_decks"):
+        description = " ".join(tools[name].description.split())
+        assert "review history is" in description and "retained" in description
+        assert "pre-deletion scope" in description and "not a deleted-row count" in description
+        assert "measured after deletion" in description and "today_reviews" in description
+
+
+@pytest.mark.anyio
 async def test_flag_search_preserves_query_and_returns_current_user_flag(tmp_path):
     fake = FakeAnki()
     mcp = make_mcp(fake, tmp_path)

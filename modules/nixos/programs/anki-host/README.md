@@ -130,8 +130,8 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 | `anki_add_notes`, `anki_update_note_fields`, `anki_update_notes_fields` | `canAddNotesWithErrorDetail`, `addNotes`, `updateNoteFields`; 추가는 `mcp::added`, 입력별 결과. 필드 변경은 새 카드 생성 가능. |
 | `anki_add_tags`, `anki_remove_tags`, `anki_create_deck` | `addTags`, `removeTags`, `createDeck`; 공통 변경 원장 적용. |
 | `anki_move_cards` | `changeDeck`; 존재하는 일반 덱으로 이동. 대상 카드 수에 따라 확인. |
-| `anki_delete_notes` | `deleteNotes`; 해당 노트의 모든 카드에 영향, 항상 확인·복구점. |
-| `anki_delete_decks` | `deleteDecks(cardsToo=True)`; 하위 덱 포함. 다른 덱의 형제 카드는 유지, 고아 노트는 삭제. filtered/default 덱 경고는 preview에서 확인. |
+| `anki_delete_notes` | `deleteNotes`; 해당 노트의 모든 카드를 삭제하고 복습 기록은 보존. 항상 확인·복구점. |
+| `anki_delete_decks` | `deleteDecks(cardsToo=True)`; 하위 덱 포함. 다른 덱의 형제 카드는 유지, 고아 노트는 삭제, 복습 기록은 보존. filtered/default 덱 경고는 preview에서 확인. |
 | `anki_suspend_cards` | `suspend` + `areSuspended` readback; 정지와 해제 모두 지원. |
 | `anki_find_cards`, `anki_set_card_flags` | `flag:N` 검색과 응답 `flag`(0–7, 조회 불가 시 null). 설정은 Anki `set_user_flag_for_cards` + readback; 1–7 설정/변경, 0 해제. 지정 카드만 변경하며 노트·형제 카드·일정·복습 기록을 보존. 20건 초과 확인·복구점 적용. |
 | `anki_set_due_date` | `setDueDate`; `2`, `2-5`, `2!` 문법. 범위는 무작위, 수동 복습 기록 추가·정지 해제 가능. |
@@ -141,6 +141,16 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 | `anki_model_info`, `anki_prepare_model_change` | 필드 add/remove/rename/reposition, 템플릿 add/remove/update. 준비만 수행하고 root 승인 경로에서 적용. |
 | `anki_update_model_css` | `updateModelStyling`; 빈 CSS도 지원, 구조 변경과 별도. |
 | `anki_sync_now` | 기존 normal systemd 서비스 실행. 전체 동기화 방향 선택 인자 없음. |
+
+삭제 preview의 `affected_review_rows`는 **실행 전 대상 카드에 연결된 복습 로그 수**이며 삭제할 기록 수가 아니다.
+이 키는 기존 호출과의 호환을 위해 유지한다. 결과의 `retained_review_rows`는 같은 카드 ID에 남아 있는 로그를
+실행 후 다시 센 값이다. 로그가 실행 전과 달라지면 `partial`로 보고하고, 직접 SQL로 이력을 삭제하지 않는다.
+노트·카드·덱 삭제는 Anki API의 삭제 표식(tombstone)을 통해 동기화하지만 복습 로그 제거 기능은 제공하지 않는다.
+
+상태의 `today_reviews`와 MCP `reviewed_today`는 Anki 학습일 시작 이후의 **전체 복습 로그 행 수**다. 삭제된 카드의 기록과 수동 일정 변경
+기록도 포함하므로, 현재 카드 수나 실제로 답한 횟수와 같다고 해석하지 않는다. `today_reviews_by_deck`는
+현재 존재하는 카드와 연결되는 로그만 현재 덱별로 집계하므로 그 합이 전체보다 작을 수 있다.
+카드를 삭제해도 `today_reviews`가 줄지 않는 것은 이 계약에 맞는 동작이다.
 
 덱 옵션 허용 키는 adapter의 `OPTION_RANGES`가 정본이다:
 `new.perDay`, `new.order`, `new.initialFactor`, `rev.perDay`, `rev.maxIvl`, `rev.ease4`,

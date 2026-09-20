@@ -81,7 +81,9 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     @mcp.tool(name="anki_status", annotations=READ_ONLY)
     async def anki_status() -> dict[str, Any]:
         """Host status: helper readiness/login/busy, last sync summary (result vocabulary of the sync script),
-        and today's review count. Call this first when something looks off."""
+        and today's review-log count. reviewed_today and sync counts_after.today_reviews count log rows,
+        including deleted cards and manual scheduling entries, not unique cards or only answered reviews.
+        Call this first when something looks off."""
         helper = await deps.helper.status()
         reviewed_today = await anki.invoke("getNumCardsReviewedToday")
         return {
@@ -312,7 +314,9 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     @mcp.tool(name="anki_delete_notes", annotations=DESTRUCTIVE)
     async def anki_delete_notes(note_ids: list[int], request_id: str | None = None,
                                 preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
-        """Preview deletion of notes, ALL their cards and review history. Always show the preview and get user
+        """Preview deletion of notes and ALL their cards. Existing review history is retained, including in
+        today_reviews. affected_review_rows is the pre-deletion scope, not a deleted-row count;
+        retained_review_rows in the result is measured after deletion. Always show the preview and get user
         confirmation, then repeat the same request_id/token with confirm=true. Requires a verified restore point.
         Inspect link_check for remaining notes whose stored Note Linker references became missing; do not automatically repair them."""
         return await operations.run("delete_notes", {"note_ids": note_ids},
@@ -334,8 +338,10 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     @mcp.tool(name="anki_delete_decks", annotations=DESTRUCTIVE)
     async def anki_delete_decks(deck_names: list[str], request_id: str | None = None,
                                 preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
-        """Preview deleting decks including subdecks and their affected cards. Filtered/Default deck behavior
-        is explained in the preview. Always requires user confirmation and a verified restore point.
+        """Preview deleting decks including subdecks and their affected cards. Existing review history is
+        retained, including in today_reviews. affected_review_rows is the pre-deletion scope, not a
+        deleted-row count; retained_review_rows in the result is measured after deletion. Filtered/Default
+        deck behavior is explained in the preview. Always requires user confirmation and a verified restore point.
         Inspect the separate link_check for remaining notes whose stored Note Linker references became missing."""
         return await operations.run("delete_decks", {"deck_names": deck_names},
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)

@@ -114,6 +114,10 @@ def _content(operation: dict[str, Any]) -> tuple[str, str]:
         updated = operation.get("result", {}).get("updated")
         if _count(updated):
             lines.append(f"노트 {updated}개 수정을 확인했습니다.")
+    if action in ("delete_notes", "delete_decks") and state == "applied":
+        retained_reviews = operation.get("result", {}).get("retained_review_rows")
+        if _count(retained_reviews) and retained_reviews:
+            lines.append(f"기존 복습 기록 {retained_reviews}건은 남아 있습니다.")
     if state != "applied":
         lines.append("같은 변경을 다시 실행하기 전에 작업 번호로 결과를 확인해 주세요.")
 
