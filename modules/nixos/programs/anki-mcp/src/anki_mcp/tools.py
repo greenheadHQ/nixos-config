@@ -68,6 +68,7 @@ class Deps:
 
 
 def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 정의 나열
+    """Register Anki tools with their dependencies and client-facing usage guidance."""
     anki = deps.anki
 
     operations = deps.operations
@@ -144,7 +145,8 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         if the user already explicitly authorized that cleanup choice for those notes.
         Exclude notes with unfinished work or unresolved memo questions, including those about sibling cards.
         Before clearing, reread the current full memo; if it changed since the choice was offered, preserve it
-        and reconfirm. Clear only the approved notes' existing 검토 메모 field to an empty string and/or their
+        and reconfirm. Rereading does not atomically guard edits arriving before the mutation tool prepares
+        its snapshot. Clear only the approved notes' existing 검토 메모 field to an empty string and/or their
         marked tag, according to the choice. Preserve other fields, tags, flags and scheduling. For both,
         clear the memo and verify it first, then remove marked. On partial/unknown results, inspect and
         report the remaining state instead of claiming cleanup complete or retrying with a new request_id.
