@@ -94,6 +94,33 @@ class AddonsTest(unittest.TestCase):
         meta = m.read_json(self.manager.target / "123/meta.json")
         self.assertEqual(meta["config"], {"runtime": 42})
 
+    def test_upgrade_can_replace_nested_directory_with_file_and_back(self):
+        (self.source / "foo/nested").mkdir(parents=True)
+        (self.source / "foo/nested/bar.py").write_text("old code")
+        self.apply()
+        shutil.rmtree(self.source / "foo")
+        (self.source / "foo").write_text("new file")
+        self.apply()
+        self.assertEqual((self.manager.target / "123/foo").read_text(), "new file")
+        (self.source / "foo").unlink()
+        (self.source / "foo").mkdir()
+        (self.source / "foo/new.py").write_text("new code")
+        self.apply()
+        self.assertEqual((self.manager.target / "123/foo/new.py").read_text(), "new code")
+
+    def test_directory_to_file_conflict_preserves_unknown_runtime_file(self):
+        (self.source / "foo").mkdir()
+        (self.source / "foo/bar.py").write_text("old code")
+        self.apply()
+        runtime = self.manager.target / "123/foo/state.json"
+        runtime.write_text("precious state")
+        before = m.fingerprint(self.manager.target)
+        shutil.rmtree(self.source / "foo")
+        (self.source / "foo").write_text("new file")
+        with self.assertRaises(IsADirectoryError):
+            self.apply()
+        self.assertEqual(m.fingerprint(self.manager.target), before)
+
     def test_user_files_seed_only_and_disabled(self):
         addon = self.seed()
         (self.source / "user_files").mkdir()

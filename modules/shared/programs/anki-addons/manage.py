@@ -6,6 +6,7 @@ The process guard is conservative (any Anki owned by this user blocks writes).
 
 import argparse
 import contextlib
+import errno
 import fcntl
 import hashlib
 import json
@@ -181,8 +182,20 @@ class Manager:
                 dest = stage / addon_id
                 dest.mkdir(exist_ok=True)
                 previous = old.get(addon_id, {"files": [], "config_keys": []})
+                old_directories = set()
                 for name in previous["files"]:
-                    (dest / relative_file(name)).unlink(missing_ok=True)
+                    relative = relative_file(name)
+                    (dest / relative).unlink(missing_ok=True)
+                    old_directories.update(p for p in relative.parents if p != Path("."))
+                # A package may replace foo/bar.py with a file named foo.
+                # Only prune empty ancestors of previously managed code, never
+                # a non-empty directory containing unknown runtime/user files.
+                for relative in sorted(old_directories, key=lambda p: len(p.parts), reverse=True):
+                    try:
+                        (dest / relative).rmdir()
+                    except OSError as exc:
+                        if exc.errno not in {errno.ENOENT, errno.ENOTEMPTY, errno.EEXIST}:
+                            raise
                 files = []
                 for path in sorted(source.rglob("*")):
                     if not path.is_file():
