@@ -1527,6 +1527,10 @@ let
                 nixpkgsLib.optional ankiHostCfg.instances.${name}.sync.enable
                   "pushover:${nixosCfg.age.secrets.pushover-anki.path}"
             && (svc.environment ? ANKI_HOST_MANAGED_BUNDLE) == ankiHostCfg.instances.${name}.sync.enable
+            &&
+              (builtins.any (
+                package: (package.name or "") == "anki-host-managed-${name}"
+              ) nixosCfg.environment.systemPackages) == (svc.environment ? ANKI_HOST_MANAGED_BUNDLE)
           )
           [
             "main"

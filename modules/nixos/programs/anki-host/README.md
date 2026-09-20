@@ -557,7 +557,8 @@ sudo anki-host-managed-main register <operation_id> --preview-token <preview_tok
 sudo anki-host-managed-main inspect
 ```
 
-`lab`은 `anki-host-managed-lab`으로 명시한다. 두 명령은 root 전용이며 wrapper가 지정한 인스턴스·loopback·역할 키만 쓴다.
+현재 관리 원장은 동기화 인스턴스인 `main`에만 설정하며, import 전용 `lab`에는 관리 명령을 설치하지 않는다.
+`anki-host-managed-main`은 root 전용이며 wrapper가 지정한 인스턴스·loopback·역할 키만 쓴다.
 `inspect`는 읽기 키, 등록·통지 재시도·복구 진단은 schema 키를 사용한다. 임의 URL·파일·원문·digest 입력이나
 일반 schema 승인, 서비스 실행, 전체 Upload/Download를 받는 인자는 없다. 키와 상세 비공개 결과를 로그·PR에 복사하지 않는다.
 
