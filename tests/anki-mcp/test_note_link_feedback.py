@@ -194,10 +194,18 @@ def test_fence_closing_requires_no_trailing_text():
 
 
 @pytest.mark.parametrize('count', range(5))
-def test_whole_marker_escape_matches_renderer_backslash_parity(count):
-    assert links.candidates('\\' * count + MARKER) == (Counter() if count % 2 else Counter({TARGET: 1}))
+def test_whole_marker_backslashes_remain_desktop_reference_candidates(count):
+    assert links.candidates('\\' * count + MARKER) == Counter({TARGET: 1})
 
 
 def test_br_is_a_link_boundary_but_preserves_markdown_fence_lines():
     assert links.candidates(f'[line<br>break|nid{TARGET}]') == Counter()
     assert links.candidates(f'```text<br>{MARKER}<br>```<br>{MARKER}') == Counter({TARGET: 1})
+
+
+@pytest.mark.parametrize('wrapper', [
+    '<pre>{}</pre>', '<code>{}</code>', '`{}`', '```text\n{}\n```',
+    r'\({}\)', '<math>{}</math>',
+])
+def test_backslashed_marker_inside_code_fence_or_math_remains_excluded(wrapper):
+    assert links.candidates(wrapper.format('\\' + MARKER)) == Counter()

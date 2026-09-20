@@ -98,15 +98,10 @@ def candidates(source):
         else:
             lines.append(line)
     text = _CODE_OR_MATH.sub('\x00', ''.join(lines))
-    found = Counter()
-    for match in _PATTERN.finditer(text):
-        start = match.start()
-        index = start
-        while index > 0 and text[index - 1] == '\\':
-            index -= 1
-        if (start - index) % 2 == 0:
-            found[int(match[2])] += 1
-    return found
+    # Desktop Note Linker still activates a whole marker preceded by a
+    # backslash. Keep it as a stored candidate even when a mobile renderer
+    # treats it as literal; this check must not miss an active Desktop link.
+    return Counter(int(match[2]) for match in _PATTERN.finditer(text))
 
 
 def snapshot(rows, model_fields):

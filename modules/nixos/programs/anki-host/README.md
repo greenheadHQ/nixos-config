@@ -159,6 +159,7 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 포함하고, 잘리면 `truncated=true`다. 필드 원문과 제목은 검사 영수증에 저장하지 않는다.
 HTML 인라인 서식은 이어 읽고 코드·수식·속성·Markdown 코드 예제는 제외한다. 카드 템플릿,
 조건부 표시, 실제 클라이언트 렌더링을 평가하지 않으므로 결과는 **저장된 참조 후보**에 대한 검사다.
+전체 마커 앞에 역슬래시가 있어도 Desktop Note Linker에서는 링크가 될 수 있으므로 후보에 포함한다.
 
 검사 결과와 쓰기·동기화 결과는 별개다. `state=unavailable`은 진단 실패이며 성공한 쓰기를 실패로
 바꾸지 않는다. 쓰기가 `partial` 또는 `unknown`이면 검사가 끝났더라도 쓰기 완료를 의미하지 않는다.
