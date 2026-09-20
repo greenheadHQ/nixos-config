@@ -184,6 +184,26 @@ note ID는 조회 결과로 확인하고 삭제·재생성·가져오기 뒤 다
 card ID는 사용자가 특정 출제 카드를 LLM에 지목하는 별도 포인터이며 Note Linker 형식에 넣지 않는다.
 필드에 raw `anki://x-callback-url`이나 이를 감싼 `<a>`를 저장하지 않는다.
 
+끊어진 링크는 `files/audit-note-links.py`로 읽기 전용 진단한다. `anki_find_notes(query="", max_field_chars=0)`의
+모든 페이지를 모은 `notes`와 서버가 보고한 전체 개수 `page.total`을 JSON에 넣는다. 검색으로 제한하거나
+본문이 잘린 결과는 사용하지 않는다. 전체 개수·고유 note ID가 맞지 않으면 검사기가 거절한다.
+
+```bash
+python3 modules/nixos/programs/anki-host/files/audit-note-links.py \
+  --input /private/path/notes.json --output /private/path/link-report.json
+```
+
+보고서는 source note·field·표시 제목·target note ID·원문 위치·대상 존재 여부와 누락 대상별 집계를 담는다.
+이는 저장된 marker 전체의 진단이며 코드 예제나 HTML 속성 속 marker도 포함한다. 실제 링크 여부와 원문
+맥락은 수선 전에 확인한다. 보고서는 학습 내용을 포함하므로 비공개로 보관한다(출력 파일 0600,
+기존 파일·심볼릭 링크 덮어쓰기 금지). 표준 출력에는 개수만 표시한다.
+
+수선 후보는 현재 노트를 조회해 확인하고, 같은 제목이라는 이유만으로 재생성된 동일 노트라고 단정하지 않는다.
+한 옛 ID가 여러 개념에 쓰였으면 각 source field의 링크별로 판단한다. 사용자에게 구체적 변경안을 보여 주고
+승인된 항목만 기존 일괄 필드 수정과 정확한 `expected_fields`로 적용한다. 원래 제목·순서·HTML과 다른
+필드·태그·카드 일정은 보존한다. 자동 삭제·추측 연결·새 노트 생성은 하지 않는다. 적용 전 검증된 복구점을
+확인하고 적용 후 전체 진단을 다시 실행하여 남긴 항목과 수정 결과를 구분한다.
+
 Desktop은 활성 [Anki Note Linker](https://github.com/gugutu/Anki-Note-Linker)가 marker를 내부
 Previewer 링크로 바꾼다. macOS URL scheme에 넘기지 않으므로 Finder의 “열도록 설정한 응용 프로그램이 없음”
 경로를 사용하지 않는다. MiniPC는 필드·템플릿을 저장하고 동기화할 뿐이므로 GUI add-on을 설치하지 않는다.
