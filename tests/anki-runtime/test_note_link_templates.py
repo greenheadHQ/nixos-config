@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from test_card_id_templates import _Controls
 from test_real_collection import HOST, add, load, runtime  # noqa: F401
 
 
@@ -75,7 +76,9 @@ def test_card_id_and_note_link_plans_compose_without_changing_collection_rows(ru
 
     assert _rows(r) == before
     rendered = r.col.get_card(cid).answer()
-    assert rendered.count('<div class="anki-cid-copy" data-anki-cid="') == 1
+    controls = _Controls()
+    controls.feed(rendered)
+    assert controls.ids == [str(cid)]
     assert '<div class="explanation linkRender">[target|nid' in rendered
     assert '<div class="source linkRender">[source|nid' in rendered
     assert rendered.count("anki-note-link-mobile-renderer") == 1
