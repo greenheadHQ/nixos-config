@@ -5,39 +5,87 @@
   const root = document.documentElement;
   if (!root.classList.contains("iphone") && !root.classList.contains("ipad")) return;
 
-  if (window.AnkiNoteLinkerMobileVersion !== 2) {
+  if (window.AnkiNoteLinkerMobileVersion !== 3) {
     const pattern = /\[((?:[^\[]|\\\[)*?)\|nid(\d{13})\]/g;
-    const renderContainer = container => {
-      const walker = document.createTreeWalker(container, 4);
-      const nodes = [];
-      while (walker.nextNode()) {
-        const node = walker.currentNode;
-        const parent = node.parentElement;
-        if (parent && !parent.closest("a,script,style,textarea,pre,code")) nodes.push(node);
-      }
+    const inline = new Set("B STRONG I EM U S STRIKE DEL INS SPAN FONT SMALL BIG SUB SUP MARK".split(" "));
+    const excluded = "a,button,select,textarea,script,style,pre,code,svg,math,mjx-container,.MathJax,.MathJax_Preview,.katex,[contenteditable]";
+    const escaped = (value, index) => {
+      let slashes = 0;
+      while (index > 0 && value[--index] === "\\") slashes++;
+      return slashes % 2 !== 0;
+    };
+    const renderRun = nodes => {
+      const text = nodes.map(node => node.nodeValue).join("");
+      // MathJax may not have replaced Anki's native TeX delimiters yet.
+      const math = Array.from(text.matchAll(/\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]/g));
+      const positions = [];
+      let offset = 0;
       nodes.forEach(node => {
-        const value = node.nodeValue;
-        pattern.lastIndex = 0;
-        let match;
-        let end = 0;
-        let fragment = null;
-        while ((match = pattern.exec(value)) !== null) {
-          fragment ||= document.createDocumentFragment();
-          fragment.appendChild(document.createTextNode(value.slice(end, match.index)));
-          const link = document.createElement("a");
-          link.className = "noteLink";
-          link.href = "anki://x-callback-url/search?query=nid%3A" + match[2];
-          link.textContent = match[1].replace(/\\\[/g, "[");
-          fragment.appendChild(link);
-          end = pattern.lastIndex;
+        positions.push({ node, start: offset, end: offset + node.length });
+        offset += node.length;
+      });
+      const point = (index, end = false) => positions.find(position =>
+        end ? position.start < index && index <= position.end
+          : position.start <= index && index < position.end);
+      const matches = Array.from(text.matchAll(pattern));
+      // Work backwards so earlier node offsets remain valid after replacement.
+      matches.reverse().forEach(match => {
+        if (escaped(text, match.index)) return;
+        if (math.some(item => item.index < match.index + match[0].length
+            && item.index + item[0].length > match.index)) return;
+        const start = point(match.index);
+        const titleEnd = match.index + 1 + match[1].length;
+        const suffix = point(titleEnd);
+        const end = point(match.index + match[0].length, true);
+        // Only a complete inline title is moved. A marker spanning partially
+        // opened tags or formatting inside its nid suffix stays literal.
+        if (!start || !suffix || !end || suffix.node !== end.node
+            || start.node.parentNode !== end.node.parentNode) return;
+        const whole = document.createRange();
+        whole.setStart(start.node, match.index - start.start);
+        whole.setEnd(end.node, match.index + match[0].length - end.start);
+        const title = document.createRange();
+        title.setStart(start.node, match.index + 1 - start.start);
+        title.setEnd(suffix.node, titleEnd - suffix.start);
+        const content = title.extractContents();
+        const walker = document.createTreeWalker(content, 4);
+        while (walker.nextNode()) {
+          const node = walker.currentNode;
+          node.nodeValue = node.nodeValue.replace(/\\\[/g, "[");
         }
-        if (fragment) {
-          fragment.appendChild(document.createTextNode(value.slice(end)));
-          node.parentNode.replaceChild(fragment, node);
-        }
+        const link = document.createElement("a");
+        link.className = "noteLink";
+        link.href = "anki://x-callback-url/search?query=nid%3A" + match[2];
+        link.appendChild(content);
+        whole.deleteContents();
+        whole.insertNode(link);
       });
     };
-    window.AnkiNoteLinkerMobileVersion = 2;
+    const renderContainer = container => {
+      if (container.closest(excluded)) return;
+      let run = [];
+      const flush = () => {
+        if (run.length) renderRun(run);
+        run = [];
+      };
+      const walk = parent => {
+        // Snapshot children: rendering a previous run can insert new nodes.
+        Array.from(parent.childNodes).forEach(node => {
+          if (node.nodeType === 3) run.push(node);
+          else if (node.nodeType === 1 && !node.matches(excluded)) {
+            if (inline.has(node.tagName)) walk(node);
+            else {
+              flush();
+              walk(node);
+              flush();
+            }
+          } else flush();
+        });
+      };
+      walk(container);
+      flush();
+    };
+    window.AnkiNoteLinkerMobileVersion = 3;
     window.AnkiNoteLinkerRenderMobile = () => {
       document.querySelectorAll(".linkRender").forEach(renderContainer);
     };
