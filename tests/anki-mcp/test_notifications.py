@@ -136,6 +136,30 @@ async def test_missing_add_readback_does_not_promote_requested_count_to_success(
     assert "0개를 추가했" not in message
 
 
+@pytest.mark.parametrize("action", ["delete_notes", "delete_decks"])
+async def test_deletion_reports_measured_retained_reviews_not_preview_scope(credentials, action):
+    _, payload = await send_payload(credentials, operation(
+        action=action, summary={"notes": 1, "affected_review_rows": 99},
+        result={"state": "applied", "retained_review_rows": 3},
+    ))
+    assert "기존 복습 기록 3건은 남아 있습니다." in payload["message"]
+    assert "99" not in payload["message"]
+
+
+@pytest.mark.parametrize("action", ["delete_notes", "delete_decks"])
+@pytest.mark.parametrize("state,count", [
+    ("partial", 3), ("unknown", 3), ("applied", None), ("applied", 0),
+    ("applied", True), ("applied", -1), ("applied", "3"),
+])
+async def test_deletion_does_not_invent_history_retention_from_uncertain_receipt(credentials, action, state, count):
+    _, payload = await send_payload(credentials, operation(
+        action=action, state=state, summary={"notes": 1, "affected_review_rows": 99},
+        result={"state": state, "retained_review_rows": count},
+    ))
+    assert "복습 기록" not in payload["message"]
+    assert "99" not in payload["message"]
+
+
 async def test_existing_deck_receipt_does_not_claim_a_new_deck_was_created(credentials):
     _, payload = await send_payload(credentials, operation(
         action="create_deck", summary={"notes": 0, "cards": 0, "decks": ["private-existing-deck"]},
@@ -284,7 +308,7 @@ async def test_long_deck_names_are_shortened_without_losing_counts_sync_or_full_
     _, payload = await send_payload(credentials, operation(
         action="delete_decks", summary={"decks": names, "cards": 99},
         result={"state": "applied", "deleted_decks": names, "retained_decks": ["Default"],
-                "deleted_cards": 3, "retained_cards": 5},
+                "deleted_cards": 3, "retained_cards": 5, "retained_review_rows": 999999},
         sync={"state": "blocked"},
     ))
     message = payload["message"]
@@ -295,6 +319,7 @@ async def test_long_deck_names_are_shortened_without_losing_counts_sync_or_full_
     assert "함께 삭제된 카드: 3장." in message
     assert "삭제되지 않은 카드: 5장." in message
     assert "AnkiWeb 동기화가 중단되어 확인이 필요합니다." in message
+    assert "기존 복습 기록 999999건은 남아 있습니다." in message
     assert "변경을 다시 실행하기 전에 작업 번호로 원인을 확인해 주세요." in message
 
 

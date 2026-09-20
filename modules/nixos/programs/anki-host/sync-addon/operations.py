@@ -19,6 +19,8 @@ import unicodedata
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
+from . import note_link_feedback
+
 
 class OperationError(ValueError):
     """Stable error code safe to return without note contents or credentials."""
@@ -246,6 +248,9 @@ class Adapter(Protocol):
     def apply(self, spec: dict[str, Any]) -> dict[str, Any]:
         """Return state=applied|partial plus precise per-item outcomes."""
 
+    def note_link_snapshot(self) -> dict[str, Any]:
+        """Read all stored link candidates and current target existence."""
+
 
 class Operations:
     def __init__(self, root: Path, adapter: Adapter, restore: Callable[[str], dict[str, Any]],
@@ -271,6 +276,12 @@ class Operations:
             if restarted and record["state"] == "applying":
                 record["state"] = "unknown"
                 record["error"] = "process-stopped-during-apply-do-not-repeat"
+                if record.get("link_check", {}).get("state") == "pending":
+                    record["link_check"] = {"state": "unavailable", "scope": note_link_feedback.SCOPE,
+                                            "stage": "interrupted"}
+            elif restarted and record.get("link_check", {}).get("state") == "pending":
+                record["link_check"] = {"state": "unavailable", "scope": note_link_feedback.SCOPE,
+                                        "stage": "interrupted"}
             elif record["state"] == "prepared" and self.clock() > record["expires_at"]:
                 record["state"] = "expired"
                 record["error"] = "preview-expired-create-a-new-request-id"
@@ -299,7 +310,7 @@ class Operations:
     def _public(self, record: dict[str, Any]) -> dict[str, Any]:
         allowed = ("operation_id", "request_id", "action", "state", "created_at", "expires_at", "applied_at",
                    "summary", "confirmation_required", "backup_required", "schema_required", "backup",
-                   "result", "error", "sync", "notification")
+                   "result", "error", "sync", "notification", "link_check")
         out = {k: record[k] for k in allowed if k in record}
         if record["state"] == "prepared":
             out["preview_token"] = record["preview_token"]
@@ -383,6 +394,15 @@ class Operations:
             if not record["backup"].get("mirrored"):
                 raise OperationError("restore-point-not-mirrored")
             self._checked_prepared(operation_id, token, confirm)
+        # Capture only after backup/reopen and the final stale-preview check.
+        # A failed diagnostic must not prevent or repeat an authorized write.
+        before_links = None
+        if record["action"] in note_link_feedback.ACTIONS:
+            try:
+                before_links = self.adapter.note_link_snapshot()
+                record["link_check"] = {"state": "pending", "scope": note_link_feedback.SCOPE}
+            except Exception as err:
+                record["link_check"] = note_link_feedback.unavailable("before-write", err)
         record["state"] = "applying"
         self._save(record)  # Must reach durable storage before invoking Anki.
         try:
@@ -399,7 +419,18 @@ class Operations:
             record["error"] = "apply-result-unknown:" + type(err).__name__
         record.pop("spec", None)
         record.pop("preview_token", None)
+        # Persist the write outcome first. A diagnostic crash must not turn an
+        # acknowledged successful write into an unknown mutation after restart.
         self._save(record)
+        if before_links is not None:
+            try:
+                after_links = self.adapter.note_link_snapshot()
+                record["link_check"] = note_link_feedback.compare(before_links, after_links)
+            except Exception as err:
+                record["link_check"] = note_link_feedback.unavailable("after-write", err)
+            # A local readback can observe changes even after an uncertain apply.
+            # It does not establish successful completion or sync on any client.
+            self._save(record)
         return self._public(record)
 
     def record_delivery(self, operation_id: str, kind: str, receipt: dict[str, Any]) -> dict[str, Any]:

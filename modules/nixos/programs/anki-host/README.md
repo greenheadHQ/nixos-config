@@ -130,8 +130,8 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 | `anki_add_notes`, `anki_update_note_fields`, `anki_update_notes_fields` | `canAddNotesWithErrorDetail`, `addNotes`, `updateNoteFields`; 추가는 `mcp::added`, 입력별 결과. 필드 변경은 새 카드 생성 가능. |
 | `anki_add_tags`, `anki_remove_tags`, `anki_create_deck` | `addTags`, `removeTags`, `createDeck`; 공통 변경 원장 적용. |
 | `anki_move_cards` | `changeDeck`; 존재하는 일반 덱으로 이동. 대상 카드 수에 따라 확인. |
-| `anki_delete_notes` | `deleteNotes`; 해당 노트의 모든 카드에 영향, 항상 확인·복구점. |
-| `anki_delete_decks` | `deleteDecks(cardsToo=True)`; 하위 덱 포함. 다른 덱의 형제 카드는 유지, 고아 노트는 삭제. filtered/default 덱 경고는 preview에서 확인. |
+| `anki_delete_notes` | `deleteNotes`; 해당 노트의 모든 카드를 삭제하고 복습 기록은 보존. 항상 확인·복구점. |
+| `anki_delete_decks` | `deleteDecks(cardsToo=True)`; 하위 덱 포함. 다른 덱의 형제 카드는 유지, 고아 노트는 삭제, 복습 기록은 보존. filtered/default 덱 경고는 preview에서 확인. |
 | `anki_suspend_cards` | `suspend` + `areSuspended` readback; 정지와 해제 모두 지원. |
 | `anki_find_cards`, `anki_set_card_flags` | `flag:N` 검색과 응답 `flag`(0–7, 조회 불가 시 null). 설정은 Anki `set_user_flag_for_cards` + readback; 1–7 설정/변경, 0 해제. 지정 카드만 변경하며 노트·형제 카드·일정·복습 기록을 보존. 20건 초과 확인·복구점 적용. |
 | `anki_set_due_date` | `setDueDate`; `2`, `2-5`, `2!` 문법. 범위는 무작위, 수동 복습 기록 추가·정지 해제 가능. |
@@ -142,6 +142,16 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 | `anki_update_model_css` | `updateModelStyling`; 빈 CSS도 지원, 구조 변경과 별도. |
 | `anki_sync_now` | 기존 normal systemd 서비스 실행. 전체 동기화 방향 선택 인자 없음. |
 
+삭제 preview의 `affected_review_rows`는 **실행 전 대상 카드에 연결된 복습 로그 수**이며 삭제할 기록 수가 아니다.
+이 키는 기존 호출과의 호환을 위해 유지한다. 결과의 `retained_review_rows`는 같은 카드 ID에 남아 있는 로그를
+실행 후 다시 센 값이다. 로그가 실행 전과 달라지면 `partial`로 보고하고, 직접 SQL로 이력을 삭제하지 않는다.
+노트·카드·덱 삭제는 Anki API의 삭제 표식(tombstone)을 통해 동기화하지만 복습 로그 제거 기능은 제공하지 않는다.
+
+상태의 `today_reviews`와 MCP `reviewed_today`는 Anki 학습일 시작 이후의 **전체 복습 로그 행 수**다. 삭제된 카드의 기록과 수동 일정 변경
+기록도 포함하므로, 현재 카드 수나 실제로 답한 횟수와 같다고 해석하지 않는다. `today_reviews_by_deck`는
+현재 존재하는 카드와 연결되는 로그만 현재 덱별로 집계하므로 그 합이 전체보다 작을 수 있다.
+카드를 삭제해도 `today_reviews`가 줄지 않는 것은 이 계약에 맞는 동작이다.
+
 덱 옵션 허용 키는 adapter의 `OPTION_RANGES`가 정본이다:
 `new.perDay`, `new.order`, `new.initialFactor`, `rev.perDay`, `rev.maxIvl`, `rev.ease4`,
 `rev.ivlFct`, `rev.hardFactor`, `lapse.mult`, `lapse.minInt`, `lapse.leechFails`, `lapse.leechAction`.
@@ -149,11 +159,50 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 
 ## 노트 연결
 
+`add_notes`, `update_fields`, `update_fields_bulk`, `delete_notes`, `delete_decks`의 완료 영수증에는
+`link_check`가 포함된다. 호스트에서 쓰기 직전·직후 전체 노트의 저장된 Note Linker 참조 후보를 읽고,
+이번 작업 중 새로 끊어진 참조만 알린다. 기존에 끊긴 참조는 반복하지 않으며, 같은 노트·필드·대상의
+발생 수가 늘어난 경우 증가분을 센다. 삭제한 노트를 가리키는 다른 노트의 참조도 포함된다.
+
+`state=checked`의 `new_missing_occurrences`와 `new_missing_references`는 각각 증가한 발생 수와
+서로 다른 `(source_note_id, field_name, target_note_id)` 수다. `references`는 최대 50개 포인터만
+포함하고, 잘리면 `truncated=true`다. 필드 원문과 제목은 검사 영수증에 저장하지 않는다.
+HTML 인라인 서식은 이어 읽고 코드·수식·속성·Markdown 코드 예제는 제외한다. 카드 템플릿,
+조건부 표시, 실제 클라이언트 렌더링을 평가하지 않으므로 결과는 **저장된 참조 후보**에 대한 검사다.
+전체 마커 앞에 역슬래시가 있어도 Desktop Note Linker에서는 링크가 될 수 있으므로 후보에 포함한다.
+
+검사 결과와 쓰기·동기화 결과는 별개다. `state=unavailable`은 진단 실패이며 성공한 쓰기를 실패로
+바꾸지 않는다. 쓰기가 `partial` 또는 `unknown`이면 검사가 끝났더라도 쓰기 완료를 의미하지 않는다.
+LLM은 영수증의 포인터로 현재 노트를 다시 조회하고 사용자에게 결과를 설명한다. 검사를 재실행하려고
+쓰기를 반복하거나 새 `request_id`를 만들지 않는다. 같은 요청의 재시도와 상태 조회는 저장된 검사
+영수증을 그대로 반환한다. 자동 수선, 별도 Pushover 경고·주기적 감시, 모델 변경이나 다른 기기의
+변경 감시는 이 검사에 포함하지 않는다.
+
 개념 관계의 저장 형식은 Anki Note Linker의 `[표시 제목|nid1234567890123]`이다. 제목에 `[`가 있으면
 `\[`로 이스케이프하고, 다른 링크의 끝으로 해석될 수 있는 `|nid<13자리>]` 문자열은 제목에 넣지 않는다.
 note ID는 조회 결과로 확인하고 삭제·재생성·가져오기 뒤 다시 확인한다.
 card ID는 사용자가 특정 출제 카드를 LLM에 지목하는 별도 포인터이며 Note Linker 형식에 넣지 않는다.
 필드에 raw `anki://x-callback-url`이나 이를 감싼 `<a>`를 저장하지 않는다.
+
+끊어진 링크는 `files/audit-note-links.py`로 읽기 전용 진단한다. `anki_find_notes(query="", max_field_chars=0)`의
+모든 페이지를 모은 `notes`와 서버가 보고한 전체 개수 `page.total`을 JSON에 넣는다. 검색으로 제한하거나
+본문이 잘린 결과는 사용하지 않는다. 전체 개수·고유 note ID가 맞지 않으면 검사기가 거절한다.
+
+```bash
+python3 modules/nixos/programs/anki-host/files/audit-note-links.py \
+  --input /private/path/notes.json --output /private/path/link-report.json
+```
+
+보고서는 source note·field·표시 제목·target note ID·원문 위치·대상 존재 여부와 누락 대상별 집계를 담는다.
+이는 저장된 marker 전체의 진단이며 코드 예제나 HTML 속성 속 marker도 포함한다. 실제 링크 여부와 원문
+맥락은 수선 전에 확인한다. 보고서는 학습 내용을 포함하므로 비공개로 보관한다(출력 파일 0600,
+기존 파일·심볼릭 링크 덮어쓰기 금지). 표준 출력에는 개수만 표시한다.
+
+수선 후보는 현재 노트를 조회해 확인하고, 같은 제목이라는 이유만으로 재생성된 동일 노트라고 단정하지 않는다.
+한 옛 ID가 여러 개념에 쓰였으면 각 source field의 링크별로 판단한다. 사용자에게 구체적 변경안을 보여 주고
+승인된 항목만 기존 일괄 필드 수정과 정확한 `expected_fields`로 적용한다. 원래 제목·순서·HTML과 다른
+필드·태그·카드 일정은 보존한다. 자동 삭제·추측 연결·새 노트 생성은 하지 않는다. 적용 전 검증된 복구점을
+확인하고 적용 후 전체 진단을 다시 실행하여 남긴 항목과 수정 결과를 구분한다.
 
 Desktop은 활성 [Anki Note Linker](https://github.com/gugutu/Anki-Note-Linker)가 marker를 내부
 Previewer 링크로 바꾼다. macOS URL scheme에 넘기지 않으므로 Finder의 “열도록 설정한 응용 프로그램이 없음”
@@ -307,11 +356,14 @@ Computer Use 호출의 충돌을 막을 수 없으며, 스크린샷만 요청하
 미완료 작업이나 메모 속 미해결 질문이 남은 노트는 정리 대상에서 제외한다. 형제 카드에 관한 질문도 포함한다.
 정리 직전 전체 메모를 다시 읽고, 선택지를 제시한 뒤 내용이 바뀌었으면 보존하고 다시 확인한다.
 승인된 노트의 기존 `검토 메모` 값만 빈 문자열로 비우거나 `marked`만 해제한다. 다른 필드·태그·깃발·일정은 유지한다.
+메모를 비울 때는 단일·일괄 필드 수정 모두 `expected_fields={"검토 메모": 마지막으로 읽은 전체 값}`을 함께 보낸다.
+일괄 수정은 각 노트마다 해당 값을 넣으며, HTML·줄바꿈·끝부분을 자르거나 정규화하지 않는다.
+사전 동기화 뒤 하나라도 값이 다르면 `expected-field-value-mismatch`로 전체 작업이 쓰기 전에 거절된다.
+이때 메모와 별표를 유지하고 새 메모를 읽어 다시 확인받는다. 기대값 검사를 빼거나 새 내용으로 바꿔 자동 재시도하지 않는다.
 둘 다 정리할 때는 메모를 비우고 결과를 확인한 뒤 별표를 해제한다. 일부 실패·결과 불명이면 상태를 재조회하고
 남은 내용을 보고하며, 새 요청 번호로 전체 정리를 반복하지 않는다.
 이는 기존 조회·필드 수정·태그 도구를 사용하는 LLM 지침이다. 서버가 대화의 완료·동의를 자동 판정하는 기능은 아니다.
-재조회는 확인 시점의 상태만 확인한다. 조회 후 변경 도구의 사전 동기화·준비 전에 새 내용이 들어오는 경우까지
-보호하는 원자적 조건부 쓰기(CAS)는 현재 제공하지 않는다.
+기대값 검사는 호스트에 도착한 메모만 비교한다. 아직 다른 기기에서 동기화하지 않은 내용까지 확인하는 기능은 아니다.
 깃발은 카드 단위이며 `anki_find_cards(query="flag:N")`으로 모으고 `anki_set_card_flags(..., flag=0)`으로 해제한다.
 깃발은 별도로 사용할 수 있지만 특정 색을 검토 대기열로 해석하지 않는다.
 

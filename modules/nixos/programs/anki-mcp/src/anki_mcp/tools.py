@@ -81,7 +81,9 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     @mcp.tool(name="anki_status", annotations=READ_ONLY)
     async def anki_status() -> dict[str, Any]:
         """Host status: helper readiness/login/busy, last sync summary (result vocabulary of the sync script),
-        and today's review count. Call this first when something looks off."""
+        and today's review-log count. reviewed_today and sync counts_after.today_reviews count log rows,
+        including deleted cards and manual scheduling entries, not unique cards or only answered reviews.
+        Call this first when something looks off."""
         helper = await deps.helper.status()
         reviewed_today = await anki.invoke("getNumCardsReviewedToday")
         return {
@@ -150,9 +152,12 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         if the user already explicitly authorized that cleanup choice for those notes.
         Exclude notes with unfinished work or unresolved memo questions, including those about sibling cards.
         Before clearing, reread the current full memo; if it changed since the choice was offered, preserve it
-        and reconfirm. Rereading does not atomically guard edits arriving before the mutation tool prepares
-        its snapshot. Clear only the approved notes' existing 검토 메모 field to an empty string and/or their
-        marked tag, according to the choice. Preserve other fields, tags, flags and scheduling. For both,
+        and reconfirm. For either field-update tool, clear a memo only with expected_fields containing its
+        exact last-read full value (including HTML and newlines); include it for every note in a bulk edit.
+        On expected-field-value-mismatch, keep memos and stars, reread and reconfirm; never omit the guard
+        or substitute newly read values just to retry. Clear only the approved notes' existing 검토 메모 field
+        to an empty string and/or their marked tag, according to the choice. Preserve other fields, tags,
+        flags and scheduling. For both,
         clear the memo and verify it first, then remove marked. On partial/unknown results, inspect and
         report the remaining state instead of claiming cleanup complete or retrying with a new request_id.
         Check freshness for the host's recorded sync boundary; phone edits may still be absent even after
@@ -203,6 +208,7 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         "Add notes. Every note gets the 'mcp::added' tag so MCP-created cards stay identifiable. "
         "Duplicates (same first field in the deck) are rejected unless allow_duplicate. Returns an operation receipt "
         "with per-note outcomes in result.results (null noteId = unconfirmed/failed, see errors). "
+        "Inspect the separate link_check for newly missing stored Note Linker references; never repeat a write to rerun it. "
         "Normal sync runs before and after writes. Reuse request_id "
         "for every retry. More than 20 affected notes/cards returns a preview requiring user confirmation. "
         "In 검토 메모, use plain-language cloze examples such as 'c1: answer', never literal cloze markup: "
@@ -221,11 +227,14 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         "Replace the given fields of a note (other fields unchanged). Card ids, scheduling and review "
         "history are preserved for existing cards. Changed templates/cloze fields may generate new cards. "
         "Returns an operation receipt; use anki_note_info for readback. Reuse request_id for retries. "
+        "Inspect link_check for newly missing stored Note Linker references; diagnostic failure does not undo the write. "
         "A verified media-free restore point is created before every field edit, including one note. "
         "For read-modify-write changes, pass expected_fields with exact old values for the same keys. "
         "검토 메모 can contain multiple paragraphs. Describe cloze examples as 'c1: answer', never literal "
         "cloze markup: it can generate cards even in a hidden memo field. Do not silently rewrite an existing memo.\n"
-        "Clearing 검토 메모 requires the user's explicit cleanup choice for those notes; follow anki_note_info.\n\n"
+        "Clearing 검토 메모 requires the user's explicit cleanup choice and expected_fields with the exact "
+        "last-read full memo. On expected-field-value-mismatch, preserve the memo and star, reread and "
+        "reconfirm; do not drop the guard or automatically replace its value. Follow anki_note_info.\n\n"
         + AUTHORING_GUIDANCE
     ))
     async def anki_update_note_fields(note_id: int, fields: dict[str, str], expected_fields: dict[str, str] | None = None,
@@ -245,11 +254,14 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         "More than 20 affected notes/cards, including anticipated new cards, requires preview/confirmation.\n"
         "For migrations, include expected_fields with each note's exact old values for the replaced keys;\n"
         "a mismatch after pre-sync rejects the whole operation before backup or writes.\n"
+        "Inspect the separate link_check for newly missing stored Note Linker references, including partial writes.\n"
         "Results list each note as applied, unknown or not-attempted. An uncertain write stops the batch;\n"
         "no automatic rollback. Inspect partial/unknown receipts instead of repeating with a new request_id.\n"
         "Reuse the same request_id for retries. 검토 메모 supports multiple paragraphs: describe cloze\n"
         "examples as 'c1: answer', never literal cloze markup, and do not silently rewrite an existing memo.\n"
-        "Clearing 검토 메모 requires the user's explicit cleanup choice for those notes; follow anki_note_info.\n\n"
+        "Clearing 검토 메모 requires the user's explicit cleanup choice and expected_fields with each note's "
+        "exact last-read full memo. On expected-field-value-mismatch, preserve all memos and stars, reread "
+        "and reconfirm; do not drop the guard or automatically replace its value. Follow anki_note_info.\n\n"
         + AUTHORING_GUIDANCE
     ))
     async def anki_update_notes_fields(
@@ -309,8 +321,11 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     @mcp.tool(name="anki_delete_notes", annotations=DESTRUCTIVE)
     async def anki_delete_notes(note_ids: list[int], request_id: str | None = None,
                                 preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
-        """Preview deletion of notes, ALL their cards and review history. Always show the preview and get user
-        confirmation, then repeat the same request_id/token with confirm=true. Requires a verified restore point."""
+        """Preview deletion of notes and ALL their cards. Existing review history is retained, including in
+        today_reviews. affected_review_rows is the pre-deletion scope, not a deleted-row count;
+        retained_review_rows in the result is measured after deletion. Always show the preview and get user
+        confirmation, then repeat the same request_id/token with confirm=true. Requires a verified restore point.
+        Inspect link_check for remaining notes whose stored Note Linker references became missing; do not automatically repair them."""
         return await operations.run("delete_notes", {"note_ids": note_ids},
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
 
@@ -330,8 +345,11 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     @mcp.tool(name="anki_delete_decks", annotations=DESTRUCTIVE)
     async def anki_delete_decks(deck_names: list[str], request_id: str | None = None,
                                 preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
-        """Preview deleting decks including subdecks and their affected cards. Filtered/Default deck behavior
-        is explained in the preview. Always requires user confirmation and a verified restore point."""
+        """Preview deleting decks including subdecks and their affected cards. Existing review history is
+        retained, including in today_reviews. affected_review_rows is the pre-deletion scope, not a
+        deleted-row count; retained_review_rows in the result is measured after deletion. Filtered/Default
+        deck behavior is explained in the preview. Always requires user confirmation and a verified restore point.
+        Inspect the separate link_check for remaining notes whose stored Note Linker references became missing."""
         return await operations.run("delete_decks", {"deck_names": deck_names},
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
 
