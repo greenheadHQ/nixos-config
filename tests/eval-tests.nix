@@ -1574,7 +1574,24 @@ let
         && nixpkgsLib.hasPrefix "${constants.paths.ankiHostStatusRun}/" ankiMcpSvc.environment.ANKI_SYNC_STATUS_FILE;
     }
   ]
-  ++ darwinIntentTests;
+  ++ darwinIntentTests
+  ++ [
+    {
+      name = "Desktop Anki add-ons are personal-only and do not enable the prefs/collection-owning Anki module";
+      cond = builtins.all (
+        name:
+        let
+          homes = darwinCfgs.${name}.config.home-manager.users;
+          home = builtins.head (builtins.attrValues homes);
+          enabled = builtins.elem name personalDarwinHosts;
+        in
+        home.programs.ankiAddons.enable == enabled
+        && !home.programs.anki.enable
+        && (home.home.activation ? ankiAddons) == enabled
+        && builtins.length (builtins.attrNames home.programs.ankiAddons.addons) == 10
+      ) expectedDarwinHosts;
+    }
+  ];
 
   # 모든 테스트를 순차적으로 평가 (실패 시 해당 테스트 이름과 함께 throw)
   runTests = builtins.foldl' (acc: t: if acc then check t.name t.cond true else acc) true tests;

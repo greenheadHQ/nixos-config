@@ -88,6 +88,7 @@ in
         ../shared/programs/secrets
 
         # 공유 프로그램
+        ../shared/programs/anki-addons
         ../shared/programs/broot
         ../shared/programs/claude # Claude Code 설정(공용)
         ../shared/programs/codex # Codex CLI 호환 레이어

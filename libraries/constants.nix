@@ -125,6 +125,7 @@
   # 경로
   # ═══════════════════════════════════════════════════════════════
   paths = {
+    ankiDesktopBaseRelative = "Library/Application Support/Anki2";
     dockerData = "/var/lib/docker-data"; # SSD - 컨테이너 데이터
     mediaData = "/mnt/data"; # HDD - 미디어 파일
     ankiHostBackupsRelPath = "backups/anki-host"; # mediaData 아래 headless Anki .colpkg 백업 루트 — backup.nix·smoke-test.nix가 함께 쓴다
