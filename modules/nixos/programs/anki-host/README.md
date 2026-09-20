@@ -165,6 +165,12 @@ AnkiMobile은 add-on을 실행하지 못하므로 링크가 있는 필드의 기
 AnkiMobile의 `nid:` 탐색 링크로 바꾼다. 다른 HTML이나 기존 anchor의 `innerHTML`을 다시 쓰지 않는다.
 iPhone의 도착점은 즉시 복습이나 팝업이 아니라 탐색 검색이다.
 
+iPhone에서 링크 검색을 닫으면 실제 복습 화면은 같은 카드의 문제 화면으로 돌아오며 정답을 다시 표시할 수 있다.
+다만 `탐색 → 노트 편집 → 미리보기`에서 링크를 열고 돌아오면 미리보기가 비고, 뒤집기에서 JavaScript
+예외가 발생하는 경로가 있다. 이때 미리보기를 닫아 편집 화면으로 돌아간 뒤 다시 열면 회복된다.
+링크 변환 코드 없는 기본 anchor에서도 재현되며 `target="_blank"`만으로는 해결되지 않는다.
+카드 ID widget이 공통으로 있는 환경의 결과이므로 AnkiMobile 자체만의 결함이라고 단정하지 않는다.
+
 순수 계획 생성기 `sync-addon/note_links.py`의 `build_plan(model, targets)`에는 최신 native model 또는
 `anki_model_info` 결과와
 `template_name`·`front|back`·`field_name` 대상을 명시한다. 자동으로 모든 필드나 노트 타입을 바꾸지 않는다.
