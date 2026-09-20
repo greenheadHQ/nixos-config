@@ -75,6 +75,19 @@ let
       name = "anki-host-approve-${name}";
       text = ''exec ${script name inst}/bin/anki-host-operations-${name} approve "$@"'';
     };
+  managedCommand =
+    name: inst:
+    pkgs.writeShellApplication {
+      name = "anki-host-managed-${name}";
+      runtimeInputs = [ pkgs.python3 ];
+      runtimeEnv = {
+        INSTANCE = name;
+        HELPER_PORT = toString inst.helperPort;
+        LOCAL_CREDENTIAL_ROOT = credentialRoot;
+        HELPER_CURL_MAX_TIME = toString constants.ankiHost.helperCurlMaxTimeSecs;
+      };
+      text = ''exec python3 ${./files/managed-host.py} "$@"'';
+    };
 in
 {
   config = lib.mkIf cfg.enable {
@@ -83,9 +96,9 @@ in
       "d ${credentialRoot} 0700 root root -"
       "d ${archive} 0700 root root -"
     ];
-    environment.systemPackages = lib.mapAttrsToList approveCommand (
-      lib.filterAttrs (_: inst: inst.sync.enable) cfg.instances
-    );
+    environment.systemPackages =
+      (lib.mapAttrsToList approveCommand (lib.filterAttrs (_: inst: inst.sync.enable) cfg.instances))
+      ++ (lib.mapAttrsToList managedCommand cfg.instances);
     security.polkit.enable = true;
     security.polkit.extraConfig = lib.concatStringsSep "\n" (
       lib.mapAttrsToList (name: _: ''

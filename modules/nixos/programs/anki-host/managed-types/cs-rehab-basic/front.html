@@ -1,0 +1,447 @@
+<div class="rehab-card">
+  {{#맥락}}<div class="context">{{맥락}}</div>{{/맥락}}
+  <div class="question anki-code-scope">{{질문}}</div>
+</div>{{#질문}}<style>
+.anki-cid-copy{--cid-text:#596570;--cid-border:#dce1e5;--cid-surface:rgba(249,250,251,.55);--cid-hover:#f0f3f5;--cid-focus:#708ca5;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;margin:24px 0 2px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;text-align:right;line-height:1.5}
+.anki-cid-copy__button{appearance:none;-webkit-appearance:none;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;min-width:124px;margin:0;padding:8px 12px;border:1px solid var(--cid-border);border-radius:12px;background:var(--cid-surface);color:var(--cid-text);font:500 12px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:0;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;transition:background-color .12s ease,border-color .12s ease}
+.anki-cid-copy__button:hover{background:var(--cid-hover)}
+.anki-cid-copy__button:focus-visible{outline:2px solid var(--cid-focus);outline-offset:3px}
+.anki-cid-copy__button:active{background:var(--cid-hover)}
+.anki-cid-copy__button:disabled{cursor:default;opacity:.6}
+.anki-cid-copy__icon{display:block;flex:0 0 16px}
+.anki-cid-copy__check{display:none}
+.anki-cid-copy[data-state="success"] .anki-cid-copy__copy{display:none}
+.anki-cid-copy[data-state="success"] .anki-cid-copy__check{display:block}
+.anki-cid-copy__manual{flex:0 1 100%;max-width:360px;color:var(--cid-text);font:400 12px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;text-align:left}
+.anki-cid-copy__manual[hidden]{display:none!important}
+.anki-cid-copy__hint{display:block;margin:2px 0 7px}
+.anki-cid-copy__value{box-sizing:border-box;width:100%;min-height:44px;margin:0;padding:9px 12px;border:1px solid var(--cid-border);border-radius:10px;background:var(--cid-surface);color:var(--cid-text);font:400 16px/1.4 ui-monospace,monospace;text-align:left;user-select:text;-webkit-user-select:text;}
+.anki-cid-copy__status{position:absolute!important;width:1px!important;height:1px!important;margin:-1px!important;padding:0!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+.nightMode .anki-cid-copy,.night_mode .anki-cid-copy,.night-mode .anki-cid-copy{--cid-text:#b6c0c9;--cid-border:#46515d;--cid-surface:rgba(38,45,54,.5);--cid-hover:#323d48;--cid-focus:#99b1c6}
+@media(prefers-color-scheme:dark){.anki-cid-copy{--cid-text:#b6c0c9;--cid-border:#46515d;--cid-surface:rgba(38,45,54,.5);--cid-hover:#323d48;--cid-focus:#99b1c6}}
+@media(prefers-reduced-motion:reduce){.anki-cid-copy__button{transition:none}}
+</style>
+<div class="anki-cid-copy" data-anki-cid="{{CardID}}"></div>
+<script>
+/* Copy the current card ID; callers can resolve its parent note with noteId.
+ * Decision: https://github.com/greenheadHQ/nixos-config/issues/1328#issuecomment-5742567599 */
+(function (global) {
+  "use strict";
+  if (global.AnkiCidCopyV2) return;
+  var mounted = new WeakMap();
+  var selector = ".anki-cid-copy[data-anki-cid]";
+  var blockedEvents = ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart", "touchend", "click", "keydown", "keyup"];
+  function validCardId(value) {
+    return typeof value === "string" && /^[1-9][0-9]*$/.test(value);
+  }
+  function mount(scope) {
+    var old = mounted.get(scope);
+    if (old) old.destroy();
+    var roots = Array.prototype.slice.call(scope.querySelectorAll(selector));
+    if (!roots.length) { mounted.delete(scope); return null; }
+    // Back templates can contain FrontSide plus their own copy control.
+    var root = roots[roots.length - 1];
+    roots.slice(0, -1).forEach(function (duplicate) { duplicate.remove(); });
+    var cardId = root.getAttribute("data-anki-cid");
+    var payload = validCardId(cardId) ? "cid:" + cardId : null;
+    root.innerHTML = '<button type="button" class="anki-cid-copy__button" aria-label="카드 ID 복사"><svg class="anki-cid-copy__icon" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"><g class="anki-cid-copy__copy"><rect x="7" y="7" width="9" height="10" rx="2"/><path d="M12 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></g><path class="anki-cid-copy__check" d="m4 10 4 4 8-8"/></svg><span class="anki-cid-copy__label">카드 ID 복사</span></button><div class="anki-cid-copy__manual" hidden><span class="anki-cid-copy__hint">자동 복사가 지원되지 않습니다. 아래 번호를 선택하거나 길게 눌러 복사해 주세요.</span><input class="anki-cid-copy__value" type="text" readonly aria-label="복사할 카드 ID" spellcheck="false" autocapitalize="off" autocorrect="off"></div><span class="anki-cid-copy__status" role="status" aria-live="polite" aria-atomic="true"></span>';
+    var button = root.querySelector("button");
+    var label = root.querySelector(".anki-cid-copy__label");
+    var panel = root.querySelector(".anki-cid-copy__manual");
+    var input = root.querySelector("input");
+    var status = root.querySelector(".anki-cid-copy__status");
+    var alive = true, pending = false, generation = 0, resetTimer = null, copyTimer = null;
+    input.value = payload || "";
+    root.setAttribute("data-state", payload ? "ready" : "unavailable");
+    if (!payload) {
+      button.disabled = true;
+      label.textContent = "카드 ID 준비 중";
+      button.setAttribute("aria-label", "카드 ID를 아직 사용할 수 없습니다");
+    }
+    function stop(event) { event.stopPropagation(); }
+    blockedEvents.forEach(function (name) { root.addEventListener(name, stop); });
+    function current(token) {
+      return alive && root.isConnected && generation === token && root.getAttribute("data-anki-cid") === cardId;
+    }
+    function reset() {
+      clearTimeout(resetTimer);
+      resetTimer = null;
+      root.setAttribute("data-state", "ready");
+      label.textContent = "카드 ID 복사";
+      status.textContent = "";
+    }
+    function showManual(token) {
+      if (!current(token)) return;
+      clearTimeout(copyTimer);
+      copyTimer = null;
+      pending = false;
+      button.removeAttribute("aria-busy");
+      root.setAttribute("data-state", "manual");
+      label.textContent = "카드 ID 복사";
+      panel.hidden = false;
+      status.textContent = "자동 복사를 할 수 없습니다. 아래 번호를 직접 복사해 주세요.";
+      input.focus({ preventScroll: true });
+      input.select();
+      input.setSelectionRange(0, input.value.length);
+    }
+    function success(token) {
+      if (!current(token)) return;
+      clearTimeout(copyTimer);
+      copyTimer = null;
+      pending = false;
+      button.removeAttribute("aria-busy");
+      panel.hidden = true;
+      root.setAttribute("data-state", "success");
+      label.textContent = "복사됨";
+      status.textContent = "카드 ID를 복사했습니다.";
+      resetTimer = setTimeout(function () { if (current(token)) reset(); }, 1800);
+    }
+    function legacyCopy() {
+      var temporary = document.createElement("textarea");
+      var previousFocus = document.activeElement;
+      temporary.value = payload;
+      temporary.readOnly = true;
+      temporary.setAttribute("aria-hidden", "true");
+      temporary.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;font-size:16px;pointer-events:none;";
+      root.appendChild(temporary);
+      var accepted = false;
+      try {
+        temporary.focus({ preventScroll: true });
+        temporary.select();
+        temporary.setSelectionRange(0, payload.length);
+        accepted = typeof document.execCommand === "function" && document.execCommand("copy") === true;
+      } catch (_) { accepted = false; }
+      finally {
+        temporary.remove();
+        if (previousFocus && previousFocus.isConnected && typeof previousFocus.focus === "function") previousFocus.focus({ preventScroll: true });
+      }
+      return accepted;
+    }
+    function copy(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!payload || !alive || pending || root.getAttribute("data-anki-cid") !== cardId) return;
+      clearTimeout(resetTimer);
+      panel.hidden = true;
+      status.textContent = "";
+      pending = true;
+      var token = ++generation;
+      button.setAttribute("aria-busy", "true");
+      root.setAttribute("data-state", "copying");
+      label.textContent = "복사 중";
+      try {
+        // Qt can leave Clipboard.writeText pending forever. Try the
+        // synchronous path while the click still grants clipboard access.
+        if (legacyCopy()) { success(token); return; }
+        // Keep this call synchronous with the user's click/tap. An await,
+        // timer or an ID lookup here would consume the WebKit gesture window.
+        if (global.isSecureContext && global.navigator.clipboard && typeof global.navigator.clipboard.writeText === "function") {
+          var result = global.navigator.clipboard.writeText(payload);
+          // Clipboard.writeText returns a Promise. A missing/invalid result
+          // is not evidence of a successful copy.
+          if (!result || typeof result.then !== "function") { showManual(token); return; }
+          copyTimer = setTimeout(function () {
+            if (!current(token)) return;
+            showManual(token);
+            // Ignore late completion from an expired attempt.
+            generation += 1;
+          }, 1800);
+          result.then(function () { success(token); }, function () { showManual(token); });
+        } else { showManual(token); }
+      } catch (_) { showManual(token); }
+    }
+    button.addEventListener("click", copy);
+    var handle = {
+      root: root,
+      destroy: function () {
+        alive = false;
+        generation += 1;
+        clearTimeout(resetTimer);
+        clearTimeout(copyTimer);
+        button.removeEventListener("click", copy);
+        blockedEvents.forEach(function (name) { root.removeEventListener(name, stop); });
+      }
+    };
+    mounted.set(scope, handle);
+    return handle;
+  }
+  global.AnkiCidCopyV2 = { mount: mount, validCardId: validCardId };
+})(window);
+
+AnkiCidCopyV2.mount(document.getElementById("qa") || document.body);
+</script>
+{{/질문}}{{^질문}}{{#맥락}}<style>
+.anki-cid-copy{--cid-text:#596570;--cid-border:#dce1e5;--cid-surface:rgba(249,250,251,.55);--cid-hover:#f0f3f5;--cid-focus:#708ca5;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;margin:24px 0 2px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;text-align:right;line-height:1.5}
+.anki-cid-copy__button{appearance:none;-webkit-appearance:none;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;min-width:124px;margin:0;padding:8px 12px;border:1px solid var(--cid-border);border-radius:12px;background:var(--cid-surface);color:var(--cid-text);font:500 12px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:0;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;transition:background-color .12s ease,border-color .12s ease}
+.anki-cid-copy__button:hover{background:var(--cid-hover)}
+.anki-cid-copy__button:focus-visible{outline:2px solid var(--cid-focus);outline-offset:3px}
+.anki-cid-copy__button:active{background:var(--cid-hover)}
+.anki-cid-copy__button:disabled{cursor:default;opacity:.6}
+.anki-cid-copy__icon{display:block;flex:0 0 16px}
+.anki-cid-copy__check{display:none}
+.anki-cid-copy[data-state="success"] .anki-cid-copy__copy{display:none}
+.anki-cid-copy[data-state="success"] .anki-cid-copy__check{display:block}
+.anki-cid-copy__manual{flex:0 1 100%;max-width:360px;color:var(--cid-text);font:400 12px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;text-align:left}
+.anki-cid-copy__manual[hidden]{display:none!important}
+.anki-cid-copy__hint{display:block;margin:2px 0 7px}
+.anki-cid-copy__value{box-sizing:border-box;width:100%;min-height:44px;margin:0;padding:9px 12px;border:1px solid var(--cid-border);border-radius:10px;background:var(--cid-surface);color:var(--cid-text);font:400 16px/1.4 ui-monospace,monospace;text-align:left;user-select:text;-webkit-user-select:text;}
+.anki-cid-copy__status{position:absolute!important;width:1px!important;height:1px!important;margin:-1px!important;padding:0!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+.nightMode .anki-cid-copy,.night_mode .anki-cid-copy,.night-mode .anki-cid-copy{--cid-text:#b6c0c9;--cid-border:#46515d;--cid-surface:rgba(38,45,54,.5);--cid-hover:#323d48;--cid-focus:#99b1c6}
+@media(prefers-color-scheme:dark){.anki-cid-copy{--cid-text:#b6c0c9;--cid-border:#46515d;--cid-surface:rgba(38,45,54,.5);--cid-hover:#323d48;--cid-focus:#99b1c6}}
+@media(prefers-reduced-motion:reduce){.anki-cid-copy__button{transition:none}}
+</style>
+<div class="anki-cid-copy" data-anki-cid="{{CardID}}"></div>
+<script>
+/* Copy the current card ID; callers can resolve its parent note with noteId.
+ * Decision: https://github.com/greenheadHQ/nixos-config/issues/1328#issuecomment-5742567599 */
+(function (global) {
+  "use strict";
+  if (global.AnkiCidCopyV2) return;
+  var mounted = new WeakMap();
+  var selector = ".anki-cid-copy[data-anki-cid]";
+  var blockedEvents = ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart", "touchend", "click", "keydown", "keyup"];
+  function validCardId(value) {
+    return typeof value === "string" && /^[1-9][0-9]*$/.test(value);
+  }
+  function mount(scope) {
+    var old = mounted.get(scope);
+    if (old) old.destroy();
+    var roots = Array.prototype.slice.call(scope.querySelectorAll(selector));
+    if (!roots.length) { mounted.delete(scope); return null; }
+    // Back templates can contain FrontSide plus their own copy control.
+    var root = roots[roots.length - 1];
+    roots.slice(0, -1).forEach(function (duplicate) { duplicate.remove(); });
+    var cardId = root.getAttribute("data-anki-cid");
+    var payload = validCardId(cardId) ? "cid:" + cardId : null;
+    root.innerHTML = '<button type="button" class="anki-cid-copy__button" aria-label="카드 ID 복사"><svg class="anki-cid-copy__icon" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"><g class="anki-cid-copy__copy"><rect x="7" y="7" width="9" height="10" rx="2"/><path d="M12 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></g><path class="anki-cid-copy__check" d="m4 10 4 4 8-8"/></svg><span class="anki-cid-copy__label">카드 ID 복사</span></button><div class="anki-cid-copy__manual" hidden><span class="anki-cid-copy__hint">자동 복사가 지원되지 않습니다. 아래 번호를 선택하거나 길게 눌러 복사해 주세요.</span><input class="anki-cid-copy__value" type="text" readonly aria-label="복사할 카드 ID" spellcheck="false" autocapitalize="off" autocorrect="off"></div><span class="anki-cid-copy__status" role="status" aria-live="polite" aria-atomic="true"></span>';
+    var button = root.querySelector("button");
+    var label = root.querySelector(".anki-cid-copy__label");
+    var panel = root.querySelector(".anki-cid-copy__manual");
+    var input = root.querySelector("input");
+    var status = root.querySelector(".anki-cid-copy__status");
+    var alive = true, pending = false, generation = 0, resetTimer = null, copyTimer = null;
+    input.value = payload || "";
+    root.setAttribute("data-state", payload ? "ready" : "unavailable");
+    if (!payload) {
+      button.disabled = true;
+      label.textContent = "카드 ID 준비 중";
+      button.setAttribute("aria-label", "카드 ID를 아직 사용할 수 없습니다");
+    }
+    function stop(event) { event.stopPropagation(); }
+    blockedEvents.forEach(function (name) { root.addEventListener(name, stop); });
+    function current(token) {
+      return alive && root.isConnected && generation === token && root.getAttribute("data-anki-cid") === cardId;
+    }
+    function reset() {
+      clearTimeout(resetTimer);
+      resetTimer = null;
+      root.setAttribute("data-state", "ready");
+      label.textContent = "카드 ID 복사";
+      status.textContent = "";
+    }
+    function showManual(token) {
+      if (!current(token)) return;
+      clearTimeout(copyTimer);
+      copyTimer = null;
+      pending = false;
+      button.removeAttribute("aria-busy");
+      root.setAttribute("data-state", "manual");
+      label.textContent = "카드 ID 복사";
+      panel.hidden = false;
+      status.textContent = "자동 복사를 할 수 없습니다. 아래 번호를 직접 복사해 주세요.";
+      input.focus({ preventScroll: true });
+      input.select();
+      input.setSelectionRange(0, input.value.length);
+    }
+    function success(token) {
+      if (!current(token)) return;
+      clearTimeout(copyTimer);
+      copyTimer = null;
+      pending = false;
+      button.removeAttribute("aria-busy");
+      panel.hidden = true;
+      root.setAttribute("data-state", "success");
+      label.textContent = "복사됨";
+      status.textContent = "카드 ID를 복사했습니다.";
+      resetTimer = setTimeout(function () { if (current(token)) reset(); }, 1800);
+    }
+    function legacyCopy() {
+      var temporary = document.createElement("textarea");
+      var previousFocus = document.activeElement;
+      temporary.value = payload;
+      temporary.readOnly = true;
+      temporary.setAttribute("aria-hidden", "true");
+      temporary.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;font-size:16px;pointer-events:none;";
+      root.appendChild(temporary);
+      var accepted = false;
+      try {
+        temporary.focus({ preventScroll: true });
+        temporary.select();
+        temporary.setSelectionRange(0, payload.length);
+        accepted = typeof document.execCommand === "function" && document.execCommand("copy") === true;
+      } catch (_) { accepted = false; }
+      finally {
+        temporary.remove();
+        if (previousFocus && previousFocus.isConnected && typeof previousFocus.focus === "function") previousFocus.focus({ preventScroll: true });
+      }
+      return accepted;
+    }
+    function copy(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!payload || !alive || pending || root.getAttribute("data-anki-cid") !== cardId) return;
+      clearTimeout(resetTimer);
+      panel.hidden = true;
+      status.textContent = "";
+      pending = true;
+      var token = ++generation;
+      button.setAttribute("aria-busy", "true");
+      root.setAttribute("data-state", "copying");
+      label.textContent = "복사 중";
+      try {
+        // Qt can leave Clipboard.writeText pending forever. Try the
+        // synchronous path while the click still grants clipboard access.
+        if (legacyCopy()) { success(token); return; }
+        // Keep this call synchronous with the user's click/tap. An await,
+        // timer or an ID lookup here would consume the WebKit gesture window.
+        if (global.isSecureContext && global.navigator.clipboard && typeof global.navigator.clipboard.writeText === "function") {
+          var result = global.navigator.clipboard.writeText(payload);
+          // Clipboard.writeText returns a Promise. A missing/invalid result
+          // is not evidence of a successful copy.
+          if (!result || typeof result.then !== "function") { showManual(token); return; }
+          copyTimer = setTimeout(function () {
+            if (!current(token)) return;
+            showManual(token);
+            // Ignore late completion from an expired attempt.
+            generation += 1;
+          }, 1800);
+          result.then(function () { success(token); }, function () { showManual(token); });
+        } else { showManual(token); }
+      } catch (_) { showManual(token); }
+    }
+    button.addEventListener("click", copy);
+    var handle = {
+      root: root,
+      destroy: function () {
+        alive = false;
+        generation += 1;
+        clearTimeout(resetTimer);
+        clearTimeout(copyTimer);
+        button.removeEventListener("click", copy);
+        blockedEvents.forEach(function (name) { root.removeEventListener(name, stop); });
+      }
+    };
+    mounted.set(scope, handle);
+    return handle;
+  }
+  global.AnkiCidCopyV2 = { mount: mount, validCardId: validCardId };
+})(window);
+
+AnkiCidCopyV2.mount(document.getElementById("qa") || document.body);
+</script>
+{{/맥락}}{{/질문}}{{#질문}}<!-- anki-code-highlight-v1 -->
+<script>
+(() => {
+  const ASSET = "_anki-syntax-hljs-11.12.0-fd009500d0c826a5.min.js";
+  const CSS = "/* Scoped GitHub-inspired palette; app night mode is authoritative, not OS theme. */\n.anki-code-scope pre {\n  box-sizing: border-box;\n  max-width: 100%;\n  min-width: 0;\n  overflow-x: auto;\n  white-space: pre;\n  overflow-wrap: normal;\n  word-break: normal;\n  tab-size: 4;\n  margin: 1em 0;\n  padding: 1em 1.1em;\n  border: 1px solid #d8dee4;\n  border-radius: 10px;\n  background: #f6f8fa;\n  color: #24292f;\n  text-align: left;\n  font: 400 0.88em/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;\n  -webkit-text-size-adjust: 100%;\n}\n.anki-code-scope pre > code {\n  display: block;\n  min-width: max-content;\n  padding: 0;\n  border: 0;\n  border-radius: 0;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  white-space: inherit;\n  overflow-wrap: inherit;\n  word-break: inherit;\n}\n.anki-code-scope .hljs-keyword, .anki-code-scope .hljs-selector-tag, .anki-code-scope .hljs-literal { color: #cf222e; }\n.anki-code-scope .hljs-title, .anki-code-scope .hljs-section { color: #8250df; }\n.anki-code-scope .hljs-string, .anki-code-scope .hljs-regexp { color: #0a3069; }\n.anki-code-scope .hljs-number, .anki-code-scope .hljs-attr, .anki-code-scope .hljs-variable, .anki-code-scope .hljs-type, .anki-code-scope .hljs-built_in { color: #0550ae; }\n.anki-code-scope .hljs-comment, .anki-code-scope .hljs-quote { color: #57606a; }\n.anki-code-scope .hljs-name, .anki-code-scope .hljs-selector-class, .anki-code-scope .hljs-selector-id { color: #116329; }\n.anki-code-scope .hljs-meta, .anki-code-scope .hljs-symbol, .anki-code-scope .hljs-bullet { color: #953800; }\n.anki-code-scope .hljs-emphasis { font-style: italic; }\n.anki-code-scope .hljs-strong { font-weight: 600; }\n:is(.nightMode, .night_mode) .anki-code-scope pre,\n.anki-code-scope:is(.nightMode, .night_mode) pre { background: #161b22; color: #e6edf3; border-color: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-keyword,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-tag,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-literal { color: #ff7b72; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-title,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-section { color: #d2a8ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-string,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-regexp { color: #a5d6ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-number,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-attr,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-variable,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-type,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-built_in { color: #79c0ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-comment,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-quote { color: #8b949e; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-name,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-class,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-id { color: #7ee787; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-meta,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-symbol,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-bullet { color: #ffa657; }\n";
+  const KEY = "AnkiCodeHighlightV1";
+  if (!window[KEY]) {
+    const records = new WeakMap();
+    const aliases = Object.freeze({
+      js: "javascript", javascript: "javascript", jsx: "javascript",
+      ts: "typescript", typescript: "typescript", tsx: "typescript",
+      html: "xml", xml: "xml", css: "css", json: "json",
+      bash: "bash", sh: "bash", shell: "bash", sql: "sql", c: "c",
+      python: "python", py: "python", java: "java", yaml: "yaml", yml: "yaml", http: "http"
+    });
+    let pending = null;
+    let generation = 0;
+    const library = () => {
+      const value = window.AnkiSyntaxHighlightLibraryV1;
+      return value && value.version === "11.12.0" ? value : null;
+    };
+    const load = () => {
+      if (library()) return Promise.resolve(library());
+      if (pending) return pending;
+      pending = new Promise(resolve => {
+        const script = document.createElement("script");
+        script.src = ASSET;
+        script.async = true;
+        script.dataset.ankiSyntaxAsset = ASSET;
+        let timer;
+        const finish = value => {
+          clearTimeout(timer);
+          script.onload = script.onerror = null;
+          script.remove();
+          resolve(value);
+        };
+        script.onload = () => finish(library());
+        script.onerror = () => finish(null);
+        timer = setTimeout(() => finish(null), 3000);
+        document.head.appendChild(script);
+      }).then(value => { pending = null; return value; });
+      return pending;
+    };
+    const render = async () => {
+      const current = ++generation;
+      const started = performance.now();
+      const nodes = Array.from(document.querySelectorAll(".anki-code-scope pre > code"));
+      const metrics = { blocks: nodes.length, highlighted: 0, skipped: 0, loadMs: 0, highlightMs: 0 };
+      if (!nodes.length) return metrics;
+      const engine = await load();
+      if (current !== generation) return { stale: true };
+      metrics.loadMs = performance.now() - started;
+      const painting = performance.now();
+      let characters = 0;
+      for (const code of nodes) {
+        if (!code.isConnected) continue;
+        const text = code.textContent;
+        const classes = Array.from(code.classList).filter(name => name.startsWith("language-"));
+        const name = classes.length === 1 ? classes[0].slice(9).toLowerCase() : "";
+        const language = Object.hasOwn(aliases, name) ? aliases[name] : null;
+        const previous = records.get(code);
+        if (previous && previous.html === code.innerHTML && previous.language === language) continue;
+        // Only replace markup that this exact DOM instance produced. Never flatten
+        // cloze spans, edited HTML, anchors, or other renderers' output.
+        if (code.children.length && (!previous || previous.html !== code.innerHTML)) {
+          metrics.skipped++;
+          continue;
+        }
+        if (previous) { code.textContent = text; code.classList.remove("hljs"); }
+        characters += text.length;
+        if (!engine || !language || text.length > 4096 || characters > 16384 ||
+            metrics.highlighted >= 32 || performance.now() - painting > 16) {
+          metrics.skipped++;
+          continue;
+        }
+        try {
+          const result = engine.highlight(text, { language, ignoreIllegals: true });
+          code.innerHTML = result.value;
+          code.classList.add("hljs");
+          records.set(code, { html: code.innerHTML, language });
+          metrics.highlighted++;
+        } catch (_) {
+          // Loading or parsing must never prevent a question/answer from showing.
+          code.textContent = text;
+          code.classList.remove("hljs");
+          metrics.skipped++;
+        }
+      }
+      metrics.highlightMs = performance.now() - painting;
+      window[KEY].lastMetrics = metrics;
+      return metrics;
+    };
+    window[KEY] = { render, lastMetrics: null };
+  }
+  if (!document.getElementById("anki-code-style-v1")) {
+    const style = document.createElement("style");
+    style.id = "anki-code-style-v1";
+    style.textContent = CSS;
+    document.head.appendChild(style);
+  }
+  // Anki reuses its WebView, including globals, across question/answer/card changes.
+  // Each script invocation gets a new generation; a pending old card cannot paint it.
+  window[KEY].render();
+})();
+</script>
+{{/질문}}

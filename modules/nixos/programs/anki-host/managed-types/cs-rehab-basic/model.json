@@ -1,0 +1,126 @@
+{
+  "css": {
+    "file": "style.css"
+  },
+  "did": null,
+  "flds": [
+    {
+      "collapsed": false,
+      "description": "",
+      "excludeFromSearch": false,
+      "font": "Arial",
+      "name": "질문",
+      "ord": 0,
+      "plainText": false,
+      "preventDeletion": false,
+      "rtl": false,
+      "size": 20,
+      "sticky": false,
+      "tag": null
+    },
+    {
+      "collapsed": false,
+      "description": "",
+      "excludeFromSearch": false,
+      "font": "Arial",
+      "name": "답",
+      "ord": 1,
+      "plainText": false,
+      "preventDeletion": false,
+      "rtl": false,
+      "size": 20,
+      "sticky": false,
+      "tag": null
+    },
+    {
+      "collapsed": false,
+      "description": "",
+      "excludeFromSearch": false,
+      "font": "Arial",
+      "name": "맥락",
+      "ord": 2,
+      "plainText": false,
+      "preventDeletion": false,
+      "rtl": false,
+      "size": 20,
+      "sticky": false,
+      "tag": null
+    },
+    {
+      "collapsed": false,
+      "description": "",
+      "excludeFromSearch": false,
+      "font": "Arial",
+      "name": "설명",
+      "ord": 3,
+      "plainText": false,
+      "preventDeletion": false,
+      "rtl": false,
+      "size": 20,
+      "sticky": false,
+      "tag": null
+    },
+    {
+      "collapsed": false,
+      "description": "",
+      "excludeFromSearch": false,
+      "font": "Arial",
+      "name": "출처",
+      "ord": 4,
+      "plainText": false,
+      "preventDeletion": false,
+      "rtl": false,
+      "size": 20,
+      "sticky": false,
+      "tag": null
+    },
+    {
+      "collapsed": false,
+      "description": "",
+      "excludeFromSearch": false,
+      "font": "Arial",
+      "name": "검토 메모",
+      "ord": 5,
+      "plainText": false,
+      "preventDeletion": false,
+      "rtl": false,
+      "size": 20,
+      "sticky": false,
+      "tag": null
+    }
+  ],
+  "latexPost": "\\end{document}",
+  "latexPre": "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n",
+  "latexsvg": false,
+  "name": "CS 재활 Basic",
+  "originalStockKind": 1,
+  "req": [
+    [
+      0,
+      "any",
+      [
+        0,
+        2
+      ]
+    ]
+  ],
+  "sortf": 0,
+  "tmpls": [
+    {
+      "afmt": {
+        "file": "back.html"
+      },
+      "bafmt": "",
+      "bfont": "",
+      "bqfmt": "",
+      "bsize": 0,
+      "did": null,
+      "name": "카드 1",
+      "ord": 0,
+      "qfmt": {
+        "file": "front.html"
+      }
+    }
+  ],
+  "type": 0
+}

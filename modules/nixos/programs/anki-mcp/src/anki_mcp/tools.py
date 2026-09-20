@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .ankiconnect import AnkiConnect
 from .authoring import AUTHORING_GUIDANCE
 from .helper import Helper
+from .managed import DEFAULT_MODEL, ManagedService
 from .operations import OperationService
 from .shaping import card_view, note_view, page, truncate
 from .syncstatus import SyncNow, read_freshness, read_status, summarize
@@ -41,6 +42,7 @@ ADDITIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotent
 UPDATE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 DESTRUCTIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=False)
 SYNC = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True)
+MANAGED_RESTORE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=True)
 
 
 class NewNote(BaseModel):
@@ -77,6 +79,7 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     anki = deps.anki
 
     operations = deps.operations
+    managed = ManagedService(deps.helper, deps.syncer, sync_enabled=operations.sync_enabled, lock=operations.lock)
 
     @mcp.tool(name="anki_status", annotations=READ_ONLY)
     async def anki_status() -> dict[str, Any]:
@@ -114,13 +117,83 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
 
     @mcp.tool(name="anki_models", annotations=READ_ONLY)
     async def anki_models(name: str | None = None) -> dict[str, Any]:
-        """List note types. With `name`, return that type's field names (in order) and card template names."""
+        """List note types. With `name`, return that type's field names (in order) and card template names.
+        Only CS 재활 Basic is initially managed; other types are unmanaged, not automatically registered.
+        Use anki_managed_model_check for the applied baseline, observed drift and separate pending updates."""
         freshness = read_freshness(deps.sync_status_file)
         if name is None:
             return {"models": await anki.invoke("modelNames"), "freshness": freshness}
         fields = await anki.invoke("modelFieldNames", modelName=name)
         templates = await anki.invoke("modelTemplates", modelName=name)
         return {"model": name, "fields": fields, "templates": list(templates.keys()), "freshness": freshness}
+
+    @mcp.tool(name="anki_managed_model_check", annotations=READ_ONLY)
+    async def anki_managed_model_check(
+        model_name: Annotated[str, Field(strict=True, min_length=1)] = DEFAULT_MODEL,
+    ) -> dict[str, Any]:
+        """Check a managed note type and registered JS/CSS against the host's last applied-and-verified bundle.
+        Return normal, drift, unavailable or unmanaged, changed items, baseline version and observed/sync times.
+        A Git update pending is separate from drift; GitHub being unavailable does not invalidate a locally
+        stored baseline. Unuploaded Mac/iPhone edits may be absent: this is host evidence, not all-device proof.
+        Drift/unavailable blocks MCP note creation and field writes for that type, including mixed batches;
+        reads, other types and the user's app review/editing remain available. Show the differences and ask
+        whether to restore the verified baseline or review app changes for Git adoption. Never automatically
+        restore or adopt. Only CS 재활 Basic is initially managed. Detailed snapshots remain private."""
+        return await deps.helper.post("/managed/check", {"model_name": model_name})
+
+    @mcp.tool(name="anki_managed_model_history", annotations=READ_ONLY)
+    async def anki_managed_model_history(
+        model_name: Annotated[str, Field(strict=True, min_length=1)] = DEFAULT_MODEL,
+        limit: Annotated[int, Field(strict=True, ge=1, le=100)] = 20,
+        offset: Annotated[int, Field(strict=True, ge=0)] = 0,
+    ) -> dict[str, Any]:
+        """Read paginated private drift incidents, baseline/last-good/first-observed times, changed items,
+        notification outcomes and resolution. First observed is not the edit time; do not infer an actor/device.
+        Unresolved incidents remain retained; resolved detail is retained for 90 days after resolution.
+        Do not automatically copy private original definitions or detailed differences into public issues."""
+        return await deps.helper.post("/managed/history", {"model_name": model_name, "limit": limit, "offset": offset})
+
+    @mcp.tool(name="anki_restore_managed_model", annotations=MANAGED_RESTORE)
+    async def anki_restore_managed_model(
+        model_name: Annotated[str, Field(strict=True, min_length=1)] = DEFAULT_MODEL,
+        request_id: Annotated[str, Field(strict=True, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$")] | None = None,
+        preview_token: Annotated[str, Field(strict=True, min_length=1)] | None = None,
+        confirm: Annotated[bool, Field(strict=True)] = False,
+    ) -> dict[str, Any]:
+        """Preview restoring the host-selected, currently eligible applied-and-verified baseline, then apply
+        only after showing that concrete preview and obtaining the user's confirmation. Repeat its original
+        request_id/preview_token with confirm=true. This is dialogue approval submitted by the LLM, not an
+        independent human authentication UI. Never invent approval or use this to apply a new Git version.
+        Only permitted HTML/CSS and registered JS/CSS can be restored; structure/generation changes or
+        uncertain card/note/schedule/review preservation stop remote restore. No raw bytes, digest, arbitrary
+        file, schema action or root approval can be supplied. Expired/changed previews require a new preview.
+        State applied means verified local restoration; sync.state=synced separately means verified AnkiWeb
+        collection/media delivery, not reception or UI verification on every client. Partial/unknown must not
+        be replayed. Read anki_managed_restore_status; a retry with the same request_id resumes only confirmed
+        delivery. Normal sync runs before prepare/apply and after restoration. Full Upload needs fresh per-device
+        sync/pause confirmation and explicit operation-specific operator approval; never auto-select Download
+        or reuse old approval. New deployment and adopting app changes into Git remain operator workflows."""
+        return await managed.restore(model_name=model_name, request_id=request_id,
+                                     preview_token=preview_token, confirm=confirm)
+
+    @mcp.tool(name="anki_managed_restore_status", annotations=READ_ONLY)
+    async def anki_managed_restore_status(
+        request_id: Annotated[str, Field(strict=True, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$")],
+    ) -> dict[str, Any]:
+        """Read a managed restore's durable receipt without retrying anything. Inspect component states,
+        verified local restoration and separate AnkiWeb delivery. Unknown/partial requires diagnosis, not a
+        new request or blind reapply. Client/device reception is not established by host delivery."""
+        return await managed.status(request_id)
+
+    # The pinned FastMCP SDK defaults to ignoring unknown top-level arguments.
+    # Reject them for this narrow capability, including misleading raw payload,
+    # target digest or root-approval fields, in both validation and public schema.
+    for name in ("anki_managed_model_check", "anki_managed_model_history",
+                 "anki_restore_managed_model", "anki_managed_restore_status"):
+        tool = mcp._tool_manager.get_tool(name)
+        tool.fn_metadata.arg_model.model_config["extra"] = "forbid"
+        tool.fn_metadata.arg_model.model_rebuild(force=True)
+        tool.parameters = tool.fn_metadata.arg_model.model_json_schema(by_alias=True)
 
     @mcp.tool(name="anki_find_notes", annotations=READ_ONLY)
     async def anki_find_notes(
@@ -209,6 +282,8 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         "Duplicates (same first field in the deck) are rejected unless allow_duplicate. Returns an operation receipt "
         "with per-note outcomes in result.results (null noteId = unconfirmed/failed, see errors). "
         "Inspect the separate link_check for newly missing stored Note Linker references; never repeat a write to rerun it. "
+        "Managed-type drift or unavailable checks block creation before any write; split mixed-type batches. "
+        "Use anki_managed_model_check to inspect the applied baseline and available choices. "
         "Normal sync runs before and after writes. Reuse request_id "
         "for every retry. More than 20 affected notes/cards returns a preview requiring user confirmation. "
         "In 검토 메모, use plain-language cloze examples such as 'c1: answer', never literal cloze markup: "
@@ -228,6 +303,7 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         "history are preserved for existing cards. Changed templates/cloze fields may generate new cards. "
         "Returns an operation receipt; use anki_note_info for readback. Reuse request_id for retries. "
         "Inspect link_check for newly missing stored Note Linker references; diagnostic failure does not undo the write. "
+        "Managed-type drift or unavailable checks block field writes; inspect anki_managed_model_check. "
         "A verified media-free restore point is created before every field edit, including one note. "
         "For read-modify-write changes, pass expected_fields with exact old values for the same keys. "
         "검토 메모 can contain multiple paragraphs. Describe cloze examples as 'c1: answer', never literal "
@@ -254,6 +330,8 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         "More than 20 affected notes/cards, including anticipated new cards, requires preview/confirmation.\n"
         "For migrations, include expected_fields with each note's exact old values for the replaced keys;\n"
         "a mismatch after pre-sync rejects the whole operation before backup or writes.\n"
+        "If a managed type has drift or an unavailable check, the entire mixed-type batch is rejected before writes; "
+        "split the batch and inspect anki_managed_model_check.\n"
         "Inspect the separate link_check for newly missing stored Note Linker references, including partial writes.\n"
         "Results list each note as applied, unknown or not-attempted. An uncertain write stops the batch;\n"
         "no automatic rollback. Inspect partial/unknown receipts instead of repeating with a new request_id.\n"

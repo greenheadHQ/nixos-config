@@ -47,9 +47,10 @@ REQUIRED_METHODS = (
 
 
 class AnkiAdapter:
-    def __init__(self, window: Any, media_limit: int) -> None:
+    def __init__(self, window: Any, media_limit: int, managed_guard=None) -> None:
         self.mw = window
         self.media_limit = media_limit
+        self.managed_guard = managed_guard
 
     @property
     def ac(self) -> Any:
@@ -224,6 +225,8 @@ class AnkiAdapter:
         return unicodedata.normalize("NFC", value) if normalize_text else value
 
     def inspect(self, spec: dict[str, Any]) -> dict[str, Any]:
+        if self.managed_guard is not None:
+            self.managed_guard(spec)
         action, p = spec["action"], spec["params"]
         note_ids, card_ids = list(p.get("note_ids", [])), list(p.get("card_ids", []))
         if "note_id" in p:
@@ -415,6 +418,8 @@ class AnkiAdapter:
             result["state"] = "partial"
 
     def apply(self, spec: dict[str, Any]) -> dict[str, Any]:
+        if self.managed_guard is not None:
+            self.managed_guard(spec)
         action, p = spec["action"], spec["params"]
         ac = self.ac
         result: dict[str, Any] = {"state": "applied"}
