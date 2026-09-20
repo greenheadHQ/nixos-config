@@ -207,7 +207,7 @@ def _raw_attributes(opening):
     return attrs
 
 
-def _add_link_class(opening, parsed_attrs):
+def _add_link_class(opening, parsed_attrs, class_name=LINK_CLASS):
     attrs = _raw_attributes(opening)
     # HTMLParser is the independent structural parser. Disagreement indicates
     # malformed or surprising markup, which a byte-preserving edit must reject.
@@ -218,7 +218,7 @@ def _add_link_class(opening, parsed_attrs):
         raise ValueError("note-link-unsupported-class-attribute")
     if not classes:
         insert = len(opening) - 2 if opening.endswith("/>") else len(opening) - 1
-        return opening[:insert] + f' class="{LINK_CLASS}"' + opening[insert:]
+        return opening[:insert] + f' class="{class_name}"' + opening[insert:]
     attr = classes[0]
     if attr["quote"] is None or attr["value_start"] is None:
         raise ValueError("note-link-unsupported-class-attribute")
@@ -226,9 +226,9 @@ def _add_link_class(opening, parsed_attrs):
     if any(char in value for char in "{}&"):
         raise ValueError("note-link-unsupported-class-attribute")
     names = value.split()
-    if LINK_CLASS in names:
+    if class_name in names:
         raise ValueError("note-link-partial-install")
-    value = (value + " " if value and not value[-1].isspace() else value) + LINK_CLASS
+    value = (value + " " if value and not value[-1].isspace() else value) + class_name
     return opening[:attr["value_start"]] + value + opening[attr["value_end"]:]
 
 

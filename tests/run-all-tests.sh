@@ -89,6 +89,8 @@ run_driver "issuing-codex-pairing-code-tests" bash tests/run-issuing-codex-pairi
 #     pytest로 검증한다 (AnkiConnect·systemctl은 fake). 런타임은 flake 패키지 ankiMcpTestEnv(핀된 mcp SDK).
 run_driver "anki-mcp-tests" bash tests/run-anki-mcp-tests.sh
 
+run_driver "anki-code-highlight-tests" bash tests/run-anki-code-highlight-tests.sh
+
 # Desktop add-on deployment: isolated filesystem fixtures, no live collection.
 run_driver "anki-addons-tests" bash tests/run-anki-addons-tests.sh
 

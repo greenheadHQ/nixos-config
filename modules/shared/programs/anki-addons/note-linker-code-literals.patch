@@ -1,0 +1,10 @@
+--- a/anki_note_linker/runtime/editor_actions.py
++++ b/anki_note_linker/runtime/editor_actions.py
+@@ -15,0 +16 @@
++from ..core.html_links import replace_links_outside_literals
+@@ -88 +89,2 @@
+-        return "<script>window.AnkiNoteLinkerIsActive = true</script>" + NOTE_LINK_PATTERN.sub(
++        return "<script>window.AnkiNoteLinkerIsActive = true</script>" + replace_links_outside_literals(
++            text, NOTE_LINK_PATTERN,
+@@ -93 +94,0 @@
+-            text,

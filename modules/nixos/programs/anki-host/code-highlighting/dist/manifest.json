@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "namespace": "AnkiSyntaxHighlightLibraryV1",
+  "library": {
+    "name": "highlight.js",
+    "version": "11.12.0",
+    "integrity": "sha512-nbfWpyRMcMrPMmDwJB+dhX/eiaPKtc2RB+0QZskqJ3WjRA/FDS0e9hZrx8EC/lbEv8gXy98FcDbNa/dspAaJMg==",
+    "license": "BSD-3-Clause"
+  },
+  "grammars": [
+    "bash",
+    "c",
+    "css",
+    "http",
+    "java",
+    "javascript",
+    "json",
+    "python",
+    "sql",
+    "typescript",
+    "xml",
+    "yaml"
+  ],
+  "asset": {
+    "filename": "_anki-syntax-hljs-11.12.0-f94e2a1e6e865515.min.js",
+    "sha256": "f94e2a1e6e86551506f6ae43c4984767358ef304edda8773c2cf7f25f65b1f44",
+    "integrity": "sha256-+U4qHm6GVRUG9q5DxJhHZzWO8wTt2odzws9/JfZbH0Q=",
+    "bytes": 74979
+  },
+  "license": {
+    "filename": "_anki-syntax-hljs-11.12.0.LICENSE.txt",
+    "sha256": "6c081431591d9df696c82dc598fe1423765b8a299b200ed00b281afd0f64c490"
+  },
+  "build": {
+    "esbuild": "0.28.2",
+    "target": "es2018"
+  }
+}
