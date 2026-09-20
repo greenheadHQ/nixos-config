@@ -149,6 +149,24 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 
 ## 노트 연결
 
+`add_notes`, `update_fields`, `update_fields_bulk`, `delete_notes`, `delete_decks`의 완료 영수증에는
+`link_check`가 포함된다. 호스트에서 쓰기 직전·직후 전체 노트의 저장된 Note Linker 참조 후보를 읽고,
+이번 작업 중 새로 끊어진 참조만 알린다. 기존에 끊긴 참조는 반복하지 않으며, 같은 노트·필드·대상의
+발생 수가 늘어난 경우 증가분을 센다. 삭제한 노트를 가리키는 다른 노트의 참조도 포함된다.
+
+`state=checked`의 `new_missing_occurrences`와 `new_missing_references`는 각각 증가한 발생 수와
+서로 다른 `(source_note_id, field_name, target_note_id)` 수다. `references`는 최대 50개 포인터만
+포함하고, 잘리면 `truncated=true`다. 필드 원문과 제목은 검사 영수증에 저장하지 않는다.
+HTML 인라인 서식은 이어 읽고 코드·수식·속성·Markdown 코드 예제는 제외한다. 카드 템플릿,
+조건부 표시, 실제 클라이언트 렌더링을 평가하지 않으므로 결과는 **저장된 참조 후보**에 대한 검사다.
+
+검사 결과와 쓰기·동기화 결과는 별개다. `state=unavailable`은 진단 실패이며 성공한 쓰기를 실패로
+바꾸지 않는다. 쓰기가 `partial` 또는 `unknown`이면 검사가 끝났더라도 쓰기 완료를 의미하지 않는다.
+LLM은 영수증의 포인터로 현재 노트를 다시 조회하고 사용자에게 결과를 설명한다. 검사를 재실행하려고
+쓰기를 반복하거나 새 `request_id`를 만들지 않는다. 같은 요청의 재시도와 상태 조회는 저장된 검사
+영수증을 그대로 반환한다. 자동 수선, 별도 Pushover 경고·주기적 감시, 모델 변경이나 다른 기기의
+변경 감시는 이 검사에 포함하지 않는다.
+
 개념 관계의 저장 형식은 Anki Note Linker의 `[표시 제목|nid1234567890123]`이다. 제목에 `[`가 있으면
 `\[`로 이스케이프하고, 다른 링크의 끝으로 해석될 수 있는 `|nid<13자리>]` 문자열은 제목에 넣지 않는다.
 note ID는 조회 결과로 확인하고 삭제·재생성·가져오기 뒤 다시 확인한다.

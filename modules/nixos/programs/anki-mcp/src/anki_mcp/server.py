@@ -50,6 +50,12 @@ INSTRUCTIONS = (
     "Show the complete impact and warnings, obtain user confirmation, then repeat the original request_id and preview_token with confirm=true. "
     "Check the operation receipt: applied/partial/unknown and sync/notification are separate states. Never repeat an unknown write with a new ID. "
     "If no request_id was supplied and the response is lost, inspect recent results before attempting the write again. "
+    "Add, field-update and delete receipts include link_check: a before/after scan of stored Note Linker candidates, "
+    "not proof of rendered/client behavior. Report new_missing_occurrences and use references (source_note_id, "
+    "field_name, target_note_id) to reread affected notes; truncated means only the pointer list is capped. "
+    "Existing missing occurrences are excluded. link_check is independent of the mutation state: checked can "
+    "accompany partial/unknown writes, and unavailable means the diagnostic failed. Do not repeat a write to "
+    "rerun a link check or automatically repair links; preserve the receipt and inspect the current notes. "
     "Read back affected notes/cards after changes. Note-type structural changes are prepared here and executed only by the root approval command. "
     "The ordinary sync tool never chooses a full upload/download."
 ) + "\n\n" + AUTHORING_GUIDANCE
