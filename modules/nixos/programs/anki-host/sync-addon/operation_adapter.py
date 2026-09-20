@@ -13,6 +13,7 @@ import unicodedata
 from typing import Any
 
 from .operations import OperationError, decode_media, filename
+from . import note_link_feedback
 
 
 # A small, documented subset of the legacy deck-config representation. Preset
@@ -66,6 +67,18 @@ class AnkiAdapter:
         if self.mw.col is None:
             raise OperationError("collection-not-open")
         return self.mw.col
+
+    def note_link_snapshot(self) -> dict[str, Any]:
+        # This runs on Anki's main thread under the helper mutation lock. Read
+        # directly through Anki's live DB, never open another collection handle.
+        rows = self.col.db.all("select id, mid, flds from notes")
+        models = {}
+        for mid in {row[1] for row in rows}:
+            model = self.col.models.get(mid)
+            if model is None:
+                raise OperationError("note-link-note-type-unavailable")
+            models[mid] = [field["name"] for field in model["flds"]]
+        return note_link_feedback.snapshot(rows, models)
 
     def _rows(self, table: str, column: str, values: list[int]) -> list[list[Any]]:
         # Names are caller constants; values always use bound SQL parameters.
@@ -355,8 +368,12 @@ class AnkiAdapter:
         if action == "set_card_flags":
             summary["flag"] = p["flag"]
         if action in ("delete_notes", "delete_decks"):
+            # Compatibility: this is the pre-deletion scope, never a deleted-row
+            # count. Anki retains revlog entries after removing their cards.
             summary["affected_review_rows"] = len(snapshot.get("reviews", []))
-            warnings.append("Deletion may remove cards and their review history; a verified restore point is required.")
+            warnings.append("Cards may be deleted, but their review history is retained. "
+                            "affected_review_rows counts related review-log rows before deletion, not rows removed. "
+                            "A verified restore point is required.")
         if action == "set_due_date":
             warnings.append("Ranges choose a random day; scheduling changes can add manual review-log entries and unsuspend cards.")
         if action == "forget_cards":
@@ -388,6 +405,14 @@ class AnkiAdapter:
         added = sum(r["noteId"] is not None for r in results)
         return {"state": "applied" if added == len(notes) else "partial", "added": added,
                 "results": results, "tag": "mcp::added"}
+
+    def _review_retention(self, result: dict[str, Any], card_ids: list[int], before: list[list[Any]]) -> None:
+        after = self._rows("revlog", "cid", card_ids)
+        result["retained_review_rows"] = len(after)
+        # Keep the native deletion/tombstone path. Never repair a mismatch with
+        # direct SQL: that would not propagate the removal through Anki sync.
+        if after != before:
+            result["state"] = "partial"
 
     def apply(self, spec: dict[str, Any]) -> dict[str, Any]:
         action, p = spec["action"], spec["params"]
@@ -433,7 +458,10 @@ class AnkiAdapter:
         elif action == "move_cards":
             ac.changeDeck(cards=p["card_ids"], deck=p["deck_name"])
         elif action == "delete_notes":
+            card_ids = sorted({cid for note in self._notes(p["note_ids"]) for cid in note.card_ids()})
+            reviews = self._rows("revlog", "cid", card_ids)
             ac.deleteNotes(notes=p["note_ids"])
+            self._review_retention(result, card_ids, reviews)
         elif action == "delete_decks":
             # Passing only topmost selected roots avoids removing a subdeck twice.
             roots = [n for n in p["deck_names"] if not any(n.startswith(parent + "::") for parent in p["deck_names"] if parent != n)]
@@ -445,6 +473,7 @@ class AnkiAdapter:
             ordinary = {did for did, deck in affected.items() if not deck.get("dyn")}
             expected_deleted = {card.id for card in self._cards(sorted(before))
                                 if card.did in ordinary or card.odid in ordinary}
+            reviews = self._rows("revlog", "cid", sorted(before))
             ac.deleteDecks(decks=roots, cardsToo=True)
             after_dids = {int(d["id"]) for d in self._decks().values()}
             retained = set(affected) & after_dids
@@ -458,6 +487,7 @@ class AnkiAdapter:
             # mean the request was only partially fulfilled, even without an API error.
             if retained - {1} or before - remaining != expected_deleted:
                 result["state"] = "partial"
+            self._review_retention(result, sorted(before), reviews)
         elif action == "suspend_cards":
             ac.suspend(cards=list(p["card_ids"]), suspend=p["suspended"])
             states = ac.areSuspended(cards=p["card_ids"])
