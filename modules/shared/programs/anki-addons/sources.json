@@ -1,0 +1,62 @@
+{
+  "1077002392": {
+    "name": "Anki Note Linker",
+    "url": "https://ankiweb.net/shared/download/1077002392?v=2.1&p=260902",
+    "hash": "sha256-FVZDYEAHGuclfO9HHZjqzL605fZXAL/MR6flqz2e504=",
+    "mod": 1786368311
+  },
+  "1124670306": {
+    "name": "Set Added Date",
+    "url": "https://ankiweb.net/shared/download/1124670306?v=2.1&p=260902",
+    "hash": "sha256-eXxFid2hor9yJAg4KNiUfyhmy5G3gnErQDgjl9zwup4=",
+    "mod": 1689528678
+  },
+  "1237621971": {
+    "name": "Add Table",
+    "url": "https://ankiweb.net/shared/download/1237621971?v=2.1&p=260902",
+    "hash": "sha256-H8Uz5PvmXVttTF01TpqeMiXyBU7LNg69osd6T3uRUSY=",
+    "mod": 1687088232
+  },
+  "1990296174": {
+    "name": "Enhanced Cloze for Anki 21",
+    "url": "https://ankiweb.net/shared/download/1990296174?v=2.1&p=260902",
+    "hash": "sha256-lzv0WsXfBYaq4afB/wrGfcxLiM/0iXN5SnqTTagSOEU=",
+    "mod": 1774299488
+  },
+  "2055492159": {
+    "name": "AnkiConnect",
+    "url": "https://ankiweb.net/shared/download/2055492159?v=2.1&p=260902",
+    "hash": "sha256-Zl2VNGVEabfkcItN8jXUPPN3D/hbI7n/XrNvm3tBM88=",
+    "mod": 1762717231
+  },
+  "24411424": {
+    "name": "Customize Keyboard Shortcuts",
+    "url": "https://ankiweb.net/shared/download/24411424?v=2.1&p=260902",
+    "hash": "sha256-25JSP9C/0l0bvDVCGfEI/wIRrevWiCUsAW1vo49MfUc=",
+    "mod": 1698830276
+  },
+  "2491935955": {
+    "name": "Quick Colour Changing",
+    "url": "https://ankiweb.net/shared/download/2491935955?v=2.1&p=260902",
+    "hash": "sha256-Z+Dg/TlFnqzodT+3YEH7aI4vTHYrguWslmDbTrk5hio=",
+    "mod": 1697685322
+  },
+  "31746032": {
+    "name": "AnkiWebView Inspector",
+    "url": "https://ankiweb.net/shared/download/31746032?v=2.1&p=260902",
+    "hash": "sha256-C/Zzv3bfMvsU5NY0t9MXG0ehfpzRLPQ3yieGVEaoW5A=",
+    "mod": 1687894000
+  },
+  "318752047": {
+    "name": "Add Hyperlink",
+    "url": "https://ankiweb.net/shared/download/318752047?v=2.1&p=260902",
+    "hash": "sha256-2vPgDLo90y7bs+w3gO2z/ubu/SUZH+hP7UBYQbK7nAA=",
+    "mod": 1687088386
+  },
+  "805891399": {
+    "name": "extended editor for field for tables searchreplace",
+    "url": "https://ankiweb.net/shared/download/805891399?v=2.1&p=260902",
+    "hash": "sha256-je98QGEk+EP2FBSBG5WWCXebQ9HA9NJE+JEU+Hab+nU=",
+    "mod": 1751798460
+  }
+}
