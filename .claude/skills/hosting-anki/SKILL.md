@@ -1,7 +1,7 @@
 ---
 name: hosting-anki
 description: |
-  Manage the MiniPC headless Anki host, AnkiWeb sync, backups and private Anki MCP connector.
+  Manage the MiniPC headless Anki host, AnkiWeb sync, backups, private Anki MCP connector and safe Mac Anki GUI automation.
   Use for Anki MCP errors, host sync status, operation receipts, restore points or root-approved note-type changes.
   Personal card content and study rules belong to the user's study project.
 ---
@@ -17,6 +17,14 @@ description: |
 - `anki_status`와 `anki_operation_status`/`anki_recent_operations`에서 적용·동기화·알림 상태를 따로 확인한다.
 - 대상은 MiniPC `main`인지 격리 `lab`인지 명시한다. Mac의 loopback AnkiConnect와 혼동하지 않는다.
 - 배포 버전·서비스 상태는 실측한다. 소스에 도구가 있다는 사실만으로 운영 배포를 완료했다고 하지 않는다.
+
+## Mac GUI 자동화 안전 경계
+
+- Computer History 관찰 설정에서 Anki(`net.ankiweb.anki`)를 항상 제외한다. 이 제외는 명시적인 Computer Use까지 막지 않는다.
+- Computer Use는 일반 덱 선택·복습·동기화 화면과 iPhone Mirroring에서 사용할 수 있다. 다만 독립·내장 편집 창 또는
+  선택 행이 있는 `탐색` 창을 Computer Use로 열거나 그 안에서 조회·클릭·키 입력·스크롤 등 어떤 조작도 하지 않는다.
+  격리 임시 프로필 A/B 검증 전에는 MCP/API나 사용자 수동 조작을 사용하고, 위험 창을 닫은 뒤 Computer Use를 재개한다.
+- 자세한 충돌 근거와 재검증 경계는 README의 같은 절을 따른다.
 
 ## 변경·재개 판단
 

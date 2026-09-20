@@ -47,6 +47,20 @@ def test_single_field_edit_has_restore_point_without_extra_confirmation(runtime)
     assert after['revlog'] == before['revlog']
 
 
+def test_expected_old_field_rejects_a_change_arriving_before_prepare(runtime):
+    r = runtime
+    nid = add(r, fields={'Front': 'question', 'Back': 'old answer'})
+    params = {'note_id': nid, 'fields': {'Back': 'planned answer'},
+              'expected_fields': {'Back': 'old answer'}}
+    r.ac.updateNoteFields(note={'id': nid, 'fields': {'Back': 'newer external answer'}})
+    before = collection_rows(r)
+    with pytest.raises(r.error, match='expected-field-value-mismatch'):
+        r.ops.prepare('update_fields', params)
+    assert collection_rows(r) == before
+    assert r.col.get_note(nid)['Back'] == 'newer external answer'
+    assert not r.restored
+
+
 def test_bulk_mixed_note_types_preserves_other_fields_scheduling_and_reviews(runtime):
     r = runtime
     basic = add(r, fields={'Front': 'basic question', 'Back': 'old answer'})

@@ -1,0 +1,105 @@
+<!-- anki-code-highlight-v1 -->
+<script>
+(() => {
+  const ASSET = __ANKI_SYNTAX_ASSET__;
+  const CSS = __ANKI_SYNTAX_CSS__;
+  const KEY = "AnkiCodeHighlightV1";
+  if (!window[KEY]) {
+    const records = new WeakMap();
+    const aliases = Object.freeze({
+      js: "javascript", javascript: "javascript", jsx: "javascript",
+      ts: "typescript", typescript: "typescript", tsx: "typescript",
+      html: "xml", xml: "xml", css: "css", json: "json",
+      bash: "bash", sh: "bash", shell: "bash", sql: "sql", c: "c",
+      python: "python", py: "python", java: "java", yaml: "yaml", yml: "yaml", http: "http"
+    });
+    let pending = null;
+    let generation = 0;
+    const library = () => {
+      const value = window.AnkiSyntaxHighlightLibraryV1;
+      return value && value.version === "11.12.0" ? value : null;
+    };
+    const load = () => {
+      if (library()) return Promise.resolve(library());
+      if (pending) return pending;
+      pending = new Promise(resolve => {
+        const script = document.createElement("script");
+        script.src = ASSET;
+        script.async = true;
+        script.dataset.ankiSyntaxAsset = ASSET;
+        let timer;
+        const finish = value => {
+          clearTimeout(timer);
+          script.onload = script.onerror = null;
+          script.remove();
+          resolve(value);
+        };
+        script.onload = () => finish(library());
+        script.onerror = () => finish(null);
+        timer = setTimeout(() => finish(null), 3000);
+        document.head.appendChild(script);
+      }).then(value => { pending = null; return value; });
+      return pending;
+    };
+    const render = async () => {
+      const current = ++generation;
+      const started = performance.now();
+      const nodes = Array.from(document.querySelectorAll(".anki-code-scope pre > code"));
+      const metrics = { blocks: nodes.length, highlighted: 0, skipped: 0, loadMs: 0, highlightMs: 0 };
+      if (!nodes.length) return metrics;
+      const engine = await load();
+      if (current !== generation) return { stale: true };
+      metrics.loadMs = performance.now() - started;
+      const painting = performance.now();
+      let characters = 0;
+      for (const code of nodes) {
+        if (!code.isConnected) continue;
+        const text = code.textContent;
+        const classes = Array.from(code.classList).filter(name => name.startsWith("language-"));
+        const name = classes.length === 1 ? classes[0].slice(9).toLowerCase() : "";
+        const language = Object.hasOwn(aliases, name) ? aliases[name] : null;
+        const previous = records.get(code);
+        if (previous && previous.html === code.innerHTML && previous.language === language) continue;
+        // Only replace markup that this exact DOM instance produced. Never flatten
+        // cloze spans, edited HTML, anchors, or other renderers' output.
+        if (code.children.length && (!previous || previous.html !== code.innerHTML)) {
+          metrics.skipped++;
+          continue;
+        }
+        if (previous) { code.textContent = text; code.classList.remove("hljs"); }
+        characters += text.length;
+        if (!engine || !language || text.length > 4096 || characters > 16384 ||
+            metrics.highlighted >= 32 || performance.now() - painting > 16) {
+          metrics.skipped++;
+          continue;
+        }
+        try {
+          const result = engine.highlight(text, { language, ignoreIllegals: true });
+          code.innerHTML = result.value;
+          code.classList.add("hljs");
+          records.set(code, { html: code.innerHTML, language });
+          metrics.highlighted++;
+        } catch (_) {
+          // Loading or parsing must never prevent a question/answer from showing.
+          code.textContent = text;
+          code.classList.remove("hljs");
+          metrics.skipped++;
+        }
+      }
+      metrics.highlightMs = performance.now() - painting;
+      window[KEY].lastMetrics = metrics;
+      return metrics;
+    };
+    window[KEY] = { render, lastMetrics: null };
+  }
+  if (!document.getElementById("anki-code-style-v1")) {
+    const style = document.createElement("style");
+    style.id = "anki-code-style-v1";
+    style.textContent = CSS;
+    document.head.appendChild(style);
+  }
+  // Anki reuses its WebView, including globals, across question/answer/card changes.
+  // Each script invocation gets a new generation; a pending old card cannot paint it.
+  window[KEY].render();
+})();
+</script>

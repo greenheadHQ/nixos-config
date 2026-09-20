@@ -50,6 +50,12 @@ immutable add-on version URL**. The initial archives match the installed code
 byte for byte. We use those distributions rather than upstream HEAD or a
 different nixpkgs revision, preserving bundled JavaScript and vendor files.
 
+The Note Linker package applies one local rendering patch: markers inside
+`pre`, `code`, `script`, `style` and `textarea` remain literal. This prevents
+code examples from becoming links before syntax highlighting runs. Its
+graph/index extraction is unchanged. The patch is applied with zero fuzz;
+review it again when updating the pinned distribution.
+
 If AnkiWeb replaces a distribution, a fresh build fails on the hash mismatch
 rather than silently updating. Existing Nix generations/cache retain the old
 package while rooted, but AnkiWeb does not guarantee old downloads. Preserve

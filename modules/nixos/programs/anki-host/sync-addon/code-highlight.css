@@ -1,0 +1,64 @@
+/* Scoped GitHub-inspired palette; app night mode is authoritative, not OS theme. */
+.anki-code-scope pre {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+  tab-size: 4;
+  margin: 1em 0;
+  padding: 1em 1.1em;
+  border: 1px solid #d8dee4;
+  border-radius: 10px;
+  background: #f6f8fa;
+  color: #24292f;
+  text-align: left;
+  font: 400 0.88em/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  -webkit-text-size-adjust: 100%;
+}
+.anki-code-scope pre > code {
+  display: block;
+  min-width: max-content;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: inherit;
+  overflow-wrap: inherit;
+  word-break: inherit;
+}
+.anki-code-scope .hljs-keyword, .anki-code-scope .hljs-selector-tag, .anki-code-scope .hljs-literal { color: #cf222e; }
+.anki-code-scope .hljs-title, .anki-code-scope .hljs-section { color: #8250df; }
+.anki-code-scope .hljs-string, .anki-code-scope .hljs-regexp { color: #0a3069; }
+.anki-code-scope .hljs-number, .anki-code-scope .hljs-attr, .anki-code-scope .hljs-variable, .anki-code-scope .hljs-type, .anki-code-scope .hljs-built_in { color: #0550ae; }
+.anki-code-scope .hljs-comment, .anki-code-scope .hljs-quote { color: #57606a; }
+.anki-code-scope .hljs-name, .anki-code-scope .hljs-selector-class, .anki-code-scope .hljs-selector-id { color: #116329; }
+.anki-code-scope .hljs-meta, .anki-code-scope .hljs-symbol, .anki-code-scope .hljs-bullet { color: #953800; }
+.anki-code-scope .hljs-emphasis { font-style: italic; }
+.anki-code-scope .hljs-strong { font-weight: 600; }
+:is(.nightMode, .night_mode) .anki-code-scope pre,
+.anki-code-scope:is(.nightMode, .night_mode) pre { background: #161b22; color: #e6edf3; border-color: #30363d; }
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-keyword,
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-tag,
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-literal { color: #ff7b72; }
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-title,
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-section { color: #d2a8ff; }
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-string,
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-regexp { color: #a5d6ff; }
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-number,
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-attr,
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-variable,
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-type,
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-built_in { color: #79c0ff; }
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-comment,
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-quote { color: #8b949e; }
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-name,
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-class,
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-id { color: #7ee787; }
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-meta,
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-symbol,
+:is(.nightMode, .night_mode) .anki-code-scope .hljs-bullet { color: #ffa657; }

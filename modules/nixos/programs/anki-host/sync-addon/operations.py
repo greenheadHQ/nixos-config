@@ -93,7 +93,7 @@ def fields(value: Any) -> dict[str, str]:
 # the Anki adapter. There is no arbitrary action/kwargs passthrough.
 PARAMETERS = {
     "add_notes": ({"notes", "allow_duplicate"}, set()),
-    "update_fields": ({"note_id", "fields"}, set()),
+    "update_fields": ({"note_id", "fields"}, {"expected_fields"}),
     "update_fields_bulk": ({"notes"}, set()),
     "add_tags": ({"note_ids", "tags"}, set()),
     "remove_tags": ({"note_ids", "tags"}, set()),
@@ -113,7 +113,10 @@ PARAMETERS = {
     "model_field_reposition": ({"model_name", "field_name", "index"}, set()),
     "model_template_add": ({"model_name", "template_name", "front", "back"}, set()),
     "model_template_remove": ({"model_name", "template_name"}, set()),
-    "model_template_update": ({"model_name", "template_name", "front", "back"}, set()),
+    "model_template_update": (
+        {"model_name", "template_name", "front", "back"},
+        {"expected_model_id", "expected_front", "expected_back"},
+    ),
     "model_css_update": ({"model_name", "css"}, set()),
 }
 SCHEMA_ACTIONS = frozenset({"model_field_add", "model_field_remove", "model_field_rename",
@@ -135,13 +138,18 @@ def validate_spec(action: Any, params: Any, media_limit: int) -> dict[str, Any]:
             p[key] = ids(p[key])
     if "note_id" in p:
         p["note_id"] = ids([p["note_id"]])[0]
-    for key in ("name", "deck_name", "model_name", "field_name", "new_name", "template_name", "front", "back"):
+    for key in ("name", "deck_name", "model_name", "field_name", "new_name", "template_name", "front", "back",
+                "expected_front", "expected_back"):
         if key in p:
             p[key] = text(p[key])
     if "css" in p:
         p["css"] = text(p["css"], empty=True)
     if "fields" in p:
         p["fields"] = fields(p["fields"])
+    if "expected_fields" in p:
+        if not isinstance(p["expected_fields"], dict) or set(p["expected_fields"]) != set(p.get("fields", {})):
+            raise OperationError("expected-fields-must-match-updated-fields")
+        p["expected_fields"] = fields(p["expected_fields"])
     if "tags" in p:
         p["tags"] = tags(p["tags"])
         if not p["tags"]:
@@ -151,6 +159,8 @@ def validate_spec(action: Any, params: Any, media_limit: int) -> dict[str, Any]:
             raise OperationError("invalid-boolean")
     if "index" in p and (type(p["index"]) is not int or p["index"] < 0):
         raise OperationError("invalid-index")
+    if "expected_model_id" in p and (type(p["expected_model_id"]) is not int or p["expected_model_id"] <= 0):
+        raise OperationError("invalid-expected-model-id")
     if "flag" in p and (type(p["flag"]) is not int or not 0 <= p["flag"] <= 7):
         raise OperationError("flag-must-be-an-integer-from-0-to-7")
     if "days" in p and (not isinstance(p["days"], str) or re.fullmatch(r"[0-9]+(-[0-9]+)?!?", p["days"]) is None):
@@ -177,14 +187,26 @@ def validate_spec(action: Any, params: Any, media_limit: int) -> dict[str, Any]:
         normalized = []
         seen = set()
         for note in p["notes"]:
-            if not isinstance(note, dict) or set(note) != {"note_id", "fields"}:
+            if (not isinstance(note, dict) or not {"note_id", "fields"} <= note.keys()
+                    or set(note) - {"note_id", "fields", "expected_fields"}):
                 raise OperationError("invalid-note-field-update")
             nid = ids([note["note_id"]])[0]
             if nid in seen:
                 raise OperationError("duplicate-note-id")
             seen.add(nid)
-            normalized.append({"note_id": nid, "fields": fields(note["fields"])})
+            update = {"note_id": nid, "fields": fields(note["fields"])}
+            if "expected_fields" in note:
+                if (not isinstance(note["expected_fields"], dict)
+                        or set(note["expected_fields"]) != set(update["fields"])):
+                    raise OperationError("expected-fields-must-match-updated-fields")
+                expected = fields(note["expected_fields"])
+                update["expected_fields"] = expected
+            normalized.append(update)
         p["notes"] = normalized
+    if action == "model_template_update":
+        expected = {"expected_model_id", "expected_front", "expected_back"} & p.keys()
+        if expected and expected != {"expected_model_id", "expected_front", "expected_back"}:
+            raise OperationError("incomplete-expected-template-values")
     if action == "store_media":
         p["filename"] = filename(p["filename"])
         decode_media(p["data"], media_limit)

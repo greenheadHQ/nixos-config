@@ -2,7 +2,29 @@
 
 이 문서는 Anki 호스트와 MCP 소스의 운영 계약이다. **구현·격리 검증과 운영 배포 여부는 별도 확인한다.**
 도입 이력은 [이슈 #1306](https://github.com/greenheadHQ/nixos-config/issues/1306), 실기기·장애 검증은 [PR #1317](https://github.com/greenheadHQ/nixos-config/pull/1317), iPhone 직접 추가 검증은 [PR #1320](https://github.com/greenheadHQ/nixos-config/pull/1320)에 남긴다.
-개인 학습 방식·카드 내용 규칙은 이 인프라에서 정하지 않는다.
+플러그인의 공통 카드 작성 지침은 [authoring.py](../anki-mcp/src/anki_mcp/authoring.py)가 정본이다.
+특정 책·배치·개인 카드 자료와 학습량은 사용자 학습 프로젝트에서 관리한다.
+
+## 카드 작성 지침 전달
+
+공통 지침은 MCP `initialize.instructions`와 `anki_add_notes`·`anki_update_note_fields`의 도구 설명에 함께 전달한다.
+초기화 지침을 모델에 노출하지 않는 클라이언트도 내용 쓰기 도구 설명에서 같은 원칙을 읽을 수 있다.
+대화에서 이해한 내용의 선별, 필요한 경우의 짧은 이해 확인, 원문 대조, 기존 카드 검색·관계 링크·출처 보존을 안내한다.
+단순 조회·그대로 옮기기·오타 수정에는 학습 절차를 강요하지 않는다. 새 도구·필수 인자·노트 유형 변경은 없다.
+
+이는 클라이언트 LLM의 작성 지침이며 서버가 이해도·사실성을 판정하거나 링크를 자동 검증한다는 뜻은 아니다.
+원문 확보는 클라이언트의 자료 접근 범위에 달려 있다. 서버는 웹 검색·개인 책 PDF 조회 기능을 제공하지 않는다.
+관련 노트는 필드에 플랫폼 URL을 저장하지 않고 `[표시 제목|nid<13자리 note ID>]` 형식으로 저장한다.
+Desktop Anki Note Linker와 AnkiMobile 카드 템플릿이 같은 값을 각 클라이언트의 이동 방식으로 렌더링한다.
+두 adapter의 설치·실제 탭·복습 복귀 동작은 각각 확인한다.
+
+배포 후 인증된 `initialize`·`tools/list` 응답에서 지침을 확인한다. 서버 응답만으로 ChatGPT 적용 완료라고 판단하지 않는다.
+ChatGPT 개발자 모드 연결은 연결 설정에서 **새로 고침(Refresh)**을 실행하고 변경된 도구 설명을 확인한다.
+게시된 플러그인의 도구 정의는 정기 스캔과 자동 검사를 거쳐 갱신되며, 통과 전에는 이전 정의가 유지된다.
+제출 정보·imported skill 변경은 새 버전 제출·게시가 필요하다 ([개발 연결 새로 고침](https://developers.openai.com/plugins/deploy/connect-chatgpt#refresh-metadata),
+[게시 도구의 지속 검토](https://developers.openai.com/plugins/deploy/app-review#continuous-review-and-tool-updates)).
+갱신 후 새 대화에서 변경된 지침을 검증하고, iPhone의 실제 작성·링크 동작은 실기기에서 확인한다.
+동작하는 연결을 먼저 삭제·재등록하지 않는다. 지침 전달 확인은 LLM 준수나 실기기 동작 검증을 대신하지 않는다.
 
 ## 변경 요청과 결과 확인
 
@@ -85,6 +107,8 @@ MCP의 결과 대기는 별도 3분이므로 호출이 먼저 끝날 수 있다.
 바꿀 필드만 전달하며 중복 note ID는 거절한다. 전체 대상·필드·예상 생성 카드 수를 실행 전에 검증한다.
 사전/사후 동기화 한 쌍, 검증된 미디어 제외 복구점 하나, 결과 알림 하나를 사용한다.
 단일 노트의 `anki_update_note_fields`도 매번 같은 복구점 보호를 적용하지만, 20건 이하 변경에 새 확인 단계를 추가하지 않는다.
+읽은 값을 바탕으로 계산한 migration은 바꿀 각 필드의 정확한 이전 값을 `expected_fields`로 함께 보내며,
+사전 동기화 뒤 하나라도 다르면 작업 원장을 만들기 전에 전체 요청을 거절한다.
 
 입력별 결과는 `applied`, `unknown`, `not-attempted`로 구분한다. 저장 결과가 불명확하면 이후 항목을 중단하고
 전체를 `partial`로 반환한다. 자동으로 되돌리지 않으며 새 request ID로 전체를 반복하지 않는다.
@@ -92,7 +116,7 @@ MCP의 결과 대기는 별도 3분이므로 호출이 먼저 끝날 수 있다.
 
 ## 지원표
 
-소스 핀: Anki **26.08**, AnkiConnect **25.11.9.0**, helper **2.0.0**, MCP SDK **1.29.0**.
+소스 핀: Anki **26.08**, AnkiConnect **25.11.9.0**, helper **2.1.0**, MCP SDK **1.29.0**.
 Anki 본체를 별도 overlay로 다시 만들지 않고, AnkiConnect 애드온에만 인증·내부 호출 연결 패치를 적용한다.
 핀 변경 시 아래 실제 API 테스트를 다시 실행한다. nixpkgs 쪽 세 값의 재검증(helper는 `addons.nix`의 `version`):
 
@@ -123,6 +147,60 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 `rev.ivlFct`, `rev.hardFactor`, `lapse.mult`, `lapse.minInt`, `lapse.leechFails`, `lapse.leechAction`.
 현 버전에서 없는 키·범위 밖 값·프리셋 ID/name 교체는 거부한다. FSRS 설정 전체 편집은 지원하지 않는다.
 
+## 노트 연결
+
+개념 관계의 저장 형식은 Anki Note Linker의 `[표시 제목|nid1234567890123]`이다. 제목에 `[`가 있으면
+`\[`로 이스케이프하고, 다른 링크의 끝으로 해석될 수 있는 `|nid<13자리>]` 문자열은 제목에 넣지 않는다.
+note ID는 조회 결과로 확인하고 삭제·재생성·가져오기 뒤 다시 확인한다.
+card ID는 사용자가 특정 출제 카드를 LLM에 지목하는 별도 포인터이며 Note Linker 형식에 넣지 않는다.
+필드에 raw `anki://x-callback-url`이나 이를 감싼 `<a>`를 저장하지 않는다.
+
+Desktop은 활성 [Anki Note Linker](https://github.com/gugutu/Anki-Note-Linker)가 marker를 내부
+Previewer 링크로 바꾼다. macOS URL scheme에 넘기지 않으므로 Finder의 “열도록 설정한 응용 프로그램이 없음”
+경로를 사용하지 않는다. MiniPC는 필드·템플릿을 저장하고 동기화할 뿐이므로 GUI add-on을 설치하지 않는다.
+
+AnkiMobile은 add-on을 실행하지 못하므로 링크가 있는 필드의 기존 블록 컨테이너에 `linkRender` class를 추가하고,
+카드 뒷면 끝에 `sync-addon/note-link-renderer.html`을 둔다. renderer는 Desktop add-on의
+`window.AnkiNoteLinkerIsActive`를 확인해 중복 실행을 피하고, iPhone/iPad에서만 DOM text node를
+AnkiMobile의 `nid:` 탐색 링크로 바꾼다. 다른 HTML이나 기존 anchor의 `innerHTML`을 다시 쓰지 않는다.
+iPhone의 도착점은 즉시 복습이나 팝업이 아니라 탐색 검색이다.
+
+iPhone에서 링크 검색을 닫으면 실제 복습 화면은 같은 카드의 문제 화면으로 돌아오며 정답을 다시 표시할 수 있다.
+다만 `탐색 → 노트 편집 → 미리보기`에서 링크를 열고 돌아오면 미리보기가 비고, 뒤집기에서 JavaScript
+예외가 발생하는 경로가 있다. 이때 미리보기를 닫아 편집 화면으로 돌아간 뒤 다시 열면 회복된다.
+링크 변환 코드 없는 기본 anchor에서도 재현되며 `target="_blank"`만으로는 해결되지 않는다.
+카드 ID widget이 공통으로 있는 환경의 결과이므로 AnkiMobile 자체만의 결함이라고 단정하지 않는다.
+
+순수 계획 생성기 `sync-addon/note_links.py`의 `build_plan(model, targets)`에는 최신 native model 또는
+`anki_model_info` 결과와
+`template_name`·`front|back`·`field_name` 대상을 명시한다. 자동으로 모든 필드나 노트 타입을 바꾸지 않는다.
+필드 토큰이 일반 HTML 본문에 정확히 한 번 있을 때만 감싸고, 중복·부분 설치·불완전 HTML·stale target은
+거절한다. 반환한 변경·원복 입력에는 model ID와 양면의 예상 이전 값이 들어간다. helper는 사전 동기화 뒤
+현재 값이 이 예상값과 정확히 같을 때만 준비하므로 계획 뒤 바뀐 템플릿을 덮지 않는다. 카드 ID 조각을 포함한
+현재 템플릿을 새로 읽어 계획하며 기존 앞면을 재구성하지 않는다. `anki_prepare_model_change`와 아래 root 승인
+경로로 적용한다.
+
+실엔진 테스트는 템플릿 적용·원복 전후 note/card/revlog와 카드 ID UI 보존을 검사하지만 JavaScript를
+실행하지 않는다. Mac 복습 화면에서는 OS 오류 팝업 없이 내부 Previewer가 정확한 노트를 여는지,
+iPhone에서는 탐색 결과가 정확히 한 노트인지와 복습 화면 복귀·일정 무변경을 각각 실측한다.
+
+운영 도입과 기존 raw 링크 이전은 다음 순서를 고정한다.
+
+1. helper 2.1.0과 MCP metadata를 배포·재조회한다.
+2. 아래 구조 변경 절차대로 Mac·AnkiMobile을 각각 동기화하고 작업 중 복습·편집을 멈춘다. 호스트도 normal
+   sync한 뒤 최신 model을 읽어 CAS가 포함된 템플릿 변경을 준비·root 승인·Upload한다.
+3. 운영 계정에 disposable 두 노트만 만들고 서로 연결한다. Mac 내부 Previewer와 iPhone 탐색·복귀가 모두
+   정확하고 일정·revlog가 그대로인지 확인한 다음 시험 노트를 삭제하고 개수 복귀를 확인한다.
+4. 다시 host sync하고 전체 노트의 모든 필드를 읽어 실제 anchor인 strict legacy shape만 변환한다. 각 수정에
+   바꿀 필드의 정확한 이전 값을 `expected_fields`로 함께 넣고 제목·대상 nid·순서, 대상 존재와 raw URL 잔여를
+   검사한다.
+5. 전체를 하나의 `anki_update_notes_fields` 요청으로 preview한다. 20개 초과 확인을 작은 작업으로 쪼개
+   우회하지 않고 같은 request ID·token으로 승인한다.
+6. 전체 readback에서 marker 수와 이전 manifest가 일치하고, 다른 필드·note/card ID·태그·flag·일정·revlog가
+   보존됐는지 확인한다. Mac·iPhone을 동기화해 이전된 실제 링크 하나를 다시 실측한다.
+
+필드 복구점과 템플릿 원본은 서로 다른 복구 경로다. 실패 시 운영 프로필에 `.colpkg`를 직접 import하지 않는다.
+
 ## 카드 ID 복사
 
 복습 화면의 `카드 ID 복사` 버튼은 현재 카드의 `{{CardID}}`를 문자열로 받아 `cid:<ID>`를 복사한다.
@@ -135,7 +213,8 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 컬렉션을 직접 읽거나 바꾸지 않는다. 원래 ALL/ANY 카드 생성 조건 안에만 버튼을 넣고, `FrontSide`가 있는
 뒷면은 앞면의 버튼을 상속한다. 기존 CSS·필드·템플릿 본문은 유지하며, 불명확한 HTML이나 중복 설치는 거절한다.
 실제 적용은 각 변경안을 `anki_prepare_model_change(action="model_template_update", ...)`로 준비한 뒤
-아래 root 승인·복구점 경로를 따른다. `original` 쌍은 같은 경로의 원복 입력이다.
+아래 root 승인·복구점 경로를 따른다. 변경안은 원본 template을, `original` 원복 입력은 적용된 template을
+각각 예상 이전 값으로 묶어 계획 뒤 최신 편집을 덮지 않는다.
 
 적용된 타입의 기존 카드와 이후 생성 카드는 같은 버튼을 사용한다. 새로 만들거나 가져온 **다른 노트 타입**에는
 자동 설치하지 않는다. 이 경우 원본을 확인하고 같은 준비·기기 검증 절차를 거친다.
@@ -147,6 +226,64 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 Mac/iPhone에서 문제·정답·형제 카드의 버튼을 누른 뒤 실제로 붙여넣은 값의 대조를 구분한다.
 버튼 클릭으로 정답이 열리거나 평가되지 않는지도 확인한다. API 성공 반환이나 성공 문구만으로
 실기기의 클립보드 호환성을 확정하지 않는다.
+
+## 코드 블록 강조
+
+`CS 재활 Basic`의 명시적으로 선택한 필드에만 `code_highlighting.py` 계획을 적용한다.
+질문·답·설명·출처의 `<pre><code class="language-javascript">…</code></pre>`를 표시할 때
+로컬 highlight.js로 색칠한다. 저장 필드에는 원문과 언어만 남기며 구문별 span은 저장하지 않는다.
+문장 안 `<code>`는 기존 단색 서식을 유지한다. 구형 KaTeX/Markdown/Cloze 템플릿은 변경하지 않는다.
+
+지원 이름은 javascript/js/jsx, typescript/ts/tsx, html/xml, css, json, bash/sh/shell,
+sql, c, python/py, java, yaml/yml, http다. 미지정·미지원·plaintext는 자동 추측 없이 단색이다.
+`&`, `<`, `>`는 HTML text로 이스케이프하고 들여쓰기와 개행을 보존한다.
+코드 예제에 실제 HTML 자식 요소나 cloze span이 있으면 강조를 건너뛰며 평탄화하지 않는다.
+HTML 소스 자체를 실행하는 기능은 없다.
+
+코드는 앱의 밝은/어두운 모드를 따르고, 긴 줄은 코드 블록 내부에서 가로 스크롤한다.
+별도 scoped style을 삽입하므로 기존 모델 CSS 필드는 수정하지 않는다.
+블록당 4,096자·한 화면 총 16,384자·32블록을 초과하면 남은 블록은 단색으로 표시한다.
+16ms를 넘으면 다음 블록 처리를 시작하지 않지만, 실행 중인 한 블록의 시간을 중단하는 보장은 아니다.
+미디어 로드가 실패해도 원문은 즉시 읽을 수 있고 다음 카드에서 다시 시도한다.
+
+배포는 다음 순서로 진행한다.
+
+1. `code-highlighting/README.md`의 고정 버전 빌드 또는
+   `nix develop --command bash tests/run-anki-code-highlight-tests.sh`로 번들과 DOM 계약을 검사한다.
+   `dist/manifest.json`의 JavaScript·라이선스를 신규 미디어로 저장하고 기기별 다운로드를 확인한다.
+   기존 `_highlight.js`와 `_highlights.css`는 덮어쓰지 않는다.
+2. 최신 `anki_model_info`로 `code_highlighting.build_plan(model, targets)`를 만든다.
+   target은 `template_name`, `side`, `field_name`을 명시한다. 노트 유형·필드 범위를 추측하지 않는다.
+   repo 밖에서 planner를 쓰면 `asset_filename`에 검증한 manifest의 파일명을 명시한다.
+   변경 전에 원본 계획·필드·복구점을 확보하고 아래 구조 변경 승인·Upload 절차를 따른다.
+3. `changes[].change`를 기존 `model_template_update`에 전달한다. 원복은 `changes[].original`이다.
+   양쪽 모두 기대 모델 ID와 앞뒤 원문에 묶여 있으므로 나중에 수정된 내용을 덮어쓰지 않는다.
+   알려진 구형 mobile Note Linker renderer는 코드 영역을 건너뛰는 버전으로 함께 바꾼다.
+   미확인 renderer나 부분 설치는 거절한다. Mac에는 선언적 Note Linker 패키지의 동일 호환 패치를 적용한다.
+4. 기존 코드의 언어 보완은 `build_field_patch(note_id, fields, languages_by_field)`로
+   블록 순서별 명시적 언어 목록을 전달한다. 미디어·템플릿 준비 후 `change`를 필드 변경에 사용한다.
+   이 함수는 언어 class와 기존 pre의 두 줄바꿈 style만 바꾸며, 읽은 필드와 기대값이 다르면 거절된다.
+   `original`은 같은 조건으로 보호한 원복 입력이다. 내용을 임의 추정하거나 모호한 HTML을 고치지 않는다.
+5. 호스트 readback과 Mac·iPhone의 앞뒤·야간 모드·오프라인 표시를 각각 확인한다.
+   note/card ID, 일정, 복습 이력, 별표·검토 메모를 보존한다. 호스트 sync 성공만으로 기기 검증을 대신하지 않는다.
+
+## Mac GUI 자동화 안전 경계
+
+Computer History 관찰 설정에서는 Anki bundle ID `net.ankiweb.anki`를 제외한다. 이 규칙은 백그라운드
+Computer History에만 적용되며, 명시적인 Computer Use를 Anki 전체에서 금지하지 않는다. 일반 덱 선택·복습·
+동기화 화면과 iPhone Mirroring은 계속 사용할 수 있다.
+
+Anki 26.9.2/Qt 6.11.2에서 선택된 행이 있는 `탐색` 창의 접근성 트리를 읽을 때 `libqcocoa`의
+`NSAccessibility` 경로로 충돌한 기록이 있고, 사용자는 편집 창에서도 반복 충돌을 보고했다.
+개인 데이터·동기화 계정 없이 AnkiConnect만 설치한 격리 프로필에서도 `탐색` 창을 API로 연 뒤에는 생존했지만,
+Computer Use의 스크린샷 요청 직후 같은 접근성 계층 조회에서 충돌했다. Computer History 제외만으로 직접
+Computer Use 호출의 충돌을 막을 수 없으며, 스크린샷만 요청하는 방식도 안전한 우회가 아니다.
+같은 격리 환경의 기본 `Edit Current` 창은 접근성 조회·스크린샷 1회씩 성공했으나, 운영 확장 프로그램과
+모든 편집 상태의 안전을 보장하지 않는다. 재검증은 이처럼 격리 프로필에서 창·확장 구성·조회 방식을 구분한다.
+운영 구성에 대응하는 격리 프로필의 A/B 재현 시험을 통과하기 전까지 독립·내장 편집 창 또는 선택 행이 있는 `탐색` 창을 Computer Use로
+열지 않으며, 그 안에서 조회·클릭·키 입력·스크롤 등 어떤 Computer Use 조작도 하지 않는다. MCP/API나 사용자
+수동 조작을 사용하고, 위험 창을 닫으면 일반 화면에서 Computer Use를 재개한다. 근거는 [Anki selected-row Browse 충돌](https://forums.ankiweb.net/t/macos-accessibility-scan-can-crash-browse-when-a-row-is-selected/70882)과
+[Codex Qt 앱 접근성 충돌 #41374](https://github.com/openai/codex/issues/41374)이다.
 
 ## 검토 표시와 메모
 
@@ -209,6 +346,11 @@ Mac/iPhone에서 문제·정답·형제 카드의 버튼을 누른 뒤 실제로
 - 일반 동기화의 급감 게이트는 유지한다. 정당한 대량 삭제로 게이트가 걸려도 MCP가 기준값을 초기화하지 않는다.
 
 ## 구조 변경과 승인 Upload
+
+구조 변경은 AnkiWeb에서 전체 Upload를 요구할 수 있으므로, 먼저 연결된 Mac·AnkiMobile을 각각 직접 동기화해
+로컬 변경을 AnkiWeb에 올리고 성공 화면을 확인한다. 그 뒤 구조 변경·Upload·각 클라이언트의 후속 동기화가
+끝날 때까지 모든 클라이언트에서 복습·편집을 중지한다. 호스트의 `mobile_upload_confirmed=false`는 이 절차를
+대신할 수 없다. 어떤 클라이언트에 미전송 변경이 남았는지 불명확하면 구조 변경을 시작하지 않는다.
 
 `anki_prepare_model_change`의 preview에서 필드/템플릿, 영향 수, 복구점·전체 동기화 필요성을 확인한다.
 실제 변경과 AnkiWeb Upload를 승인한 운영자가 MiniPC에서 다음 명령을 실행한다.

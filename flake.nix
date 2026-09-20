@@ -294,6 +294,9 @@
         {
           inherit (pythonRuntimes) pythonWithTomlkit;
           inherit claudeRcFlock prePushRuntime;
+          ankiCodeHighlightCheck = import ./modules/nixos/programs/anki-host/code-highlight-check.nix {
+            inherit pkgs;
+          };
           # Build/fetch desktop add-ons without building or replacing Anki itself.
           ankiDesktopAddons = pkgs.linkFarm "anki-desktop-addons" (
             nixpkgs.lib.mapAttrsToList (name: path: { inherit name path; }) (
@@ -301,14 +304,22 @@
             )
           );
           # anki-mcp 오프라인 단위 테스트 런타임 (tests/run-anki-mcp-tests.sh) — 서비스와 같은 핀된 mcp SDK
-          ankiMcpTestEnv = pkgs.python3.withPackages (
-            ps: with ps; [
-              mcp
-              httpx
-              pytest
-              anyio
-            ]
-          );
+          ankiMcpTestEnv = pkgs.buildEnv {
+            name = "anki-mcp-test-env";
+            paths = [
+              (pkgs.python3.withPackages (
+                ps: with ps; [
+                  mcp
+                  httpx
+                  pytest
+                  anyio
+                ]
+              ))
+              # Execute the shipped JavaScript regex instead of duplicating its
+              # greedy/non-greedy behavior in a Python assertion.
+              pkgs.nodejs_24
+            ];
+          };
         }
       );
     };

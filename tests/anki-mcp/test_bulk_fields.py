@@ -85,6 +85,30 @@ def test_duplicate_note_ids_are_rejected_even_when_payloads_match():
         validate_spec("update_fields_bulk", updates(1, 1), 100)
 
 
+def test_expected_fields_must_cover_exactly_the_replaced_fields():
+    good = {"notes": [{"note_id": 1, "fields": {"Text": "new"},
+                       "expected_fields": {"Text": "{{c1::old}}"}}]}
+    assert validate_spec("update_fields_bulk", good, 100)["params"] == good
+    for expected in ({}, {"Memo": "preserve me"}, {"Text": "old", "Memo": "extra"}):
+        bad = {"notes": [{"note_id": 1, "fields": {"Text": "new"},
+                          "expected_fields": expected}]}
+        with pytest.raises(OperationError, match="expected-fields-must-match-updated-fields"):
+            validate_spec("update_fields_bulk", bad, 100)
+
+
+@pytest.mark.parametrize("action,params", [
+    ("update_fields", {"note_id": 1, "fields": {"Text": "new"},
+                       "expected_fields": {"Text": "stale"}}),
+    ("update_fields_bulk", {"notes": [{"note_id": 1, "fields": {"Text": "new"},
+                                        "expected_fields": {"Text": "stale"}}]}),
+])
+def test_expected_fields_reject_stale_payload_before_journal_or_backup(tmp_path, action, params):
+    r = bulk_fixture(tmp_path)
+    with pytest.raises(OperationError, match="expected-field-value-mismatch"):
+        r.ops.prepare(action, params, "field-cas")
+    assert not r.calls and not r.backups and not list(r.ops.root.glob("*.json"))
+
+
 @pytest.mark.parametrize("action,params", [("update_fields", {"note_id": 1, "fields": {"Text": "new"}}),
                                           ("update_fields_bulk", updates(1, 2))])
 def test_small_field_edits_backup_without_extra_confirmation(tmp_path, action, params):
@@ -260,6 +284,25 @@ async def test_bulk_tool_contract_and_single_tool_remain_available(tmp_path):
         assert receipt["state"] == "applied" and receipt["backup_required"]
     assert fake.operation_calls == [{"action": "update_fields_bulk", "params": updates(1, 2)}]
     assert not fake.calls
+
+
+@pytest.mark.anyio
+async def test_field_tools_forward_expected_old_values_without_adding_nulls(tmp_path):
+    fake = FakeAnki()
+    mcp = make_mcp(fake, tmp_path)
+    bulk = {"notes": [{"note_id": 1, "fields": {"Text": "new"},
+                       "expected_fields": {"Text": "old"}}], "request_id": "bulk-cas-job"}
+    await mcp.call_tool("anki_update_notes_fields", bulk)
+    await mcp.call_tool("anki_update_note_fields", {
+        "note_id": 2, "fields": {"Text": "new"}, "expected_fields": {"Text": "old"},
+        "request_id": "single-cas-job",
+    })
+    assert fake.operation_calls == [
+        {"action": "update_fields_bulk", "params": {"notes": bulk["notes"]}},
+        {"action": "update_fields", "params": {
+            "note_id": 2, "fields": {"Text": "new"}, "expected_fields": {"Text": "old"},
+        }},
+    ]
 
 
 @pytest.mark.anyio

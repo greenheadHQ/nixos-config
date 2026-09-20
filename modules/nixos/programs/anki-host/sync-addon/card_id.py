@@ -192,6 +192,19 @@ def build_plan(model, widget=None):
                 raise ValueError("card-id-unfinished-back")
             change["back"] = widget + back
             placement = "prefix-preserve-malformed-cloze"
+        expected_model_id = model["id"]
+        forward = {
+            **change,
+            "expected_model_id": expected_model_id,
+            "expected_front": original["front"],
+            "expected_back": original["back"],
+        }
+        rollback = {
+            **original,
+            "expected_model_id": expected_model_id,
+            "expected_front": change["front"],
+            "expected_back": change["back"],
+        }
         changes.append({"template_index": index, "back_placement": placement,
-                        "original": original, "change": change})
+                        "original": rollback, "change": forward})
     return {"model_id": model["id"], "model_name": model["name"], "changes": changes}

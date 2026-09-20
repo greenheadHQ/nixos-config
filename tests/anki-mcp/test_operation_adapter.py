@@ -67,6 +67,25 @@ def test_field_update_counts_new_cloze_cards_and_retained_old_cards(tmp_path):
     assert col.db.scalar("select count() from cards") == 1
 
 
+def test_template_update_expected_preimage_and_model_id_are_checked_before_prepare(tmp_path):
+    ops, _adapter, col = adapter_fixture(tmp_path)
+    template = col.model["tmpls"][0]
+    base = {
+        "model_name": "Cloze", "template_name": "Cloze",
+        "front": "{{cloze:Text}}!", "back": "{{cloze:Text}}!",
+        "expected_model_id": col.model["id"],
+        "expected_front": template["qfmt"], "expected_back": template["afmt"],
+    }
+    assert ops.prepare("model_template_update", base, "template-cas")["state"] == "prepared"
+
+    for key, value in (("expected_model_id", col.model["id"] + 1),
+                       ("expected_front", "stale front"),
+                       ("expected_back", "stale back")):
+        wrong = {**base, key: value}
+        with pytest.raises(OperationError, match="expected-model-or-template-value-mismatch"):
+            ops.prepare("model_template_update", wrong, f"wrong-{key}")
+
+
 def test_deck_delete_snapshot_includes_siblings_without_deleting_them(tmp_path):
     ops, _adapter, col = adapter_fixture(tmp_path)
     col.db.db.execute("insert into cards values(11, 1, 2, 0, 1)")
