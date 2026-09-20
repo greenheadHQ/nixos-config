@@ -201,8 +201,8 @@ def test_renderer_contract_is_mobile_only_idempotent_and_avoids_inner_html_rewri
     assert "window.AnkiNoteLinkerIsActive" in RENDERER
     assert "anki-note-link-mobile-renderer" in RENDERER
     assert "iphone" in RENDERER and "ipad" in RENDERER
-    assert "createTextNode" in RENDERER and "createElement" in RENDERER
-    assert "textContent" in RENDERER
+    assert "createRange" in RENDERER and "createElement" in RENDERER
+    assert "extractContents" in RENDERER
     assert "innerHTML" not in RENDERER
     assert "anki://x-callback-url/search?query=nid%3A" in RENDERER
     assert "ankiuser.net" not in RENDERER

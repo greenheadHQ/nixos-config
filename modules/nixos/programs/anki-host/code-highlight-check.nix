@@ -18,7 +18,8 @@ pkgs.buildNpmPackage {
     npm run test:library
     export ANKI_SYNTAX_PACKAGE="$PWD"
     export ANKI_SYNTAX_ADDON=${./sync-addon}
-    node --test ${../../../../tests/anki-web}/code-highlighting.test.mjs
+    export ANKI_NOTE_LINK_FIXTURES=${../../../../tests/fixtures/anki-note-link}
+    node --test ${../../../../tests/anki-web}/*.test.mjs
     runHook postBuild
   '';
   installPhase = ''

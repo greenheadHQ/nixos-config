@@ -6,6 +6,8 @@ client display still require the separate DOM suite and Mac/iPhone acceptance.
 
 import copy
 import itertools
+import os
+from pathlib import Path
 
 import pytest
 
@@ -37,10 +39,8 @@ def _note_type(r, with_links=False):
     template["afmt"] = ('{{FrontSide}}<hr id="answer"><div class="answer">{{답}}</div>'
                         '{{#설명}}<div class="explanation linkRender">{{설명}}</div>{{/설명}}')
     if with_links:
-        previous = (HOST / "note-link-renderer.html").read_text(encoding="utf-8")
-        previous = previous.replace('if (window.AnkiNoteLinkerMobileVersion !== 2)', 'if (!window.AnkiNoteLinkerRenderMobile)')
-        previous = previous.replace('"a,script,style,textarea,pre,code"', '"a,script,style,textarea"')
-        previous = previous.replace('    window.AnkiNoteLinkerMobileVersion = 2;\n', '')
+        fixture_dir = Path(os.environ.get("ANKI_NOTE_LINK_FIXTURES", Path(__file__).parents[1] / "fixtures/anki-note-link"))
+        previous = (fixture_dir / "renderer-v1.html").read_text(encoding="utf-8")
         template["afmt"] += previous
     r.col.models.add_template(model, template)
     model["css"] = ".question { font-weight: bold; } code { background: #eee; }"
@@ -85,7 +85,7 @@ def test_template_and_field_migration_preserve_scheduling_history_tags_and_other
     assert _model(r)["req"] == original_model["req"]
     assert 'class="question anki-code-scope"' in r.col.get_card(cid).question()
     assert ASSET in r.col.get_card(cid).answer()
-    assert "window.AnkiNoteLinkerMobileVersion = 2;" in _model(r)["tmpls"][0]["afmt"]
+    assert "window.AnkiNoteLinkerMobileVersion = 3;" in _model(r)["tmpls"][0]["afmt"]
 
     patch = planner.build_field_patch(nid, original_fields, {"질문": ["javascript"]})
     r.apply("update_fields", patch["change"])

@@ -171,9 +171,7 @@ def test_migration_binds_inventory_count_and_supported_explicit_languages():
 def _mobile_renderers():
     from pathlib import Path
     current = Path(code.__file__).with_name("note-link-renderer.html").read_text(encoding="utf-8")
-    previous = current.replace('if (window.AnkiNoteLinkerMobileVersion !== 2)', 'if (!window.AnkiNoteLinkerRenderMobile)')
-    previous = previous.replace('"a,script,style,textarea,pre,code"', '"a,script,style,textarea"')
-    previous = previous.replace('    window.AnkiNoteLinkerMobileVersion = 2;\n', '')
+    previous = (Path(__file__).parents[1] / "fixtures/anki-note-link/renderer-v1.html").read_text(encoding="utf-8")
     return previous, current
 
 
@@ -189,6 +187,16 @@ def test_exact_legacy_mobile_renderer_is_upgraded_and_rollback_keeps_original_by
     current_model = model()
     current_model["tmpls"][0]["afmt"] += current
     assert plan(current_model)["changes"][0]["change"]["back"].count(current) == 1
+
+
+def test_exact_version_two_mobile_renderer_can_upgrade_without_losing_rollback():
+    from pathlib import Path
+    previous = (Path(__file__).parents[1] / "fixtures/anki-note-link/renderer-v2.html").read_text(encoding="utf-8")
+    before = model()
+    before["tmpls"][0]["afmt"] += previous
+    entry = plan(before)["changes"][0]
+    assert "window.AnkiNoteLinkerMobileVersion = 3;" in entry["change"]["back"]
+    assert entry["original"]["back"] == before["tmpls"][0]["afmt"]
 
 
 @pytest.mark.parametrize("mutation", ["trailing", "modified", "duplicate", "partial"])

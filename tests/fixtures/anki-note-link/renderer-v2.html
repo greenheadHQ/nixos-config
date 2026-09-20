@@ -1,0 +1,58 @@
+<!-- anki-note-link-mobile-renderer -->
+<script>
+(() => {
+  if (window.AnkiNoteLinkerIsActive) return;
+  const root = document.documentElement;
+  if (!root.classList.contains("iphone") && !root.classList.contains("ipad")) return;
+
+  if (window.AnkiNoteLinkerMobileVersion !== 2) {
+    const pattern = /\[((?:[^\[]|\\\[)*?)\|nid(\d{13})\]/g;
+    const renderContainer = container => {
+      const walker = document.createTreeWalker(container, 4);
+      const nodes = [];
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        const parent = node.parentElement;
+        if (parent && !parent.closest("a,script,style,textarea,pre,code")) nodes.push(node);
+      }
+      nodes.forEach(node => {
+        const value = node.nodeValue;
+        pattern.lastIndex = 0;
+        let match;
+        let end = 0;
+        let fragment = null;
+        while ((match = pattern.exec(value)) !== null) {
+          fragment ||= document.createDocumentFragment();
+          fragment.appendChild(document.createTextNode(value.slice(end, match.index)));
+          const link = document.createElement("a");
+          link.className = "noteLink";
+          link.href = "anki://x-callback-url/search?query=nid%3A" + match[2];
+          link.textContent = match[1].replace(/\\\[/g, "[");
+          fragment.appendChild(link);
+          end = pattern.lastIndex;
+        }
+        if (fragment) {
+          fragment.appendChild(document.createTextNode(value.slice(end)));
+          node.parentNode.replaceChild(fragment, node);
+        }
+      });
+    };
+    window.AnkiNoteLinkerMobileVersion = 2;
+    window.AnkiNoteLinkerRenderMobile = () => {
+      document.querySelectorAll(".linkRender").forEach(renderContainer);
+    };
+  }
+
+  if (document.readyState === "loading") {
+    if (!window.AnkiNoteLinkerMobileRenderPending) {
+      window.AnkiNoteLinkerMobileRenderPending = true;
+      document.addEventListener("DOMContentLoaded", () => {
+        window.AnkiNoteLinkerMobileRenderPending = false;
+        window.AnkiNoteLinkerRenderMobile();
+      }, { once: true });
+    }
+  } else {
+    window.AnkiNoteLinkerRenderMobile();
+  }
+})();
+</script>

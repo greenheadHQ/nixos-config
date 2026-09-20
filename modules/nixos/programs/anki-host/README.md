@@ -214,6 +214,16 @@ AnkiMobile은 add-on을 실행하지 못하므로 링크가 있는 필드의 기
 AnkiMobile의 `nid:` 탐색 링크로 바꾼다. 다른 HTML이나 기존 anchor의 `innerHTML`을 다시 쓰지 않는다.
 iPhone의 도착점은 즉시 복습이나 팝업이 아니라 탐색 검색이다.
 
+모바일 renderer v3는 제목 안의 `b`·`sup`·`u` 같은 inline 서식이 여러 text node로 나뉘어도
+기존 요소를 그대로 링크 안으로 옮긴다. 표시 제목·서식·entity의 표시 결과를 유지하며, 노트 필드는 수정하지 않는다.
+대괄호와 `|nid<13자리>]`가 같은 부모 요소 안에 있고 nid suffix가 한 text node일 때만 처리한다.
+부분 태그 경계를 걸친 marker, block·줄바꿈·주석을 넘는 marker, 기존 anchor·코드·수식·편집 요소는
+변환하지 않는다. 제목의 `\[`는 기존 Note Linker 규칙대로 표시하며, marker 전체 앞에 `\`가 붙으면 그대로 둔다.
+재사용 WebView에서도 이전 renderer 함수를 버전별로 교체하고 반복 실행 시 이미 만든 anchor는 건너뛴다.
+DOM 회귀 검사는 `nix develop --command bash tests/run-anki-code-highlight-tests.sh`에 포함된다.
+관리 대상 Basic 템플릿의 알려진 renderer만 준비 도구로 업그레이드한다. 기존 KaTeX 타입의 별도
+Markdown·Cloze 링크 처리는 교체하거나 덧붙이지 않는다. 그 타입의 제목 표본은 입력 호환성 검증에만 사용한다.
+
 iPhone에서 링크 검색을 닫으면 실제 복습 화면은 같은 카드의 문제 화면으로 돌아오며 정답을 다시 표시할 수 있다.
 다만 `탐색 → 노트 편집 → 미리보기`에서 링크를 열고 돌아오면 미리보기가 비고, 뒤집기에서 JavaScript
 예외가 발생하는 경로가 있다. 이때 미리보기를 닫아 편집 화면으로 돌아간 뒤 다시 열면 회복된다.

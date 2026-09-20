@@ -17,9 +17,12 @@ from . import note_links
 MODEL_NAME = "CS 재활 Basic"
 MARKER = "anki-code-highlight-v1"
 SCOPE_CLASS = "anki-code-scope"
-# Exact original mobile adapter from the note-link rollout. A hash permits a
-# narrowly bound upgrade without copying a second complete renderer into code.
-_LEGACY_NOTE_LINK_SHA256 = "17eaddd7b9d5192b418f19ee4a80feddcb5b6a666d01d84c302d531dcdf7ebec"
+# Exact mobile adapters from the note-link and code-highlighting rollouts.
+# Only known bytes can be upgraded; user-modified renderers remain untouched.
+_LEGACY_NOTE_LINK_SHA256 = frozenset({
+    "17eaddd7b9d5192b418f19ee4a80feddcb5b6a666d01d84c302d531dcdf7ebec",  # v1
+    "91445a7d0c242ec9a11237079942ba867eb3ba5c898ec561db35ddad58df58fd",  # v2
+})
 FIELDS = frozenset({"질문", "답", "맥락", "설명", "출처"})
 LANGUAGES = frozenset({
     "javascript", "js", "jsx", "typescript", "ts", "tsx", "xml", "html",
@@ -44,7 +47,7 @@ def _upgrade_note_links(source):
     replacement = Path(__file__).with_name("note-link-renderer.html").read_text(encoding="utf-8")
     if suffix == replacement:
         return source
-    if hashlib.sha256(suffix.encode("utf-8")).hexdigest() != _LEGACY_NOTE_LINK_SHA256:
+    if hashlib.sha256(suffix.encode("utf-8")).hexdigest() not in _LEGACY_NOTE_LINK_SHA256:
         raise ValueError("code-highlight-unknown-note-link-renderer")
     return source[:start] + replacement
 
