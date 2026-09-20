@@ -69,7 +69,13 @@ def github_latest(baseline_digest: str | None) -> dict:
         with urllib.request.urlopen(request, timeout=3) as response:
             return json.loads(response.read(65536))
     try:
-        commit = read(GITHUB_REPOSITORY + "/commits/main")["sha"]
+        # A commit response includes patches and can exceed the bounded JSON
+        # read. Resolve the small exact ref instead, then pin version.json to
+        # that commit even if main moves between the two requests.
+        reference = read(GITHUB_REPOSITORY + "/git/ref/heads/main")
+        if reference["ref"] != "refs/heads/main" or reference["object"]["type"] != "commit":
+            raise ValueError("invalid-reference")
+        commit = reference["object"]["sha"]
         if not isinstance(commit, str) or re.fullmatch(r"[0-9a-f]{40}", commit) is None:
             raise ValueError("invalid-commit")
         version = read("https://raw.githubusercontent.com/greenheadHQ/nixos-config/" + commit + "/" + VERSION_PATH)
