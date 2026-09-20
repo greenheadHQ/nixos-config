@@ -150,9 +150,12 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         if the user already explicitly authorized that cleanup choice for those notes.
         Exclude notes with unfinished work or unresolved memo questions, including those about sibling cards.
         Before clearing, reread the current full memo; if it changed since the choice was offered, preserve it
-        and reconfirm. Rereading does not atomically guard edits arriving before the mutation tool prepares
-        its snapshot. Clear only the approved notes' existing 검토 메모 field to an empty string and/or their
-        marked tag, according to the choice. Preserve other fields, tags, flags and scheduling. For both,
+        and reconfirm. For either field-update tool, clear a memo only with expected_fields containing its
+        exact last-read full value (including HTML and newlines); include it for every note in a bulk edit.
+        On expected-field-value-mismatch, keep memos and stars, reread and reconfirm; never omit the guard
+        or substitute newly read values just to retry. Clear only the approved notes' existing 검토 메모 field
+        to an empty string and/or their marked tag, according to the choice. Preserve other fields, tags,
+        flags and scheduling. For both,
         clear the memo and verify it first, then remove marked. On partial/unknown results, inspect and
         report the remaining state instead of claiming cleanup complete or retrying with a new request_id.
         Check freshness for the host's recorded sync boundary; phone edits may still be absent even after
@@ -225,7 +228,9 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         "For read-modify-write changes, pass expected_fields with exact old values for the same keys. "
         "검토 메모 can contain multiple paragraphs. Describe cloze examples as 'c1: answer', never literal "
         "cloze markup: it can generate cards even in a hidden memo field. Do not silently rewrite an existing memo.\n"
-        "Clearing 검토 메모 requires the user's explicit cleanup choice for those notes; follow anki_note_info.\n\n"
+        "Clearing 검토 메모 requires the user's explicit cleanup choice and expected_fields with the exact "
+        "last-read full memo. On expected-field-value-mismatch, preserve the memo and star, reread and "
+        "reconfirm; do not drop the guard or automatically replace its value. Follow anki_note_info.\n\n"
         + AUTHORING_GUIDANCE
     ))
     async def anki_update_note_fields(note_id: int, fields: dict[str, str], expected_fields: dict[str, str] | None = None,
@@ -249,7 +254,9 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         "no automatic rollback. Inspect partial/unknown receipts instead of repeating with a new request_id.\n"
         "Reuse the same request_id for retries. 검토 메모 supports multiple paragraphs: describe cloze\n"
         "examples as 'c1: answer', never literal cloze markup, and do not silently rewrite an existing memo.\n"
-        "Clearing 검토 메모 requires the user's explicit cleanup choice for those notes; follow anki_note_info.\n\n"
+        "Clearing 검토 메모 requires the user's explicit cleanup choice and expected_fields with each note's "
+        "exact last-read full memo. On expected-field-value-mismatch, preserve all memos and stars, reread "
+        "and reconfirm; do not drop the guard or automatically replace its value. Follow anki_note_info.\n\n"
         + AUTHORING_GUIDANCE
     ))
     async def anki_update_notes_fields(
