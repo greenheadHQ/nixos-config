@@ -54,6 +54,10 @@ class NoteFieldUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     note_id: Annotated[int, Field(strict=True, gt=0)]
     fields: dict[str, str] = Field(min_length=1, description="Only fields to replace; other fields remain unchanged")
+    expected_fields: dict[str, str] | None = Field(
+        default=None,
+        description="Optional exact old values for the same field names; stale values reject the whole operation",
+    )
 
 
 @dataclass
@@ -218,14 +222,19 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         "history are preserved for existing cards. Changed templates/cloze fields may generate new cards. "
         "Returns an operation receipt; use anki_note_info for readback. Reuse request_id for retries. "
         "A verified media-free restore point is created before every field edit, including one note. "
+        "For read-modify-write changes, pass expected_fields with exact old values for the same keys. "
         "검토 메모 can contain multiple paragraphs. Describe cloze examples as 'c1: answer', never literal "
         "cloze markup: it can generate cards even in a hidden memo field. Do not silently rewrite an existing memo.\n"
         "Clearing 검토 메모 requires the user's explicit cleanup choice for those notes; follow anki_note_info.\n\n"
         + AUTHORING_GUIDANCE
     ))
-    async def anki_update_note_fields(note_id: int, fields: dict[str, str], request_id: str | None = None,
+    async def anki_update_note_fields(note_id: int, fields: dict[str, str], expected_fields: dict[str, str] | None = None,
+                                     request_id: str | None = None,
                                      preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
-        return await operations.run("update_fields", {"note_id": note_id, "fields": fields},
+        params = {"note_id": note_id, "fields": fields}
+        if expected_fields is not None:
+            params["expected_fields"] = expected_fields
+        return await operations.run("update_fields", params,
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
 
     @mcp.tool(name="anki_update_notes_fields", annotations=UPDATE, description=(
@@ -234,6 +243,8 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         "scheduling/history remain unchanged; changed templates/cloze fields can generate new cards.\n"
         "Creates one verified media-free restore point and uses one pre/post sync pair and notification.\n"
         "More than 20 affected notes/cards, including anticipated new cards, requires preview/confirmation.\n"
+        "For migrations, include expected_fields with each note's exact old values for the replaced keys;\n"
+        "a mismatch after pre-sync rejects the whole operation before backup or writes.\n"
         "Results list each note as applied, unknown or not-attempted. An uncertain write stops the batch;\n"
         "no automatic rollback. Inspect partial/unknown receipts instead of repeating with a new request_id.\n"
         "Reuse the same request_id for retries. 검토 메모 supports multiple paragraphs: describe cloze\n"
@@ -245,7 +256,8 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         notes: Annotated[list[NoteFieldUpdate], Field(min_length=1)],
         request_id: str | None = None, preview_token: str | None = None, confirm: bool = False,
     ) -> dict[str, Any]:
-        return await operations.run("update_fields_bulk", {"notes": [n.model_dump() for n in notes]},
+        payload = [n.model_dump(exclude_none=True) for n in notes]
+        return await operations.run("update_fields_bulk", {"notes": payload},
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
 
     @mcp.tool(name="anki_add_tags", annotations=UPDATE)
@@ -401,7 +413,9 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         """Prepare (never apply) a note-type change requiring root approval and possibly full Upload. params:
         model_name plus field_name (add/remove), field_name+new_name (rename), field_name+index (reposition),
         template_name+front+back (add/update), or template_name (remove). Field add accepts optional index.
-        Show the preview; the root anki-host-approve command verifies backup/counts and executes once."""
+        For template update, expected_model_id+expected_front+expected_back may bind the change to the exact
+        pre-sync template; provide all three together for generated plans. Show the preview; the root
+        anki-host-approve command verifies backup/counts and executes once."""
         return await operations.run(action, params, request_id=request_id)
 
     @mcp.tool(name="anki_update_model_css", annotations=UPDATE)

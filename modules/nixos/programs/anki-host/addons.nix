@@ -1,7 +1,7 @@
 # Small addon derivations, independently buildable without rebuilding Anki.
 { pkgs }:
 let
-  version = "2.0.0";
+  version = "2.1.0";
 in
 {
   inherit version;

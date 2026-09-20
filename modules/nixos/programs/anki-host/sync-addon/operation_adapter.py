@@ -151,6 +151,12 @@ class AnkiAdapter:
                 raise OperationError("index-out-of-range")
         if "_template_" in action and model["type"] == 1 and action != "model_template_update":
             raise OperationError("cloze-note-types-have-one-template")
+        if action == "model_template_update" and "expected_model_id" in p:
+            template = next(item for item in model["tmpls"] if item["name"] == p["template_name"])
+            if (model["id"] != p["expected_model_id"]
+                    or template["qfmt"] != p["expected_front"]
+                    or template["afmt"] != p["expected_back"]):
+                raise OperationError("expected-model-or-template-value-mismatch")
 
     def _config_patch(self, config: dict[str, Any], changes: dict[str, Any]) -> dict[str, Any]:
         config = copy.deepcopy(config)
@@ -315,6 +321,10 @@ class AnkiAdapter:
                     note = by_id[update["note_id"]]
                     if set(update["fields"]) - set(note.keys()):
                         raise OperationError("unknown-note-field")
+                    if ("expected_fields" in update
+                            and any(note[name] != value
+                                    for name, value in update["expected_fields"].items())):
+                        raise OperationError("expected-field-value-mismatch")
                     model = copy.deepcopy(note.note_type())
                     models[str(model["id"])] = model
                     changed_fields = {**dict(note.items()), **update["fields"]}

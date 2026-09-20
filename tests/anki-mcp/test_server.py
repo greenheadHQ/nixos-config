@@ -199,12 +199,21 @@ async def test_split_apps_metadata_and_full_oauth_flow(tmp_path, auth_method):
                 assert AUTHORING_GUIDANCE in listed[name]["description"]
                 assert "검토 메모" in listed[name]["description"]
                 assert "never literal cloze markup" in listed[name]["description"]
+                assert "[표시 제목|nid<13자리 note ID>]" in listed[name]["description"]
+                assert "raw anki://" in listed[name]["description"]
             assert "multiple paragraphs" in listed["anki_update_note_fields"]["description"]
             assert "Do not silently rewrite" in listed["anki_update_note_fields"]["description"]
+            assert "Clearing 검토 메모 requires" in listed["anki_update_note_fields"]["description"]
+            assert "Clearing 검토 메모 requires" in listed["anki_update_notes_fields"]["description"]
+            assert "clear both star and memo" in listed["anki_note_info"]["description"]
+            assert "Without a choice, change neither" in listed["anki_remove_tags"]["description"]
+            assert "Use a supplied cid:<ID> as the exact query" in listed["anki_find_cards"]["description"]
+            assert "query 'tag:marked'. Collect all pages" in listed["anki_find_notes"]["description"]
             assert listed["anki_set_card_flags"]["inputSchema"]["required"] == ["card_ids", "flag"]
             assert AUTHORING_GUIDANCE not in listed["anki_find_notes"]["description"]
             assert listed["anki_add_notes"]["inputSchema"]["required"] == ["notes"]
             assert listed["anki_update_note_fields"]["inputSchema"]["required"] == ["note_id", "fields"]
+            assert "anki://x-callback-url" not in AUTHORING_GUIDANCE
 
             # 7. Host·Origin의 포트도 일치해야 한다. 다른 포트나 포트 생략은 토큰이 있어도 거부한다.
             for wrong_host in ("evil.example", FQDN, f"{FQDN}:443", APPROVAL_HOST):

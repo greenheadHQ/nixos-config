@@ -14,8 +14,9 @@
 
 이는 클라이언트 LLM의 작성 지침이며 서버가 이해도·사실성을 판정하거나 링크를 자동 검증한다는 뜻은 아니다.
 원문 확보는 클라이언트의 자료 접근 범위에 달려 있다. 서버는 웹 검색·개인 책 PDF 조회 기능을 제공하지 않는다.
-AnkiMobile의 `anki://x-callback-url/search?query=...` 링크는 검색 화면을 여는 것이며,
-Desktop 호환이나 iPhone의 실제 탭·복습 복귀 동작은 별도로 확인한다.
+관련 노트는 필드에 플랫폼 URL을 저장하지 않고 `[표시 제목|nid<13자리 note ID>]` 형식으로 저장한다.
+Desktop Anki Note Linker와 AnkiMobile 카드 템플릿이 같은 값을 각 클라이언트의 이동 방식으로 렌더링한다.
+두 adapter의 설치·실제 탭·복습 복귀 동작은 각각 확인한다.
 
 배포 후 인증된 `initialize`·`tools/list` 응답에서 지침을 확인한다. 서버 응답만으로 ChatGPT 적용 완료라고 판단하지 않는다.
 ChatGPT 개발자 모드 연결은 연결 설정에서 **새로 고침(Refresh)**을 실행하고 변경된 도구 설명을 확인한다.
@@ -104,6 +105,8 @@ MCP의 결과 대기는 별도 3분이므로 호출이 먼저 끝날 수 있다.
 바꿀 필드만 전달하며 중복 note ID는 거절한다. 전체 대상·필드·예상 생성 카드 수를 실행 전에 검증한다.
 사전/사후 동기화 한 쌍, 검증된 미디어 제외 복구점 하나, 결과 알림 하나를 사용한다.
 단일 노트의 `anki_update_note_fields`도 매번 같은 복구점 보호를 적용하지만, 20건 이하 변경에 새 확인 단계를 추가하지 않는다.
+읽은 값을 바탕으로 계산한 migration은 바꿀 각 필드의 정확한 이전 값을 `expected_fields`로 함께 보내며,
+사전 동기화 뒤 하나라도 다르면 작업 원장을 만들기 전에 전체 요청을 거절한다.
 
 입력별 결과는 `applied`, `unknown`, `not-attempted`로 구분한다. 저장 결과가 불명확하면 이후 항목을 중단하고
 전체를 `partial`로 반환한다. 자동으로 되돌리지 않으며 새 request ID로 전체를 반복하지 않는다.
@@ -111,7 +114,7 @@ MCP의 결과 대기는 별도 3분이므로 호출이 먼저 끝날 수 있다.
 
 ## 지원표
 
-소스 핀: Anki **26.08**, AnkiConnect **25.11.9.0**, helper **2.0.0**, MCP SDK **1.29.0**.
+소스 핀: Anki **26.08**, AnkiConnect **25.11.9.0**, helper **2.1.0**, MCP SDK **1.29.0**.
 Anki 본체를 별도 overlay로 다시 만들지 않고, AnkiConnect 애드온에만 인증·내부 호출 연결 패치를 적용한다.
 핀 변경 시 아래 실제 API 테스트를 다시 실행한다. nixpkgs 쪽 세 값의 재검증(helper는 `addons.nix`의 `version`):
 
@@ -142,6 +145,54 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 `rev.ivlFct`, `rev.hardFactor`, `lapse.mult`, `lapse.minInt`, `lapse.leechFails`, `lapse.leechAction`.
 현 버전에서 없는 키·범위 밖 값·프리셋 ID/name 교체는 거부한다. FSRS 설정 전체 편집은 지원하지 않는다.
 
+## 노트 연결
+
+개념 관계의 저장 형식은 Anki Note Linker의 `[표시 제목|nid1234567890123]`이다. 제목에 `[`가 있으면
+`\[`로 이스케이프하고, 다른 링크의 끝으로 해석될 수 있는 `|nid<13자리>]` 문자열은 제목에 넣지 않는다.
+note ID는 조회 결과로 확인하고 삭제·재생성·가져오기 뒤 다시 확인한다.
+card ID는 사용자가 특정 출제 카드를 LLM에 지목하는 별도 포인터이며 Note Linker 형식에 넣지 않는다.
+필드에 raw `anki://x-callback-url`이나 이를 감싼 `<a>`를 저장하지 않는다.
+
+Desktop은 활성 [Anki Note Linker](https://github.com/gugutu/Anki-Note-Linker)가 marker를 내부
+Previewer 링크로 바꾼다. macOS URL scheme에 넘기지 않으므로 Finder의 “열도록 설정한 응용 프로그램이 없음”
+경로를 사용하지 않는다. MiniPC는 필드·템플릿을 저장하고 동기화할 뿐이므로 GUI add-on을 설치하지 않는다.
+
+AnkiMobile은 add-on을 실행하지 못하므로 링크가 있는 필드의 기존 블록 컨테이너에 `linkRender` class를 추가하고,
+카드 뒷면 끝에 `sync-addon/note-link-renderer.html`을 둔다. renderer는 Desktop add-on의
+`window.AnkiNoteLinkerIsActive`를 확인해 중복 실행을 피하고, iPhone/iPad에서만 DOM text node를
+AnkiMobile의 `nid:` 탐색 링크로 바꾼다. 다른 HTML이나 기존 anchor의 `innerHTML`을 다시 쓰지 않는다.
+iPhone의 도착점은 즉시 복습이나 팝업이 아니라 탐색 검색이다.
+
+순수 계획 생성기 `sync-addon/note_links.py`의 `build_plan(model, targets)`에는 최신 native model 또는
+`anki_model_info` 결과와
+`template_name`·`front|back`·`field_name` 대상을 명시한다. 자동으로 모든 필드나 노트 타입을 바꾸지 않는다.
+필드 토큰이 일반 HTML 본문에 정확히 한 번 있을 때만 감싸고, 중복·부분 설치·불완전 HTML·stale target은
+거절한다. 반환한 변경·원복 입력에는 model ID와 양면의 예상 이전 값이 들어간다. helper는 사전 동기화 뒤
+현재 값이 이 예상값과 정확히 같을 때만 준비하므로 계획 뒤 바뀐 템플릿을 덮지 않는다. 카드 ID 조각을 포함한
+현재 템플릿을 새로 읽어 계획하며 기존 앞면을 재구성하지 않는다. `anki_prepare_model_change`와 아래 root 승인
+경로로 적용한다.
+
+실엔진 테스트는 템플릿 적용·원복 전후 note/card/revlog와 카드 ID UI 보존을 검사하지만 JavaScript를
+실행하지 않는다. Mac 복습 화면에서는 OS 오류 팝업 없이 내부 Previewer가 정확한 노트를 여는지,
+iPhone에서는 탐색 결과가 정확히 한 노트인지와 복습 화면 복귀·일정 무변경을 각각 실측한다.
+
+운영 도입과 기존 raw 링크 이전은 다음 순서를 고정한다.
+
+1. helper 2.1.0과 MCP metadata를 배포·재조회한다.
+2. 아래 구조 변경 절차대로 Mac·AnkiMobile을 각각 동기화하고 작업 중 복습·편집을 멈춘다. 호스트도 normal
+   sync한 뒤 최신 model을 읽어 CAS가 포함된 템플릿 변경을 준비·root 승인·Upload한다.
+3. 운영 계정에 disposable 두 노트만 만들고 서로 연결한다. Mac 내부 Previewer와 iPhone 탐색·복귀가 모두
+   정확하고 일정·revlog가 그대로인지 확인한 다음 시험 노트를 삭제하고 개수 복귀를 확인한다.
+4. 다시 host sync하고 전체 노트의 모든 필드를 읽어 실제 anchor인 strict legacy shape만 변환한다. 각 수정에
+   바꿀 필드의 정확한 이전 값을 `expected_fields`로 함께 넣고 제목·대상 nid·순서, 대상 존재와 raw URL 잔여를
+   검사한다.
+5. 전체를 하나의 `anki_update_notes_fields` 요청으로 preview한다. 20개 초과 확인을 작은 작업으로 쪼개
+   우회하지 않고 같은 request ID·token으로 승인한다.
+6. 전체 readback에서 marker 수와 이전 manifest가 일치하고, 다른 필드·note/card ID·태그·flag·일정·revlog가
+   보존됐는지 확인한다. Mac·iPhone을 동기화해 이전된 실제 링크 하나를 다시 실측한다.
+
+필드 복구점과 템플릿 원본은 서로 다른 복구 경로다. 실패 시 운영 프로필에 `.colpkg`를 직접 import하지 않는다.
+
 ## 카드 ID 복사
 
 복습 화면의 `카드 ID 복사` 버튼은 현재 카드의 `{{CardID}}`를 문자열로 받아 `cid:<ID>`를 복사한다.
@@ -154,7 +205,8 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 컬렉션을 직접 읽거나 바꾸지 않는다. 원래 ALL/ANY 카드 생성 조건 안에만 버튼을 넣고, `FrontSide`가 있는
 뒷면은 앞면의 버튼을 상속한다. 기존 CSS·필드·템플릿 본문은 유지하며, 불명확한 HTML이나 중복 설치는 거절한다.
 실제 적용은 각 변경안을 `anki_prepare_model_change(action="model_template_update", ...)`로 준비한 뒤
-아래 root 승인·복구점 경로를 따른다. `original` 쌍은 같은 경로의 원복 입력이다.
+아래 root 승인·복구점 경로를 따른다. 변경안은 원본 template을, `original` 원복 입력은 적용된 template을
+각각 예상 이전 값으로 묶어 계획 뒤 최신 편집을 덮지 않는다.
 
 적용된 타입의 기존 카드와 이후 생성 카드는 같은 버튼을 사용한다. 새로 만들거나 가져온 **다른 노트 타입**에는
 자동 설치하지 않는다. 이 경우 원본을 확인하고 같은 준비·기기 검증 절차를 거친다.
@@ -166,6 +218,19 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 Mac/iPhone에서 문제·정답·형제 카드의 버튼을 누른 뒤 실제로 붙여넣은 값의 대조를 구분한다.
 버튼 클릭으로 정답이 열리거나 평가되지 않는지도 확인한다. API 성공 반환이나 성공 문구만으로
 실기기의 클립보드 호환성을 확정하지 않는다.
+
+## Mac GUI 자동화 안전 경계
+
+Computer History 관찰 설정에서는 Anki bundle ID `net.ankiweb.anki`를 제외한다. 이 규칙은 백그라운드
+Computer History에만 적용되며, 명시적인 Computer Use를 Anki 전체에서 금지하지 않는다. 일반 덱 선택·복습·
+동기화 화면과 iPhone Mirroring은 계속 사용할 수 있다.
+
+Anki 26.9.2/Qt 6.11.2에서 선택된 행이 있는 `탐색` 창의 접근성 트리를 읽을 때 `libqcocoa`의
+`NSAccessibility` 경로로 충돌한 기록이 있고, 사용자는 편집 창에서도 반복 충돌을 보고했다. 격리 임시
+프로필의 A/B 재현 시험을 통과하기 전까지 독립·내장 편집 창 또는 선택 행이 있는 `탐색` 창을 Computer Use로
+열지 않으며, 그 안에서 조회·클릭·키 입력·스크롤 등 어떤 Computer Use 조작도 하지 않는다. MCP/API나 사용자
+수동 조작을 사용하고, 위험 창을 닫으면 일반 화면에서 Computer Use를 재개한다. 근거는 [Anki selected-row Browse 충돌](https://forums.ankiweb.net/t/macos-accessibility-scan-can-crash-browse-when-a-row-is-selected/70882)과
+[Codex Qt 앱 접근성 충돌 #41374](https://github.com/openai/codex/issues/41374)이다.
 
 ## 검토 표시와 메모
 
@@ -228,6 +293,11 @@ Mac/iPhone에서 문제·정답·형제 카드의 버튼을 누른 뒤 실제로
 - 일반 동기화의 급감 게이트는 유지한다. 정당한 대량 삭제로 게이트가 걸려도 MCP가 기준값을 초기화하지 않는다.
 
 ## 구조 변경과 승인 Upload
+
+구조 변경은 AnkiWeb에서 전체 Upload를 요구할 수 있으므로, 먼저 연결된 Mac·AnkiMobile을 각각 직접 동기화해
+로컬 변경을 AnkiWeb에 올리고 성공 화면을 확인한다. 그 뒤 구조 변경·Upload·각 클라이언트의 후속 동기화가
+끝날 때까지 모든 클라이언트에서 복습·편집을 중지한다. 호스트의 `mobile_upload_confirmed=false`는 이 절차를
+대신할 수 없다. 어떤 클라이언트에 미전송 변경이 남았는지 불명확하면 구조 변경을 시작하지 않는다.
 
 `anki_prepare_model_change`의 preview에서 필드/템플릿, 영향 수, 복구점·전체 동기화 필요성을 확인한다.
 실제 변경과 AnkiWeb Upload를 승인한 운영자가 MiniPC에서 다음 명령을 실행한다.
