@@ -13,6 +13,7 @@ import unicodedata
 from typing import Any
 
 from .operations import OperationError, decode_media, filename
+from . import note_link_feedback
 
 
 # A small, documented subset of the legacy deck-config representation. Preset
@@ -66,6 +67,18 @@ class AnkiAdapter:
         if self.mw.col is None:
             raise OperationError("collection-not-open")
         return self.mw.col
+
+    def note_link_snapshot(self) -> dict[str, Any]:
+        # This runs on Anki's main thread under the helper mutation lock. Read
+        # directly through Anki's live DB, never open another collection handle.
+        rows = self.col.db.all("select id, mid, flds from notes")
+        models = {}
+        for mid in {row[1] for row in rows}:
+            model = self.col.models.get(mid)
+            if model is None:
+                raise OperationError("note-link-note-type-unavailable")
+            models[mid] = [field["name"] for field in model["flds"]]
+        return note_link_feedback.snapshot(rows, models)
 
     def _rows(self, table: str, column: str, values: list[int]) -> list[list[Any]]:
         # Names are caller constants; values always use bound SQL parameters.

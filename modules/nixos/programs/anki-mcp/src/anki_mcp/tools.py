@@ -205,6 +205,7 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         "Add notes. Every note gets the 'mcp::added' tag so MCP-created cards stay identifiable. "
         "Duplicates (same first field in the deck) are rejected unless allow_duplicate. Returns an operation receipt "
         "with per-note outcomes in result.results (null noteId = unconfirmed/failed, see errors). "
+        "Inspect the separate link_check for newly missing stored Note Linker references; never repeat a write to rerun it. "
         "Normal sync runs before and after writes. Reuse request_id "
         "for every retry. More than 20 affected notes/cards returns a preview requiring user confirmation. "
         "In 검토 메모, use plain-language cloze examples such as 'c1: answer', never literal cloze markup: "
@@ -223,6 +224,7 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         "Replace the given fields of a note (other fields unchanged). Card ids, scheduling and review "
         "history are preserved for existing cards. Changed templates/cloze fields may generate new cards. "
         "Returns an operation receipt; use anki_note_info for readback. Reuse request_id for retries. "
+        "Inspect link_check for newly missing stored Note Linker references; diagnostic failure does not undo the write. "
         "A verified media-free restore point is created before every field edit, including one note. "
         "For read-modify-write changes, pass expected_fields with exact old values for the same keys. "
         "검토 메모 can contain multiple paragraphs. Describe cloze examples as 'c1: answer', never literal "
@@ -247,6 +249,7 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         "More than 20 affected notes/cards, including anticipated new cards, requires preview/confirmation.\n"
         "For migrations, include expected_fields with each note's exact old values for the replaced keys;\n"
         "a mismatch after pre-sync rejects the whole operation before backup or writes.\n"
+        "Inspect the separate link_check for newly missing stored Note Linker references, including partial writes.\n"
         "Results list each note as applied, unknown or not-attempted. An uncertain write stops the batch;\n"
         "no automatic rollback. Inspect partial/unknown receipts instead of repeating with a new request_id.\n"
         "Reuse the same request_id for retries. 검토 메모 supports multiple paragraphs: describe cloze\n"
@@ -314,7 +317,8 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         """Preview deletion of notes and ALL their cards. Existing review history is retained, including in
         today_reviews. affected_review_rows is the pre-deletion scope, not a deleted-row count;
         retained_review_rows in the result is measured after deletion. Always show the preview and get user
-        confirmation, then repeat the same request_id/token with confirm=true. Requires a verified restore point."""
+        confirmation, then repeat the same request_id/token with confirm=true. Requires a verified restore point.
+        Inspect link_check for remaining notes whose stored Note Linker references became missing; do not automatically repair them."""
         return await operations.run("delete_notes", {"note_ids": note_ids},
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
 
@@ -337,7 +341,8 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         """Preview deleting decks including subdecks and their affected cards. Existing review history is
         retained, including in today_reviews. affected_review_rows is the pre-deletion scope, not a
         deleted-row count; retained_review_rows in the result is measured after deletion. Filtered/Default
-        deck behavior is explained in the preview. Always requires user confirmation and a verified restore point."""
+        deck behavior is explained in the preview. Always requires user confirmation and a verified restore point.
+        Inspect the separate link_check for remaining notes whose stored Note Linker references became missing."""
         return await operations.run("delete_decks", {"deck_names": deck_names},
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
 
