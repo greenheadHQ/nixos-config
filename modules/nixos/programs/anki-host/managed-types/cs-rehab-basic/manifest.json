@@ -1,0 +1,8 @@
+{
+  "source_schema_version": 1,
+  "model": "model.json",
+  "asset": {
+    "filename": "_anki-syntax-hljs-11.12.0-fd009500d0c826a5.min.js",
+    "source": "code-highlighting/dist/_anki-syntax-hljs-11.12.0-fd009500d0c826a5.min.js"
+  }
+}

@@ -39,6 +39,8 @@ from .access import Access
 from .operation_adapter import AnkiAdapter
 from .operations import Operations, OperationError, digest, filename, identifier
 from .schema import SchemaOperations
+from .managed_bundle import ManagedBundleError
+from .managed_drift import ManagedDriftError
 
 ADDON_VERSION = os.environ.get("ANKI_HOST_ADDON_VERSION") or "unknown"
 BIND = "127.0.0.1"
@@ -80,6 +82,8 @@ _state: dict[str, Any] = {
     "collection_open": False,
 }
 _operations: Operations | None = None
+_managed_runtime = None
+MANAGED_BUNDLE = os.environ.get("ANKI_HOST_MANAGED_BUNDLE")
 
 
 class BusyError(RuntimeError):
@@ -410,6 +414,16 @@ def _sync(mode: str) -> dict[str, Any]:
     }
     _state["last_sync"] = result
     _log(f"sync mode={mode} required={required} action={action}")
+    if MANAGED_BUNDLE:
+        # The successful sync observes local post-merge bytes under this same
+        # lock. A refused/failed sync never re-labels a cached report as current.
+        if action == "normal":
+            try:
+                result["managed"] = _managed().check()
+            except Exception:
+                result["managed"] = {"status": "unavailable", "reason": "post-sync-check-failed"}
+        else:
+            result["managed"] = {"status": "unavailable", "reason": "sync-not-completed"}
     return result
 
 
@@ -545,9 +559,98 @@ def _ops() -> Operations:
     global _operations
     _require_col()
     if _operations is None:
-        _operations = Operations(Path(STATE_DIR) / "operations", AnkiAdapter(aqt.mw, MEDIA_LIMIT), _restore_point,
+        _operations = Operations(Path(STATE_DIR) / "operations",
+                                 AnkiAdapter(aqt.mw, MEDIA_LIMIT, _managed_guard if MANAGED_BUNDLE else None), _restore_point,
                                  ttl=OPERATION_TTL, bulk_limit=BULK_LIMIT, media_limit=MEDIA_LIMIT)
     return _operations
+
+
+def _managed_guard(spec):
+    if spec["action"] in ("add_notes", "update_fields", "update_fields_bulk"):
+        _managed().guard(spec)
+
+
+def _managed_sync_status():
+    try:
+        result = json.loads((Path(STATE_DIR) / "sync-status.json").read_text())
+    except (OSError, ValueError):
+        result = {"result": "unavailable"}
+    # The shell publishes success after /sync returns. Include the in-process
+    # observation separately rather than claiming that old persistent run is new.
+    last = _state["last_sync"] or {}
+    # Do not retain the result object: its managed report contains this summary.
+    # Explicit scalar projection keeps /sync and /status JSON acyclic.
+    return {**result, "helper_last_sync": {key: last.get(key) for key in ("at", "mode", "action", "required")}}
+
+
+def _managed_restore_point(operation_id):
+    return {**_restore_point(operation_id),
+            "path": str(Path(STATE_DIR) / "restore-points" / (operation_id + ".colpkg"))}
+
+
+def _managed():
+    global _managed_runtime
+    _require_col()
+    if not MANAGED_BUNDLE:
+        raise OperationError("managed-types-not-configured-for-instance")
+    if _managed_runtime is None:
+        from .managed_runtime import ManagedRuntime
+        _managed_runtime = ManagedRuntime(
+            aqt.mw, Path(STATE_DIR) / "managed-types", Path(MANAGED_BUNDLE), instance=INSTANCE,
+            snapshot=_collection_identity, restore_point=_managed_restore_point,
+            sync_status=_managed_sync_status, ttl=OPERATION_TTL,
+            source_revision=os.environ.get("ANKI_HOST_MANAGED_SOURCE_REV", "unknown"),
+            credential_file=Path(os.environ["CREDENTIALS_DIRECTORY"]) / "pushover")
+    return _managed_runtime
+
+
+def _managed_request(path, body):
+    # This allowlist rejects extra payload, version, file, schema or approval
+    # arguments; the operation credential can never enroll a new baseline.
+    required_optional = {
+        "/managed/check": (set(), {"model_name", "check_latest"}),
+        "/managed/history": (set(), {"model_name", "limit", "offset"}),
+        "/managed/restore/prepare": ({"request_id", "model_name"}, set()),
+        "/managed/restore/apply": ({"request_id", "preview_token", "confirm"}, set()),
+        "/managed/restore/status": ({"request_id"}, set()),
+        "/managed/restore/delivery": ({"request_id"}, set()),
+        "/managed/restore/diagnose": ({"request_id"}, set()),
+        "/managed/enrollment/prepare": (set(), set()),
+        "/managed/enrollment/apply": ({"operation_id", "preview_token", "confirm"}, set()),
+        "/managed/notification/retry": ({"incident_id"}, set()),
+    }
+    if path not in required_optional:
+        raise OperationError("managed-route-not-supported")
+    required, optional = required_optional[path]
+    if not required <= body.keys() or body.keys() - required - optional:
+        raise OperationError("managed-invalid-parameters")
+    name = body.get("model_name", "CS 재활 Basic")
+    if not isinstance(name, str):
+        raise OperationError("managed-invalid-model-name")
+    managed = _managed()
+    if path == "/managed/check":
+        if type(body.get("check_latest", True)) is not bool:
+            raise OperationError("managed-invalid-check-latest")
+        return managed.check(name, latest=body.get("check_latest", True))
+    if path == "/managed/history":
+        return managed.store.history(name, limit=body.get("limit", 20), offset=body.get("offset", 0))
+    if path.startswith("/managed/restore/") and managed.restores is None:
+        raise OperationError("managed-restore-journal-unavailable-operator-repair-required")
+    if path == "/managed/restore/prepare":
+        return managed.restores.prepare(name, body["request_id"])
+    if path == "/managed/restore/apply":
+        return managed.restores.apply(body["request_id"], body["preview_token"], body["confirm"])
+    if path == "/managed/restore/status":
+        return managed.restores.status(body["request_id"])
+    if path == "/managed/restore/delivery":
+        return managed.restores.delivery(body["request_id"])
+    if path == "/managed/restore/diagnose":
+        return managed.restores.diagnose(body["request_id"])
+    if path == "/managed/enrollment/prepare":
+        return managed.enrollment_prepare()
+    if path == "/managed/enrollment/apply":
+        return managed.enrollment_apply(body["operation_id"], body["preview_token"], body["confirm"])
+    return managed.store.retry_notification(body["incident_id"])
 
 
 def _collection_identity() -> dict[str, Any]:
@@ -753,13 +856,15 @@ class _Handler(BaseHTTPRequestHandler):
                 result = _mutating("model-info", lambda: AnkiAdapter(aqt.mw, MEDIA_LIMIT).model_info(str(body["model_name"])))
             elif path == "/media" and self.command == "POST":
                 result = _mutating("media", _media, body)
+            elif path.startswith("/managed/") and self.command == "POST":
+                result = _mutating("managed-type", _managed_request, path, body)
             else:
                 self._reply(404, {"ok": False, "error": "not-found"})
                 return
             self._reply(200, {"ok": True, "result": result})
         except BusyError as err:
             self._reply(409, {"ok": False, "error": "busy", "busy": err.current})
-        except OperationError as err:
+        except (OperationError, ManagedBundleError, ManagedDriftError) as err:
             self._reply(400, {"ok": False, "error": str(err)})
         except Exception as err:  # noqa: BLE001
             # Upstream exceptions can include note contents or request values.
@@ -825,8 +930,9 @@ def _on_profile_open() -> None:
 
 
 def _on_profile_close() -> None:
-    global _operations
+    global _operations, _managed_runtime
     _operations = None
+    _managed_runtime = None
     _state["collection_open"] = False
 
 

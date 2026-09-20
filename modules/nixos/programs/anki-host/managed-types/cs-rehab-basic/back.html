@@ -1,0 +1,218 @@
+{{FrontSide}}
+
+<hr id="answer">
+
+<div class="answer anki-code-scope">{{답}}</div>
+{{#설명}}<div class="explanation linkRender anki-code-scope">{{설명}}</div>{{/설명}}
+{{#출처}}<div class="source linkRender anki-code-scope">{{출처}}</div>{{/출처}}<!-- anki-note-link-mobile-renderer -->
+<script>
+(() => {
+  if (window.AnkiNoteLinkerIsActive) return;
+  const root = document.documentElement;
+  if (!root.classList.contains("iphone") && !root.classList.contains("ipad")) return;
+
+  if (window.AnkiNoteLinkerMobileVersion !== 3) {
+    const pattern = /\[((?:[^\[]|\\\[)*?)\|nid(\d{13})\]/g;
+    const inline = new Set("B STRONG I EM U S STRIKE DEL INS SPAN FONT SMALL BIG SUB SUP MARK".split(" "));
+    const excluded = "a,button,select,textarea,script,style,pre,code,svg,math,mjx-container,.MathJax,.MathJax_Preview,.katex,[contenteditable]";
+    const escaped = (value, index) => {
+      let slashes = 0;
+      while (index > 0 && value[--index] === "\\") slashes++;
+      return slashes % 2 !== 0;
+    };
+    const renderRun = nodes => {
+      const text = nodes.map(node => node.nodeValue).join("");
+      // MathJax may not have replaced Anki's native TeX delimiters yet.
+      const math = Array.from(text.matchAll(/\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]/g));
+      const positions = [];
+      let offset = 0;
+      nodes.forEach(node => {
+        positions.push({ node, start: offset, end: offset + node.length });
+        offset += node.length;
+      });
+      const point = (index, end = false) => positions.find(position =>
+        end ? position.start < index && index <= position.end
+          : position.start <= index && index < position.end);
+      const matches = Array.from(text.matchAll(pattern));
+      // Work backwards so earlier node offsets remain valid after replacement.
+      matches.reverse().forEach(match => {
+        if (escaped(text, match.index)) return;
+        if (math.some(item => item.index < match.index + match[0].length
+            && item.index + item[0].length > match.index)) return;
+        const start = point(match.index);
+        const titleEnd = match.index + 1 + match[1].length;
+        const suffix = point(titleEnd);
+        const end = point(match.index + match[0].length, true);
+        // Only a complete inline title is moved. A marker spanning partially
+        // opened tags or formatting inside its nid suffix stays literal.
+        if (!start || !suffix || !end || suffix.node !== end.node
+            || start.node.parentNode !== end.node.parentNode) return;
+        const whole = document.createRange();
+        whole.setStart(start.node, match.index - start.start);
+        whole.setEnd(end.node, match.index + match[0].length - end.start);
+        const title = document.createRange();
+        title.setStart(start.node, match.index + 1 - start.start);
+        title.setEnd(suffix.node, titleEnd - suffix.start);
+        const content = title.extractContents();
+        const walker = document.createTreeWalker(content, 4);
+        while (walker.nextNode()) {
+          const node = walker.currentNode;
+          node.nodeValue = node.nodeValue.replace(/\\\[/g, "[");
+        }
+        const link = document.createElement("a");
+        link.className = "noteLink";
+        link.href = "anki://x-callback-url/search?query=nid%3A" + match[2];
+        link.appendChild(content);
+        whole.deleteContents();
+        whole.insertNode(link);
+      });
+    };
+    const renderContainer = container => {
+      if (container.closest(excluded)) return;
+      let run = [];
+      const flush = () => {
+        if (run.length) renderRun(run);
+        run = [];
+      };
+      const walk = parent => {
+        // Snapshot children: rendering a previous run can insert new nodes.
+        Array.from(parent.childNodes).forEach(node => {
+          if (node.nodeType === 3) run.push(node);
+          else if (node.nodeType === 1 && !node.matches(excluded)) {
+            if (inline.has(node.tagName)) walk(node);
+            else {
+              flush();
+              walk(node);
+              flush();
+            }
+          } else flush();
+        });
+      };
+      walk(container);
+      flush();
+    };
+    window.AnkiNoteLinkerMobileVersion = 3;
+    window.AnkiNoteLinkerRenderMobile = () => {
+      document.querySelectorAll(".linkRender").forEach(renderContainer);
+    };
+  }
+
+  if (document.readyState === "loading") {
+    if (!window.AnkiNoteLinkerMobileRenderPending) {
+      window.AnkiNoteLinkerMobileRenderPending = true;
+      document.addEventListener("DOMContentLoaded", () => {
+        window.AnkiNoteLinkerMobileRenderPending = false;
+        window.AnkiNoteLinkerRenderMobile();
+      }, { once: true });
+    }
+  } else {
+    window.AnkiNoteLinkerRenderMobile();
+  }
+})();
+</script>
+{{#질문}}<!-- anki-code-highlight-v1 -->
+<script>
+(() => {
+  const ASSET = "_anki-syntax-hljs-11.12.0-fd009500d0c826a5.min.js";
+  const CSS = "/* Scoped GitHub-inspired palette; app night mode is authoritative, not OS theme. */\n.anki-code-scope pre {\n  box-sizing: border-box;\n  max-width: 100%;\n  min-width: 0;\n  overflow-x: auto;\n  white-space: pre;\n  overflow-wrap: normal;\n  word-break: normal;\n  tab-size: 4;\n  margin: 1em 0;\n  padding: 1em 1.1em;\n  border: 1px solid #d8dee4;\n  border-radius: 10px;\n  background: #f6f8fa;\n  color: #24292f;\n  text-align: left;\n  font: 400 0.88em/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;\n  -webkit-text-size-adjust: 100%;\n}\n.anki-code-scope pre > code {\n  display: block;\n  min-width: max-content;\n  padding: 0;\n  border: 0;\n  border-radius: 0;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  white-space: inherit;\n  overflow-wrap: inherit;\n  word-break: inherit;\n}\n.anki-code-scope .hljs-keyword, .anki-code-scope .hljs-selector-tag, .anki-code-scope .hljs-literal { color: #cf222e; }\n.anki-code-scope .hljs-title, .anki-code-scope .hljs-section { color: #8250df; }\n.anki-code-scope .hljs-string, .anki-code-scope .hljs-regexp { color: #0a3069; }\n.anki-code-scope .hljs-number, .anki-code-scope .hljs-attr, .anki-code-scope .hljs-variable, .anki-code-scope .hljs-type, .anki-code-scope .hljs-built_in { color: #0550ae; }\n.anki-code-scope .hljs-comment, .anki-code-scope .hljs-quote { color: #57606a; }\n.anki-code-scope .hljs-name, .anki-code-scope .hljs-selector-class, .anki-code-scope .hljs-selector-id { color: #116329; }\n.anki-code-scope .hljs-meta, .anki-code-scope .hljs-symbol, .anki-code-scope .hljs-bullet { color: #953800; }\n.anki-code-scope .hljs-emphasis { font-style: italic; }\n.anki-code-scope .hljs-strong { font-weight: 600; }\n:is(.nightMode, .night_mode) .anki-code-scope pre,\n.anki-code-scope:is(.nightMode, .night_mode) pre { background: #161b22; color: #e6edf3; border-color: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-keyword,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-tag,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-literal { color: #ff7b72; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-title,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-section { color: #d2a8ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-string,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-regexp { color: #a5d6ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-number,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-attr,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-variable,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-type,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-built_in { color: #79c0ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-comment,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-quote { color: #8b949e; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-name,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-class,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-id { color: #7ee787; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-meta,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-symbol,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-bullet { color: #ffa657; }\n";
+  const KEY = "AnkiCodeHighlightV1";
+  if (!window[KEY]) {
+    const records = new WeakMap();
+    const aliases = Object.freeze({
+      js: "javascript", javascript: "javascript", jsx: "javascript",
+      ts: "typescript", typescript: "typescript", tsx: "typescript",
+      html: "xml", xml: "xml", css: "css", json: "json",
+      bash: "bash", sh: "bash", shell: "bash", sql: "sql", c: "c",
+      python: "python", py: "python", java: "java", yaml: "yaml", yml: "yaml", http: "http"
+    });
+    let pending = null;
+    let generation = 0;
+    const library = () => {
+      const value = window.AnkiSyntaxHighlightLibraryV1;
+      return value && value.version === "11.12.0" ? value : null;
+    };
+    const load = () => {
+      if (library()) return Promise.resolve(library());
+      if (pending) return pending;
+      pending = new Promise(resolve => {
+        const script = document.createElement("script");
+        script.src = ASSET;
+        script.async = true;
+        script.dataset.ankiSyntaxAsset = ASSET;
+        let timer;
+        const finish = value => {
+          clearTimeout(timer);
+          script.onload = script.onerror = null;
+          script.remove();
+          resolve(value);
+        };
+        script.onload = () => finish(library());
+        script.onerror = () => finish(null);
+        timer = setTimeout(() => finish(null), 3000);
+        document.head.appendChild(script);
+      }).then(value => { pending = null; return value; });
+      return pending;
+    };
+    const render = async () => {
+      const current = ++generation;
+      const started = performance.now();
+      const nodes = Array.from(document.querySelectorAll(".anki-code-scope pre > code"));
+      const metrics = { blocks: nodes.length, highlighted: 0, skipped: 0, loadMs: 0, highlightMs: 0 };
+      if (!nodes.length) return metrics;
+      const engine = await load();
+      if (current !== generation) return { stale: true };
+      metrics.loadMs = performance.now() - started;
+      const painting = performance.now();
+      let characters = 0;
+      for (const code of nodes) {
+        if (!code.isConnected) continue;
+        const text = code.textContent;
+        const classes = Array.from(code.classList).filter(name => name.startsWith("language-"));
+        const name = classes.length === 1 ? classes[0].slice(9).toLowerCase() : "";
+        const language = Object.hasOwn(aliases, name) ? aliases[name] : null;
+        const previous = records.get(code);
+        if (previous && previous.html === code.innerHTML && previous.language === language) continue;
+        // Only replace markup that this exact DOM instance produced. Never flatten
+        // cloze spans, edited HTML, anchors, or other renderers' output.
+        if (code.children.length && (!previous || previous.html !== code.innerHTML)) {
+          metrics.skipped++;
+          continue;
+        }
+        if (previous) { code.textContent = text; code.classList.remove("hljs"); }
+        characters += text.length;
+        if (!engine || !language || text.length > 4096 || characters > 16384 ||
+            metrics.highlighted >= 32 || performance.now() - painting > 16) {
+          metrics.skipped++;
+          continue;
+        }
+        try {
+          const result = engine.highlight(text, { language, ignoreIllegals: true });
+          code.innerHTML = result.value;
+          code.classList.add("hljs");
+          records.set(code, { html: code.innerHTML, language });
+          metrics.highlighted++;
+        } catch (_) {
+          // Loading or parsing must never prevent a question/answer from showing.
+          code.textContent = text;
+          code.classList.remove("hljs");
+          metrics.skipped++;
+        }
+      }
+      metrics.highlightMs = performance.now() - painting;
+      window[KEY].lastMetrics = metrics;
+      return metrics;
+    };
+    window[KEY] = { render, lastMetrics: null };
+  }
+  if (!document.getElementById("anki-code-style-v1")) {
+    const style = document.createElement("style");
+    style.id = "anki-code-style-v1";
+    style.textContent = CSS;
+    document.head.appendChild(style);
+  }
+  // Anki reuses its WebView, including globals, across question/answer/card changes.
+  // Each script invocation gets a new generation; a pending old card cannot paint it.
+  window[KEY].render();
+})();
+</script>
+{{/질문}}

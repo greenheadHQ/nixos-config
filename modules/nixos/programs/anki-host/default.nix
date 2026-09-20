@@ -40,6 +40,7 @@
   pkgs,
   lib,
   constants,
+  inputs,
   ...
 }:
 
@@ -159,6 +160,8 @@ let
       }
       // lib.optionalAttrs inst.sync.enable {
         ANKI_HOST_SYNC_CREDENTIALS = ankiwebCredPath;
+        ANKI_HOST_MANAGED_BUNDLE = "${import ./managed-types.nix { inherit pkgs; }}";
+        ANKI_HOST_MANAGED_SOURCE_REV = inputs.self.rev or inputs.self.dirtyRev or "unknown";
       }
       // lib.optionalAttrs inst.allowImport {
         # 컬렉션 교체(/import-colpkg) 라우팅 — 구성 시점 결정. sync.enable과의 배타는 아래 assertion
@@ -169,12 +172,14 @@ let
         Type = "simple";
         User = user;
         Group = user;
-        LoadCredential = map (role: "${role}:${constants.paths.ankiHostCredentials}/${name}/${role}") [
-          "read"
-          "operation"
-          "maintenance"
-          "schema"
-        ];
+        LoadCredential =
+          (map (role: "${role}:${constants.paths.ankiHostCredentials}/${name}/${role}") [
+            "read"
+            "operation"
+            "maintenance"
+            "schema"
+          ])
+          ++ lib.optional inst.sync.enable "pushover:${config.age.secrets.pushover-anki.path}";
         StateDirectory = "anki-host/${name}";
         StateDirectoryMode = "0700";
         RuntimeDirectory = "anki-host/${name}";

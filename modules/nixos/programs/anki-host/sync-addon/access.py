@@ -45,4 +45,11 @@ class Access:
             return role == "maintenance"
         if method == "POST" and path in ("/schema/inspect", "/schema/backup", "/schema/apply"):
             return role == "schema"
+        if method == "POST" and path in ("/managed/check", "/managed/history", "/managed/restore/status"):
+            return role in ("read", "operation", "schema")
+        if method == "POST" and path in ("/managed/restore/prepare", "/managed/restore/apply", "/managed/restore/delivery"):
+            return role in ("operation", "schema")
+        if method == "POST" and path in ("/managed/enrollment/prepare", "/managed/enrollment/apply", "/managed/notification/retry",
+                                         "/managed/restore/diagnose"):
+            return role == "schema"
         return False

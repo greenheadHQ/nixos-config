@@ -1517,12 +1517,20 @@ let
             builtins.elem "anki-host-keys-${name}.service" svc.requires
             &&
               svc.serviceConfig.LoadCredential
-              == map (role: "${role}:${constants.paths.ankiHostCredentials}/${name}/${role}") [
+              == (map (role: "${role}:${constants.paths.ankiHostCredentials}/${name}/${role}") [
                 "read"
                 "operation"
                 "maintenance"
                 "schema"
-              ]
+              ])
+              ++
+                nixpkgsLib.optional ankiHostCfg.instances.${name}.sync.enable
+                  "pushover:${nixosCfg.age.secrets.pushover-anki.path}"
+            && (svc.environment ? ANKI_HOST_MANAGED_BUNDLE) == ankiHostCfg.instances.${name}.sync.enable
+            &&
+              (builtins.any (
+                package: (package.name or "") == "anki-host-managed-${name}"
+              ) nixosCfg.environment.systemPackages) == (svc.environment ? ANKI_HOST_MANAGED_BUNDLE)
           )
           [
             "main"
