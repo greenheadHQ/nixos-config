@@ -10,7 +10,7 @@ No collection, network, credentials, or mutation API is accessed here.
 """
 
 import argparse
-from collections import Counter
+from collections import Counter, defaultdict
 import json
 import os
 from pathlib import Path
@@ -70,7 +70,12 @@ def audit(snapshot):
                     "end": match.end(),
                 })
     missing = [item for item in occurrences if not item["target_exists"]]
-    counts = Counter(item["target_note_id"] for item in missing)
+    counts = Counter()
+    source_ids = defaultdict(set)
+    for item in missing:
+        target = item["target_note_id"]
+        counts[target] += 1
+        source_ids[target].add(item["source_note_id"])
     return {
         "summary": {
             "notes_scanned": len(notes),
@@ -82,8 +87,7 @@ def audit(snapshot):
         "missing_targets": [{
             "target_note_id": target,
             "occurrences": count,
-            "source_note_ids": sorted({item["source_note_id"] for item in missing
-                                       if item["target_note_id"] == target}),
+            "source_note_ids": sorted(source_ids[target]),
         } for target, count in sorted(counts.items())],
         "occurrences": occurrences,
     }

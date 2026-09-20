@@ -53,6 +53,17 @@ def test_html_entities_escaped_brackets_multiline_and_literal_markers_stay_raw()
     assert report["occurrences"][1]["title_html"] == "example"
 
 
+def test_multiple_targets_keep_their_own_sorted_sources_and_occurrence_counts():
+    other = MISSING + 1
+    data = snapshot({"Body": f"[second|nid{other}] [first|nid{MISSING}] [repeat|nid{other}]"},
+                    {"Body": f"[second again|nid{other}]"},
+                    {"Body": f"[first again|nid{MISSING}]"})
+    assert module.audit(data)["missing_targets"] == [
+        {"target_note_id": MISSING, "occurrences": 2, "source_note_ids": [A, A + 2]},
+        {"target_note_id": other, "occurrences": 3, "source_note_ids": [A, B]},
+    ]
+
+
 def test_ankiconnect_full_field_shape_and_empty_collection():
     data = snapshot({"Body": {"value": f"[yes|nid{A}]", "order": 0}})
     assert module.audit(data)["summary"]["missing_targets"] == 0
