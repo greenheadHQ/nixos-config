@@ -20,7 +20,9 @@ Desktop Anki Note Linker와 AnkiMobile 카드 템플릿이 같은 값을 각 클
 
 배포 후 인증된 `initialize`·`tools/list` 응답에서 지침을 확인한다. 서버 응답만으로 ChatGPT 적용 완료라고 판단하지 않는다.
 ChatGPT 개발자 모드 연결은 연결 설정에서 **새로 고침(Refresh)**을 실행하고 변경된 도구 설명을 확인한다.
-게시된 플러그인은 검토된 metadata 스냅샷을 사용하므로 서버 재스캔 → 새 버전 제출 → 승인된 버전 게시가 필요하다 ([공식 절차](https://developers.openai.com/plugins/deploy/connect-chatgpt#refresh-metadata)).
+게시된 플러그인의 도구 정의는 정기 스캔과 자동 검사를 거쳐 갱신되며, 통과 전에는 이전 정의가 유지된다.
+제출 정보·imported skill 변경은 새 버전 제출·게시가 필요하다 ([개발 연결 새로 고침](https://developers.openai.com/plugins/deploy/connect-chatgpt#refresh-metadata),
+[게시 도구의 지속 검토](https://developers.openai.com/plugins/deploy/app-review#continuous-review-and-tool-updates)).
 갱신 후 새 대화에서 변경된 지침을 검증하고, iPhone의 실제 작성·링크 동작은 실기기에서 확인한다.
 동작하는 연결을 먼저 삭제·재등록하지 않는다. 지침 전달 확인은 LLM 준수나 실기기 동작 검증을 대신하지 않는다.
 
@@ -226,8 +228,13 @@ Computer History에만 적용되며, 명시적인 Computer Use를 Anki 전체에
 동기화 화면과 iPhone Mirroring은 계속 사용할 수 있다.
 
 Anki 26.9.2/Qt 6.11.2에서 선택된 행이 있는 `탐색` 창의 접근성 트리를 읽을 때 `libqcocoa`의
-`NSAccessibility` 경로로 충돌한 기록이 있고, 사용자는 편집 창에서도 반복 충돌을 보고했다. 격리 임시
-프로필의 A/B 재현 시험을 통과하기 전까지 독립·내장 편집 창 또는 선택 행이 있는 `탐색` 창을 Computer Use로
+`NSAccessibility` 경로로 충돌한 기록이 있고, 사용자는 편집 창에서도 반복 충돌을 보고했다.
+개인 데이터·동기화 계정 없이 AnkiConnect만 설치한 격리 프로필에서도 `탐색` 창을 API로 연 뒤에는 생존했지만,
+Computer Use의 스크린샷 요청 직후 같은 접근성 계층 조회에서 충돌했다. Computer History 제외만으로 직접
+Computer Use 호출의 충돌을 막을 수 없으며, 스크린샷만 요청하는 방식도 안전한 우회가 아니다.
+같은 격리 환경의 기본 `Edit Current` 창은 접근성 조회·스크린샷 1회씩 성공했으나, 운영 확장 프로그램과
+모든 편집 상태의 안전을 보장하지 않는다. 재검증은 이처럼 격리 프로필에서 창·확장 구성·조회 방식을 구분한다.
+운영 구성에 대응하는 격리 프로필의 A/B 재현 시험을 통과하기 전까지 독립·내장 편집 창 또는 선택 행이 있는 `탐색` 창을 Computer Use로
 열지 않으며, 그 안에서 조회·클릭·키 입력·스크롤 등 어떤 Computer Use 조작도 하지 않는다. MCP/API나 사용자
 수동 조작을 사용하고, 위험 창을 닫으면 일반 화면에서 Computer Use를 재개한다. 근거는 [Anki selected-row Browse 충돌](https://forums.ankiweb.net/t/macos-accessibility-scan-can-crash-browse-when-a-row-is-selected/70882)과
 [Codex Qt 앱 접근성 충돌 #41374](https://github.com/openai/codex/issues/41374)이다.
