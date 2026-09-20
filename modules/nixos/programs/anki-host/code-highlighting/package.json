@@ -1,0 +1,19 @@
+{
+  "name": "anki-code-highlighting",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "node build.mjs --check",
+    "test:library": "node --test library.test.mjs"
+  },
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "highlight.js": "11.12.0",
+    "jsdom": "30.1.0"
+  }
+}

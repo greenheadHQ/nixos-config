@@ -294,6 +294,9 @@
         {
           inherit (pythonRuntimes) pythonWithTomlkit;
           inherit claudeRcFlock prePushRuntime;
+          ankiCodeHighlightCheck = import ./modules/nixos/programs/anki-host/code-highlight-check.nix {
+            inherit pkgs;
+          };
           # Build/fetch desktop add-ons without building or replacing Anki itself.
           ankiDesktopAddons = pkgs.linkFarm "anki-desktop-addons" (
             nixpkgs.lib.mapAttrsToList (name: path: { inherit name path; }) (

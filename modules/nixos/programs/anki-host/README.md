@@ -227,6 +227,46 @@ Mac/iPhone에서 문제·정답·형제 카드의 버튼을 누른 뒤 실제로
 버튼 클릭으로 정답이 열리거나 평가되지 않는지도 확인한다. API 성공 반환이나 성공 문구만으로
 실기기의 클립보드 호환성을 확정하지 않는다.
 
+## 코드 블록 강조
+
+`CS 재활 Basic`의 명시적으로 선택한 필드에만 `code_highlighting.py` 계획을 적용한다.
+질문·답·설명·출처의 `<pre><code class="language-javascript">…</code></pre>`를 표시할 때
+로컬 highlight.js로 색칠한다. 저장 필드에는 원문과 언어만 남기며 구문별 span은 저장하지 않는다.
+문장 안 `<code>`는 기존 단색 서식을 유지한다. 구형 KaTeX/Markdown/Cloze 템플릿은 변경하지 않는다.
+
+지원 이름은 javascript/js/jsx, typescript/ts/tsx, html/xml, css, json, bash/sh/shell,
+sql, c, python/py, java, yaml/yml, http다. 미지정·미지원·plaintext는 자동 추측 없이 단색이다.
+`&`, `<`, `>`는 HTML text로 이스케이프하고 들여쓰기와 개행을 보존한다.
+코드 예제에 실제 HTML 자식 요소나 cloze span이 있으면 강조를 건너뛰며 평탄화하지 않는다.
+HTML 소스 자체를 실행하는 기능은 없다.
+
+코드는 앱의 밝은/어두운 모드를 따르고, 긴 줄은 코드 블록 내부에서 가로 스크롤한다.
+별도 scoped style을 삽입하므로 기존 모델 CSS 필드는 수정하지 않는다.
+블록당 4,096자·한 화면 총 16,384자·32블록을 초과하면 남은 블록은 단색으로 표시한다.
+16ms를 넘으면 다음 블록 처리를 시작하지 않지만, 실행 중인 한 블록의 시간을 중단하는 보장은 아니다.
+미디어 로드가 실패해도 원문은 즉시 읽을 수 있고 다음 카드에서 다시 시도한다.
+
+배포는 다음 순서로 진행한다.
+
+1. `code-highlighting/README.md`의 고정 버전 빌드 또는
+   `nix develop --command bash tests/run-anki-code-highlight-tests.sh`로 번들과 DOM 계약을 검사한다.
+   `dist/manifest.json`의 JavaScript·라이선스를 신규 미디어로 저장하고 기기별 다운로드를 확인한다.
+   기존 `_highlight.js`와 `_highlights.css`는 덮어쓰지 않는다.
+2. 최신 `anki_model_info`로 `code_highlighting.build_plan(model, targets)`를 만든다.
+   target은 `template_name`, `side`, `field_name`을 명시한다. 노트 유형·필드 범위를 추측하지 않는다.
+   repo 밖에서 planner를 쓰면 `asset_filename`에 검증한 manifest의 파일명을 명시한다.
+   변경 전에 원본 계획·필드·복구점을 확보하고 아래 구조 변경 승인·Upload 절차를 따른다.
+3. `changes[].change`를 기존 `model_template_update`에 전달한다. 원복은 `changes[].original`이다.
+   양쪽 모두 기대 모델 ID와 앞뒤 원문에 묶여 있으므로 나중에 수정된 내용을 덮어쓰지 않는다.
+   알려진 구형 mobile Note Linker renderer는 코드 영역을 건너뛰는 버전으로 함께 바꾼다.
+   미확인 renderer나 부분 설치는 거절한다. Mac에는 선언적 Note Linker 패키지의 동일 호환 패치를 적용한다.
+4. 기존 코드의 언어 보완은 `build_field_patch(note_id, fields, languages_by_field)`로
+   블록 순서별 명시적 언어 목록을 전달한다. 미디어·템플릿 준비 후 `change`를 필드 변경에 사용한다.
+   이 함수는 언어 class와 기존 pre의 두 줄바꿈 style만 바꾸며, 읽은 필드와 기대값이 다르면 거절된다.
+   `original`은 같은 조건으로 보호한 원복 입력이다. 내용을 임의 추정하거나 모호한 HTML을 고치지 않는다.
+5. 호스트 readback과 Mac·iPhone의 앞뒤·야간 모드·오프라인 표시를 각각 확인한다.
+   note/card ID, 일정, 복습 이력, 별표·검토 메모를 보존한다. 호스트 sync 성공만으로 기기 검증을 대신하지 않는다.
+
 ## Mac GUI 자동화 안전 경계
 
 Computer History 관찰 설정에서는 Anki bundle ID `net.ankiweb.anki`를 제외한다. 이 규칙은 백그라운드

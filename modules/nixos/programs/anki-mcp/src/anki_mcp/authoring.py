@@ -26,6 +26,12 @@ AUTHORING_GUIDANCE = """카드 작성 원칙
   anki_model_info로 링크를 넣을 필드에 mobile renderer가 적용됐는지 확인한다. 미적용이면 플랫폼별 URL로 우회하지 말고 템플릿 준비 필요를 보고한다.
   관련 설명·링크는 기본적으로 뒷면의 링크 지원 필드에 둔다. iPhone의 도착점은 즉시 복습이나 팝업이 아니라 탐색 검색이다.
   삭제·재생성·가져오기 후에는 대상을 재확인한다. 역링크를 위해 기존 노트를 자동으로 연쇄 수정하지 않는다.
+- 코드: 독립 코드 예제는 `<pre><code class="language-javascript">…</code></pre>`처럼 저장하고 실제 언어를 명시한다.
+  지원 표시는 javascript/js/jsx, typescript/ts/tsx, html/xml, css, json, bash/sh/shell, sql, c, python/py, java, yaml/yml, http다.
+  도식·출력·자연어는 language-plaintext로 둔다. 언어를 알 수 없으면 추측해 지정하지 않는다. 미지정·미지원 언어는 단색이다.
+  코드 원문의 &, <, >를 HTML text로 이스케이프하고 들여쓰기·개행을 보존한다. 구문 색칠용 span·인라인 색상·자동 줄바꿈 style은 저장하지 않는다.
+  문장 안 식별자는 일반 <code>를 유지한다. Markdown fence를 HTML 대신 저장하지 않는다.
+  anki_model_info에서 코드 강조 renderer 적용 여부를 확인한다. 미적용 유형과 구형 Markdown/Cloze 유형을 자동 교체하지 않는다.
 - 출처: 생성·검증에 실제 사용한 자료를 빠뜨리지 않고 제목·URL 또는 서지정보·장/절/쪽/그림 위치로 남긴다.
   필요한 버전과 실제 확인일, 직접 근거와 보충 자료를 구분한다. 관련 문헌을 무한 수집하거나 참고문헌을 암송하도록 요구하지 않는다.
   개인 자료의 본문·인증 정보를 외부 검색 URL에 넣지 않고, Mac 로컬 경로를 iPhone에서 열 수 있는 출처로 제시하지 않는다.
