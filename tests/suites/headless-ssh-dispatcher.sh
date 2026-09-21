@@ -83,6 +83,7 @@ test_codex_direct_ssh_uses_headless_identity() {
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -93,12 +94,16 @@ targets = [*aliases, network["minipcTailscaleIP"]]
 base_env = dict(os.environ)
 for key in ("CODEX_CI", "CODEX_PROGRAMMATIC", "NIXOS_CONFIG_HEADLESS_SSH"):
     base_env.pop(key, None)
+# Darwin은 배포 대상 시스템 ssh, Linux는 NixOS에서도 존재하는 PATH의 ssh를 쓴다.
+ssh = "/usr/bin/ssh" if sys.platform == "darwin" else shutil.which("ssh")
+assert ssh is not None, "OpenSSH client is required"
 
 def config(target, markers, role="personal"):
     result = subprocess.run(
-        ["/usr/bin/ssh", "-G", "-F", str(root / f"{role}-ssh-config"), target],
-        env={**base_env, **markers}, capture_output=True, text=True, check=True,
+        [ssh, "-G", "-F", str(root / f"{role}-ssh-config"), target],
+        env={**base_env, **markers}, capture_output=True, text=True,
     )
+    assert result.returncode == 0, (target, markers, role, result.stderr)
     values = {}
     for line in result.stdout.splitlines():
         key, value = line.split(" ", 1)
@@ -118,6 +123,10 @@ for marker in ("CODEX_CI", "CODEX_PROGRAMMATIC"):
         assert values.get("controlpath", ["none"]) == ["none"], target
         assert values["hostname"] == [network["minipcTailscaleIP"]], target
         assert values["user"] == ["greenhead"], target
+    # 값 자체를 쉘 명령에 삽입하지 않는다. 비어 있지 않다는 의미만 사용한다.
+    for value in (" ", "*", "quote'\";"):
+        assert config("minipc", {marker: value})["identityfile"] == headless_key
+    assert config("minipc", {marker: ""})["identityfile"] != headless_key
 
 # 기존 GUI 승인 경로, 긴급 키, 다른 호스트, work Mac에는 적용하지 않는다.
 for target in aliases:

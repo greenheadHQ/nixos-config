@@ -12,7 +12,9 @@ let
   onePasswordAgentSock = "${homeDir}/${constants.onePassword.agentSocketRelPath}";
   # 절대경로 ssh·scp·sftp는 PATH dispatcher를 거치지 않는다. Codex가 명시한
   # 환경에서만 기존 무인 키를 선택하고, 일반 터미널은 1Password 경로를 유지한다.
-  codexContext = builtins.toJSON ''test -n "''${CODEX_CI:-}''${CODEX_PROGRAMMATIC:-}"'';
+  # OpenSSH 9.6의 Match 파서는 중첩 escaped quote를 지원하지 않는다. 환경값을
+  # 고정 문자로 치환해 공백·glob도 피하면서 둘 중 하나라도 nonempty인지 검사한다.
+  codexContext = builtins.toJSON "test x\${CODEX_CI:+1}\${CODEX_PROGRAMMATIC:+1} != x";
   minipcPatterns = lib.concatStringsSep "," constants.network.minipcSshHostAliases;
   headlessDispatcher = import ./headless-dispatcher.nix {
     inherit
