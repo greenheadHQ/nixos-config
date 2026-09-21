@@ -41,8 +41,9 @@ macOS MiniPC 경로는 interactive와 automation child가 다름
   파일 metadata, 그리고 `launchctl print gui/$(id -u)/org.nix-community.home.claude-snapshot-path-repair`
   출력으로 repair agent 로드 여부를 확인하되, 실행 중 앱/bridge를 임의로 재시작하지 않는다.
 - automation 경로는 인증 성립까지만 15초 deadline을 적용하고, 인증 뒤 장시간 command는 자르지 않는다.
-- Codex(`CODEX_CI`/`CODEX_PROGRAMMATIC`)의 MiniPC 직접 호출은 SSH config의 조건부
-  identity 선택으로 보완한다. `/usr/bin/ssh`, scp, sftp도 기존 headless 키와
+- 명시적 무인 표식(`NIXOS_CONFIG_HEADLESS_SSH=1`) 또는 `CODEX_PROGRAMMATIC`이 있는
+  MiniPC 직접 호출은 SSH config의 조건부 identity 선택으로 보완한다. `CODEX_CI`만으로는
+  무인 세션으로 판정하지 않는다. `/usr/bin/ssh`, scp, sftp도 기존 headless 키와
   `IdentityAgent none`, `BatchMode yes`를 사용하며 대화형 master를 재사용하지 않는다.
   이 보완은 키 선택만 담당한다. 인증-only deadline과 옵션 검사가 필요하면 계속
   PATH의 `ssh` dispatcher를 사용한다. 명시적 `-F`/`-o`는 기본 config를 덮어쓸 수 있다.

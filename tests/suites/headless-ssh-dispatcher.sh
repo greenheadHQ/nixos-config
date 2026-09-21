@@ -113,27 +113,42 @@ def config(target, markers, role="personal"):
 headless_key = config("minipc-headless", {})["identityfile"]
 emergency_key = config("minipc-emergency", {})["identityfile"]
 assert len(headless_key) == 1 and headless_key[0].endswith("/.ssh/minipc-headless")
-for marker in ("CODEX_CI", "CODEX_PROGRAMMATIC"):
+# CODEX_CI는 대화형 Codex에도 존재할 수 있어 그 자체로 무인 소유권이 아니다.
+for target in targets:
+    normal = config(target, {"CODEX_CI": "1"})
+    assert "1password" in normal["identityagent"][0].lower(), target
+    assert normal["identityfile"] != headless_key, target
+
+headless_markers = (
+    {"NIXOS_CONFIG_HEADLESS_SSH": "1"},
+    {"CODEX_PROGRAMMATIC": "1"},
+    {"CODEX_CI": "1", "NIXOS_CONFIG_HEADLESS_SSH": "1"},
+    {"CODEX_CI": "1", "CODEX_PROGRAMMATIC": "1"},
+)
+for markers in headless_markers:
     for target in targets:
-        values = config(target, {marker: "1"})
-        assert values["identityagent"] == ["none"], (marker, target, values["identityagent"])
+        values = config(target, markers)
+        assert values["identityagent"] == ["none"], (markers, target, values["identityagent"])
         assert values["identityfile"] == headless_key, (target, values["identityfile"])
         assert values["batchmode"] == ["yes"], target
         # OpenSSH는 ControlPath none을 -G 출력에서 생략할 수 있다.
         assert values.get("controlpath", ["none"]) == ["none"], target
         assert values["hostname"] == [network["minipcTailscaleIP"]], target
         assert values["user"] == ["greenhead"], target
-    # 값 자체를 쉘 명령에 삽입하지 않는다. 비어 있지 않다는 의미만 사용한다.
-    for value in (" ", "*", "quote'\";"):
-        assert config("minipc", {marker: value})["identityfile"] == headless_key
-    assert config("minipc", {marker: ""})["identityfile"] != headless_key
+# PROGRAMMATIC은 nonempty, 명시적 launcher 표식은 기존 PATH 정책과 같이 정확히 1이다.
+for value in (" ", "*", "quote'\";"):
+    assert config("minipc", {"CODEX_PROGRAMMATIC": value})["identityfile"] == headless_key
+for value in ("", "0", " ", "*", "quote'\";"):
+    markers = {"CODEX_CI": "1", "NIXOS_CONFIG_HEADLESS_SSH": value}
+    assert config("minipc", markers)["identityfile"] != headless_key
+assert config("minipc", {"CODEX_PROGRAMMATIC": ""})["identityfile"] != headless_key
 
 # 기존 GUI 승인 경로, 긴급 키, 다른 호스트, work Mac에는 적용하지 않는다.
 for target in aliases:
     normal = config(target, {})
     assert "1password" in normal["identityagent"][0].lower(), target
     assert len(normal["identityfile"]) == 1 and normal["identityfile"][0].endswith("/.ssh/mac-ssh.pub"), target
-for markers in ({}, {"CODEX_CI": "1"}):
+for markers in ({}, {"CODEX_CI": "1"}, *headless_markers):
     assert config("minipc-emergency", markers)["identityfile"] == emergency_key
     assert config("minipc-emergency", markers)["identityagent"] == ["none"]
     assert "1password" in config("unmanaged.invalid", markers)["identityagent"][0].lower()

@@ -10,11 +10,11 @@ let
   homeDir = config.home.homeDirectory;
   # 1Password macOS SSH agent socket (단일 소스: constants.onePassword.agentSocketRelPath)
   onePasswordAgentSock = "${homeDir}/${constants.onePassword.agentSocketRelPath}";
-  # 절대경로 ssh·scp·sftp는 PATH dispatcher를 거치지 않는다. Codex가 명시한
-  # 환경에서만 기존 무인 키를 선택하고, 일반 터미널은 1Password 경로를 유지한다.
-  # OpenSSH 9.6의 Match 파서는 중첩 escaped quote를 지원하지 않는다. 환경값을
-  # 고정 문자로 치환해 공백·glob도 피하면서 둘 중 하나라도 nonempty인지 검사한다.
-  codexContext = builtins.toJSON "test x\${CODEX_CI:+1}\${CODEX_PROGRAMMATIC:+1} != x";
+  # 절대경로 ssh·scp·sftp도 launcher의 명시적 무인 표식이나 programmatic 세션에서만
+  # 기존 무인 키를 선택한다. CODEX_CI만으로 세션 종류를 판정하지 않는다.
+  # OpenSSH 9.6은 중첩 escaped quote를 지원하지 않는다. case와 고정 문자 치환은
+  # 따옴표 없이 공백·glob를 보존하며, launcher 표식은 PATH 정책과 같이 정확히 1이다.
+  headlessContext = builtins.toJSON "case \${NIXOS_CONFIG_HEADLESS_SSH:-0} in 1) exit 0;; esac; test x\${CODEX_PROGRAMMATIC:+1} != x";
   minipcPatterns = lib.concatStringsSep "," constants.network.minipcSshHostAliases;
   headlessDispatcher = import ./headless-dispatcher.nix {
     inherit
@@ -42,7 +42,7 @@ in
     }
     // lib.optionalAttrs (hostType == "personal") {
       "minipc-codex" = lib.hm.dag.entryBefore [ "minipc" ] {
-        header = "Match originalhost ${minipcPatterns},${constants.network.minipcTailscaleIP} exec ${codexContext}";
+        header = "Match originalhost ${minipcPatterns},${constants.network.minipcTailscaleIP} exec ${headlessContext}";
         HostName = constants.network.minipcTailscaleIP;
         User = "greenhead";
         IdentityFile = "${homeDir}/${constants.onePassword.headlessKeyRelPath}";
@@ -56,7 +56,7 @@ in
       # IdentityFile은 누적되는 옵션이므로 무인 키와 mac-ssh.pub를 상호 배타적으로
       # 선택한다. 아래 Host 블록에는 목적지와 일반 연결 재사용 설정만 둔다.
       "minipc-interactive-identity" = {
-        header = "Match originalhost ${minipcPatterns} !exec ${codexContext}";
+        header = "Match originalhost ${minipcPatterns} !exec ${headlessContext}";
         IdentityFile = "${homeDir}/.ssh/mac-ssh.pub";
       };
       # MiniPC는 Tailscale IP 전용 — work Mac(Tailnet 미소속)에서는 접속 불가
