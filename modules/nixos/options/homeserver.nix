@@ -216,7 +216,7 @@
 
     # opnix: 1Password Service Account 기반 시크릿 materialization 인프라
     # enable=true 시 services.onepassword-secrets(Go SDK root oneshot)로 op:// reference를
-    # tmpfs에 materialize하고, SA token 90일 rotation 알림 timer를 활성화한다.
+    # tmpfs에 materialize하고, 실제 SA 비밀 조회 상태를 매시간 점검한다.
     opnix = {
       enable = lib.mkEnableOption "1Password Service Account secrets materialization (opnix)";
       ghPatPath = lib.mkOption {
@@ -375,7 +375,7 @@
     ../programs/smoke-test.nix # 런타임 스모크 테스트 (헬스체크 + 백업 신선도)
     ../programs/interaction-limits-renewal # GitHub interaction limits 만료 전 자동 갱신
     ../programs/opnix # 1Password Service Account 시크릿 materialization
-    ../programs/opnix-rotate.nix # SA token 90일 rotation 알림 (opnix.enable 게이팅)
+    ../programs/opnix-health.nix # SA 실제 비밀 조회 상태 점검 (opnix.enable 게이팅)
     ../programs/codex-remote-control.nix # Codex mobile remote-control app-server 회귀 방지
     ../programs/claude-remote-control.nix # Claude Code RC bridge version-drift 감시
     ../programs/private-job-runner # generic private job runner (작업 정의는 기기 로컬)

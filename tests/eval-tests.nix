@@ -1085,6 +1085,28 @@ let
       ) opnixTmpfilesRules;
     }
     {
+      name = "Test 5b-10: SA health check runs hourly with bounded root service and no fake expiry record";
+      cond =
+        nixosCfg.systemd.timers.opnix-health-check.timerConfig.OnCalendar == "hourly"
+        && nixosCfg.systemd.services.opnix-health-check.serviceConfig.TimeoutStartSec == 90
+        && nixosCfg.systemd.services.opnix-health-check.serviceConfig.StateDirectoryMode == "0700"
+        && !(nixosCfg.systemd.timers ? opnix-rotate-check)
+        && !(nixosCfg.environment.etc ? opnix-service-account-expiry);
+    }
+    {
+      name = "Test 5b-11: personal Mac SA health check is hourly; work Mac is excluded";
+      cond =
+        let
+          personal = darwinCfgs.greenhead-MacBookPro.config.home-manager.users.greenhead;
+          work = darwinCfgs.work-MacBookPro.config.home-manager.users.glen;
+        in
+        personal.launchd.agents.opnix-health-mac.config.StartInterval == 3600
+        && personal.launchd.agents.opnix-health-mac.config.RunAtLoad
+        && !(personal.launchd.agents ? opnix-rotate-mac)
+        && !(personal.home.file ? ".config/op/sa-expiry-mac")
+        && !(work.launchd.agents ? opnix-health-mac);
+    }
+    {
       # Codex 피드백: SSH 경화 설정은 Tailscale 경계와 독립적인 보안 레이어
       name = "Test 5c: openssh PermitRootLogin이 'no'이어야 함";
       cond = nixosCfg.services.openssh.settings.PermitRootLogin == "no";

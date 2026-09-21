@@ -1,6 +1,5 @@
 # modules/nixos/programs/opnix/default.nix
 # opnix — 1Password Service Account 기반 secret materialization
-# 기존 stub(SA token 만료일 평문 record 배포)을 extend한다.
 #
 # brizzbuzz/opnix nixosModules.default(flake.nix에서 import)의 services.onepassword-secrets는
 # 1Password Go SDK 기반 root oneshot(op CLI 래퍼 아님)이다. op:// reference를 tmpfs에 native
@@ -33,12 +32,6 @@ in
       homeserver.opnix.ghPatPath = ghPatPath;
     }
     (lib.mkIf cfg.enable {
-      # ── SA token 만료일 평문 record 배포 (stub 보존) ──
-      # rotation timer(opnix-rotate.nix)가 /etc/opnix-service-account-expiry를 읽는다.
-      # source 파일: secrets/opnix-service-account-expiry.txt (ISO-8601 date 1줄, agenix 아님).
-      environment.etc."opnix-service-account-expiry".source =
-        constants.paths.opnixServiceAccountExpirySource;
-
       # ── SA token (agenix, host key 복호화) ──
       # opnix-secrets.service는 tokenFile을 항상 root:${opnixGroup} 0640으로 강제하므로
       # (opnix nix/module.nix), agenix도 동일 권한으로 선언해 매 activation 권한 경합(토글)을 제거한다.

@@ -10,6 +10,10 @@ let
   homeDir = config.home.homeDirectory;
   # 1Password macOS SSH agent socket (단일 소스: constants.onePassword.agentSocketRelPath)
   onePasswordAgentSock = "${homeDir}/${constants.onePassword.agentSocketRelPath}";
+  # 절대경로 ssh·scp·sftp는 PATH dispatcher를 거치지 않는다. Codex가 명시한
+  # 환경에서만 기존 무인 키를 선택하고, 일반 터미널은 1Password 경로를 유지한다.
+  codexContext = builtins.toJSON ''test -n "''${CODEX_CI:-}''${CODEX_PROGRAMMATIC:-}"'';
+  minipcPatterns = lib.concatStringsSep "," constants.network.minipcSshHostAliases;
   headlessDispatcher = import ./headless-dispatcher.nix {
     inherit
       config
@@ -35,15 +39,32 @@ in
       };
     }
     // lib.optionalAttrs (hostType == "personal") {
+      "minipc-codex" = lib.hm.dag.entryBefore [ "minipc" ] {
+        header = "Match originalhost ${minipcPatterns},${constants.network.minipcTailscaleIP} exec ${codexContext}";
+        HostName = constants.network.minipcTailscaleIP;
+        User = "greenhead";
+        IdentityFile = "${homeDir}/${constants.onePassword.headlessKeyRelPath}";
+        IdentityAgent = "none";
+        IdentitiesOnly = "yes";
+        BatchMode = "yes";
+        # 대화형 mac-ssh로 인증한 master를 무인 세션에서 공유하지 않는다.
+        ControlPath = "none";
+        ControlMaster = "no";
+      };
+      # IdentityFile은 누적되는 옵션이므로 무인 키와 mac-ssh.pub를 상호 배타적으로
+      # 선택한다. 아래 Host 블록에는 목적지와 일반 연결 재사용 설정만 둔다.
+      "minipc-interactive-identity" = {
+        header = "Match originalhost ${minipcPatterns} !exec ${codexContext}";
+        IdentityFile = "${homeDir}/.ssh/mac-ssh.pub";
+      };
       # MiniPC는 Tailscale IP 전용 — work Mac(Tailnet 미소속)에서는 접속 불가
       "minipc" = {
         # MagicDNS 이름도 같은 블록에 묶어 `Host *`(IdentitiesOnly 없음)로 새지 않게 한다.
         header = "Host ${lib.concatStringsSep " " constants.network.minipcSshHostAliases}";
         HostName = constants.network.minipcTailscaleIP;
         User = "greenhead";
-        # mac-ssh 공개키로 고정 + IdentitiesOnly — agent의 mac-ssh 키만 제시한다.
+        # 선택한 identity만 제시한다. 일반 터미널은 mac-ssh, Codex는 headless 키다.
         # 구 id_rsa/id_ecdsa 등 무차별 키 시도(서버 로그 오염·MaxAuthTries lockout 위험)를 차단한다.
-        IdentityFile = "${homeDir}/.ssh/mac-ssh.pub";
         IdentitiesOnly = "yes";
         ControlMaster = "auto";
         ControlPath = "~/.ssh/cm-%h-%p-%r";
@@ -88,6 +109,8 @@ in
 
   # Launcher 전용 stable path. global package/session PATH에는 넣지 않아
   # interactive Ghostty와 일반 SSH가 계속 /usr/bin/ssh를 사용한다.
+  # 위 Codex Match는 직접 호출의 키 선택만 보완한다. 인증-only 15초 deadline과
+  # 옵션 검사는 계속 dispatcher가 담당하므로 일반 ssh 호출은 이 경로를 유지한다.
   home.file.${constants.paths.headlessSshDispatcherRelPath} = lib.mkIf headlessDispatcher.enabled {
     source = headlessDispatcher.package;
   };

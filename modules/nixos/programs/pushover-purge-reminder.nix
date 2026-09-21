@@ -51,7 +51,7 @@ let
   };
 in
 {
-  # pushover-system-monitor.age — temp-monitor/smartd/smoke-test/opnix-rotate와 동일 값 (NixOS 모듈 시스템이 merge).
+  # pushover-system-monitor.age — temp-monitor/smartd/smoke-test/opnix-health와 동일 값 (NixOS 모듈 시스템이 merge).
   age.secrets.pushover-system-monitor = {
     file = ../../../secrets/pushover-system-monitor.age;
     mode = "0400";

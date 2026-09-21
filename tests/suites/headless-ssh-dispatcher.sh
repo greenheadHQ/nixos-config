@@ -66,6 +66,99 @@ test_headless_ssh_dispatcher_manifest_drift() {
   _run_headless_ssh_dispatcher_group ManifestDriftTests
 }
 
+# 절대경로 ssh와 scp/sftp의 자식 ssh도 읽는 실제 Home Manager 산출물을 검사한다.
+# -G만 사용하므로 네트워크 접속이나 1Password 승인 요청은 발생하지 않는다.
+test_codex_direct_ssh_uses_headless_identity() {
+  local sandbox
+  sandbox="$(new_sandbox)"
+  nix eval --raw \
+    "$REPO_ROOT#darwinConfigurations.greenhead-MacBookPro.config.home-manager.users.greenhead.home.file.\".ssh/config\".text" \
+    > "$sandbox/personal-ssh-config"
+  nix eval --raw \
+    "$REPO_ROOT#darwinConfigurations.work-MacBookPro.config.home-manager.users.glen.home.file.\".ssh/config\".text" \
+    > "$sandbox/work-ssh-config"
+  nix eval --json --file "$REPO_ROOT/libraries/constants.nix" network \
+    > "$sandbox/network.json"
+  python3 - "$sandbox" <<'PY'
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+root = Path(sys.argv[1])
+network = json.loads((root / "network.json").read_text())
+aliases = network["minipcSshHostAliases"]
+targets = [*aliases, network["minipcTailscaleIP"]]
+base_env = dict(os.environ)
+for key in ("CODEX_CI", "CODEX_PROGRAMMATIC", "NIXOS_CONFIG_HEADLESS_SSH"):
+    base_env.pop(key, None)
+
+def config(target, markers, role="personal"):
+    result = subprocess.run(
+        ["/usr/bin/ssh", "-G", "-F", str(root / f"{role}-ssh-config"), target],
+        env={**base_env, **markers}, capture_output=True, text=True, check=True,
+    )
+    values = {}
+    for line in result.stdout.splitlines():
+        key, value = line.split(" ", 1)
+        values.setdefault(key, []).append(value)
+    return values
+
+headless_key = config("minipc-headless", {})["identityfile"]
+emergency_key = config("minipc-emergency", {})["identityfile"]
+assert len(headless_key) == 1 and headless_key[0].endswith("/.ssh/minipc-headless")
+for marker in ("CODEX_CI", "CODEX_PROGRAMMATIC"):
+    for target in targets:
+        values = config(target, {marker: "1"})
+        assert values["identityagent"] == ["none"], (marker, target, values["identityagent"])
+        assert values["identityfile"] == headless_key, (target, values["identityfile"])
+        assert values["batchmode"] == ["yes"], target
+        # OpenSSH는 ControlPath none을 -G 출력에서 생략할 수 있다.
+        assert values.get("controlpath", ["none"]) == ["none"], target
+        assert values["hostname"] == [network["minipcTailscaleIP"]], target
+        assert values["user"] == ["greenhead"], target
+
+# 기존 GUI 승인 경로, 긴급 키, 다른 호스트, work Mac에는 적용하지 않는다.
+for target in aliases:
+    normal = config(target, {})
+    assert "1password" in normal["identityagent"][0].lower(), target
+    assert len(normal["identityfile"]) == 1 and normal["identityfile"][0].endswith("/.ssh/mac-ssh.pub"), target
+for markers in ({}, {"CODEX_CI": "1"}):
+    assert config("minipc-emergency", markers)["identityfile"] == emergency_key
+    assert config("minipc-emergency", markers)["identityagent"] == ["none"]
+    assert "1password" in config("unmanaged.invalid", markers)["identityagent"][0].lower()
+    assert "1password" in config("minipc", markers, "work")["identityagent"][0].lower()
+print("PASS: Codex direct SSH selects only the headless key; other contexts retain their identities")
+PY
+}
+
+test_github_ssh_urls_use_https() {
+  local sandbox
+  sandbox="$(new_sandbox)"
+  nix eval --raw \
+    "$REPO_ROOT#darwinConfigurations.greenhead-MacBookPro.config.home-manager.users.greenhead.xdg.configFile.\"git/config\".text" \
+    > "$sandbox/git-config"
+  GIT_CONFIG_GLOBAL="$sandbox/git-config" GIT_CONFIG_SYSTEM=/dev/null \
+    python3 - "$sandbox" <<'PY'
+import subprocess
+import sys
+
+for prefix in ("git@github.com:", "ssh://git@github.com/", "ssh://git@github.com:22/"):
+    actual = subprocess.check_output(
+        ["git", "ls-remote", "--get-url", prefix + "owner/repo.git"],
+        cwd=sys.argv[1], text=True,
+    ).strip()
+    assert actual == "https://github.com/owner/repo.git", (prefix, actual)
+for url in ("ssh://git@github.com:443/owner/repo.git", "git@example.invalid:owner/repo.git"):
+    actual = subprocess.check_output(
+        ["git", "ls-remote", "--get-url", url], cwd=sys.argv[1], text=True,
+    ).strip()
+    assert actual == url, (url, actual)
+print("PASS: standard GitHub SSH URLs use HTTPS; other hosts and ports are unchanged")
+PY
+}
+
 test_claude_owner_shell_finalizes_dispatcher_path() {
   local sandbox personal_env personal_init work_env finalizer
   local stable_bin fixture_env fixture_finalizer zsh_bin

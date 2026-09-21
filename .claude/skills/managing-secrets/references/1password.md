@@ -1,4 +1,4 @@
-# 1Password 운영 (SA 발급 / rotation / op CLI / gh 무인 / SSH device key)
+# 1Password 운영 (SA 발급 / 인증 상태 점검 / op CLI / gh 무인 / SSH device key)
 
 agenix(.age 정적 시크릿)와 별개로, 1Password를 동적 시크릿(github-pat) / SSH device key / Service Account(SA) token의 저장소로 사용한다. 본 문서는 1Password 운영 절차 본문을 담당하며, routing matrix와 통합 inventory는 SKILL.md에 있다.
 
@@ -26,20 +26,20 @@ host key recipient(`minipcHostOnly`) .age의 rekey는 host private key가 없는
 
 SSOT: `secrets/secrets.nix`(L67-78), `modules/shared/programs/secrets/default.nix`, `modules/nixos/programs/opnix/default.nix`.
 
-## SA token 90일 rotation 만료 알림 — Mac launchd + MiniPC systemd 양쪽
+## SA 실제 비밀 조회 상태 점검 — Mac launchd + MiniPC systemd
 
-1Password Individual은 SA 자동 만료를 미지원하고, SA 만료일 확인은 1Password.com 웹 GUI 전용이다 — op CLI로는 조회할 수 없다 (아래 트러블슈팅 참조). 그 대체로 평문 ISO date expiry record(.txt)를 SSOT로 운용한다. SA 재발급 시 GUI에서 만료일을 확인해 해당 `.txt`를 갱신한다.
+기존 90일 날짜 비교 알림(#875)은 실제 토큰 만료 설정을 조회하지 않았다. 두 SA가 1Password 웹의 서비스 계정 표에서 `만료되지 않음`으로 설정되어 있으므로, 날짜 기록과 교체 알림을 제거하고 실제 비밀 조회 점검으로 대체한다. 토큰 자체와 vault 권한은 변경하지 않는다. 만료 설정은 웹에서 다시 확인하며, 조회 실패를 토큰 만료로 단정하지 않는다.
 
-| 호스트 | 메커니즘 | expiry record (SSOT) |
-|--------|----------|----------------------|
-| MiniPC (NixOS) | `systemd.services.opnix-rotate-check` (oneshot) + timer (`OnCalendar=weekly`, `Persistent=true`, `RandomizedDelaySec=1h`), `homeserver.opnix.enable` 게이팅 | `/etc/opnix-service-account-expiry` = `secrets/opnix-service-account-expiry.txt` |
-| Mac | `launchd.agents.opnix-rotate-mac` (user agent, `StartCalendarInterval` Weekday=1 10:00, `RunAtLoad=false`, Persistent 미지원), `hostType==personal` 한정 | `~/.config/op/sa-expiry-mac` = `secrets/opnix-service-account-expiry-mac.txt` |
+| 호스트 | 스케줄·검사 | 상태 기록 |
+|--------|-------------|-----------|
+| MiniPC | `opnix-health-check.service` + hourly timer (`Persistent=true`, 최대 5분 지연). 기존 root SA로 `opnix env` 실행 | `/var/lib/opnix-health/status.json` |
+| 개인 Mac | `opnix-health-mac` launchd agent (`StartInterval=3600`, `RunAtLoad=true`). 기존 SA로 `op read` 실행 | `~/.local/state/opnix-health/status.json` |
 
-공통 동작: `warnDays=14` (남은 일수 ≤14면 알림, <0이면 priority=1). ISO-8601 `YYYY-MM-DD` 정규식 검증 후 GNU `date -d`로 epoch 변환 (BSD date 회피 — Mac은 `runtimeInputs`에 coreutils). MiniPC는 `pushover-system-monitor` cred + service-lib `send_notification_strict`, Mac은 `pushover/share` cred로 `curl api.pushover.net` 직접 호출.
+공통 동작: `op://Automation/github-pat/token`을 조회하고 결과는 메모리에서만 확인한다. 검사당 20초 제한, 실패 시 5초 후 한 번 재시도한다. 비밀·원문 stderr는 출력하지 않으며 데스크탑 인증으로 폴백하지 않는다. `opnix env`의 상속 SA 환경값은 제거해 지정한 배포 파일만 검사한다. 비밀 materialization·서비스 재시작·GitHub API 검증은 수행하지 않는다.
 
-관련 PR: 90일 rotation 도입 #875.
+기존 Pushover 채널로 장애 최초(priority=1), 복구(priority=0)를 알리고, 지속 장애는 마지막 성공한 알림으로부터 24시간 후 다시 알린다. 정상 시 알리지 않는다. 전송 실패는 알림 완료로 기록하지 않아 다음 검사 때 재시도한다. 상태 파일은 마지막 검사·성공·알림 시각과 상태만 저장하며 비밀은 포함하지 않는다. Mac 잠자기·종료 중에는 검사하지 않는다.
 
-SSOT: `modules/darwin/programs/opnix-rotate.nix`, `modules/nixos/programs/opnix-rotate.nix`, `secrets/opnix-service-account-expiry{,-mac}.txt`.
+SSOT: `modules/{darwin,nixos}/programs/opnix-health.nix`, `modules/shared/lib/opnix-health-check.nix`, `modules/shared/scripts/opnix-health-check.py`, `constants.onePassword`.
 
 ## Mac 무인 gh 인증 (방식 B: SA token → github-pat per-user temp 캐시)
 
@@ -96,13 +96,13 @@ SSOT: `libraries/constants.nix`(sshDeviceKeys), `modules/darwin/programs/ssh/def
 
 agenix 계열 트러블슈팅은 [troubleshooting.md](troubleshooting.md) 참조. `op read` 비대화형 hang은 #1134로 코드로 해결됨 — 위 "op_get 해석 순서" 참조.
 
-### SA token 만료일이 op CLI로 조회되지 않음
+### SA 비밀 조회 실패 알림
 
-증상: SA token의 만료일을 op CLI로 확인하려 해도 만료 정보를 얻을 수 없다.
+증상: 재시도 후에도 필요한 비밀 조회가 실패하거나 제한 시간을 초과한다.
 
-원인: 1Password는 SA 만료일을 CLI에 노출하지 않는다 — 만료일 확인은 1Password.com 웹 GUI(Service Accounts 페이지) 전용이다.
+원인: 네트워크, SA 파일 누락, 자격 취소, vault 권한, 참조 항목 변경 등을 구분해 조사해야 한다. CLI/SDK의 일반 실패 코드는 인증 오류와 네트워크 오류를 구분하지 못하므로 알림만으로 만료를 단정하지 않는다.
 
-해결: GUI에서 확인한 만료일을 평문 expiry record(`secrets/opnix-service-account-expiry{,-mac}.txt`)에 박제하고, rotation 알림이 이 record를 SSOT로 읽는다 (위 "SA token 90일 rotation" 섹션). SA 재발급 시 GUI에서 새 만료일을 확인해 `.txt`를 갱신한다.
+해결: 상태 파일의 마지막 성공과 알림 사유를 확인하고 대상 호스트에서 배포 SA를 명시해 조사한다. Mac은 `op whoami`와 `op read`, MiniPC는 `opnix env`를 사용하며 비밀 값은 출력하지 않는다. 실제 만료 설정은 개인 계정의 웹 Developer → 서비스 계정 표에서 확인한다. 교체가 필요하다고 확인되기 전에는 토큰을 재발급하지 않는다.
 
 ### 1Password 데스크탑 (재)기동 후 SSH 키 승인 팝업 반복 (Mac 전용)
 
