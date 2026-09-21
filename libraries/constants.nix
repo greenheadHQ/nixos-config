@@ -144,13 +144,12 @@
     # (modules/shared/programs/secrets)의 단일 소스이며, cleanup·소비자는 그
     # 옵션(config.age.*)을 경유해 같은 값을 본다.
     agenixDarwinSecretsRelPath = ".local/state/agenix";
-    # agenix 복호화 identity (host private key) + opnix SA 만료 record source
+    # agenix 복호화 identity (host private key)
     # host key는 부팅 의존 시크릿(SA token) 복호화 전용. user key(/home/<user>/.ssh/id_ed25519)는
     # username 보간이 필요해 정적 constants에 담을 수 없으므로 configuration.nix에서 inline 유지한다.
     agenixHostIdentityKey = "/etc/ssh/ssh_host_ed25519_key";
     # headless Anki 인스턴스 상태 루트 (StateDirectory·sync·backup·eval 테스트가 공유하는 단일 소스)
     ankiHostState = "/var/lib/anki-host";
-    opnixServiceAccountExpirySource = ../secrets/opnix-service-account-expiry.txt;
     # opnix SA token agenix secret — opnix/default.nix가 tokenFile 등록에 사용
     opnixServiceAccountTokenAge = ../secrets/opnix-service-account-token.age;
   };
@@ -291,6 +290,10 @@
     # 배포: modules/shared/programs/secrets(agenix path), 소비: gh-pat-mac(shell/darwin.nix) ·
     # op_get(shell/default.nix). literal 분산 시 경로 정책 변경이 배포/소비 경계를 따로 움직인다.
     saTokenMacRelPath = ".config/op/sa-token-mac";
+    cliMacPath = "/opt/homebrew/bin/op"; # Homebrew가 관리하는 기존 CLI
+    healthStateMacRelPath = ".local/state/opnix-health";
+    healthStateLinuxPath = "/var/lib/opnix-health";
+    healthLogMacRelPath = "Library/Logs/opnix-health-mac.log";
     # 무인 minipc SSH 개인키 배포 경로 (home 상대) — 단일 소스 (#1094 C안).
     # 배포: modules/shared/programs/secrets(agenix path), 소비: ssh minipc-headless alias
     # (modules/darwin/programs/ssh) · ssh() 무인 라우팅(shell/darwin.nix).

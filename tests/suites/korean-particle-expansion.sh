@@ -17,8 +17,6 @@
 _kpe_nix_targets() {
   # "<nix 파일 상대경로>|<확장 성공 시 나와야 하는 문자열>"
   printf '%s\n' \
-    "modules/darwin/programs/opnix-rotate.nix|2026-08-29에" \
-    "modules/nixos/programs/opnix-rotate.nix|2026-08-29에" \
     "modules/nixos/programs/tailscale.nix|4200가"
 }
 

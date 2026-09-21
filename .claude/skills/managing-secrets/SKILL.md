@@ -68,7 +68,7 @@ agenix `.age` 22개(디스크 실측 — 재검증: `ls secrets/*.age | wc -l`) 
 
 | Name | Storage | Vault | 배포경로·위치 | 소비처 | recipient |
 |------|---------|-------|---------------|--------|-----------|
-| `pushover-share.age` | agenix | — | `~/.config/pushover/share` (Mac+MiniPC home) | sharing-text 수동 push; opnix-rotate-mac 만료 알림 `PUSHOVER_FILE` source | allHosts |
+| `pushover-share.age` | agenix | — | `~/.config/pushover/share` (Mac+MiniPC home) | sharing-text 수동 push; opnix-health-mac SA 조회 상태 알림 `PUSHOVER_FILE` source | allHosts |
 | `pane-note-links.age` | agenix | — | `~/.config/pane-note/links.txt` (Mac+MiniPC home) | pane-note.sh 새 노트 Links 섹션 | allHosts |
 | `immich-db-password.age` | agenix | — | `/run/agenix/immich-db-password` (MiniPC) | immich.nix dbPasswordPath → PostgreSQL | minipcOnly |
 | `immich-api-key.age` | agenix | — | Mac `~/.config/immich/api-key` / MiniPC `/run/agenix/immich-api-key` | immich-update·immich-cleanup FolderAction upload | allHosts |
@@ -83,7 +83,7 @@ agenix `.age` 22개(디스크 실측 — 재검증: `ls secrets/*.age | wc -l`) 
 | `karakeep-meili-master-key.age` | agenix | — | `/run/agenix/karakeep-meili-master-key` (MiniPC) | karakeep.nix meiliMasterKeyPath → Meilisearch master key | minipcOnly |
 | `karakeep-openai-key.age` | agenix | — | `/run/agenix/karakeep-openai-key` (MiniPC) | karakeep.nix openaiKeyPath → AI 태깅 OpenAI 키 | allHosts |
 | `pushover-karakeep.age` | agenix | — | `/run/agenix/pushover-karakeep` (MiniPC) | karakeep-update·notify·singlefile-bridge·backup·fallback-sync·log-monitor (다중 모듈 merge) | allHosts |
-| `pushover-system-monitor.age` | agenix | — | `/run/agenix/pushover-system-monitor` (MiniPC) | smartd·temp-monitor·smoke-test·opnix-rotate(MiniPC) 하드웨어/SMART/온도/SA rotation 알림 (다중 모듈 merge) | minipcOnly |
+| `pushover-system-monitor.age` | agenix | — | `/run/agenix/pushover-system-monitor` (MiniPC) | smartd·temp-monitor·smoke-test·opnix-health(MiniPC) 하드웨어/SMART/온도/SA 조회 상태 알림 (다중 모듈 merge) | minipcOnly |
 | `anki-ankiweb.age` | agenix | — | `/run/agenix/anki-ankiweb` (`anki-host:anki-host`, 0400, MiniPC) | `anki-host/default.nix`가 sync를 켠 인스턴스 유닛에 `ANKI_HOST_SYNC_CREDENTIALS`로 주입 → 헬퍼 애드온이 AnkiWeb 로그인 1회 (`ANKIWEB_USERNAME=`/`ANKIWEB_PASSWORD=`) | minipcOnly |
 | `pushover-anki.age` | agenix | — | `/run/agenix/pushover-anki` (root, 0400, MiniPC) → 유닛에는 `LoadCredential` 파일로만 전달 | `anki-host/sync.nix`·`backup.nix` 동기화·백업 알림 (다중 모듈 merge, `ConditionPathExists`) | minipcOnly |
 | `anki-mcp-oauth.age` | agenix | — | `/run/agenix/anki-mcp-oauth` (root, 0400, MiniPC) → `anki-mcp` 유닛에 `LoadCredential` 파일로만 전달 | 원격 MCP 승인 화면의 비밀 문구(`ANKI_MCP_APPROVAL_PASSPHRASE=`) — 비어 있으면 어떤 승인도 통과하지 않는다. 1Password Personal `anki-mcp-approval`과 같은 값 | minipcOnly |
@@ -94,10 +94,10 @@ agenix `.age` 22개(디스크 실측 — 재검증: `ls secrets/*.age | wc -l`) 
 | `mac-ssh` (1Password 항목) | 1Password | SSH | SSH vault item (comment `mac-ssh`, `constants.sshDeviceKeys.macSsh`) | Mac SSH agent(agent.toml이 SSH vault 노출) + MiniPC authorized_keys 등록. Automation→SSH vault 격리 | — |
 | `mobile-ssh` (디바이스 키) | Termius keychain | — | Termius keychain 보관 (iPhone·iPad 동기화 공유); 공개키만 `constants.sshDeviceKeys.mobile` | iPhone/iPad Termius 공유 단일 키(디바이스별 격리 불성립). MiniPC + personal Mac authorized_keys 등록용(work Mac 미배포). 1Password 미보관 | — |
 | `emergency-ssh` (1Password 항목) | 1Password | SSH | SSH vault item (backup copy; ssh key comment `emergency-fallback`); 운영 키는 `~/.ssh/emergency_ed25519` (`IdentityAgent=none` 독립 fallback) | 긴급 fallback SSH 접속. 1Password backup copy가 SSH vault 보관. Automation→SSH vault 격리 | — |
-| SA token (mac) | 1Password | Automation (read-only) | 1Password Service Account; token은 `opnix-service-account-token-mac.age`로 암호화되어 `~/.config/op/sa-token-mac` 배포 | Mac gh-pat-mac이 github-pat 발급 시 사용. blast radius=Automation read-only(SSH vault 접근 불가). 90일 cadence rotation (만료 record†) | — |
-| SA token (minipc) | 1Password | Automation (read-only) | 1Password Service Account; token은 `opnix-service-account-token.age`로 암호화되어 `/run/agenix/opnix-service-account-token` 배포 | MiniPC opnix가 github-pat materialize 시 사용. blast radius=Automation read-only. 90일 cadence rotation (만료 record†). Mac SA와 별개 발급 격리 SA | — |
+| SA token (mac) | 1Password | Automation (read-only) | 1Password Service Account; token은 `opnix-service-account-token-mac.age`로 암호화되어 `~/.config/op/sa-token-mac` 배포 | Mac gh-pat-mac이 github-pat 발급 시 사용. blast radius=Automation read-only(SSH vault 접근 불가). 매시간 실제 비밀 조회 점검† | — |
+| SA token (minipc) | 1Password | Automation (read-only) | 1Password Service Account; token은 `opnix-service-account-token.age`로 암호화되어 `/run/agenix/opnix-service-account-token` 배포 | MiniPC opnix가 github-pat materialize 시 사용. blast radius=Automation read-only. 매시간 실제 비밀 조회 점검†. Mac SA와 별개 발급 격리 SA | — |
 
-† `secrets/opnix-service-account-expiry.txt`(MiniPC) / `secrets/opnix-service-account-expiry-mac.txt`(Mac)는 평문 ISO date record(.age 아님). 1Password Individual SA 자동 만료 미지원 + op CLI 만료 조회 미지원 대체. rotation 운영은 [references/1password.md](references/1password.md) 참조.
+† 두 SA의 웹 설정은 `만료되지 않음`이다. 과거 90일 날짜 기록은 실제 만료일이 아니어서 제거했다. 매시간 조회·재시도·장애/복구·24시간 재알림 운영은 [references/1password.md](references/1password.md) 참조.
 
 상세는 `secrets/secrets.nix`(.age) + `libraries/constants.nix`(1Password) 참조.
 
@@ -167,6 +167,6 @@ KC_VAULT=<base64 encoded vault>
 
 ## 레퍼런스
 
-- 1Password 운영 (SA 발급 / 90일 rotation / op CLI / gh 무인 / SSH device key / 1Password 함정 트러블슈팅): [references/1password.md](references/1password.md)
+- 1Password 운영 (SA 발급 / 인증 상태 점검 / op CLI / gh 무인 / SSH device key / 1Password 함정 트러블슈팅): [references/1password.md](references/1password.md)
 - 워크플로 상세 (암호화/복호화/호스트 추가): [references/workflows.md](references/workflows.md)
 - 트러블슈팅 (agenix 계열): [references/troubleshooting.md](references/troubleshooting.md)

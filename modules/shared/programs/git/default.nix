@@ -194,7 +194,7 @@ in
     };
   };
 
-  # Mac 전용 GitHub git 인증: git@github.com SSH URL을 https로 rewrite한다.
+  # Mac 전용 GitHub git 인증: scp형 및 표준 SSH URL을 https로 rewrite한다.
   # rewrite된 https remote는 gh credential helper(gh auth git-credential —
   # programs.gh.enable이 자동 주입)로 인증된다. 이 helper는 별도 gh 프로세스로 실행돼
   # shell의 gh wrapper(alias/함수)를 거치지 않으며, keyring의 PAT(gh auth login) 또는
@@ -203,6 +203,10 @@ in
   # NixOS(MiniPC)는 opnix github-pat + 기존 ssh 경로라 제외(darwin 한정 — git
   # credential helper에 토큰 공급원이 다름).
   programs.git.settings.url = lib.mkIf pkgs.stdenv.isDarwin {
-    "https://github.com/".insteadOf = "git@github.com:";
+    "https://github.com/".insteadOf = [
+      "git@github.com:"
+      "ssh://git@github.com/"
+      "ssh://git@github.com:22/"
+    ];
   };
 }

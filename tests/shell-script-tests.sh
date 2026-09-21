@@ -414,6 +414,8 @@ run_test "headless SSH dispatcher scope parser" test_headless_ssh_dispatcher_sco
 run_test "headless SSH dispatcher supervisor" test_headless_ssh_dispatcher_supervisor
 run_test "headless SSH dispatcher identity compatibility" test_headless_ssh_dispatcher_identity_compat
 run_test "headless SSH dispatcher manifest drift" test_headless_ssh_dispatcher_manifest_drift
+run_test "Codex direct SSH uses headless identity" test_codex_direct_ssh_uses_headless_identity
+run_test "GitHub SSH URL variants use HTTPS" test_github_ssh_urls_use_https
 run_test "Claude owner shell finalizes dispatcher PATH" test_claude_owner_shell_finalizes_dispatcher_path
 run_test "Claude stale shell snapshot recovers headless SSH PATH" test_claude_stale_snapshot_path_recovery
 
@@ -427,6 +429,7 @@ run_test "interaction-limits-renewal missing PAT exits nonzero" test_ilr_missing
 
 # korean-particle-expansion suite (tests/suites/korean-particle-expansion.sh)
 run_test "korean particle expansions stay brace-bounded" test_korean_particle_expansion_is_brace_bounded
+run_test "SA health check lifecycle and secret handling" test_opnix_health_check_lifecycle
 
 # 퇴역 키 로더는 tomlkit 없이도 도는 순수 셸 계약이라 아래 게이트 밖에 둔다.
 run_test "codex-config retired keys loader" test_codex_config_retired_keys_loader
