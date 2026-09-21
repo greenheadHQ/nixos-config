@@ -38,6 +38,7 @@ test("all declared aliases work without detecting unspecified languages", async 
 test("inline code, unrelated cards, and contradictory language classes stay untouched", async t => {
   const html = `<div>${block("const outside = 1;")}</div>` + scope('<p><code class="language-js">const inline = 2;</code></p><pre><code class="language-js language-python">const ambiguous = 3;</code></pre>');
   const page = await rendered(t, html);
+  page.document.querySelector(".anki-code-controls").remove();
   assert.equal(page.document.body.innerHTML, html);
   assert.equal(page.document.querySelectorAll(".hljs").length, 0);
 });

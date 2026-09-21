@@ -3,6 +3,84 @@
 (() => {
   const ASSET = __ANKI_SYNTAX_ASSET__;
   const CSS = __ANKI_SYNTAX_CSS__;
+  const CONTROLS = "AnkiCodeControlsV1";
+  if (!window[CONTROLS]) {
+    let cardId = null, answer = false, scale = 100;
+    let root = null, first = null, toolbar = null;
+    const onToggle = event => {
+      if (event.target.tagName === "DETAILS") mount();
+    };
+    const update = () => {
+      root.style.setProperty("--anki-code-scale", String(scale / 100));
+      toolbar.querySelector("output").textContent = `${scale}%`;
+      toolbar.querySelector('[data-action="smaller"]').disabled = scale === 80;
+      toolbar.querySelector('[data-action="larger"]').disabled = scale === 140;
+      toolbar.querySelector('[data-action="reset"]').disabled = scale === 100;
+    };
+    const mount = () => {
+      const nextRoot = document.getElementById("qa") || document.body;
+      const blocks = Array.from(nextRoot.querySelectorAll(".anki-code-scope pre > code"));
+      const nextFirst = blocks.find(code => !code.closest("details:not([open]), [hidden]"))?.parentElement;
+      const id = nextRoot.querySelector("[data-anki-cid]")?.dataset.ankiCid;
+      const nextId = /^[1-9][0-9]*$/.test(id || "") ? id : null;
+      const nextAnswer = !!nextRoot.querySelector("#answer");
+      // Keep only the current card, including a replaced FrontSide DOM. Never
+      // persist preferences or infer identity from note text. A preview without
+      // CardID may retain a setting only while its exact code node survives.
+      if (nextId ? nextId !== cardId || (answer && !nextAnswer)
+        : nextRoot !== root || nextFirst !== first || cardId !== null) scale = 100;
+      cardId = nextId;
+      answer = nextAnswer;
+      if (root !== nextRoot) {
+        root?.removeEventListener("toggle", onToggle, true);
+        root?.style.removeProperty("--anki-code-scale");
+        // Native details toggles do not bubble. Keep the one toolbar reachable
+        // when optional code is expanded, without observing or rewriting code.
+        nextRoot.addEventListener("toggle", onToggle, true);
+      }
+      root = nextRoot;
+      first = nextFirst;
+      // FrontSide may carry previously rendered markup, but not its listeners.
+      for (const duplicate of root.querySelectorAll(".anki-code-controls")) {
+        if (duplicate !== toolbar) duplicate.remove();
+      }
+      if (!first) {
+        toolbar?.remove();
+        toolbar = null;
+        if (blocks.length) root.style.setProperty("--anki-code-scale", String(scale / 100));
+        else root.style.removeProperty("--anki-code-scale");
+        return;
+      }
+      if (!toolbar || !toolbar.isConnected || toolbar.nextElementSibling !== first) {
+        toolbar?.remove();
+        const bar = document.createElement("div");
+        bar.className = "anki-code-controls";
+        bar.setAttribute("role", "group");
+        bar.setAttribute("aria-label", "이 카드의 코드 글자 크기");
+        bar.innerHTML = '<button type="button" data-action="smaller" aria-label="코드 글자 작게">−</button><output aria-live="polite" aria-atomic="true">100%</output><button type="button" data-action="larger" aria-label="코드 글자 크게">+</button><button type="button" data-action="reset" aria-label="코드 글자 크기 기본값">기본</button>';
+        // Stop reviewer tap/key actions, but retain native button activation,
+        // focus and scrolling. No document-wide or code-block gesture handlers.
+        for (const name of ["pointerdown", "pointerup", "mousedown", "mouseup",
+          "touchstart", "touchend", "keydown", "keypress", "keyup"]) {
+          bar.addEventListener(name, event => event.stopPropagation());
+        }
+        bar.addEventListener("click", event => {
+          event.stopPropagation();
+          if (toolbar !== bar || !bar.isConnected) return;
+          const button = event.target.closest("button[data-action]");
+          if (!button || button.disabled) return;
+          const action = button.dataset.action;
+          scale = action === "reset" ? 100 : Math.max(80, Math.min(140,
+            scale + (action === "larger" ? 10 : -10)));
+          update();
+        });
+        first.before(bar);
+        toolbar = bar;
+      }
+      update();
+    };
+    window[CONTROLS] = { mount };
+  }
   const KEY = "AnkiCodeHighlightV1";
   if (!window[KEY]) {
     const records = new WeakMap();
@@ -92,12 +170,15 @@
     };
     window[KEY] = { render, lastMetrics: null };
   }
-  if (!document.getElementById("anki-code-style-v1")) {
-    const style = document.createElement("style");
+  let style = document.getElementById("anki-code-style-v1");
+  if (!style) {
+    style = document.createElement("style");
     style.id = "anki-code-style-v1";
-    style.textContent = CSS;
     document.head.appendChild(style);
   }
+  // A synced template can change while the reviewer WebView remains alive.
+  if (style.textContent !== CSS) style.textContent = CSS;
+  window[CONTROLS].mount();
   // Anki reuses its WebView, including globals, across question/answer/card changes.
   // Each script invocation gets a new generation; a pending old card cannot paint it.
   window[KEY].render();
