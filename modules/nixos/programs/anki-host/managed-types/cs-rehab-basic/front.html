@@ -343,7 +343,85 @@ AnkiCidCopyV2.mount(document.getElementById("qa") || document.body);
 <script>
 (() => {
   const ASSET = "_anki-syntax-hljs-11.12.0-fd009500d0c826a5.min.js";
-  const CSS = "/* Scoped GitHub-inspired palette; app night mode is authoritative, not OS theme. */\n.anki-code-scope pre {\n  box-sizing: border-box;\n  max-width: 100%;\n  min-width: 0;\n  overflow-x: auto;\n  white-space: pre;\n  overflow-wrap: normal;\n  word-break: normal;\n  tab-size: 4;\n  margin: 1em 0;\n  padding: 1em 1.1em;\n  border: 1px solid #d8dee4;\n  border-radius: 10px;\n  background: #f6f8fa;\n  color: #24292f;\n  text-align: left;\n  font: 400 0.88em/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;\n  -webkit-text-size-adjust: 100%;\n}\n.anki-code-scope pre > code {\n  display: block;\n  min-width: max-content;\n  padding: 0;\n  border: 0;\n  border-radius: 0;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  white-space: inherit;\n  overflow-wrap: inherit;\n  word-break: inherit;\n}\n.anki-code-scope .hljs-keyword, .anki-code-scope .hljs-selector-tag, .anki-code-scope .hljs-literal { color: #cf222e; }\n.anki-code-scope .hljs-title, .anki-code-scope .hljs-section { color: #8250df; }\n.anki-code-scope .hljs-string, .anki-code-scope .hljs-regexp { color: #0a3069; }\n.anki-code-scope .hljs-number, .anki-code-scope .hljs-attr, .anki-code-scope .hljs-variable, .anki-code-scope .hljs-type, .anki-code-scope .hljs-built_in { color: #0550ae; }\n.anki-code-scope .hljs-comment, .anki-code-scope .hljs-quote { color: #57606a; }\n.anki-code-scope .hljs-name, .anki-code-scope .hljs-selector-class, .anki-code-scope .hljs-selector-id { color: #116329; }\n.anki-code-scope .hljs-meta, .anki-code-scope .hljs-symbol, .anki-code-scope .hljs-bullet { color: #953800; }\n.anki-code-scope .hljs-emphasis { font-style: italic; }\n.anki-code-scope .hljs-strong { font-weight: 600; }\n:is(.nightMode, .night_mode) .anki-code-scope pre,\n.anki-code-scope:is(.nightMode, .night_mode) pre { background: #161b22; color: #e6edf3; border-color: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-keyword,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-tag,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-literal { color: #ff7b72; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-title,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-section { color: #d2a8ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-string,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-regexp { color: #a5d6ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-number,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-attr,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-variable,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-type,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-built_in { color: #79c0ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-comment,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-quote { color: #8b949e; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-name,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-class,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-id { color: #7ee787; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-meta,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-symbol,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-bullet { color: #ffa657; }\n";
+  const CSS = "/* Scoped GitHub-inspired palette; app night mode is authoritative, not OS theme. */\n.anki-code-scope {\n  --anki-code-size: 17px;\n}\n.anki-code-scope pre {\n  box-sizing: border-box;\n  max-width: 100%;\n  min-width: 0;\n  overflow-x: auto;\n  white-space: pre;\n  overflow-wrap: normal;\n  word-break: normal;\n  tab-size: 4;\n  margin: 16px 0;\n  padding: 14px 16px;\n  border: 1px solid #d8dee4;\n  border-radius: 10px;\n  background: #f6f8fa;\n  color: #24292f;\n  text-align: left;\n  font: 400 17px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;\n  font-size: calc(var(--anki-code-size) * var(--anki-code-scale, 1));\n  -webkit-text-size-adjust: 100%;\n}\n.anki-code-controls {\n  box-sizing: border-box;\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  width: fit-content;\n  max-width: 100%;\n  margin: 16px 0 6px auto;\n  padding: 2px;\n  gap: 2px;\n  border: 1px solid #d8dee4;\n  border-radius: 10px;\n  background: #f6f8fa;\n  color: #57606a;\n  font: 500 12px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;\n  -webkit-text-size-adjust: 100%;\n}\n.anki-code-controls + pre { margin-top: 0; }\n.anki-code-controls button {\n  appearance: none;\n  -webkit-appearance: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 44px;\n  min-height: 44px;\n  margin: 0;\n  padding: 4px 8px;\n  border: 0;\n  border-radius: 7px;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  touch-action: manipulation;\n  -webkit-tap-highlight-color: transparent;\n  user-select: none;\n  -webkit-user-select: none;\n}\n.anki-code-controls button[data-action=\"smaller\"],\n.anki-code-controls button[data-action=\"larger\"] { font-size: 20px; }\n.anki-code-controls button:not(:disabled):hover,\n.anki-code-controls button:not(:disabled):active { background: #e6ebf0; }\n.anki-code-controls button:focus-visible { outline: 2px solid #0969da; outline-offset: 1px; }\n.anki-code-controls button:disabled { opacity: .4; cursor: default; }\n.anki-code-controls output {\n  min-width: 42px;\n  text-align: center;\n  font: inherit;\n  font-variant-numeric: tabular-nums;\n}\n@media (max-width: 600px) {\n  .anki-code-scope { --anki-code-size: 15px; }\n  .anki-code-scope pre { padding: 12px; }\n}\n.anki-code-scope pre > code {\n  display: block;\n  min-width: max-content;\n  padding: 0;\n  border: 0;\n  border-radius: 0;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  white-space: inherit;\n  overflow-wrap: inherit;\n  word-break: inherit;\n}\n.anki-code-scope .hljs-keyword, .anki-code-scope .hljs-selector-tag, .anki-code-scope .hljs-literal { color: #cf222e; }\n.anki-code-scope .hljs-title, .anki-code-scope .hljs-section { color: #8250df; }\n.anki-code-scope .hljs-string, .anki-code-scope .hljs-regexp { color: #0a3069; }\n.anki-code-scope .hljs-number, .anki-code-scope .hljs-attr, .anki-code-scope .hljs-variable, .anki-code-scope .hljs-type, .anki-code-scope .hljs-built_in { color: #0550ae; }\n.anki-code-scope .hljs-comment, .anki-code-scope .hljs-quote { color: #57606a; }\n.anki-code-scope .hljs-name, .anki-code-scope .hljs-selector-class, .anki-code-scope .hljs-selector-id { color: #116329; }\n.anki-code-scope .hljs-meta, .anki-code-scope .hljs-symbol, .anki-code-scope .hljs-bullet { color: #953800; }\n.anki-code-scope .hljs-emphasis { font-style: italic; }\n.anki-code-scope .hljs-strong { font-weight: 600; }\n:is(.nightMode, .night_mode) .anki-code-scope pre,\n.anki-code-scope:is(.nightMode, .night_mode) pre { background: #161b22; color: #e6edf3; border-color: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-controls {\n  background: #161b22; color: #8b949e; border-color: #30363d;\n}\n:is(.nightMode, .night_mode) .anki-code-controls button:not(:disabled):hover,\n:is(.nightMode, .night_mode) .anki-code-controls button:not(:disabled):active { background: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-controls button:focus-visible { outline-color: #79c0ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-keyword,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-tag,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-literal { color: #ff7b72; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-title,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-section { color: #d2a8ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-string,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-regexp { color: #a5d6ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-number,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-attr,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-variable,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-type,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-built_in { color: #79c0ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-comment,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-quote { color: #8b949e; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-name,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-class,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-id { color: #7ee787; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-meta,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-symbol,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-bullet { color: #ffa657; }\n";
+  const CONTROLS = "AnkiCodeControlsV1";
+  if (!window[CONTROLS]) {
+    let cardId = null, answer = false, scale = 100;
+    let root = null, first = null, toolbar = null;
+    const onToggle = event => {
+      if (event.target.tagName === "DETAILS") mount();
+    };
+    const update = () => {
+      root.style.setProperty("--anki-code-scale", String(scale / 100));
+      toolbar.querySelector("output").textContent = `${scale}%`;
+      toolbar.querySelector('[data-action="smaller"]').disabled = scale === 80;
+      toolbar.querySelector('[data-action="larger"]').disabled = scale === 140;
+      toolbar.querySelector('[data-action="reset"]').disabled = scale === 100;
+    };
+    const mount = () => {
+      const nextRoot = document.getElementById("qa") || document.body;
+      const blocks = Array.from(nextRoot.querySelectorAll(".anki-code-scope pre > code"));
+      const nextFirst = blocks.find(code => !code.closest("details:not([open]), [hidden]"))?.parentElement;
+      const id = nextRoot.querySelector("[data-anki-cid]")?.dataset.ankiCid;
+      const nextId = /^[1-9][0-9]*$/.test(id || "") ? id : null;
+      const nextAnswer = !!nextRoot.querySelector("#answer");
+      // Keep only the current card, including a replaced FrontSide DOM. Never
+      // persist preferences or infer identity from note text. A preview without
+      // CardID may retain a setting only while its exact code node survives.
+      if (nextId ? nextId !== cardId || (answer && !nextAnswer)
+        : nextRoot !== root || nextFirst !== first || cardId !== null) scale = 100;
+      cardId = nextId;
+      answer = nextAnswer;
+      if (root !== nextRoot) {
+        root?.removeEventListener("toggle", onToggle, true);
+        root?.style.removeProperty("--anki-code-scale");
+        // Native details toggles do not bubble. Keep the one toolbar reachable
+        // when optional code is expanded, without observing or rewriting code.
+        nextRoot.addEventListener("toggle", onToggle, true);
+      }
+      root = nextRoot;
+      first = nextFirst;
+      // FrontSide may carry previously rendered markup, but not its listeners.
+      for (const duplicate of root.querySelectorAll(".anki-code-controls")) {
+        if (duplicate !== toolbar) duplicate.remove();
+      }
+      if (!first) {
+        toolbar?.remove();
+        toolbar = null;
+        if (blocks.length) root.style.setProperty("--anki-code-scale", String(scale / 100));
+        else root.style.removeProperty("--anki-code-scale");
+        return;
+      }
+      if (!toolbar || !toolbar.isConnected || toolbar.nextElementSibling !== first) {
+        toolbar?.remove();
+        const bar = document.createElement("div");
+        bar.className = "anki-code-controls";
+        bar.setAttribute("role", "group");
+        bar.setAttribute("aria-label", "이 카드의 코드 글자 크기");
+        bar.innerHTML = '<button type="button" data-action="smaller" aria-label="코드 글자 작게">−</button><output aria-live="polite" aria-atomic="true">100%</output><button type="button" data-action="larger" aria-label="코드 글자 크게">+</button><button type="button" data-action="reset" aria-label="코드 글자 크기 기본값">기본</button>';
+        // Stop reviewer tap/key actions, but retain native button activation,
+        // focus and scrolling. No document-wide or code-block gesture handlers.
+        for (const name of ["pointerdown", "pointerup", "mousedown", "mouseup",
+          "touchstart", "touchend", "keydown", "keypress", "keyup"]) {
+          bar.addEventListener(name, event => event.stopPropagation());
+        }
+        bar.addEventListener("click", event => {
+          event.stopPropagation();
+          if (toolbar !== bar || !bar.isConnected) return;
+          const button = event.target.closest("button[data-action]");
+          if (!button || button.disabled) return;
+          const action = button.dataset.action;
+          scale = action === "reset" ? 100 : Math.max(80, Math.min(140,
+            scale + (action === "larger" ? 10 : -10)));
+          update();
+        });
+        first.before(bar);
+        toolbar = bar;
+      }
+      update();
+    };
+    window[CONTROLS] = { mount };
+  }
   const KEY = "AnkiCodeHighlightV1";
   if (!window[KEY]) {
     const records = new WeakMap();
@@ -433,12 +511,15 @@ AnkiCidCopyV2.mount(document.getElementById("qa") || document.body);
     };
     window[KEY] = { render, lastMetrics: null };
   }
-  if (!document.getElementById("anki-code-style-v1")) {
-    const style = document.createElement("style");
+  let style = document.getElementById("anki-code-style-v1");
+  if (!style) {
+    style = document.createElement("style");
     style.id = "anki-code-style-v1";
-    style.textContent = CSS;
     document.head.appendChild(style);
   }
+  // A synced template can change while the reviewer WebView remains alive.
+  if (style.textContent !== CSS) style.textContent = CSS;
+  window[CONTROLS].mount();
   // Anki reuses its WebView, including globals, across question/answer/card changes.
   // Each script invocation gets a new generation; a pending old card cannot paint it.
   window[KEY].render();

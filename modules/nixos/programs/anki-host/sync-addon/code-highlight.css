@@ -1,4 +1,7 @@
 /* Scoped GitHub-inspired palette; app night mode is authoritative, not OS theme. */
+.anki-code-scope {
+  --anki-code-size: 17px;
+}
 .anki-code-scope pre {
   box-sizing: border-box;
   max-width: 100%;
@@ -8,15 +11,71 @@
   overflow-wrap: normal;
   word-break: normal;
   tab-size: 4;
-  margin: 1em 0;
-  padding: 1em 1.1em;
+  margin: 16px 0;
+  padding: 14px 16px;
   border: 1px solid #d8dee4;
   border-radius: 10px;
   background: #f6f8fa;
   color: #24292f;
   text-align: left;
-  font: 400 0.88em/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font: 400 17px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: calc(var(--anki-code-size) * var(--anki-code-scale, 1));
   -webkit-text-size-adjust: 100%;
+}
+.anki-code-controls {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: fit-content;
+  max-width: 100%;
+  margin: 16px 0 6px auto;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid #d8dee4;
+  border-radius: 10px;
+  background: #f6f8fa;
+  color: #57606a;
+  font: 500 12px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+.anki-code-controls + pre { margin-top: 0; }
+.anki-code-controls button {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.anki-code-controls button[data-action="smaller"],
+.anki-code-controls button[data-action="larger"] { font-size: 20px; }
+.anki-code-controls button:not(:disabled):hover,
+.anki-code-controls button:not(:disabled):active { background: #e6ebf0; }
+.anki-code-controls button:focus-visible { outline: 2px solid #0969da; outline-offset: 1px; }
+.anki-code-controls button:disabled { opacity: .4; cursor: default; }
+.anki-code-controls output {
+  min-width: 42px;
+  text-align: center;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 600px) {
+  .anki-code-scope { --anki-code-size: 15px; }
+  .anki-code-scope pre { padding: 12px; }
 }
 .anki-code-scope pre > code {
   display: block;
@@ -42,6 +101,12 @@
 .anki-code-scope .hljs-strong { font-weight: 600; }
 :is(.nightMode, .night_mode) .anki-code-scope pre,
 .anki-code-scope:is(.nightMode, .night_mode) pre { background: #161b22; color: #e6edf3; border-color: #30363d; }
+:is(.nightMode, .night_mode) .anki-code-controls {
+  background: #161b22; color: #8b949e; border-color: #30363d;
+}
+:is(.nightMode, .night_mode) .anki-code-controls button:not(:disabled):hover,
+:is(.nightMode, .night_mode) .anki-code-controls button:not(:disabled):active { background: #30363d; }
+:is(.nightMode, .night_mode) .anki-code-controls button:focus-visible { outline-color: #79c0ff; }
 :is(.nightMode, .night_mode) .anki-code-scope .hljs-keyword,
 :is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-tag,
 :is(.nightMode, .night_mode) .anki-code-scope .hljs-literal { color: #ff7b72; }
