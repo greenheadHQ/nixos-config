@@ -68,8 +68,12 @@
 .anki-code-controls button[data-action="reset"]::before { content: "↺"; font-size: 16px; }
 .anki-code-controls button:not(:disabled):hover,
 .anki-code-controls button:not(:disabled):active { background: #e6ebf0; }
-.anki-code-controls button:focus-visible { outline: 2px solid #0969da; outline-offset: 1px; }
-.anki-code-controls button:disabled { opacity: .4; cursor: default; }
+.anki-code-controls button:hover,
+.anki-code-controls button:active { box-shadow: none; }
+/* Desktop Anki suppresses button outlines with !important. Restore focus here. */
+.anki-code-controls button:focus-visible { outline: 2px solid #0969da !important; outline-offset: 1px; }
+.anki-code-controls button:disabled,
+.anki-code-controls button:disabled:hover { background: transparent; color: inherit; opacity: .4; cursor: default; }
 .anki-code-controls output {
   min-width: 34px;
   text-align: center;
@@ -110,7 +114,7 @@
 }
 :is(.nightMode, .night_mode) .anki-code-controls button:not(:disabled):hover,
 :is(.nightMode, .night_mode) .anki-code-controls button:not(:disabled):active { background: #30363d; }
-:is(.nightMode, .night_mode) .anki-code-controls button:focus-visible { outline-color: #79c0ff; }
+:is(.nightMode, .night_mode) .anki-code-controls button:focus-visible { outline-color: #79c0ff !important; }
 :is(.nightMode, .night_mode) .anki-code-scope .hljs-keyword,
 :is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-tag,
 :is(.nightMode, .night_mode) .anki-code-scope .hljs-literal { color: #ff7b72; }
