@@ -92,6 +92,44 @@ with (root / 'notifications').open('a') as f:
         self.assertGreater(self.state()["last_success"], 0)
         self.assertEqual((self.root / "state/status.json").stat().st_mode & 0o777, 0o600)
 
+    def test_corrupt_state_does_not_block_successful_probe(self):
+        state_file = self.root / "state/status.json"
+        state_file.parent.mkdir()
+        cases = (b'{"FAKE_SECRET":', b'null', b'[]', b'"FAKE_SECRET"', b'\xff', b'{}')
+        for index, contents in enumerate(cases, 1):
+            with self.subTest(contents=contents):
+                state_file.write_bytes(contents)
+                result = self.run_check()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(len((self.root / "calls").read_text().splitlines()), index)
+                self.assertEqual(self.state()["last_result"], "ok")
+                self.assertFalse(self.state()["alert_open"])
+                self.assertIn("invalid local state", result.stderr)
+                self.assertEqual(self.notifications(), [])
+                self.assertEqual(state_file.stat().st_mode & 0o777, 0o600)
+        self.assertNotIn("invalid local state", self.run_check().stderr)
+
+    def test_invalid_state_fields_do_not_block_failure_alert(self):
+        state_file = self.root / "state/status.json"
+        state_file.parent.mkdir()
+        baseline = {"last_success": 0, "last_checked": 0, "last_result": "unknown",
+                    "alert_open": False, "last_alert_at": 0}
+        cases = ({"alert_open": "false"}, {"last_result": 42},
+                 {"last_alert_at": "yesterday"}, {"last_checked": None},
+                 {"last_success": []}, {"last_success": True},
+                 {"last_success": -1}, {"last_success": float("nan")},
+                 {"last_success": 1e300})
+        for index, fields in enumerate(cases, 1):
+            with self.subTest(fields=fields):
+                state_file.write_text(json.dumps({**baseline, **fields}))
+                result = self.run_check("failure")
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(len((self.root / "calls").read_text().splitlines()), 2 * index)
+                self.assertEqual(len(self.notifications()), index)
+                self.assertEqual(self.state()["last_result"], "read_failed")
+                self.assertTrue(self.state()["alert_open"])
+                self.assertIn("invalid local state", result.stderr)
+
     def test_failure_reminder_and_recovery(self):
         self.assertEqual(self.run_check("failure").returncode, 1)
         self.assertEqual(len(self.notifications()), 1)

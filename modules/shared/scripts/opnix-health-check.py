@@ -81,6 +81,32 @@ def notify(config, title, message, priority):
         return False
 
 
+def load_state(path):
+    """Reset invalid alert history so a corrupt checkpoint cannot stop probing."""
+    default = {"last_success": 0, "last_result": "unknown", "last_checked": 0,
+               "alert_open": False, "last_alert_at": 0}
+    try:
+        state = json.loads(path.read_text())
+        if not isinstance(state, dict):
+            raise ValueError("state must be an object")
+        if type(state["alert_open"]) is not bool or not isinstance(state["last_result"], str):
+            raise ValueError("invalid alert state")
+        for field in ("last_success", "last_checked", "last_alert_at"):
+            value = state[field]
+            # Reject bool, NaN, infinity and timestamps beyond year 9999 as well
+            # as wrong types, so later arithmetic/localtime cannot fail either.
+            if type(value) not in (int, float) or not 0 <= value <= 253402300799:
+                raise ValueError("invalid timestamp")
+        return {field: state[field] for field in default}
+    except FileNotFoundError:
+        pass
+    except (ValueError, KeyError):
+        # Never log file contents or parser errors. The completed check replaces
+        # the invalid file atomically; healthy probes must not send SA alarms.
+        print("SA health: invalid local state; starting fresh", file=sys.stderr)
+    return default
+
+
 def save_state(path, state):
     fd, name = tempfile.mkstemp(prefix=".status-", dir=path.parent)
     try:
@@ -102,12 +128,7 @@ def check(config):
         except BlockingIOError:
             print("SA health: another check is running")
             return 0
-        state = {"last_success": 0, "last_result": "unknown",
-                 "alert_open": False, "last_alert_at": 0}
-        try:
-            state.update(json.loads(state_file.read_text()))
-        except FileNotFoundError:
-            pass
+        state = load_state(state_file)
         result = probe(config)
         if result != "ok":
             time.sleep(config["retryDelaySeconds"])
