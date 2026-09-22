@@ -27,11 +27,11 @@ pkgs.writeShellApplication {
       launchGroup
       claudeRcFlock
     ]
-    ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+    ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
       procps # pgrep
       lsof
     ]
-    ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
+    ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
       lsof
       # pgrep은 nixpkgs 대체가 없어 호출측 PATH의 /usr/bin/pgrep으로 fallthrough.
     ];

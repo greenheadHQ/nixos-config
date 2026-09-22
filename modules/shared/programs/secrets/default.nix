@@ -20,7 +20,7 @@
   # SuccessfulExit = false(실패 시 재시도)만 남겨 upstream의 재시도 의도는 보존한다.
   # mkForce는 옵션 정의 레벨에서 upstream 정의 전체를 배제하므로 Crashed는 default(null)로
   # 돌아가 plist에서 생략된다.
-  launchd.agents.activate-agenix.config.KeepAlive = lib.mkIf pkgs.stdenv.isDarwin (
+  launchd.agents.activate-agenix.config.KeepAlive = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin (
     lib.mkForce {
       SuccessfulExit = false;
     }
@@ -59,7 +59,7 @@
   # rm 실패는 non-fatal로 남긴다 — bootout 직렬화로 경합은 구조적으로 제거되므로
   # 이제 실패는 예상 밖 이상 신호이지만, 그것이 activation 전체를 중단시킬 이유는
   # 없다 (경고 후 다음 activation에서 재시도).
-  home.activation.cleanupAgenixStaleGenerations = lib.mkIf pkgs.stdenv.isDarwin (
+  home.activation.cleanupAgenixStaleGenerations = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin (
     lib.hm.dag.entryBefore [ "setupLaunchAgents" ] ''
       _agenix_mount="${config.age.secretsMountPoint}"
       # 디렉토리 선생성 + Time Machine sticky 제외 — 구 TMPDIR 위치는 macOS 표준
@@ -158,8 +158,8 @@
     # 삭제(와 심링크 밖 orphan에 한해 위 cleanup)가 회수한다 — 롤백 상태에 머무는
     # 동안의 수동 회수 절차는 managing-secrets references/troubleshooting.md 참조.
     # linux(MiniPC)는 XDG_RUNTIME_DIR(systemd tmpfs) — dirhelper 문제가 없어 기본값 유지.
-    secretsDir = lib.mkIf pkgs.stdenv.isDarwin "${config.home.homeDirectory}/${constants.paths.agenixDarwinSecretsRelPath}";
-    secretsMountPoint = lib.mkIf pkgs.stdenv.isDarwin "${config.home.homeDirectory}/${constants.paths.agenixDarwinSecretsRelPath}.d";
+    secretsDir = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin "${config.home.homeDirectory}/${constants.paths.agenixDarwinSecretsRelPath}";
+    secretsMountPoint = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin "${config.home.homeDirectory}/${constants.paths.agenixDarwinSecretsRelPath}.d";
 
     # SSH 키로 복호화
     identityPaths = [ "${config.home.homeDirectory}/.ssh/id_ed25519" ];
@@ -182,7 +182,7 @@
       };
     }
     # Immich CLI 업로드 시크릿은 macOS FolderAction에서 사용
-    // lib.optionalAttrs pkgs.stdenv.isDarwin {
+    // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
       immich-api-key = {
         file = ../../../../secrets/immich-api-key.age;
         path = "${config.xdg.configHome}/immich/api-key";
@@ -207,7 +207,7 @@
     # #872: Mac 전용 1Password Service Account token (방식 B, epic #780 Phase 2b).
     # 셸 _gh_pat()이 이 토큰으로 github-pat을 무인 발급해 $TMPDIR 캐시에 둔다.
     # personal 호스트에만 배포(개인 Mac 키 recipient) → work role 호스트는 미배포(agenix graceful).
-    // lib.optionalAttrs (pkgs.stdenv.isDarwin && hostType == "personal") {
+    // lib.optionalAttrs (pkgs.stdenv.hostPlatform.isDarwin && hostType == "personal") {
       opnix-service-account-token-mac = {
         file = ../../../../secrets/opnix-service-account-token-mac.age;
         # 경로 단일 소스: constants.onePassword.saTokenMacRelPath — 소비자(gh-pat-mac·op_get)는

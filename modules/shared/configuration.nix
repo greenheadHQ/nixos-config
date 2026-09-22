@@ -26,7 +26,7 @@
       automatic = true;
       options = "--delete-older-than 30d";
     }
-    // lib.optionalAttrs pkgs.stdenv.isDarwin {
+    // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
       interval = {
         Weekday = 0;
         Hour = 2;

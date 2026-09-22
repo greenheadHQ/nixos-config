@@ -184,13 +184,13 @@ in
     extensions = [
       (import ./gh-stack-package.nix { inherit pkgs; })
     ]
-    ++ lib.optionals pkgs.stdenv.isDarwin [
+    ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
       (import ./gh-difftool-package.nix { inherit pkgs; })
     ];
     settings = {
       # GitHub 인증 프로토콜. Mac은 https(아래 darwin 전용 git insteadOf + gh PAT
       # credential helper로 통일), NixOS(MiniPC)는 opnix/ssh 경로라 기존 ssh 유지.
-      git_protocol = if pkgs.stdenv.isDarwin then "https" else "ssh";
+      git_protocol = if pkgs.stdenv.hostPlatform.isDarwin then "https" else "ssh";
     };
   };
 
@@ -202,7 +202,7 @@ in
   # 읽는 것이 아니다. SSH 키 등록 불필요.
   # NixOS(MiniPC)는 opnix github-pat + 기존 ssh 경로라 제외(darwin 한정 — git
   # credential helper에 토큰 공급원이 다름).
-  programs.git.settings.url = lib.mkIf pkgs.stdenv.isDarwin {
+  programs.git.settings.url = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin {
     "https://github.com/".insteadOf = [
       "git@github.com:"
       "ssh://git@github.com/"

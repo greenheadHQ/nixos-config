@@ -61,7 +61,7 @@ in
       # ── Linux 전용 ──
       # WARNING: gcc를 무조건 추가하지 마세요. macOS에서는 LLVM 전체 소스 빌드를 트리거합니다.
       # macOS는 clang이 이미 있어 tree-sitter 파서 컴파일이 가능합니다.
-      ++ lib.optionals pkgs.stdenv.isLinux [
+      ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
         gcc # tree-sitter 파서 컴파일 (NixOS 전용 — macOS는 clang 사용)
 
         # ── DAP (디버거 어댑터) ──

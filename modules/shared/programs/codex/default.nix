@@ -24,7 +24,7 @@ let
   # 파일이 seed로 반영된다. `nixosConfigPath`(=항상 메인 체크아웃 경로) 기반 문자열을
   # 쓰면 worktree 변경이 누락된다.
   codexConfigSeedPath =
-    if pkgs.stdenv.isDarwin then ./files/config.darwin.toml else ./files/config.toml;
+    if pkgs.stdenv.hostPlatform.isDarwin then ./files/config.darwin.toml else ./files/config.toml;
   # activation에서 repo-managed 키와 사용자 소유 섹션을 merge하는 Python 스크립트.
   # 동일하게 store path로 copy되므로 현 flake 기준으로 동작한다.
   codexSyncScript = ./files/sync-codex-config.py;
@@ -159,7 +159,7 @@ in
   #   - macOS: brew cask codex (homebrew cleanup="none"이라 cask 목록 제거만으론 미삭제)
   #     darwin wrapper ~/.local/bin/codex(symlink)는 home.file 항목 제거로 HM이 자동 정리.
   home.activation.cleanupLegacyCodexCli = lib.hm.dag.entryAfter [ "writeBoundary" ] (
-    lib.optionalString pkgs.stdenv.isLinux ''
+    lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
       legacy_bin="$HOME/.local/bin/codex"
       if [ -f "$legacy_bin" ] && [ ! -L "$legacy_bin" ]; then
         if ${pkgs.file}/bin/file -b "$legacy_bin" | ${pkgs.gnugrep}/bin/grep -q ELF; then
@@ -168,7 +168,7 @@ in
         fi
       fi
     ''
-    + lib.optionalString pkgs.stdenv.isDarwin ''
+    + lib.optionalString pkgs.stdenv.hostPlatform.isDarwin ''
       # Apple Silicon 전용 경로 — Intel Mac(/usr/local/bin/brew)은 이 프로젝트 범위 밖.
       # brew 부재 시 아래 -x 가드로 no-op.
       brew_bin="/opt/homebrew/bin/brew"

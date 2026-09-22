@@ -373,8 +373,11 @@ let
     builtins.readFile ../modules/shared/programs/claude/files/settings.json
   );
   claudeRcFlockSelector = import ../libraries/claude-rc-flock.nix;
+  # production 선택자가 읽는 surface를 그대로 재현한다 — 판정은 stdenv.hostPlatform 경유이며
+  # (별칭 deprecation 경위는 tests/suites/stdenv-platform-guard.sh), 이 fake가 구 surface에
+  # 남으면 선택자 평가가 attribute missing으로 즉시 실패한다. 둘은 함께 갱신해야 한다.
   fakeFlockPkgs = isLinux: {
-    stdenv = { inherit isLinux; };
+    stdenv.hostPlatform = { inherit isLinux; };
     util-linux = "util-linux";
     flock = "discoteq-flock";
   };

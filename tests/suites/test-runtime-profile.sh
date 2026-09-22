@@ -19,7 +19,7 @@ _test_runtime_profile_make_repo() {
   printf '{"version": 7}\n' > "$dir/flake.lock"
   printf '{ outputs = _: { }; }\n' > "$dir/flake.nix"
   printf '{ pkgs }: { pythonWithTomlkit = pkgs.python3; }\n' > "$dir/libraries/python-runtimes.nix"
-  printf '{ pkgs }: if pkgs.stdenv.isLinux then pkgs.util-linux else pkgs.flock\n' \
+  printf '{ pkgs }: if pkgs.stdenv.hostPlatform.isLinux then pkgs.util-linux else pkgs.flock\n' \
     > "$dir/libraries/claude-rc-flock.nix"
 }
 

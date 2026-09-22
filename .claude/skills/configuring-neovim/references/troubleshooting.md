@@ -178,12 +178,12 @@ nix build nixpkgs#vtsls
 
 ```nix
 extraPackages = with pkgs; [ ... ]
-++ lib.optionals pkgs.stdenv.isLinux [
+++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
   gcc  # NixOS 전용
 ];
 ```
 
-예방: extraPackages에 C/C++ 컴파일러나 대형 빌드 도구를 추가할 때는 반드시 플랫폼 조건을 확인할 것. `pkgs.stdenv.isLinux` / `pkgs.stdenv.isDarwin`으로 분기.
+예방: extraPackages에 C/C++ 컴파일러나 대형 빌드 도구를 추가할 때는 반드시 플랫폼 조건을 확인할 것. `pkgs.stdenv.hostPlatform.isLinux` / `pkgs.stdenv.hostPlatform.isDarwin`으로 분기.
 
 ## marksman이 Swift 소스 빌드를 트리거 (빌드 실패)
 
