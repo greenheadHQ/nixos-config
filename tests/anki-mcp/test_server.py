@@ -12,10 +12,12 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 import pytest
+from mcp.types import Tool
 from starlette.routing import Route
 
 from anki_mcp.authoring import AUTHORING_GUIDANCE
 from anki_mcp.config import Settings
+from anki_mcp.metadata import export_catalog
 from anki_mcp.server import build
 
 FQDN = "minipc.example.ts.net"
@@ -92,7 +94,8 @@ async def test_funnel_guard_caps_registrations_and_body_size(tmp_path):
 @pytest.mark.anyio
 @pytest.mark.parametrize("auth_method", ["none", "client_secret_post", None])
 async def test_split_apps_metadata_and_full_oauth_flow(tmp_path, auth_method):
-    funnel, approval = build(_settings(tmp_path))
+    cfg = _settings(tmp_path)
+    funnel, approval = build(cfg)
     funnel_paths = _paths(funnel)
     assert "/authorize" not in funnel_paths
     for p in ("/.well-known/oauth-authorization-server", "/register", "/token", "/revoke", "/mcp"):
@@ -193,6 +196,13 @@ async def test_split_apps_metadata_and_full_oauth_flow(tmp_path, auth_method):
             r = await fh.post("/mcp", headers=hdrs, json=rpc)
             assert r.status_code == 200, r.text
             listed = {t["name"]: t for t in r.json()["result"]["tools"]}
+            exported = await export_catalog(field_chars=cfg.field_chars)
+            assert exported["instructions"] == initialized.json()["result"]["instructions"]
+            # HTTP omits null optional fields; SDK parsing restores that explicit absence.
+            assert {t["name"]: t for t in exported["tools"]} == {
+                name: Tool.model_validate(tool).model_dump(mode="json", by_alias=True)
+                for name, tool in listed.items()
+            }
             names = set(listed)
             assert {"anki_find_notes", "anki_add_notes", "anki_sync_now", "anki_delete_notes", "anki_operation_status"} <= names
             for name in ("anki_add_notes", "anki_update_note_fields", "anki_update_notes_fields"):

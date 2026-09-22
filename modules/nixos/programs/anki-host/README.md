@@ -26,6 +26,59 @@ ChatGPT 개발자 모드 연결은 연결 설정에서 **새로 고침(Refresh)*
 갱신 후 새 대화에서 변경된 지침을 검증하고, iPhone의 실제 작성·링크 동작은 실기기에서 확인한다.
 동작하는 연결을 먼저 삭제·재등록하지 않는다. 지침 전달 확인은 LLM 준수나 실기기 동작 검증을 대신하지 않는다.
 
+### 메타데이터 대조와 배포 완료 조건
+
+도구·설명·스키마·annotation·초기화 지침을 바꾸면 아래 세 단계를 각각 기록한다.
+
+1. **서버**: 배포한 소스와 실행 서비스의 SDK·설정으로 내보낸 명세를 `full` 범위로 대조한다.
+   인증된 `initialize`·`tools/list` 응답도 확인한다. 서비스 재시작 성공만으로 완료하지 않는다.
+2. **ChatGPT 등록**: 개발 연결을 Refresh한 뒤 등록 화면의 전체 도구 이름·설명·입력 스키마·읽기/쓰기
+   분류를 저장하고 `registration` 범위로 대조한다. 누락·차이·필수 항목 미관측이면 갱신 확인은 미완료다.
+3. **Chat 실행**: 새 Chat에서 변경된 도구를 실제로 검색해 노출을 확인한다. 모델·시각·검색 인자와
+   반환 목록을 남긴다. 쓰기 실행·iPhone 동작은 승인된 검증에서 별도로 확인한다.
+
+등록 목록과 한 응답에 노출된 목록은 서로 다른 관측이다. Chat에서 도구가 안 보인다는 이유만으로
+서버 기능 부재나 등록 drift를 확정하지 않는다. 등록 대조가 통과해도 Chat 실행 검증이 안 됐으면 그 상태를 남긴다.
+
+저장소 루트의 `nix develop` 환경에서 다음 명령으로 비교용 명세를 만든다. `fieldCharsDefault`는
+두 조회 도구의 입력 스키마 기본값에 영향을 주므로 설정에서 읽는다. 명령은 Anki·OAuth·동기화에 접근하지 않는다.
+
+```sh
+anki_field_chars=$(nix eval --impure --raw --expr 'toString (import ./libraries/constants.nix).ankiMcp.fieldCharsDefault')
+PYTHONPATH=modules/nixos/programs/anki-mcp/src nix shell .#ankiMcpTestEnv -c \
+  python -m anki_mcp.metadata export --field-chars "$anki_field_chars" > /tmp/anki-source.json
+PYTHONPATH=modules/nixos/programs/anki-mcp/src nix shell .#ankiMcpTestEnv -c \
+  python -m anki_mcp.metadata compare /tmp/anki-source.json /tmp/anki-registration.json --scope registration
+```
+
+실행 서비스 명세는 서비스의 Python·`PYTHONPATH`·`ANKI_MCP_FIELD_CHARS`로 같은 exporter를 실행하고
+`--source server`를 지정한다. 이 표시는 수집 경로의 기록이며 HTTP 통신 성공의 증거가 아니다.
+인증된 HTTP 응답을 저장할 때는 모든 `tools/list` 페이지를 수집하고 `initialize.instructions`를 포함한다.
+각 도구는 `mcp.types.Tool.model_validate(tool).model_dump(mode="json", by_alias=True)`로 선택 필드를
+복원한다. `compare`는 이 정규화를 대신하지 않는다. 등록 UI에서 숨겨진 필드는 소스 값으로 채우지 않는다.
+
+관측 JSON은 `source`(`source`, `server`, `chatgpt-registration`, `chat-turn`), 시간대가 있는 ISO
+`observed_at`, 전체 도구 목록 수집 여부인 `complete`, `tools` 배열을 가진다. `instructions`와 각 도구의
+`description`, `inputSchema`, `outputSchema`, `annotations` 등은 **실제로 관측한 필드만** 포함한다.
+도구 이름은 `name`, 등록 화면의 읽기/쓰기 분류는 `annotations.readOnlyHint`로 저장한다.
+예를 들어 한 Chat에서 이름 하나만 확인한 불완전 관측은 다음처럼 기록한다.
+
+```json
+{
+  "source": "chat-turn",
+  "observed_at": "2026-09-22T12:00:00+09:00",
+  "complete": false,
+  "tools": [{"name": "anki_status"}]
+}
+```
+
+명령은 도구 누락·추가와 필드별 변경 경로를 출력한다. 종료 코드는 `0=match`, `1=drift`,
+`2=unknown 또는 invalid`다. 기본 `full`은 SDK 전체 명세, `registration`은 이름·설명·입력 스키마·
+`readOnlyHint`를 필수로 비교하며 추가로 관측한 필드의 차이도 검출한다. 배열과 설명은 임의로 정규화하지 않는다.
+등록 대조가 `match`여도 숨겨진 `outputSchema`·다른 annotation·초기화 지침이 있으면 `full_status=unknown`이다.
+불완전 목록과 `chat-turn`은 차이 내역을 보여 주되 등록 drift나 정상으로 확정하지 않는다.
+이 비교의 회귀 테스트와 인증된 ASGI 응답 대조는 기존 Anki MCP 테스트 및 required `check` CI에 포함된다.
+
 ## 변경 요청과 결과 확인
 
 1. `anki_status`, 검색·상세 조회로 현재 대상과 ID를 확인한다.
