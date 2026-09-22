@@ -26,7 +26,7 @@
 
 ### 플랫폼 주의사항
 
-`gcc`는 `lib.optionals pkgs.stdenv.isLinux`로 Linux 전용 추가. macOS에서 `gcc`를 무조건 추가하면 LLVM 전체 소스 빌드가 트리거되어 빌드가 수십 분 멈춤. macOS는 clang이 이미 있어 tree-sitter 파서 컴파일 가능.
+`gcc`는 `lib.optionals pkgs.stdenv.hostPlatform.isLinux`로 Linux 전용 추가. macOS에서 `gcc`를 무조건 추가하면 LLVM 전체 소스 빌드가 트리거되어 빌드가 수십 분 멈춤. macOS는 clang이 이미 있어 tree-sitter 파서 컴파일 가능.
 
 ## LazyVim extras
 

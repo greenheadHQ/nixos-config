@@ -256,6 +256,8 @@ run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_
 run_test "codex trust write failure returns warning" test_codex_trust_write_failure_returns_warning
 run_test "fixture git setup ignores host global hooks" test_fixture_git_is_hermetic_against_global_hooks
 run_test "suite definitions match aggregator registrations" test_suite_function_registration_parity
+run_test "nix sources use stdenv.hostPlatform predicates" test_nix_sources_use_host_platform_predicates
+run_test "deprecated stdenv predicate scan detects regression" test_deprecated_stdenv_predicate_scan_detects_regression
 run_test "nixos nrs offline force smoke" test_nixos_nrs_offline_force_smoke
 run_test "nixos nrs no-change activates when Codex artifact missing" test_nixos_nrs_no_changes_activates_when_codex_artifact_missing
 run_test "extract_oos_entries filesystem input" test_extract_oos_entries_filesystem_input

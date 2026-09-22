@@ -175,7 +175,7 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/lib/hook-runtime.sh";
 
     # hs.notify contentImage용 아이콘 (Claude.app에서 추출한 128x128 PNG, macOS 전용)
-    ".claude/assets/notification-icon.png" = lib.mkIf pkgs.stdenv.isDarwin {
+    ".claude/assets/notification-icon.png" = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin {
       source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/assets/notification-icon.png";
     };
 

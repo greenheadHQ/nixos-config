@@ -30,11 +30,11 @@ pkgs.writeShellApplication {
       launchGroup
       claudeRcFlock
     ]
-    ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+    ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
       procps
       lsof
     ]
-    ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
+    ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
       lsof
     ];
   text =

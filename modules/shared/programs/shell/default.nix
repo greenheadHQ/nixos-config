@@ -134,7 +134,7 @@ in
     # connector / plugin / tool_search 가 필요하면 codex-apps 로 세 feature 모두 복원한다.
     # Darwin 은 features default 가 true 라 안내 echo 없이 기존 alias 그대로 유지한다.
     codex =
-      if pkgs.stdenv.isLinux then
+      if pkgs.stdenv.hostPlatform.isLinux then
         "echo '[codex] apps feature disabled for fast startup. Use codex-apps for full connector surface.' >&2; command codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen"
       else
         "command codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen";
@@ -485,7 +485,7 @@ in
       network_connect_timeout = 5;
       local_timeout = 5;
       style = "compact";
-      inline_height = if pkgs.stdenv.isDarwin then 40 else 9;
+      inline_height = if pkgs.stdenv.hostPlatform.isDarwin then 40 else 9;
       show_help = false;
       update_check = false;
       search_mode = "fulltext";
