@@ -257,9 +257,10 @@ class AddonsTest(unittest.TestCase):
     def test_cli_defers_for_real_named_process_without_creating_base(self):
         # Exercise ps/CLI together, always against a disposable base. Never use
         # the installed wrapper's live default directory to test deferral.
+        # Symlink, not copy: macOS 27 SIGKILLs copies of Apple platform binaries,
+        # while ps still reports the process under the link name "Anki".
         binary = self.root / "Anki"
-        shutil.copyfile("/bin/sleep", binary)
-        binary.chmod(0o700)
+        binary.symlink_to("/bin/sleep")
         proc = subprocess.Popen([str(binary), "30"])
         try:
             manifest = self.root / "manifest.json"
