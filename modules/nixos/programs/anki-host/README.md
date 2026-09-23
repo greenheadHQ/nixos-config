@@ -117,7 +117,9 @@ PYTHONPATH=modules/nixos/programs/anki-mcp/src nix shell .#ankiMcpTestEnv -c \
 `anki_operation_status(operation_id)`와 `anki_recent_operations`로 작업을 찾는다.
 ID 없이 보낸 요청의 응답을 잃었으면 최근 작업부터 확인한다. `notification=unknown`은 알림 전달 여부 불명이며
 자동 재발송하지 않는다. 원장은 종료 시 본문·미디어·확인 토큰을 지우고 결과와 재사용 방지 기록을 보존한다.
-미완료 본문도 만료 정리 시 제거한다. 원장과 복구점에는 별도의 삭제 정책을 적용한다.
+미완료 본문도 만료 정리 시 제거한다. 원장 파일(0600, 디렉터리 0700)은 삭제하지 않고 무기한 보존한다.
+같은 `request_id`는 같은 작업 ID로 이어지므로, 원장을 지우면 재시도가 새 변경으로 다시 적용될 수 있다.
+원장은 컬렉션 백업·복구점(`.colpkg`)에 포함되지 않으며, 복구점 보존은 아래 '복구점과 장애 조사' 절을 따른다.
 원장 내부의 `applying`도 공개 조회에서는 `unknown`으로 반환되므로 실행 완료로 해석하지 않는다.
 
 MCP 변경 알림은 한국어 작업명과 처리 결과, AnkiWeb 동기화 상태를 먼저 보여 준다. 대상 수를 실제
