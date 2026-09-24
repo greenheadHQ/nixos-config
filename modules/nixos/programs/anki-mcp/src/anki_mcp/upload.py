@@ -15,6 +15,7 @@ import base64
 import hashlib
 import json
 import logging
+import re
 import secrets
 import struct
 import time
@@ -45,6 +46,7 @@ _SOF = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 
 # No cookies or credentials: the ticket is the only authority, so any widget origin may send it.
 _CORS = [(b"access-control-allow-origin", b"*"), (b"access-control-allow-methods", b"POST, OPTIONS"),
          (b"access-control-allow-headers", b"Content-Type"), (b"access-control-max-age", b"600")]
+_TICKET_QUERY = re.compile(r"([?&]ticket=)[^&\s]*")
 
 
 class UnsupportedImage(ValueError):
@@ -147,6 +149,16 @@ class UploadTickets:
     def consume(self, ticket: str) -> bool:
         expires = self._items.pop(ticket, None) if isinstance(ticket, str) and ticket else None
         return expires is not None and expires > self._clock()
+
+
+class RedactTickets(logging.Filter):
+    """uvicorn's access log records the request path with its query string; keep ticket values out of it."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(_TICKET_QUERY.sub(r"\1<redacted>", arg) if isinstance(arg, str) else arg
+                                for arg in record.args)
+        return True
 
 
 class _Disconnected(Exception):

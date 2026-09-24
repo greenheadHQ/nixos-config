@@ -155,7 +155,8 @@ async def test_preflight_and_method_limits_carry_cors_headers():
                                                        "access-control-request-method": "POST"})
         assert pre.status_code == 204 and pre.headers["access-control-allow-origin"] == "*"
         assert pre.headers["access-control-allow-methods"] == "POST, OPTIONS"
-        assert (await http.get(UPLOAD_PATH)).status_code == 405
+        get = await http.get(UPLOAD_PATH)
+        assert get.status_code == 405 and get.headers["access-control-allow-origin"] == "*"
         other = await http.post("/mcp", content=b"{}")
         assert other.status_code == 299 and other.text == "inner"
 
@@ -224,24 +225,30 @@ async def test_two_file_parts_are_a_bad_form():
 
 @pytest.mark.anyio
 async def test_body_limits_apply_to_declared_and_streamed_lengths():
-    tickets = UploadTickets(120)
-    async with client(gate(tickets=tickets)) as http:
-        r = await http.post(f"{UPLOAD_PATH}?ticket={tickets.issue()}", content=b"x" * (BODY_MAX + 1),
-                            headers={"content-type": "application/octet-stream"})
-        assert (r.status_code, r.json()) == (413, {"error": "request-body-too-large"})
-    sent, chunks = [], [{"type": "http.request", "body": b"x" * BODY_MAX, "more_body": True},
-                        {"type": "http.request", "body": b"x", "more_body": False}]
+    tickets, sent = UploadTickets(120), []
 
-    async def receive():
-        return chunks.pop(0)
+    async def never_read():
+        raise AssertionError("an oversized declared length must be refused before reading the body")
 
     async def send(message):
         sent.append(message)
 
     scope = {"type": "http", "method": "POST", "path": UPLOAD_PATH,
-             "query_string": f"ticket={tickets.issue()}".encode(), "headers": []}
+             "query_string": f"ticket={tickets.issue()}".encode(),
+             "headers": [(b"content-length", str(BODY_MAX + 1).encode())]}
+    await gate(tickets=tickets)(scope, never_read, send)
+    assert sent[0]["status"] == 413 and json.loads(sent[1]["body"]) == {"error": "request-body-too-large"}
+
+    sent.clear()
+    chunks = [{"type": "http.request", "body": b"x" * BODY_MAX, "more_body": True},
+              {"type": "http.request", "body": b"x", "more_body": False}]
+
+    async def receive():
+        return chunks.pop(0)
+
+    scope.update(query_string=f"ticket={tickets.issue()}".encode(), headers=[])
     await gate(tickets=tickets)(scope, receive, send)
-    assert sent[0]["status"] == 413
+    assert sent[0]["status"] == 413 and json.loads(sent[1]["body"]) == {"error": "request-body-too-large"}
 
 
 @pytest.mark.anyio

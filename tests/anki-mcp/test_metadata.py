@@ -20,10 +20,11 @@ def registration(catalog):
     observed = deepcopy(catalog)
     observed["source"] = "chatgpt-registration"
     del observed["instructions"]
+    # The app-only ticket tool (MCP Apps visibility ["app"]) is hidden from the registration list.
     observed["tools"] = [
         {"name": tool["name"], "description": tool["description"], "inputSchema": tool["inputSchema"],
          "annotations": {"readOnlyHint": tool["annotations"]["readOnlyHint"]}}
-        for tool in observed["tools"]
+        for tool in observed["tools"] if tool["name"] != "anki_upload_ticket"
     ]
     return observed
 
@@ -93,6 +94,20 @@ def test_missing_and_added_tools_are_named(catalog):
     result = compare_catalogs(catalog, observed)
     assert result["status"] == "drift"
     assert result["missing_tools"] == [old_name] and result["extra_tools"] == ["anki_new_tool"]
+
+
+def test_app_only_tools_may_be_absent_only_from_model_views(catalog):
+    observed = registration(catalog)
+    result = compare_catalogs(catalog, observed, "registration")
+    assert result["status"] == "match" and result["missing_tools"] == []
+    assert result["counts"]["expected"] == result["counts"]["observed"]
+    observed["tools"] = [tool for tool in observed["tools"] if tool["name"] != "anki_upload_image"]
+    assert compare_catalogs(catalog, observed, "registration")["missing_tools"] == ["anki_upload_image"]
+    served = deepcopy(catalog)
+    served["source"] = "server"
+    served["tools"] = [tool for tool in served["tools"] if tool["name"] != "anki_upload_ticket"]
+    result = compare_catalogs(catalog, served)
+    assert result["status"] == "drift" and result["missing_tools"] == ["anki_upload_ticket"]
 
 
 @pytest.mark.parametrize("kind", ["incomplete", "turn"])

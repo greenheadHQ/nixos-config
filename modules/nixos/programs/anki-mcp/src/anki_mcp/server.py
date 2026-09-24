@@ -40,7 +40,7 @@ from .operations import OperationService
 from .notifications import Notifications
 from .syncstatus import SyncNow
 from .tools import Deps, register_tools
-from .upload import UploadGate, UploadTickets
+from .upload import RedactTickets, UploadGate, UploadTickets
 
 log = logging.getLogger("anki_mcp")
 
@@ -247,6 +247,8 @@ async def serve(cfg: Settings) -> None:
                                       proxy_headers=True, forwarded_allow_ips="127.0.0.1",
                                       limit_concurrency=cfg.max_concurrency)),
     ]
+    # 접근 로그는 요청 경로를 쿼리 문자열까지 남긴다. 업로드 입장권 값은 journald에 남기지 않는다 (#1414).
+    logging.getLogger("uvicorn.access").addFilter(RedactTickets())
     tasks = [asyncio.create_task(s.serve()) for s in servers]
     await asyncio.sleep(0.5)  # uvicorn이 자체 signal 핸들러를 건 뒤에 우리 것으로 덮는다 — 두 서버를 함께 내린다
 

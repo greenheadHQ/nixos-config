@@ -77,6 +77,8 @@ PYTHONPATH=modules/nixos/programs/anki-mcp/src nix shell .#ankiMcpTestEnv -c \
 `readOnlyHint`를 필수로 비교하며 추가로 관측한 필드의 차이도 검출한다. 배열과 설명은 임의로 정규화하지 않는다.
 등록 대조가 `match`여도 숨겨진 `outputSchema`·다른 annotation·초기화 지침이 있으면 `full_status=unknown`이다.
 불완전 목록과 `chat-turn`은 차이 내역을 보여 주되 등록 drift나 정상으로 확정하지 않는다.
+앱 전용 도구(`_meta.ui.visibility`에 `model`이 없는 `anki_upload_ticket`)는 호스트가 모델과 등록 목록에서 숨긴다.
+그래서 `chatgpt-registration`·`chat-turn` 관측에서 빠져 있으면 누락으로 세지 않고, 관측됐으면 다른 도구처럼 비교한다.
 이 비교의 회귀 테스트와 인증된 ASGI 응답 대조는 기존 Anki MCP 테스트 및 required `check` CI에 포함된다.
 
 ## 변경 요청과 결과 확인
@@ -239,6 +241,7 @@ Claude는 저장을 시도하지 않는다.
   - 서버는 입장권을 본문보다 먼저 확인한다. 확인된 업로드만 본문을 `uploadReadTimeoutSecs` 안에
     `maxRequestBodyBytes`까지 읽는다.
   - 응답은 CORS `*`이고 쿠키·자격 증명을 쓰지 않는다. 서버는 URL을 가져오지 않는다.
+  - 입장권 값은 로그에 남기지 않는다. uvicorn 접근 로그의 `ticket=` 값은 `<redacted>`로 가린다.
   - 위젯·입장권 도구는 호출만으로는 저장하지 않으므로 `readOnlyHint: true`다. 저장은 사용자의 파일 선택으로만 일어난다.
 - **클라이언트 동작** (2026-09-24 lab 실측)
   - ChatGPT(웹·iPhone)와 Claude(웹·iPhone) 모두 위젯을 렌더링하고, 원본을 바이트 그대로 전달했다.
