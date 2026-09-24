@@ -248,6 +248,9 @@ Claude는 저장을 시도하지 않는다.
   - ChatGPT(웹·iPhone)와 Claude(웹·iPhone) 모두 위젯을 렌더링하고, 원본을 바이트 그대로 전달했다.
   - ChatGPT는 `ui/message`를 바로 전송하고, Claude는 입력창에 채운 뒤 사용자가 전송한다.
   - claude.ai는 `initialize`에서 MCP Apps 확장을 광고하지 않지만 위젯을 렌더링한다. 광고 여부로 도구를 숨기지 않는다.
+  - 두 클라이언트 모두 `anki_upload_ticket`을 모델에 노출하지 않는다. claude.ai 커넥터 설정은 이를 "App-only tools"로 따로 표시한다.
+  - 두 클라이언트 모두 도구 목록과 위젯 HTML을 캐시한다. 도구나 위젯을 바꿔 배포하면 ChatGPT는 앱 설정의 **새로 고침**,
+    claude.ai는 커넥터의 **도구 목록 새로 고침**을 해야 새 버전을 쓴다. 옛 목록으로 호출하면 없는 도구 오류가 난다.
   - 위젯을 띄우지 못하는 클라이언트에서는 결과 문장이 그 사실을 알린다. 이때 `anki_store_media`는 작은 파일에만 쓴다.
 - **응답**
   - 성공하면 영수증(`state`·`filename`·`bytes`·`format`·`width`·`height`·`unchanged`·`sync`·`notification`·`request_id`)을 돌려준다.
