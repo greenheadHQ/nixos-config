@@ -127,6 +127,7 @@
                                        : "지원하지 않는 형식입니다(JPEG·PNG·GIF·WebP만).");
     }
     if (status === 408) return new UploadError("업로드 시간이 초과됐습니다. 다시 시도해 주세요.");
+    if (status === 400) return new UploadError("요청 형식이 올바르지 않아 저장하지 않았습니다. 다시 선택해 주세요.");
     if (status === 422) return new UploadError(`저장하지 못했습니다(${body.error}).`);
     if (status === 503) return new UploadError("Anki 서버가 바쁘거나 연결되지 않습니다. 잠시 뒤 다시 시도해 주세요.");
     return new UploadError("응답을 받지 못했습니다. 저장됐을 수 있으니 최근 작업을 확인해 주세요.", true);
