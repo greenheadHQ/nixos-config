@@ -385,7 +385,10 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     @mcp.tool(name="anki_recent_operations", annotations=READ_ONLY)
     async def anki_recent_operations(limit: int = 20, offset: int = 0) -> dict[str, Any]:
         """List recent operation receipts (no note bodies). Use this to locate an operation after losing a
-        response or its server-generated ID. Inspect the receipt before considering any retry."""
+        response or its server-generated ID. Inspect the receipt before considering any retry.
+        If a write tool you need is not callable in this turn, do not say the write did not happen; another
+        response to the same message may have run it. Ask the user to check this list before any retry, and
+        retry only with the same request_id."""
         return await deps.helper.post("/operations/history", {"limit": limit, "offset": offset})
 
     @mcp.tool(name="anki_move_cards", annotations=UPDATE)
