@@ -112,9 +112,9 @@ class ManagedService:
                     return gate.preview(operation, gate_key, origin)
                 return {**operation, "next_step": PREVIEW_NEXT_STEP}
             if gate is not None:
-                reason = gate.blocked(gate_key, origin, operation.get("expires_at"))
-                if reason:
-                    return gate.refusal(operation, reason)
+                refused = gate.refusal(operation, gate_key, origin)
+                if refused:
+                    return refused
             try:
                 operation = await self.helper.post("/managed/restore/apply", {
                     "request_id": request_id, "preview_token": preview_token, "confirm": True})

@@ -100,13 +100,13 @@ class OperationService:
                 return {**operation, "next_step": "Review the preview, then run the root anki-host-approve command."}
             confirmed = bool(preview_token) and confirm is True
             if origin.gated and self.gate is not None:
-                # Every write from a gated client waits for a confirmation from a later user
-                # message, so a hidden parallel response cannot apply one on its own (#1359).
+                # Every write from a gated client waits for a confirmation, and one from the message
+                # that produced the preview is refused, so a hidden parallel response cannot apply it (#1359).
                 if not confirmed:
                     return self.gate.preview(operation, operation_id, origin)
-                reason = self.gate.blocked(operation_id, origin, operation.get("expires_at"))
-                if reason:
-                    return self.gate.refusal(operation, reason)
+                refused = self.gate.refusal(operation, operation_id, origin)
+                if refused:
+                    return refused
             elif operation["confirmation_required"] and not confirmed:
                 return {**operation, "next_step": "Show this preview and obtain confirmation; repeat the same request_id and preview_token with confirm=true."}
             try:

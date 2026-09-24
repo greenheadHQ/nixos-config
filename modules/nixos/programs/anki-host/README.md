@@ -182,26 +182,26 @@ ChatGPT Pro 계열 모델은 한 메시지에 응답 후보 여러 개를 병렬
 
 OAuth 등록의 redirect URI 호스트가 `constants.ankiMcp.writeConfirmGate.redirectHosts`(현재 `chatgpt.com`)인
 클라이언트는 모든 컬렉션 변경이 미리보기로 시작한다. 20건 이하 변경과 관리 노트 유형 제한 복구도 포함한다.
-대상은 요청 헤더가 아니라 bearer 토큰이 가리키는 등록 클라이언트로 판정한다. Claude 등 다른 클라이언트는 위 기존 규칙을 따르고,
-구조 변경의 root 승인과 `anki_sync_now`는 바뀌지 않는다.
+대상은 요청 헤더가 아니라 bearer 토큰이 가리키는 등록 클라이언트로 판정한다. Claude 등 다른 클라이언트는 기존 코드 경로와
+위 기존 규칙을 그대로 따르고, 구조 변경의 root 승인과 `anki_sync_now`도 바뀌지 않는다.
 
-1. 첫 호출은 아무것도 적용하지 않고 미리보기와 `confirmation_required=true`, `confirmation_policy=separate-user-message`를 돌려준다.
+1. 첫 호출은 아무것도 적용하지 않고 미리보기와 `confirmation_required=true`, `confirmation_policy`를 돌려준다.
 2. 모델은 미리보기를 보여 주고 사용자의 답을 기다린다.
 3. 사용자의 **다음 메시지**에서 같은 인자·`request_id`·`preview_token`에 `confirm=true`를 넣어 호출하면 적용한다.
 
-서버는 W3C `traceparent` 헤더의 trace-id로 사용자 메시지를 구분한다. ChatGPT는 메시지마다 새 trace-id를 보냈고,
-같은 메시지의 병렬 후보는 같은 값을 보냈다(2026-09-24 관측, 공개 계약 아님). 미리보기를 만든 메시지의 trace-id로 온 확인은
-거절하므로, 보이지 않는 후보가 한 메시지 안에서 미리보기와 확인을 모두 보내도 적용되지 않는다.
-거절 응답은 `confirmation_blocked`와 다음 행동 안내를 담는다.
+같은 메시지 안의 확인만 따로 거절한다. 서버는 W3C `traceparent` 헤더의 trace-id로 메시지를 구분한다. ChatGPT는 메시지마다
+새 trace-id를 보냈고, 같은 메시지의 병렬 후보는 같은 값을 보냈다(2026-09-24 관측, 공개 계약 아님). 미리보기를 처음 만든
+메시지의 trace-id로 온 확인은 `confirmation_blocked=confirmation-requires-a-new-user-message`로 거절한다. 보이지 않는 후보가
+한 메시지 안에서 미리보기와 확인을 모두 보내도 적용되지 않는다.
 
-| `confirmation_blocked` | 뜻 |
-|---|---|
-| `confirmation-requires-a-new-user-message` | 미리보기와 같은 메시지에서 온 확인이다. 사용자 답 뒤에 다시 확인한다. |
-| `confirmation-preview-not-recorded` | 서버에 미리보기 기록이 없다(재시작 등). 이번 메시지를 기록했으므로 다음 메시지에서 다시 확인한다. |
-| `confirmation-trace-unavailable` | trace-id가 없거나 형식이 다르다. 확인하지 못한 요청은 적용하지 않는다. |
+이 헤더에 기대는 부분이 깨져도 쓰기를 멈추지 않고 "확인 필수"로 물러난다.
 
-미리보기 기록은 프로세스 메모리에만 둔다. 확인 토큰의 10분 만료(`operationTtlSecs`)는 그대로다.
-응답이 긴 Pro 모델에서 미리보기와 확인 사이에 10분이 지나면 새 `request_id`로 미리보기부터 다시 한다.
+- 요청에 trace-id가 없으면 미리보기의 `confirmation_policy`가 `separate-user-message` 대신 `confirmation-required`가 되고
+  서버 로그에 경고가 남는다. 확인은 받지만 같은 메시지의 확인을 거르지 못한다.
+- 미리보기 기록은 프로세스 메모리에만 둔다. 재시작 전에 만든 미리보기는 기록이 없으므로 확인만으로 적용된다.
+
+확인 토큰의 10분 만료(`operationTtlSecs`)는 그대로다. 응답이 긴 Pro 모델에서 미리보기와 확인 사이에 10분이 지나면
+새 `request_id`로 미리보기부터 다시 한다.
 
 이 확인은 서버가 관찰한 대화 순서이며 사람 인증이 아니다. 남는 한계는 다음과 같다.
 
@@ -209,13 +209,14 @@ OAuth 등록의 redirect URI 호스트가 `constants.ankiMcp.writeConfirmGate.re
   실행하지 않았다고 말할 수 있으므로, 앞 절의 재시도 전 확인 안내는 계속 필요하다.
 - 서버는 사용자가 미리보기를 실제로 봤는지 모른다. 준비된 미리보기와 토큰은 `anki_recent_operations`에도 보이므로,
   보이지 않은 후보가 만든 미리보기를 다음 메시지의 후보가 확인할 수 있다.
-- 후보마다 다른 trace-id를 보내게 되면 같은 메시지의 확인을 막지 못한다. trace-id를 보내지 않게 되면 ChatGPT의 변경이
-  모두 거절된다. `confirmation-trace-unavailable`이 반복되면 #1359의 재현 절차로 요청 헤더를 다시 확인한다.
+- 후보마다 다른 trace-id를 보내게 되면 같은 메시지의 확인을 막지 못한다. 반대로 대화 내내 같은 trace-id를 보내게 되면
+  ChatGPT의 확인이 모두 거절된다. 이 거절이 반복되면 #1359의 재현 절차로 요청 헤더를 다시 확인한다.
 
 `constants.ankiMcp.writeConfirmGate.enable = false`로 배포하면 끈다. ChatGPT 변경도 20건 이하는 바로 실행되는 기존 규칙으로 돌아가고,
 보이지 않는 후보의 쓰기가 바로 반영되는 위험도 돌아온다.
 20건 이하를 바로 실행하는 규칙은 [#1306](https://github.com/greenheadHQ/nixos-config/issues/1306)의 2026-09-06 결정이다.
 ChatGPT에서만 바꾼 근거는 앞 절의 측정이다. 다른 클라이언트에서는 이 현상을 관측하지 않았으므로 기존 결정을 유지한다.
+같은 현상이 다른 클라이언트에 생기면 그 redirect 호스트를 `redirectHosts`에 더한다.
 
 ## 조회 결과의 동기화 경계
 

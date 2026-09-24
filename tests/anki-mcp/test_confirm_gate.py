@@ -6,7 +6,7 @@ import hashlib
 import pytest
 
 from anki_mcp.confirm_gate import (
-    GATE_POLICY, UNGATED, ConfirmationGate, Origin, gated_client, trace_id)
+    BLOCKED_REASON, GATE_POLICY, UNGATED, UNTRACED_POLICY, ConfirmationGate, Origin, gated_client, trace_id)
 from anki_mcp.helper import HelperRejected
 from anki_mcp.managed import ManagedService
 from anki_mcp.operations import OperationService
@@ -64,16 +64,17 @@ async def test_disabled_gate_never_resolves_origin():
     assert await gate.origin() == UNGATED
 
 
-def test_gate_remembers_first_preview_trace_and_expires():
+def test_gate_refuses_only_the_message_that_first_produced_the_preview():
     now = [1000.0]
     gate = ConfirmationGate(None, enabled=True, clock=lambda: now[0])
-    gate.note_preview("op", origin_of(TRACE_A), 1600.0)
-    gate.note_preview("op", origin_of(TRACE_B), 1600.0)  # a later preview keeps the first message
-    assert gate.blocked("op", origin_of(TRACE_A), 1600.0) == "confirmation-requires-a-new-user-message"
-    assert gate.blocked("op", origin_of(TRACE_B), 1600.0) is None
-    assert gate.blocked("op", origin_of(None), 1600.0) == "confirmation-trace-unavailable"
+    op = {"state": "prepared", "expires_at": 1600.0}
+    gate.preview(op, "op", origin_of(TRACE_A))
+    gate.preview(op, "op", origin_of(TRACE_B))  # a later preview keeps the first message
+    assert gate.refusal(op, "op", origin_of(TRACE_A))["confirmation_blocked"] == BLOCKED_REASON
+    assert gate.refusal(op, "op", origin_of(TRACE_B)) is None
+    assert gate.refusal(op, "op", origin_of(None)) is None
     now[0] = 1601.0
-    assert gate.blocked("op", origin_of(TRACE_B), 1600.0) == "confirmation-preview-not-recorded"
+    assert gate.refusal(op, "op", origin_of(TRACE_A)) is None
 
 
 def setup(tmp_path, origins):
@@ -98,32 +99,29 @@ async def test_gated_small_write_waits_for_a_confirmation_from_a_later_message(t
     assert preview["state"] == "prepared" and preview["confirmation_required"] is True
     assert preview["confirmation_policy"] == GATE_POLICY and "/operations/apply" not in helper.calls
     same = await service.run(*ADD_TAGS, request_id=rid, preview_token=preview["preview_token"], confirm=True)
-    assert same["confirmation_blocked"] == "confirmation-requires-a-new-user-message"
+    assert same["confirmation_blocked"] == BLOCKED_REASON
     assert state(ops, rid) == "prepared" and "/operations/apply" not in helper.calls
     applied = await service.run(*ADD_TAGS, request_id=rid, preview_token=preview["preview_token"], confirm=True)
     assert applied["state"] == "applied"
 
 
 @pytest.mark.anyio
-async def test_gated_confirmation_without_trace_is_refused(tmp_path):
+async def test_without_a_trace_writes_still_wait_for_a_confirmation(tmp_path, caplog):
     rid = "gated-no-trace-01"
-    service, ops, _ = setup(tmp_path, [origin_of(TRACE_A), origin_of(None)])
+    service, ops, helper = setup(tmp_path, [origin_of(None), origin_of(None)])
     preview = await service.run(*ADD_TAGS, request_id=rid)
-    refused = await service.run(*ADD_TAGS, request_id=rid, preview_token=preview["preview_token"], confirm=True)
-    assert refused["confirmation_blocked"] == "confirmation-trace-unavailable" and state(ops, rid) == "prepared"
+    assert preview["confirmation_policy"] == UNTRACED_POLICY and "same turn" not in preview["next_step"]
+    assert state(ops, rid) == "prepared" and "/operations/apply" not in helper.calls
+    applied = await service.run(*ADD_TAGS, request_id=rid, preview_token=preview["preview_token"], confirm=True)
+    assert applied["state"] == "applied" and "without a message trace" in caplog.text
 
 
 @pytest.mark.anyio
-async def test_restart_loses_preview_trace_and_asks_for_one_more_message(tmp_path):
+async def test_restart_forgets_previews_and_only_requires_the_confirmation(tmp_path):
     rid = "gated-restart-001"
     service, ops, helper = setup(tmp_path, [origin_of(TRACE_A)])
     preview = await service.run(*ADD_TAGS, request_id=rid)
-    restarted = OperationService(helper, Syncer(), None, sync_enabled=True,
-                                 gate=gate_with([origin_of(TRACE_B), origin_of(TRACE_B), origin_of(TRACE_A)]))
-    first = await restarted.run(*ADD_TAGS, request_id=rid, preview_token=preview["preview_token"], confirm=True)
-    assert first["confirmation_blocked"] == "confirmation-preview-not-recorded" and state(ops, rid) == "prepared"
-    again = await restarted.run(*ADD_TAGS, request_id=rid, preview_token=preview["preview_token"], confirm=True)
-    assert again["confirmation_blocked"] == "confirmation-requires-a-new-user-message"
+    restarted = OperationService(helper, Syncer(), None, sync_enabled=True, gate=gate_with([origin_of(TRACE_A)]))
     applied = await restarted.run(*ADD_TAGS, request_id=rid, preview_token=preview["preview_token"], confirm=True)
     assert applied["state"] == "applied"
 
@@ -148,7 +146,7 @@ async def test_gated_destructive_preview_uses_the_same_message_rule(tmp_path):
     assert preview["confirmation_required"] is True and preview["confirmation_policy"] == GATE_POLICY
     same = await service.run("delete_notes", {"note_ids": [1]}, request_id=rid,
                              preview_token=preview["preview_token"], confirm=True)
-    assert same["confirmation_blocked"] == "confirmation-requires-a-new-user-message"
+    assert same["confirmation_blocked"] == BLOCKED_REASON
     assert state(ops, rid) == "prepared"
 
 
@@ -180,6 +178,6 @@ async def test_gated_managed_restore_waits_for_a_later_message():
     assert preview["confirmation_policy"] == GATE_POLICY
     assert "independent human authentication" in preview["next_step"]
     same = await service.restore(request_id="managed001", preview_token="bound-preview", confirm=True)
-    assert same["confirmation_blocked"] == "confirmation-requires-a-new-user-message" and helper.apply_count == 0
+    assert same["confirmation_blocked"] == BLOCKED_REASON and helper.apply_count == 0
     applied = await service.restore(request_id="managed001", preview_token="bound-preview", confirm=True)
     assert applied["state"] == "applied" and helper.apply_count == 1

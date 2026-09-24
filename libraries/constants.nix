@@ -121,7 +121,8 @@
     maxConcurrentRequests = 8; # 두 앱 본문 버퍼 최대 128 MiB + 파싱/런타임 여유(MemoryMax 512M)
     # ChatGPT Pro는 한 메시지에 병렬 응답을 만들고 하나만 보여 준다. 보이지 않는 응답의 쓰기가 사용자 모르게
     # 적용되지 않도록, 이 redirect 호스트로 등록된 OAuth 클라이언트의 쓰기는 미리보기 뒤 다음 메시지의 확인으로만 적용한다 (#1359).
-    # 판별에 쓰는 메시지별 traceparent는 OpenAI가 보장한 값이 아니다. 확인이 모두 막히면 enable=false로 끈다 (README 참고).
+    # 메시지 구분에 쓰는 traceparent는 OpenAI가 보장한 값이 아니다. 헤더가 없으면 "확인 필수"로 물러나고,
+    # 같은 메시지 판정 때문에 확인이 모두 막히면 enable=false로 끈다 (anki-host README 참고).
     writeConfirmGate = {
       enable = true;
       redirectHosts = [ "chatgpt.com" ];
