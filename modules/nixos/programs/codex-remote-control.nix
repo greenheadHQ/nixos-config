@@ -103,7 +103,8 @@ in
         # /tmp/codex-daemon-<uid>/에 두고 ~/.codex/app-server-control/*.sock은 symlink로만
         # 남긴다. KillMode=process로 살아남은 데몬도 unit 종료 시 private /tmp가 지워져
         # 소켓을 잃고, 다음 실행은 별도 /tmp라 연결하지 못해 exit 52가 반복된다.
-        # 호스트 /tmp의 `q /tmp 10d` aging은 listening 중인 소켓을 건너뛴다.
+        # 호스트 /tmp의 `q /tmp 10d` aging은 listening 중인 소켓 파일을 건너뛴다(실측).
+        # 같은 디렉터리의 <sha256>.lock은 기동 시에만 잡는 lock이라 aging돼도 무해하다.
         NoNewPrivileges = true;
         ProtectKernelTunables = true;
         ProtectControlGroups = true;

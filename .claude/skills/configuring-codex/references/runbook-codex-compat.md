@@ -288,6 +288,16 @@ journalctl -u codex-remote-control-ensure.service -n 80 --no-pager
 jq '{exitCode,lastAction,lastRepairReason,authMode,normalCodexResolved,managedCodexVersion,appServerVersion,remoteControlEnabled}' /var/lib/codex-remote-control/status.json
 ```
 
+제어 소켓 위치 (0.156.1 기준, 재확인: `readlink ~/.codex/app-server-control/app-server-control.sock`):
+`~/.codex/app-server-control/app-server-control.sock`은 symlink이고 실체는 설정 불가한
+`/tmp/codex-daemon-<uid>/<sha256>`이다. 그래서 ensure 서비스는 `PrivateTmp`를 쓰지 않는다 — 켜면 unit 종료 시
+private /tmp와 함께 데몬 소켓이 지워진다 (eval Test CRC1이 고정).
+
+증상 `remote-control-start-failed` + stderr `app server did not become ready on …sock`이 반복되고,
+`pgrep -a -u "$(id -u)" -f 'codex app-server'`에 데몬이 살아 있는데 symlink 대상이 없으면(`ls -L`가 실패)
+소켓을 잃은 데몬이다. `ensure-running`은 이 상태를 stale로 판정하지 않으므로(PID 존재 시 소켓 정리 거부)
+그 PID를 `kill -TERM`한 뒤 `sudo systemctl start codex-remote-control-ensure.service`로 재기동한다.
+
 ## 참고 문서
 
 - https://developers.openai.com/blog/eval-skills
