@@ -19,10 +19,12 @@ import httpx
 import uvicorn
 from mcp.server.auth.handlers.metadata import MetadataHandler
 from mcp.server.auth.handlers.token import TokenHandler
+from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.middleware.client_auth import ClientAuthenticator
 from mcp.server.auth.routes import build_metadata, cors_middleware
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.fastmcp import FastMCP
+from mcp.server.lowlevel.server import request_ctx
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import AnyHttpUrl
 from starlette.requests import Request
@@ -33,6 +35,7 @@ from .ankiconnect import AnkiConnect
 from .approval import Lockout, build_approval_app
 from .authoring import AUTHORING_GUIDANCE
 from .config import Settings, read_local_key, read_passphrase
+from .confirm_gate import UNGATED, ConfirmationGate, Origin, gated_client, trace_id
 from .guard import RequestGuard
 from .helper import Helper
 from .oauth import CLIENT_AUTH_METHODS, DEFAULT_SCOPES, FileOAuthProvider
@@ -146,8 +149,23 @@ def build(cfg: Settings):
     helper = Helper(cfg.helper_url, client=http, timeout=cfg.helper_timeout,
                     key=read_local_key(cfg.local_credential_dir, "operation"))
     syncer = SyncNow(cfg.sync_status_file, cfg.sync_unit, cfg.sync_wait)
+
+    async def request_origin() -> Origin:
+        # The bearer token binds the request to a registered OAuth client, which is harder to
+        # spoof than a header. A client record missing for a valid token keeps the prior behavior.
+        token = get_access_token()
+        client = await provider.get_client(token.client_id) if token is not None else None
+        if client is None or not gated_client(client.redirect_uris, cfg.write_confirm_hosts):
+            return UNGATED
+        try:
+            request = request_ctx.get().request
+        except LookupError:
+            request = None
+        return Origin(True, trace_id(request.headers.get("traceparent") if request is not None else None))
+
+    gate = ConfirmationGate(request_origin, enabled=cfg.write_confirm_gate)
     operations = OperationService(helper, syncer, Notifications(os.path.join(cfg.local_credential_dir, "pushover"), http),
-                                  sync_enabled=cfg.sync_enabled)
+                                  sync_enabled=cfg.sync_enabled, gate=gate)
     deps = Deps(
         anki=AnkiConnect(cfg.anki_connect_url, client=http, key=read_local_key(cfg.local_credential_dir, "read")),
         helper=helper,

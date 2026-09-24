@@ -40,6 +40,7 @@ def _settings(tmp_path) -> Settings:
         reg_max_clients=3, reg_max_client_bytes=4096, reg_unused_ttl=86400, reg_burst=5, reg_window=60,
         max_body_bytes=2048, body_read_timeout=30, max_concurrency=64,
         local_credential_dir=str(tmp_path), helper_timeout=1, sync_enabled=True, media_max_bytes=5242880,
+        write_confirm_gate=True, write_confirm_hosts=frozenset({"chatgpt.com"}),
     )
 
 
@@ -269,8 +270,7 @@ async def test_unsupported_client_auth_does_not_change_registration_state(tmp_pa
         assert state.read_bytes() == before
 
 
-async def _http_grant(funnel_http, approval_http):
-    redirect = "https://client.example/cb"
+async def _http_grant(funnel_http, approval_http, redirect="https://client.example/cb"):
     response = await funnel_http.post("/register", json={"redirect_uris": [redirect], "token_endpoint_auth_method": "none"})
     assert response.status_code == 201
     client_id = response.json()["client_id"]
@@ -486,3 +486,35 @@ async def test_approval_limits_body_size_and_read_time_before_form_parsing(tmp_p
         slow = await ah.post(endpoint, headers=headers, content=unfinished())
         assert slow.status_code == 408
         assert (await ah.get("/healthz")).status_code == 200
+
+
+@pytest.mark.anyio
+async def test_write_confirm_gate_reads_oauth_client_and_message_trace(tmp_path, monkeypatch):
+    from anki_mcp.confirm_gate import Origin
+    from anki_mcp.operations import OperationService
+
+    seen = []
+
+    async def observed_run(self, action, params, *, request_id=None, preview_token=None, confirm=False):
+        seen.append(await self.gate.origin())
+        return {"state": "prepared", "action": action}
+
+    monkeypatch.setattr(OperationService, "run", observed_run)
+    funnel, approval = build(_settings(tmp_path))
+    trace = "0af7651916cd43dd8448eb211c80319c"
+    call = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "anki_add_tags", "arguments": {"note_ids": [1], "tags": ["t"]}}}
+    async with funnel.router.lifespan_context(funnel):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=funnel), base_url=f"https://{PUBLIC_HOST}") as fh, \
+                httpx.AsyncClient(transport=httpx.ASGITransport(app=approval), base_url=f"https://{APPROVAL_HOST}") as ah:
+            _, chatgpt = await _http_grant(fh, ah, "https://chatgpt.com/connector_platform_oauth_redirect")
+            _, other = await _http_grant(fh, ah, "https://claude.ai/api/mcp/auth_callback")
+            for token, extra in ((chatgpt["access_token"], {"traceparent": f"00-{trace}-b7ad6b7169203331-01"}),
+                                 (chatgpt["access_token"], {}),
+                                 (other["access_token"], {"traceparent": f"00-{trace}-b7ad6b7169203331-01"})):
+                response = await fh.post("/mcp", json=call, headers={
+                    "host": PUBLIC_HOST, "authorization": f"Bearer {token}", "content-type": "application/json",
+                    "accept": "application/json, text/event-stream", **extra})
+                assert response.status_code == 200, response.text
+                assert response.json()["result"]["isError"] is False, response.text
+    assert seen == [Origin(True, trace), Origin(True, None), Origin(False, None)]

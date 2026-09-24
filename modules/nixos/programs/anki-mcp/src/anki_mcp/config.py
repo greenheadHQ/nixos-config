@@ -62,6 +62,8 @@ class Settings:
     helper_timeout: int
     sync_enabled: bool
     media_max_bytes: int
+    write_confirm_gate: bool  # 아래 호스트로 등록된 OAuth 클라이언트의 쓰기는 다음 사용자 메시지의 확인으로만 적용
+    write_confirm_hosts: frozenset[str]  # redirect URI 호스트 (#1359: ChatGPT Pro의 보이지 않는 병렬 응답)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -98,6 +100,8 @@ class Settings:
             helper_timeout=_int("ANKI_MCP_HELPER_TIMEOUT_SECS"),
             sync_enabled=_bool("ANKI_MCP_SYNC_ENABLED"),
             media_max_bytes=_int("ANKI_MCP_MEDIA_MAX_BYTES"),
+            write_confirm_gate=_bool("ANKI_MCP_WRITE_CONFIRM_GATE"),
+            write_confirm_hosts=_hosts("ANKI_MCP_WRITE_CONFIRM_HOSTS"),
         )
 
 
@@ -106,6 +110,13 @@ def _bool(name: str) -> bool:
     if value not in ("true", "false"):
         raise SystemExit(f"anki_mcp: {name} must be true or false")
     return value == "true"
+
+
+def _hosts(name: str) -> frozenset[str]:
+    hosts = [part.strip().lower() for part in _req(name).split(",")]
+    if not all(re.fullmatch(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+", h) for h in hosts):
+        raise SystemExit(f"anki_mcp: {name} must be a comma-separated list of host names")
+    return frozenset(hosts)
 
 
 def read_local_key(directory: str, role: str) -> str:

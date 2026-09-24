@@ -41,7 +41,7 @@ async def export_catalog(*, field_chars: int, source: str = "source") -> dict[st
     register_tools(mcp, Deps(
         anki=disabled, helper=disabled, syncer=disabled, sync_status_file="",
         field_chars=field_chars, page_max=0, media_max_bytes=0,
-        operations=SimpleNamespace(sync_enabled=False, lock=asyncio.Lock()),
+        operations=SimpleNamespace(sync_enabled=False, lock=asyncio.Lock(), gate=None),
     ))
     return {
         "source": source, "observed_at": datetime.now(timezone.utc).isoformat(),

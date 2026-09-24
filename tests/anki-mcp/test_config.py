@@ -16,6 +16,7 @@ BASE = {
     "ANKI_MCP_BODY_READ_TIMEOUT_SECS": "30", "ANKI_MCP_MAX_CONCURRENCY": "64",
     "CREDENTIALS_DIRECTORY": "/tmp/credentials", "ANKI_MCP_HELPER_TIMEOUT_SECS": "1900",
     "ANKI_MCP_SYNC_ENABLED": "true", "ANKI_MCP_MEDIA_MAX_BYTES": "5242880",
+    "ANKI_MCP_WRITE_CONFIRM_GATE": "true", "ANKI_MCP_WRITE_CONFIRM_HOSTS": "chatgpt.com",
 }
 
 
@@ -54,5 +55,22 @@ def test_from_env_fails_closed_on_missing_or_non_integer_values(monkeypatch):
 @pytest.mark.parametrize("value", ["1", "yes", "False", ""])
 def test_sync_mode_cannot_be_silently_disabled(monkeypatch, value):
     _env(monkeypatch, ANKI_MCP_SYNC_ENABLED=value)
+    with pytest.raises(SystemExit):
+        Settings.from_env()
+
+
+def test_write_confirm_hosts_are_normalized(monkeypatch):
+    _env(monkeypatch, ANKI_MCP_WRITE_CONFIRM_HOSTS=" ChatGPT.com , chat.example.org ")
+    s = Settings.from_env()
+    assert s.write_confirm_gate is True and s.write_confirm_hosts == frozenset({"chatgpt.com", "chat.example.org"})
+
+
+@pytest.mark.parametrize("name,value", [
+    ("ANKI_MCP_WRITE_CONFIRM_GATE", "yes"), ("ANKI_MCP_WRITE_CONFIRM_GATE", ""),
+    ("ANKI_MCP_WRITE_CONFIRM_HOSTS", ""), ("ANKI_MCP_WRITE_CONFIRM_HOSTS", "chatgpt.com,"),
+    ("ANKI_MCP_WRITE_CONFIRM_HOSTS", "https://chatgpt.com"), ("ANKI_MCP_WRITE_CONFIRM_HOSTS", "localhost"),
+])
+def test_write_confirm_settings_fail_closed(monkeypatch, name, value):
+    _env(monkeypatch, **{name: value})
     with pytest.raises(SystemExit):
         Settings.from_env()

@@ -12,6 +12,7 @@ import re
 import secrets
 from typing import Any
 
+from .confirm_gate import UNGATED, ConfirmationGate
 from .helper import Helper, HelperRejected, HelperUnavailable
 from .syncstatus import SyncNow
 
@@ -37,9 +38,9 @@ def request_key(value: str) -> str:
 
 class ManagedService:
     def __init__(self, helper: Helper, syncer: SyncNow, *, sync_enabled: bool,
-                 lock: asyncio.Lock) -> None:
+                 lock: asyncio.Lock, gate: ConfirmationGate | None = None) -> None:
         self.helper, self.syncer = helper, syncer
-        self.sync_enabled, self.lock = sync_enabled, lock
+        self.sync_enabled, self.lock, self.gate = sync_enabled, lock, gate
 
     async def status(self, request_id: str) -> dict[str, Any]:
         """Read the host journal; reading alone never retries mutation or delivery."""
@@ -76,6 +77,8 @@ class ManagedService:
         if preview_token is not None and request_id is None:
             raise ValueError("confirmation-requires-the-original-request-id")
         request_id = request_key(secrets.token_hex(16) if request_id is None else request_id)
+        origin = await self.gate.origin() if self.gate else UNGATED
+        gate_key = "managed-restore:" + request_id
         async with self.lock:
             try:
                 existing = await self.status(request_id)
@@ -103,8 +106,15 @@ class ManagedService:
                                      "request_id; retry preparation only with the same ID. No apply was requested."}
             if operation["state"] != "prepared":
                 return await self._finish(operation)
+            gate = self.gate if origin.gated else None
             if preview_token is None or not confirm:
+                if gate is not None:
+                    return gate.preview(operation, gate_key, origin)
                 return {**operation, "next_step": PREVIEW_NEXT_STEP}
+            if gate is not None:
+                reason = gate.blocked(gate_key, origin, operation.get("expires_at"))
+                if reason:
+                    return gate.refusal(operation, reason)
             try:
                 operation = await self.helper.post("/managed/restore/apply", {
                     "request_id": request_id, "preview_token": preview_token, "confirm": True})
@@ -112,4 +122,6 @@ class ManagedService:
                 return {"state": "unknown", "request_id": request_id, "model_name": model_name,
                         "next_step": "The apply response was lost. Read anki_managed_restore_status with this request_id; "
                                      "do not submit a new request_id or reapply an unknown/partial operation."}
+            if gate is not None:
+                gate.forget(gate_key)
             return await self._finish(operation)

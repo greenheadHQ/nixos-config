@@ -8,6 +8,7 @@ import re
 import secrets
 from typing import Any
 
+from .confirm_gate import UNGATED, ConfirmationGate
 from .helper import Helper, HelperRejected, HelperUnavailable
 from .notifications import Notifications
 from .syncstatus import SyncNow
@@ -15,9 +16,10 @@ from .syncstatus import SyncNow
 
 class OperationService:
     def __init__(self, helper: Helper, syncer: SyncNow, notifications: Notifications | None,
-                 *, sync_enabled: bool) -> None:
+                 *, sync_enabled: bool, gate: ConfirmationGate | None = None) -> None:
         self.helper, self.syncer, self.notifications = helper, syncer, notifications
         self.sync_enabled = sync_enabled
+        self.gate = gate
         self.lock = asyncio.Lock()
 
     async def status(self, operation_id: str) -> dict[str, Any]:
@@ -72,6 +74,7 @@ class OperationService:
         if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{7,127}", request_id) is None:
             raise ValueError("invalid-request-id")
         operation_id = hashlib.sha256(request_id.encode()).hexdigest()[:32]
+        origin = await self.gate.origin() if self.gate else UNGATED
         async with self.lock:
             try:
                 existing = await self.status(operation_id)
@@ -95,13 +98,25 @@ class OperationService:
                 return await self._finish(operation)
             if operation["schema_required"]:
                 return {**operation, "next_step": "Review the preview, then run the root anki-host-approve command."}
-            if operation["confirmation_required"] and (not preview_token or confirm is not True):
+            confirmed = bool(preview_token) and confirm is True
+            if origin.gated and self.gate is not None:
+                # Every write from a gated client waits for a confirmation from a later user
+                # message, so a hidden parallel response cannot apply one on its own (#1359).
+                if not confirmed:
+                    return self.gate.preview(operation, operation_id, origin)
+                reason = self.gate.blocked(operation_id, origin, operation.get("expires_at"))
+                if reason:
+                    return self.gate.refusal(operation, reason)
+            elif operation["confirmation_required"] and not confirmed:
                 return {**operation, "next_step": "Show this preview and obtain confirmation; repeat the same request_id and preview_token with confirm=true."}
             try:
+                # A gated confirmation must present the token it was shown; never substitute the journal's.
+                token = preview_token if origin.gated else (preview_token or operation["preview_token"])
                 operation = await self.helper.post("/operations/apply", {
-                    "operation_id": operation_id, "preview_token": preview_token or operation["preview_token"],
-                    "confirm": confirm})
+                    "operation_id": operation_id, "preview_token": token, "confirm": confirm})
             except HelperUnavailable:
                 return {"state": "unknown", "operation_id": operation_id, "request_id": request_id,
                         "next_step": "The apply response was lost. Read operation status; do not submit a new request_id."}
+            if origin.gated and self.gate is not None:
+                self.gate.forget(operation_id)
             return await self._finish(operation)

@@ -3,6 +3,7 @@
 Mutations use OperationService for fresh pre/post sync and durable outcomes.
 Destructive, bulk, shared-preset and structural changes require previews; schema
 changes are prepared here and executed only through root's approval workflow.
+Clients selected by confirm_gate preview every write and confirm in a later message.
 Client annotations supplement the server's own confirmation checks.
 """
 
@@ -79,7 +80,8 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     anki = deps.anki
 
     operations = deps.operations
-    managed = ManagedService(deps.helper, deps.syncer, sync_enabled=operations.sync_enabled, lock=operations.lock)
+    managed = ManagedService(deps.helper, deps.syncer, sync_enabled=operations.sync_enabled, lock=operations.lock,
+                             gate=operations.gate)
 
     @mcp.tool(name="anki_status", annotations=READ_ONLY)
     async def anki_status() -> dict[str, Any]:
@@ -458,9 +460,12 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
 
     @mcp.tool(name="anki_store_media", annotations=ADDITIVE)
-    async def anki_store_media(filename: str, data: str, request_id: str | None = None) -> dict[str, Any]:
+    async def anki_store_media(filename: str, data: str, request_id: str | None = None,
+                               preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
         """Add one new media file using a safe basename and base64 data (decoded limit 5 MiB). Same content is
-        a no-op; different existing content is refused. No file paths, URLs, overwriting or deletion."""
+        a no-op; different existing content is refused. No file paths, URLs, overwriting or deletion.
+        If the result asks for confirmation, repeat the same filename, data and request_id with its preview_token
+        and confirm=true after the user confirms."""
         if (len(data) > 4 * ((deps.media_max_bytes + 2) // 3) or filename.startswith(".")
                 or any(c in filename for c in "/\\:") or filename != filename.strip()
                 or unicodedata.normalize("NFC", filename) != filename
@@ -472,7 +477,8 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
             raise ToolError("invalid-base64") from err
         if not decoded or len(decoded) > deps.media_max_bytes:
             raise ToolError("media-empty-or-too-large")
-        return await operations.run("store_media", {"filename": filename, "data": data}, request_id=request_id)
+        return await operations.run("store_media", {"filename": filename, "data": data}, request_id=request_id,
+                                    preview_token=preview_token, confirm=confirm)
 
     @mcp.tool(name="anki_media", annotations=READ_ONLY)
     async def anki_media(filename: str | None = None, contains: str = "", limit: int = 20, offset: int = 0) -> dict[str, Any]:
