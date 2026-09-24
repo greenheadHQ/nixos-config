@@ -16,7 +16,7 @@ import unicodedata
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
-from mcp.types import ToolAnnotations
+from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from .ankiconnect import AnkiConnect
@@ -26,6 +26,8 @@ from .managed import DEFAULT_MODEL, ManagedService
 from .operations import OperationService
 from .shaping import card_view, note_view, page, truncate
 from .syncstatus import SyncNow, read_freshness, read_status, summarize
+from .upload import (FORMATS, RESIZE_LONG_EDGE, TICKET_TOOL, UPLOAD_PATH, WIDGET_MIME, WIDGET_URI, UploadTickets,
+                     origin, widget_html)
 
 ADDED_TAG = "mcp::added"
 
@@ -43,6 +45,22 @@ UPDATE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHi
 DESTRUCTIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=False)
 SYNC = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True)
 MANAGED_RESTORE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=True)
+# The upload box and its ticket write nothing themselves: storing happens only when the user picks a file.
+UPLOAD_BOX = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=False, openWorldHint=False)
+
+UPLOAD_IMAGE_DESCRIPTION = (
+    "Show an upload box where the user picks one image on their device; the server stores it in Anki media as sent "
+    "(JPEG, PNG, GIF or WebP up to 5 MiB; the box resizes larger JPEG/PNG/WebP photos to a 3072 px long edge). "
+    "Use this for images on the user's device, including images already attached to the chat: chat attachments "
+    "cannot be passed to this server, so ask the user to pick the same file in the box. The box reports the stored "
+    "filename (paste-<SHA-1>.<ext>) in the conversation; reference it in a field as <img src=\"FILENAME\">. "
+    "If the user sees no upload box, this app cannot show MCP Apps widgets."
+)
+UPLOAD_RESULT_TEXT = (
+    "The upload box is shown to the user. Wait until the user picks an image; the box stores it and reports the "
+    "stored filename in the conversation. If the user sees no upload box, this app cannot show MCP Apps widgets: "
+    "use anki_store_media only for a small file, or the user can add the image in Anki directly."
+)
 
 
 class NewNote(BaseModel):
@@ -72,6 +90,8 @@ class Deps:
     page_max: int
     operations: OperationService
     media_max_bytes: int
+    public_url: str  # the upload box posts to <public_url>/upload and declares this origin in its CSP
+    uploads: UploadTickets
 
 
 def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 정의 나열
@@ -457,7 +477,9 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     @mcp.tool(name="anki_store_media", annotations=ADDITIVE)
     async def anki_store_media(filename: str, data: str, request_id: str | None = None) -> dict[str, Any]:
         """Add one new media file using a safe basename and base64 data (decoded limit 5 MiB). Same content is
-        a no-op; different existing content is refused. No file paths, URLs, overwriting or deletion."""
+        a no-op; different existing content is refused. No file paths, URLs, overwriting or deletion.
+        For images on the user's device use anki_upload_image; use base64 only for small files you created
+        yourself or when the app cannot show the upload box."""
         if (len(data) > 4 * ((deps.media_max_bytes + 2) // 3) or filename.startswith(".")
                 or any(c in filename for c in "/\\:") or filename != filename.strip()
                 or unicodedata.normalize("NFC", filename) != filename
@@ -470,6 +492,28 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         if not decoded or len(decoded) > deps.media_max_bytes:
             raise ToolError("media-empty-or-too-large")
         return await operations.run("store_media", {"filename": filename, "data": data}, request_id=request_id)
+
+    @mcp.tool(name="anki_upload_image", title="Upload image from device", annotations=UPLOAD_BOX,
+              meta={"ui": {"resourceUri": WIDGET_URI}}, description=UPLOAD_IMAGE_DESCRIPTION,
+              structured_output=False)
+    async def anki_upload_image() -> CallToolResult:
+        return CallToolResult(content=[TextContent(type="text", text=UPLOAD_RESULT_TEXT)], structuredContent={
+            "maxBytes": deps.media_max_bytes, "formats": list(FORMATS), "resizeLongEdge": RESIZE_LONG_EDGE})
+
+    @mcp.tool(name=TICKET_TOOL, title="Upload ticket (upload box only)", annotations=UPLOAD_BOX,
+              meta={"ui": {"visibility": ["app"]}}, structured_output=False,
+              description="Used only by the upload box to get a one-time upload ticket (valid for 2 minutes).")
+    async def anki_upload_ticket() -> CallToolResult:
+        ticket = deps.uploads.issue()
+        return CallToolResult(
+            content=[TextContent(type="text", text="One-time upload ticket issued for the upload box.")],
+            structuredContent={"ticket": ticket, "expiresInSeconds": int(deps.uploads.ttl)})
+
+    @mcp.resource(WIDGET_URI, name="anki-upload-image", title="Anki image upload", mime_type=WIDGET_MIME,
+                  description="Upload box that stores one image from the user's device in Anki media.",
+                  meta={"ui": {"csp": {"connectDomains": [origin(deps.public_url)]}, "prefersBorder": True}})
+    def anki_upload_page() -> str:
+        return widget_html(deps.public_url + UPLOAD_PATH, deps.media_max_bytes)
 
     @mcp.tool(name="anki_media", annotations=READ_ONLY)
     async def anki_media(filename: str | None = None, contains: str = "", limit: int = 20, offset: int = 0) -> dict[str, Any]:

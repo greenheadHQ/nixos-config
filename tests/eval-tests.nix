@@ -1503,7 +1503,14 @@ let
           == toString constants.ankiMcp.bodyReadTimeoutSecs
         &&
           ankiMcpSvc.environment.ANKI_MCP_MAX_CONCURRENCY == toString constants.ankiMcp.maxConcurrentRequests
-        && ankiMcpSvc.environment.ANKI_MCP_REG_BURST == toString constants.ankiMcp.registrationBurst;
+        && ankiMcpSvc.environment.ANKI_MCP_REG_BURST == toString constants.ankiMcp.registrationBurst
+        # 업로드 위젯의 입장권 수명·본문 기한도 constants에서 받아야 함
+        &&
+          ankiMcpSvc.environment.ANKI_MCP_UPLOAD_TICKET_TTL_SECS
+          == toString constants.ankiMcp.uploadTicketTtlSecs
+        &&
+          ankiMcpSvc.environment.ANKI_MCP_UPLOAD_READ_TIMEOUT_SECS
+          == toString constants.ankiMcp.uploadReadTimeoutSecs;
     }
     {
       name = "Test AM4: sync 트리거는 polkit 규칙으로 anki-mcp 유저에게 anki-host-sync-main.service의 start만 허용하고, 승인 문구 시크릿은 root 0400 + LoadCredential로만 전달돼야 함";

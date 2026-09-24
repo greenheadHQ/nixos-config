@@ -80,6 +80,8 @@ PYTHONPATH=modules/nixos/programs/anki-mcp/src nix shell .#ankiMcpTestEnv -c \
 `readOnlyHint`를 필수로 비교하며 추가로 관측한 필드의 차이도 검출한다. 배열과 설명은 임의로 정규화하지 않는다.
 등록 대조가 `match`여도 숨겨진 `outputSchema`·다른 annotation·초기화 지침이 있으면 `full_status=unknown`이다.
 불완전 목록과 `chat-turn`은 차이 내역을 보여 주되 등록 drift나 정상으로 확정하지 않는다.
+앱 전용 도구(`_meta.ui.visibility`에 `model`이 없는 `anki_upload_ticket`)는 호스트가 모델과 등록 목록에서 숨긴다.
+그래서 `chatgpt-registration`·`chat-turn` 관측에서 빠져 있으면 누락으로 세지 않고, 관측됐으면 다른 도구처럼 비교한다.
 이 비교의 회귀 테스트와 인증된 ASGI 응답 대조는 기존 Anki MCP 테스트 및 required `check` CI에 포함된다.
 
 ## 변경 요청과 결과 확인
@@ -227,6 +229,7 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 | `anki_set_due_date` | `setDueDate`; `2`, `2-5`, `2!` 문법. 범위는 무작위, 수동 복습 기록 추가·정지 해제 가능. |
 | `anki_forget_cards` | `forgetCards`; 새 카드 학습 상태로 돌아가며 과거 복습 기록 전체를 지우지 않는다. |
 | `anki_store_media`, `anki_media` | base64 신규 저장·이름 목록/조회. decoded 5 MiB, 안전한 NFC 파일명. 같은 내용은 no-op, 다른 내용의 덮어쓰기·삭제·URL/path 입력은 없음. |
+| `anki_upload_image`, `anki_upload_ticket` | MCP Apps 업로드 위젯과 위젯 전용 1회용 입장권. 위젯이 `POST /upload`로 보낸 이미지를 `store_media`와 같은 원장 경로로 즉시 저장. 아래 "기기 이미지 업로드" 참조. |
 | `anki_deck_options`, `anki_update_deck_options` | `getDeckConfig`, `saveDeckConfig`; 현재 프리셋 ID 고정, 공유 덱 목록 표시. 아래 허용 값만 patch. |
 | `anki_model_info`, `anki_prepare_model_change` | 필드 add/remove/rename/reposition, 템플릿 add/remove/update. 준비만 수행하고 root 승인 경로에서 적용. |
 | `anki_update_model_css` | `updateModelStyling`; 빈 CSS도 지원, 구조 변경과 별도. |
@@ -246,6 +249,77 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 `new.perDay`, `new.order`, `new.initialFactor`, `rev.perDay`, `rev.maxIvl`, `rev.ease4`,
 `rev.ivlFct`, `rev.hardFactor`, `lapse.mult`, `lapse.minInt`, `lapse.leechFails`, `lapse.leechAction`.
 현 버전에서 없는 키·범위 밖 값·프리셋 ID/name 교체는 거부한다. FSRS 설정 전체 편집은 지원하지 않는다.
+
+## 기기 이미지 업로드
+
+사용자 기기에 있는 이미지는 MCP Apps 업로드 위젯으로 원본 그대로 저장한다.
+채팅에 첨부한 이미지는 서버로 넘길 방법이 없다. 모델이 base64로 옮겨 적게 하면 ChatGPT는 해상도를 계속 낮추고,
+Claude는 저장을 시도하지 않는다.
+
+- **흐름**
+  - 모델이 `anki_upload_image`를 호출하면 호스트가 `ui://anki/upload-image` 위젯을 띄운다.
+  - 사용자가 이미지를 한 장 고르면 위젯이 앱 전용 도구 `anki_upload_ticket`(`_meta.ui.visibility: ["app"]`)으로
+    1회용 입장권을 받아 `POST /upload?ticket=…`로 파일을 보낸다.
+  - 서버는 `store_media`와 같은 원장 경로로 즉시 저장한다. 위젯은 파일명을 `ui/update-model-context`와 `ui/message`로
+    대화에 알리고, 모델은 필드에 `<img src="파일명">`을 넣는다.
+  - 채팅에 첨부했던 이미지는 위젯에서 다시 고른다.
+- **한도·형식**
+  - JPEG·PNG·GIF·WebP만 받는다(내용으로 판별). 한도는 5 MiB(`constants.ankiHost.mediaMaxBytes`)다.
+  - 한도를 넘는 JPEG·PNG·WebP는 위젯이 긴 변 3072px, 품질 0.9 JPEG로 바꿔 올린다. 한도를 넘는 GIF는 거절한다.
+  - 한도 안의 파일은 바이트 그대로 저장한다.
+  - HEIC 등은 JPEG로 바꿔 올리라는 안내와 함께 거절한다. 위치정보(EXIF)는 따로 처리하지 않는다.
+- **파일명**: Anki 편집기의 붙여넣기 이미지와 같은 `paste-<SHA-1>.<ext>`다. 같은 이미지는 같은 이름이 되어,
+  다시 올려도 no-op이다.
+- **보안 경계**
+  - `/upload`는 OAuth 밖이다. 입장권은 인증된 MCP 연결의 도구 호출로만 발급된다
+    (`constants.ankiMcp.uploadTicketTtlSecs`, 1회용, 메모리 보관 최대 256개).
+  - 서버는 입장권을 본문보다 먼저 확인한다. 확인된 업로드만 본문을 `uploadReadTimeoutSecs` 안에
+    `maxRequestBodyBytes`까지 읽는다.
+  - 응답은 CORS `*`이고 쿠키·자격 증명을 쓰지 않는다. 서버는 URL을 가져오지 않는다.
+  - 입장권 값은 로그에 남기지 않는다. uvicorn 접근 로그의 `ticket=` 값은 그 업로드의 원장 `request_id`
+    (`upload-<입장권 SHA-256 앞 32자>`)로 바꿔 적는다. 같은 값이 두 번 찍히면 재사용이고, 원장 기록과 바로 이어진다.
+  - 위젯·입장권 도구는 호출만으로는 저장하지 않으므로 `readOnlyHint: true`다. 저장은 사용자의 파일 선택으로만 일어난다.
+- **클라이언트 동작** (2026-09-24 lab 실측)
+  - ChatGPT(웹·iPhone)와 Claude(웹·iPhone) 모두 위젯을 렌더링하고, 원본을 바이트 그대로 전달했다.
+  - ChatGPT는 `ui/message`를 바로 전송하고, Claude는 입력창에 채운 뒤 사용자가 전송한다.
+  - claude.ai는 `initialize`에서 MCP Apps 확장을 광고하지 않지만 위젯을 렌더링한다. 광고 여부로 도구를 숨기지 않는다.
+  - 두 클라이언트 모두 `anki_upload_ticket`을 모델에 노출하지 않는다. claude.ai 커넥터 설정은 이를 "App-only tools"로 따로 표시한다.
+  - 두 클라이언트 모두 도구 목록과 위젯 HTML을 캐시한다. 도구나 위젯을 바꿔 배포하면 ChatGPT는 앱 설정의 **새로 고침**,
+    claude.ai는 커넥터의 **도구 목록 새로 고침**을 해야 새 버전을 쓴다. 옛 목록으로 호출하면 없는 도구 오류가 난다.
+  - 위젯을 띄우지 못하는 클라이언트에서는 결과 문장이 그 사실을 알린다. 이때 `anki_store_media`는 작은 파일에만 쓴다.
+- **응답**
+  - 성공하면 영수증(`state`·`filename`·`bytes`·`format`·`width`·`height`·`unchanged`·`sync`·`notification`·`request_id`)을 돌려준다.
+  - 거절은 401(입장권)·408·413·415·400이다. 헬퍼가 거절하면 422, 바쁘거나 연결되지 않으면 503이다.
+  - 응답을 받지 못했다면 저장됐을 수 있다. 다시 올리기 전에 `anki_recent_operations`로 확인한다.
+- **설계 근거**: 아래 선택을 바꾸기 전에 그 이유가 아직 성립하는지 확인한다.
+  - **채팅 첨부(ChatGPT `openai/fileParams`)를 쓰지 않는다.**
+    - ChatGPT 전용이고, 이미 줄인 사본(웹 긴 변 2048px, iPhone 1536px)만 준다.
+    - 서버가 약 5분 뒤 만료되는 외부 URL을 가져와야 한다. 이 서버는 요청을 받아 다른 호스트로 접속하는 경로를 만들지 않으므로 URL을 가져오지 않는다.
+    - 위젯은 두 클라이언트 모두에서 브라우저가 원본을 직접 보낸다.
+  - **파일을 고르면 바로 저장한다.**
+    - 사용자의 파일 선택이 곧 승인이다.
+    - 임시 보관한 뒤 모델이 확정하는 방식은 보관소·만료 정리·확정 도구가 더 필요하고, 확정이 다시 모델의 쓰기가 된다.
+    - 쓰이지 않은 파일은 Anki "미디어 확인"으로 정리한다.
+  - **5 MiB 한도를 유지하고, 넘는 파일만 줄인다.**
+    - 한도를 올리면 AnkiWeb 동기화 용량과 휴대폰 Anki의 부담이 커진다. 넘는 파일을 거절하면 사용자가 직접 줄여야 한다.
+    - 한도 안의 파일은 다시 인코딩하지 않아 원본 그대로 남는다.
+    - GIF는 캔버스로 줄이면 움직임이 사라지므로 거절한다.
+  - **입장권은 업로드 직전에 앱 전용 도구로 받는다.**
+    - 위젯은 호스트의 샌드박스 iframe에서 돌아 OAuth 토큰을 쓸 수 없다.
+    - 위젯이 처음 뜰 때 미리 넘기면 사진을 고를 때까지 유효해야 해 수명이 길어진다. 또 도구 결과가 모델에게 보이지 않는다는 보장이 클라이언트마다 없다.
+    - 위젯이 뜨는 도메인은 호스트마다 달라 도메인 허용 목록 대신 입장권으로 막는다. 속도 제한은 두지 않는다.
+  - **입장권을 쿼리로 보낸다.**
+    - multipart 본문과 쿼리만 쓰는 요청은 CORS 사전 요청 없이 바로 간다.
+    - 대신 쿼리가 접근 로그에 남으므로, 위의 로그 규칙으로 입장권 값을 `request_id`로 바꿔 적는다.
+  - **이 경로만 본문 기한을 120초로 둔다.** 휴대폰의 느린 업로드를 고려했다. 입장권을 확인한 요청에만 적용한다.
+  - **원래 파일명을 쓰지 않는다.** iPhone은 `image.jpg`·`IMG_1234.jpeg`처럼 겹치는 이름을 줘 충돌 처리가 필요하다. 내용 해시 이름은 같은 사진을 한 파일로 모으고, 다른 사진끼리 부딪히지 않는다.
+  - **HEIC는 거절한다.** PC용 Anki가 HEIC를 보여 주지 못할 수 있다. iPhone에서 위젯으로 고른 사진은 이미 JPEG로 온다.
+  - **위치정보(EXIF)는 처리하지 않는다.** 학습용으로 직접 찍은 사진을 올리는 일은 사실상 없다는 운영자 판단이다. 이미지 라이브러리도 추가하지 않는다.
+  - **한 번에 한 장씩 올린다.** 동시 업로드의 부분 실패 처리가 필요 없다. 같은 위젯에서 반복해 올린다.
+- **기준과 경위**
+  - 현재 동작의 기준은 이 절과 테스트(`tests/anki-mcp/test_upload.py`, `test_server.py`, `test_metadata.py`)다.
+  - 결정 경위와 실측 원자료는 GitHub 이슈 #1414에 있다. 이슈가 바뀌거나 사라져도 이 절만으로 동작과 이유를 알 수 있어야 한다.
+  - 둘이 어긋나면 이 절과 테스트를 따른다.
 
 ## 노트 연결
 

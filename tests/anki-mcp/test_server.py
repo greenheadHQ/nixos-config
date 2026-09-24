@@ -5,6 +5,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
 import secrets
 import time
 from dataclasses import replace
@@ -12,13 +13,16 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 import pytest
+import uvicorn
 from mcp.types import Tool
 from starlette.routing import Route
+from uvicorn.logging import AccessFormatter
 
 from anki_mcp.authoring import AUTHORING_GUIDANCE
 from anki_mcp.config import Settings
 from anki_mcp.metadata import export_catalog
-from anki_mcp.server import build
+from anki_mcp.server import build, serve
+from anki_mcp.upload import ticket_request_id
 
 FQDN = "minipc.example.ts.net"
 PUBLIC_HOST = f"{FQDN}:8443"
@@ -40,6 +44,7 @@ def _settings(tmp_path) -> Settings:
         reg_max_clients=3, reg_max_client_bytes=4096, reg_unused_ttl=86400, reg_burst=5, reg_window=60,
         max_body_bytes=2048, body_read_timeout=30, max_concurrency=64,
         local_credential_dir=str(tmp_path), helper_timeout=1, sync_enabled=True, media_max_bytes=5242880,
+        upload_ticket_ttl=120, upload_read_timeout=120,
     )
 
 
@@ -486,3 +491,60 @@ async def test_approval_limits_body_size_and_read_time_before_form_parsing(tmp_p
         slow = await ah.post(endpoint, headers=headers, content=unfinished())
         assert slow.status_code == 408
         assert (await ah.get("/healthz")).status_code == 200
+
+
+@pytest.mark.anyio
+async def test_upload_gate_is_public_only_and_shares_tickets_with_the_mcp_tool(tmp_path):
+    # 업로드 위젯: /upload는 OAuth 밖이지만 MCP 도구가 발급한 1회용 입장권만 통과한다.
+    # 저장까지 가지 않는 경로만 확인한다 — 이 설정은 sync가 켜져 있어 저장 시 systemctl을 부를 수 있다.
+    cfg = _settings(tmp_path)
+    funnel, approval = build(cfg)
+    async with funnel.router.lifespan_context(funnel):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=funnel), base_url=f"https://{PUBLIC_HOST}") as fh, \
+                httpx.AsyncClient(transport=httpx.ASGITransport(app=approval), base_url=f"https://{APPROVAL_HOST}") as ah:
+            denied = await fh.post("/upload", files={"file": ("a.jpg", b"x", "image/jpeg")})
+            assert denied.status_code == 401 and denied.headers["access-control-allow-origin"] == "*"
+            assert (await fh.options("/upload")).status_code == 204
+            assert (await ah.post("/upload", headers={"host": APPROVAL_HOST})).status_code == 404
+
+            _, token = await _http_grant(fh, ah)
+            hdrs = {"authorization": f"Bearer {token['access_token']}",
+                    "accept": "application/json, text/event-stream", "content-type": "application/json"}
+            listed = await fh.post("/mcp", headers=hdrs, json={"jsonrpc": "2.0", "id": 1, "method": "resources/list"})
+            [resource] = listed.json()["result"]["resources"]
+            assert resource["uri"] == "ui://anki/upload-image" and resource["mimeType"] == "text/html;profile=mcp-app"
+            assert resource["_meta"]["ui"]["csp"]["connectDomains"] == [f"https://{PUBLIC_HOST}"]
+            read = await fh.post("/mcp", headers=hdrs, json={"jsonrpc": "2.0", "id": 2, "method": "resources/read",
+                                                            "params": {"uri": "ui://anki/upload-image"}})
+            [content] = read.json()["result"]["contents"]
+            assert content["_meta"] == resource["_meta"] and f'"uploadUrl": "https://{PUBLIC_HOST}/upload"' in content["text"]
+            issued = await fh.post("/mcp", headers=hdrs, json={"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                                                              "params": {"name": "anki_upload_ticket", "arguments": {}}})
+            ticket = issued.json()["result"]["structuredContent"]["ticket"]
+            refused = await fh.post(f"/upload?ticket={ticket}", files={"file": ("a.txt", b"not an image", "text/plain")})
+            assert (refused.status_code, refused.json()) == (415, {"error": "unsupported-image-format"})
+            reused = await fh.post(f"/upload?ticket={ticket}", files={"file": ("a.txt", b"not an image", "text/plain")})
+            assert reused.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_serve_keeps_upload_tickets_out_of_the_access_log(tmp_path, monkeypatch):
+    # uvicorn 접근 로그는 경로를 쿼리 문자열까지 남긴다. serve()가 건 필터가 uvicorn 로깅 설정 뒤에도 남아
+    # 입장권 대신 그 업로드의 원장 request_id를 적어야 한다.
+    async def idle(self, sockets=None):
+        return None
+
+    monkeypatch.setattr(uvicorn.Server, "serve", idle)
+    monkeypatch.setattr(asyncio.get_running_loop(), "add_signal_handler", lambda *args: None)
+    access = logging.getLogger("uvicorn.access")
+    before = list(access.filters)
+    try:
+        await serve(_settings(tmp_path))
+        record = access.makeRecord("uvicorn.access", logging.INFO, __file__, 0, '%s - "%s %s HTTP/%s" %d',
+                                   ("127.0.0.1:1", "POST", "/upload?ticket=secret-value&x=1", "1.1", 401), None)
+        assert access.filter(record)
+        line = AccessFormatter('%(request_line)s %(status_code)s').format(record)
+        assert "secret-value" not in line and f"/upload?ticket={ticket_request_id('secret-value')}&x=1" in line
+    finally:
+        access.filters[:] = before
+

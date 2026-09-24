@@ -119,6 +119,10 @@
     # 인증 전 본문 선읽기 방어 — 미완결 본문(slowloris)이 버퍼를 무한히 붙잡지 못하게 기한·동시성에 상한을 둔다
     bodyReadTimeoutSecs = 30; # 두 앱이 인증 전 요청 본문을 다 받기까지의 기한 — 넘으면 408로 끊는다
     maxConcurrentRequests = 8; # 두 앱 본문 버퍼 최대 128 MiB + 파싱/런타임 여유(MemoryMax 512M)
+    # 기기 이미지 업로드 위젯(anki-host README "기기 이미지 업로드") — 입장권은 업로드 직전에 발급하므로 짧게 둔다.
+    # /upload 본문은 입장권을 확인한 뒤에만 읽으므로, 휴대폰의 느린 업로드를 위해 인증 전 기한보다 길게 둔다.
+    uploadTicketTtlSecs = 120; # 앱 전용 도구로 받은 1회용 업로드 입장권의 수명
+    uploadReadTimeoutSecs = 120; # 입장권이 확인된 /upload 본문(최대 maxRequestBodyBytes)을 다 받기까지의 기한
   };
 
   # ═══════════════════════════════════════════════════════════════

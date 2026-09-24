@@ -10,6 +10,7 @@ from anki_mcp.helper import Helper
 from anki_mcp.syncstatus import SyncNow
 from anki_mcp.operations import OperationService
 from anki_mcp.tools import ADDED_TAG, Deps, register_tools
+from anki_mcp.upload import UploadTickets
 from anki_host_fixture.operations import Operations, OperationError
 
 
@@ -109,6 +110,7 @@ def make_mcp(fake: FakeAnki, tmp_path):
         field_chars=10,
         page_max=100,
         operations=OperationService(helper, syncer, None, sync_enabled=False), media_max_bytes=5 * 1024 * 1024,
+        public_url="https://anki.example", uploads=UploadTickets(120),
     )
     mcp = FastMCP("t")
     register_tools(mcp, deps)

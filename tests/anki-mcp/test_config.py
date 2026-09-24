@@ -16,6 +16,7 @@ BASE = {
     "ANKI_MCP_BODY_READ_TIMEOUT_SECS": "30", "ANKI_MCP_MAX_CONCURRENCY": "64",
     "CREDENTIALS_DIRECTORY": "/tmp/credentials", "ANKI_MCP_HELPER_TIMEOUT_SECS": "1900",
     "ANKI_MCP_SYNC_ENABLED": "true", "ANKI_MCP_MEDIA_MAX_BYTES": "5242880",
+    "ANKI_MCP_UPLOAD_TICKET_TTL_SECS": "120", "ANKI_MCP_UPLOAD_READ_TIMEOUT_SECS": "90",
 }
 
 
@@ -29,6 +30,16 @@ def test_from_env_reads_every_value_and_strips_trailing_slash(monkeypatch):
     s = Settings.from_env()
     assert s.public_url == "https://minipc.example.ts.net:8443" and s.reg_max_clients == 32 and s.max_body_bytes == 262144
     assert s.body_read_timeout == 30 and s.max_concurrency == 64
+    assert s.upload_ticket_ttl == 120 and s.upload_read_timeout == 90
+
+
+@pytest.mark.parametrize("name", ["ANKI_MCP_UPLOAD_TICKET_TTL_SECS", "ANKI_MCP_UPLOAD_READ_TIMEOUT_SECS"])
+def test_upload_limits_have_no_defaults(monkeypatch, name):
+    # 업로드 입장권 수명·본문 기한도 다른 설정처럼 nixos 모듈이 constants에서 주입한다
+    _env(monkeypatch)
+    monkeypatch.delenv(name)
+    with pytest.raises(SystemExit):
+        Settings.from_env()
 
 
 def test_from_env_rejects_plain_http_issuer_and_approval_urls(monkeypatch):

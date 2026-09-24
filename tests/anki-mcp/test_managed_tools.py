@@ -9,6 +9,7 @@ from mcp.server.fastmcp.exceptions import ToolError
 from anki_mcp.managed import DEFAULT_MODEL
 from anki_mcp.operations import OperationService
 from anki_mcp.tools import Deps, register_tools
+from anki_mcp.upload import UploadTickets
 from test_managed_service import FakeManagedHelper
 from test_operation_service import Syncer
 
@@ -22,7 +23,8 @@ def setup(tmp_path):
     mcp = FastMCP("managed-tests")
     register_tools(mcp, Deps(anki=SimpleNamespace(), helper=helper, syncer=syncer,
         sync_status_file=str(tmp_path / "status.json"), field_chars=1000, page_max=100,
-        operations=OperationService(helper, syncer, None, sync_enabled=True), media_max_bytes=100))
+        operations=OperationService(helper, syncer, None, sync_enabled=True), media_max_bytes=100,
+        public_url="https://anki.example", uploads=UploadTickets(120)))
     return mcp, helper, syncer
 
 

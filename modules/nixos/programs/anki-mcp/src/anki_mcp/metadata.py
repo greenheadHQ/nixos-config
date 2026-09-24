@@ -22,6 +22,7 @@ from .server import INSTRUCTIONS
 from .tools import Deps, register_tools
 
 SOURCES = {"source", "server", "chatgpt-registration", "chat-turn"}
+MODEL_VIEWS = {"chatgpt-registration", "chat-turn"}
 TOOL_FIELDS = {field.alias or name for name, field in Tool.model_fields.items()}
 HINTS = {"readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"}
 
@@ -42,6 +43,7 @@ async def export_catalog(*, field_chars: int, source: str = "source") -> dict[st
         anki=disabled, helper=disabled, syncer=disabled, sync_status_file="",
         field_chars=field_chars, page_max=0, media_max_bytes=0,
         operations=SimpleNamespace(sync_enabled=False, lock=asyncio.Lock()),
+        public_url="https://example.invalid", uploads=disabled,
     ))
     return {
         "source": source, "observed_at": datetime.now(timezone.utc).isoformat(),
@@ -101,6 +103,11 @@ def validate_catalog(catalog: Any) -> dict[str, dict[str, Any]]:
     return indexed
 
 
+def _app_only(tool: dict[str, Any]) -> bool:
+    visibility = ((tool.get("_meta") or {}).get("ui") or {}).get("visibility")
+    return isinstance(visibility, list) and "model" not in visibility
+
+
 def compare_catalogs(expected: Any, observed: Any, scope: str = "full") -> dict[str, Any]:
     if scope not in {"registration", "full"}:
         raise ValueError("scope must be registration or full")
@@ -109,6 +116,9 @@ def compare_catalogs(expected: Any, observed: Any, scope: str = "full") -> dict[
         raise ValueError("expected catalog must be complete source or server metadata")
     if "instructions" not in expected or any(set(tool) != TOOL_FIELDS for tool in left.values()):
         raise ValueError("expected catalog must include the complete SDK export")
+    if observed["source"] in MODEL_VIEWS:
+        # MCP Apps hosts keep app-only tools (visibility without "model") out of the model's tool list.
+        left = {name: tool for name, tool in left.items() if name in right or not _app_only(tool)}
     changed, unobserved, required_unknown = [], [], []
 
     def compare_field(path: str, before: Any, after: dict[str, Any], key: str, required: bool) -> None:
