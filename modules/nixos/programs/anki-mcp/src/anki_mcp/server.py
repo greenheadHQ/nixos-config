@@ -221,7 +221,7 @@ def build(cfg: Settings):
             RequestGuard, max_body_bytes=cfg.max_body_bytes, register_burst=cfg.reg_burst,
             register_window=cfg.reg_window, read_timeout=cfg.body_read_timeout,
         )
-    # 업로드 위젯의 파일 전송(#1414)은 OAuth 밖이다. 나중에 추가한 미들웨어가 가장 바깥이므로 guard보다 먼저 받아,
+    # 업로드 위젯의 파일 전송은 OAuth 밖이다. 나중에 추가한 미들웨어가 가장 바깥이므로 guard보다 먼저 받아,
     # 입장권을 본문보다 먼저 확인하고 확인된 업로드에만 긴 본문 기한을 준다. 승인 앱에는 두지 않는다.
     funnel_app.add_middleware(
         UploadGate, tickets=uploads, operations=operations, max_body_bytes=cfg.max_body_bytes,
@@ -247,7 +247,7 @@ async def serve(cfg: Settings) -> None:
                                       proxy_headers=True, forwarded_allow_ips="127.0.0.1",
                                       limit_concurrency=cfg.max_concurrency)),
     ]
-    # 접근 로그는 요청 경로를 쿼리 문자열까지 남긴다. 업로드 입장권 대신 그 업로드의 원장 request_id를 적는다 (#1414).
+    # 접근 로그는 요청 경로를 쿼리 문자열까지 남긴다. 업로드 입장권 대신 그 업로드의 원장 request_id를 적는다.
     logging.getLogger("uvicorn.access").addFilter(RedactTickets())
     tasks = [asyncio.create_task(s.serve()) for s in servers]
     await asyncio.sleep(0.5)  # uvicorn이 자체 signal 핸들러를 건 뒤에 우리 것으로 덮는다 — 두 서버를 함께 내린다

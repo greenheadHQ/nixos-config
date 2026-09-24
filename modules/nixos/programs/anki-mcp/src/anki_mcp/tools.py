@@ -45,7 +45,7 @@ UPDATE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHi
 DESTRUCTIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=False)
 SYNC = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True)
 MANAGED_RESTORE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=True)
-# The upload box and its ticket write nothing themselves: storing happens only when the user picks a file (#1414).
+# The upload box and its ticket write nothing themselves: storing happens only when the user picks a file.
 UPLOAD_BOX = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 
 UPLOAD_IMAGE_DESCRIPTION = (

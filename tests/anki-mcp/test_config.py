@@ -35,7 +35,7 @@ def test_from_env_reads_every_value_and_strips_trailing_slash(monkeypatch):
 
 @pytest.mark.parametrize("name", ["ANKI_MCP_UPLOAD_TICKET_TTL_SECS", "ANKI_MCP_UPLOAD_READ_TIMEOUT_SECS"])
 def test_upload_limits_have_no_defaults(monkeypatch, name):
-    # 업로드 입장권 수명·본문 기한도 다른 설정처럼 nixos 모듈이 constants에서 주입한다 (#1414)
+    # 업로드 입장권 수명·본문 기한도 다른 설정처럼 nixos 모듈이 constants에서 주입한다
     _env(monkeypatch)
     monkeypatch.delenv(name)
     with pytest.raises(SystemExit):

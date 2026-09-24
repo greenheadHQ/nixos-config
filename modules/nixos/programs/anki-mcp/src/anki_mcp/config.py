@@ -62,7 +62,7 @@ class Settings:
     helper_timeout: int
     sync_enabled: bool
     media_max_bytes: int
-    upload_ticket_ttl: int  # 업로드 위젯 1회용 입장권 수명 (#1414)
+    upload_ticket_ttl: int  # 업로드 위젯 1회용 입장권 수명
     upload_read_timeout: int  # 입장권이 확인된 /upload 본문을 다 받기까지의 기한 — 휴대폰의 느린 업로드
 
     @classmethod

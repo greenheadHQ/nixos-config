@@ -495,7 +495,7 @@ async def test_approval_limits_body_size_and_read_time_before_form_parsing(tmp_p
 
 @pytest.mark.anyio
 async def test_upload_gate_is_public_only_and_shares_tickets_with_the_mcp_tool(tmp_path):
-    # 업로드 위젯(#1414): /upload는 OAuth 밖이지만 MCP 도구가 발급한 1회용 입장권만 통과한다.
+    # 업로드 위젯: /upload는 OAuth 밖이지만 MCP 도구가 발급한 1회용 입장권만 통과한다.
     # 저장까지 가지 않는 경로만 확인한다 — 이 설정은 sync가 켜져 있어 저장 시 systemctl을 부를 수 있다.
     cfg = _settings(tmp_path)
     funnel, approval = build(cfg)

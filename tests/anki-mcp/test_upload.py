@@ -1,4 +1,4 @@
-"""Device image upload (#1414): format checks, naming, one-time tickets and the /upload gate.
+"""Device image upload: format checks, naming, one-time tickets and the /upload gate.
 
 The store path runs the real OperationService and helper journal against a fake Anki adapter
 with sync disabled, so no network, host service or systemctl is involved.

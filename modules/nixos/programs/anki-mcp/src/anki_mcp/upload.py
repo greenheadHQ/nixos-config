@@ -1,11 +1,13 @@
-"""Device image upload through an MCP Apps widget (#1414).
+"""Device image upload through an MCP Apps widget.
 
 The widget (ui://anki/upload-image) runs in the host's sandboxed iframe. Right before an upload it gets a
 one-time ticket from the app-only tool anki_upload_ticket over the authenticated MCP connection, then posts
 the file to POST /upload?ticket=... . UploadGate serves that path outside OAuth: it consumes the ticket
 before reading the body, checks the format by content, names the file like Anki's editor names pasted
 images (paste-<SHA-1>.<ext>) and stores it through OperationService, the journaled path of anki_store_media.
-Nothing here fetches a URL (#1306): the user's browser sends the bytes.
+Nothing here fetches a URL, so no request can make the server reach another host: the user's browser
+sends the bytes. Limits, security boundary and the reasons behind each choice are in
+modules/nixos/programs/anki-host/README.md, section "기기 이미지 업로드".
 """
 
 from __future__ import annotations

@@ -1504,7 +1504,7 @@ let
         &&
           ankiMcpSvc.environment.ANKI_MCP_MAX_CONCURRENCY == toString constants.ankiMcp.maxConcurrentRequests
         && ankiMcpSvc.environment.ANKI_MCP_REG_BURST == toString constants.ankiMcp.registrationBurst
-        # 업로드 위젯(#1414)의 입장권 수명·본문 기한도 constants에서 받아야 함
+        # 업로드 위젯의 입장권 수명·본문 기한도 constants에서 받아야 함
         &&
           ankiMcpSvc.environment.ANKI_MCP_UPLOAD_TICKET_TTL_SECS
           == toString constants.ankiMcp.uploadTicketTtlSecs
