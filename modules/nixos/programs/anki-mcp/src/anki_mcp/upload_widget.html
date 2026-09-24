@@ -47,7 +47,8 @@
     post({ id, method, params });
     if (timeoutMs) setTimeout(() => { if (pending.delete(id)) reject(new Error(`timeout: ${method}`)); }, timeoutMs);
   });
-  const resize = () => notify("ui/notifications/size-changed", { height: document.documentElement.scrollHeight });
+  // The root's scrollHeight never drops below the frame's current height; the body's box is the content height.
+  const resize = () => notify("ui/notifications/size-changed", { height: Math.ceil(document.body.getBoundingClientRect().height) });
   const line = (text, cls) => {
     const row = document.createElement("div");
     row.textContent = text;
