@@ -253,6 +253,8 @@ in
         ANKI_MCP_HELPER_TIMEOUT_SECS = toString constants.ankiHost.helperCurlMaxTimeSecs;
         ANKI_MCP_SYNC_ENABLED = lib.boolToString inst.sync.enable;
         ANKI_MCP_MEDIA_MAX_BYTES = toString constants.ankiHost.mediaMaxBytes;
+        ANKI_MCP_UPLOAD_TICKET_TTL_SECS = toString constants.ankiMcp.uploadTicketTtlSecs;
+        ANKI_MCP_UPLOAD_READ_TIMEOUT_SECS = toString constants.ankiMcp.uploadReadTimeoutSecs;
       };
 
       serviceConfig = {

@@ -40,6 +40,7 @@ def _settings(tmp_path) -> Settings:
         reg_max_clients=3, reg_max_client_bytes=4096, reg_unused_ttl=86400, reg_burst=5, reg_window=60,
         max_body_bytes=2048, body_read_timeout=30, max_concurrency=64,
         local_credential_dir=str(tmp_path), helper_timeout=1, sync_enabled=True, media_max_bytes=5242880,
+        upload_ticket_ttl=120, upload_read_timeout=120,
     )
 
 
@@ -486,3 +487,38 @@ async def test_approval_limits_body_size_and_read_time_before_form_parsing(tmp_p
         slow = await ah.post(endpoint, headers=headers, content=unfinished())
         assert slow.status_code == 408
         assert (await ah.get("/healthz")).status_code == 200
+
+
+@pytest.mark.anyio
+async def test_upload_gate_is_public_only_and_shares_tickets_with_the_mcp_tool(tmp_path):
+    # 업로드 위젯(#1414): /upload는 OAuth 밖이지만 MCP 도구가 발급한 1회용 입장권만 통과한다.
+    # 저장까지 가지 않는 경로만 확인한다 — 이 설정은 sync가 켜져 있어 저장 시 systemctl을 부를 수 있다.
+    cfg = _settings(tmp_path)
+    funnel, approval = build(cfg)
+    async with funnel.router.lifespan_context(funnel):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=funnel), base_url=f"https://{PUBLIC_HOST}") as fh, \
+                httpx.AsyncClient(transport=httpx.ASGITransport(app=approval), base_url=f"https://{APPROVAL_HOST}") as ah:
+            denied = await fh.post("/upload", files={"file": ("a.jpg", b"x", "image/jpeg")})
+            assert denied.status_code == 401 and denied.headers["access-control-allow-origin"] == "*"
+            assert (await fh.options("/upload")).status_code == 204
+            assert (await ah.post("/upload", headers={"host": APPROVAL_HOST})).status_code == 404
+
+            _, token = await _http_grant(fh, ah)
+            hdrs = {"authorization": f"Bearer {token['access_token']}",
+                    "accept": "application/json, text/event-stream", "content-type": "application/json"}
+            listed = await fh.post("/mcp", headers=hdrs, json={"jsonrpc": "2.0", "id": 1, "method": "resources/list"})
+            [resource] = listed.json()["result"]["resources"]
+            assert resource["uri"] == "ui://anki/upload-image" and resource["mimeType"] == "text/html;profile=mcp-app"
+            assert resource["_meta"]["ui"]["csp"]["connectDomains"] == [f"https://{PUBLIC_HOST}"]
+            read = await fh.post("/mcp", headers=hdrs, json={"jsonrpc": "2.0", "id": 2, "method": "resources/read",
+                                                            "params": {"uri": "ui://anki/upload-image"}})
+            [content] = read.json()["result"]["contents"]
+            assert content["_meta"] == resource["_meta"] and f'"uploadUrl": "https://{PUBLIC_HOST}/upload"' in content["text"]
+            issued = await fh.post("/mcp", headers=hdrs, json={"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                                                              "params": {"name": "anki_upload_ticket", "arguments": {}}})
+            ticket = issued.json()["result"]["structuredContent"]["ticket"]
+            refused = await fh.post(f"/upload?ticket={ticket}", files={"file": ("a.txt", b"not an image", "text/plain")})
+            assert (refused.status_code, refused.json()) == (415, {"error": "unsupported-image-format"})
+            reused = await fh.post(f"/upload?ticket={ticket}", files={"file": ("a.txt", b"not an image", "text/plain")})
+            assert reused.status_code == 401
+

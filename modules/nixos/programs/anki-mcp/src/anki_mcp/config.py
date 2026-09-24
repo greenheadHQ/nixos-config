@@ -62,6 +62,8 @@ class Settings:
     helper_timeout: int
     sync_enabled: bool
     media_max_bytes: int
+    upload_ticket_ttl: int  # 업로드 위젯 1회용 입장권 수명 (#1414)
+    upload_read_timeout: int  # 입장권이 확인된 /upload 본문을 다 받기까지의 기한 — 휴대폰의 느린 업로드
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -98,6 +100,8 @@ class Settings:
             helper_timeout=_int("ANKI_MCP_HELPER_TIMEOUT_SECS"),
             sync_enabled=_bool("ANKI_MCP_SYNC_ENABLED"),
             media_max_bytes=_int("ANKI_MCP_MEDIA_MAX_BYTES"),
+            upload_ticket_ttl=_int("ANKI_MCP_UPLOAD_TICKET_TTL_SECS"),
+            upload_read_timeout=_int("ANKI_MCP_UPLOAD_READ_TIMEOUT_SECS"),
         )
 
 

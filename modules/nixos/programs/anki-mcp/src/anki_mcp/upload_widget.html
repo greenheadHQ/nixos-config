@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { color-scheme: light dark; --bg: #ffffff; --fg: #111111; --muted: #666666; --border: #cccccc; --ok: #1a7f37; --bad: #cf222e; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1b1b1b; --fg: #f2f2f2; --muted: #a0a0a0; --border: #444444; --ok: #3fb950; --bad: #f85149; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  #pick { display: block; border: 2px dashed var(--border); border-radius: 8px; padding: 20px 12px; text-align: center; cursor: pointer; }
+  #pick.off { opacity: 0.5; pointer-events: none; }
+  #pick small { display: block; color: var(--muted); margin-top: 4px; }
+  input[type=file] { display: none; }
+  #log { margin-top: 12px; word-break: break-all; }
+  #log div { padding: 2px 0; }
+  .muted { color: var(--muted); }
+  .ok { color: var(--ok); }
+  .bad { color: var(--bad); }
+</style>
+</head>
+<body>
+  <label id="pick" class="off">이미지 선택
+    <small id="hint"></small>
+    <input id="file" type="file" accept="image/jpeg,image/png,image/gif,image/webp" />
+  </label>
+  <div id="log"></div>
+<script>
+(() => {
+  // MCP Apps (SEP-1865) widget: postMessage JSON-RPC with the host, plain multipart fetch to the server (#1414).
+  const CONFIG = __UPLOAD_CONFIG__;
+  const MIB = Math.round((CONFIG.maxBytes / 1048576) * 10) / 10;
+  const pick = document.getElementById("pick");
+  const input = document.getElementById("file");
+  const log = document.getElementById("log");
+  document.getElementById("hint").textContent = `JPEG·PNG·GIF·WebP, ${MIB} MiB까지 (큰 사진은 자동으로 줄입니다)`;
+
+  let nextId = 1;
+  let busy = false;
+  const pending = new Map();
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const post = (message) => window.parent.postMessage({ jsonrpc: "2.0", ...message }, "*");
+  const notify = (method, params) => post({ method, params });
+  const request = (method, params, timeoutMs) => new Promise((resolve, reject) => {
+    const id = nextId++;
+    pending.set(id, { resolve, reject });
+    post({ id, method, params });
+    if (timeoutMs) setTimeout(() => { if (pending.delete(id)) reject(new Error(`timeout: ${method}`)); }, timeoutMs);
+  });
+  const resize = () => notify("ui/notifications/size-changed", { height: document.documentElement.scrollHeight });
+  const line = (text, cls) => {
+    const row = document.createElement("div");
+    row.textContent = text;
+    if (cls) row.className = cls;
+    log.appendChild(row);
+    resize();
+  };
+
+  window.addEventListener("message", (event) => {
+    const data = event.data;
+    if (event.source !== window.parent || !data || data.jsonrpc !== "2.0") return;
+    if (data.id !== undefined && !data.method) {
+      const waiting = pending.get(data.id);
+      if (!waiting) return;
+      pending.delete(data.id);
+      if (data.error) waiting.reject(new Error(data.error.message || "host error"));
+      else waiting.resolve(data.result);
+      return;
+    }
+    // Host requests (ping, ui/resource-teardown, ...) need an answer; notifications need none.
+    if (data.id !== undefined && data.method) post({ id: data.id, result: {} });
+  });
+
+  class UploadError extends Error {
+    constructor(message, unknown = false) { super(message); this.unknown = unknown; }
+  }
+
+  const isGif = async (file) => {
+    const head = new Uint8Array(await file.slice(0, 6).arrayBuffer());
+    return String.fromCharCode(...head).startsWith("GIF8");
+  };
+
+  // Only files over the media limit are re-encoded; everything else is sent byte for byte.
+  const fit = async (file) => {
+    if (file.size <= CONFIG.maxBytes) return file;
+    if (await isGif(file)) throw new UploadError(`${MIB} MiB를 넘는 GIF는 올릴 수 없습니다.`);
+    line("줄이는 중…", "muted");
+    let bitmap;
+    try {
+      bitmap = await createImageBitmap(file);
+    } catch (err) {
+      throw new UploadError("이미지를 읽지 못했습니다. JPEG로 바꿔서 올려 주세요.");
+    }
+    const scale = Math.min(1, CONFIG.resizeLongEdge / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    if (bitmap.close) bitmap.close();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", CONFIG.jpegQuality));
+    if (!blob) throw new UploadError("이미지를 줄이지 못했습니다.");
+    if (blob.size > CONFIG.maxBytes) throw new UploadError(`줄여도 ${MIB} MiB를 넘습니다.`);
+    return new File([blob], "resized.jpg", { type: "image/jpeg" });
+  };
+
+  const ticket = async () => {
+    let result;
+    try {
+      result = await request("tools/call", { name: CONFIG.ticketTool, arguments: {} }, 20000);
+    } catch (err) {
+      throw new UploadError("입장권을 받지 못했습니다.");
+    }
+    const value = result && result.structuredContent && result.structuredContent.ticket;
+    if (!value) throw new UploadError("입장권을 받지 못했습니다.");
+    return value;
+  };
+
+  const failure = (status, body) => {
+    if (status === 401) return new UploadError("입장권이 만료됐습니다. 다시 선택해 주세요.");
+    if (status === 413) return new UploadError(`${MIB} MiB를 넘어 올릴 수 없습니다.`);
+    if (status === 415) {
+      return new UploadError(body.hint ? "지원하지 않는 형식입니다. HEIC는 JPEG로 바꿔서 올려 주세요."
+                                       : "지원하지 않는 형식입니다(JPEG·PNG·GIF·WebP만).");
+    }
+    if (status === 408) return new UploadError("업로드 시간이 초과됐습니다. 다시 시도해 주세요.");
+    if (status === 422) return new UploadError(`저장하지 못했습니다(${body.error}).`);
+    if (status === 503) return new UploadError("Anki 서버가 바쁘거나 연결되지 않습니다. 잠시 뒤 다시 시도해 주세요.");
+    return new UploadError("응답을 받지 못했습니다. 저장됐을 수 있으니 최근 작업을 확인해 주세요.", true);
+  };
+
+  const upload = async (file, value) => {
+    const form = new FormData();
+    form.append("file", file, file.name || "image");
+    let response;
+    try {
+      response = await fetch(`${CONFIG.uploadUrl}?ticket=${encodeURIComponent(value)}`, { method: "POST", body: form });
+    } catch (err) {
+      throw new UploadError("응답을 받지 못했습니다. 저장됐을 수 있으니 최근 작업을 확인해 주세요.", true);
+    }
+    let body = {};
+    try { body = await response.json(); } catch (err) { body = {}; }
+    if (!response.ok) throw failure(response.status, body);
+    return body;
+  };
+
+  const tell = async (text, receipt) => {
+    await Promise.race([
+      request("ui/update-model-context", { content: [{ type: "text", text }], structuredContent: { ankiUpload: receipt } }),
+      sleep(5000),
+    ]).catch(() => {});
+  };
+
+  const report = async (receipt) => {
+    const size = receipt.width && receipt.height ? `${receipt.width}×${receipt.height}` : "크기 미상";
+    if (receipt.state !== "applied") {
+      line(`저장하지 못했습니다(${receipt.state}).`, "bad");
+      await tell(`The Anki upload widget could not store the image: state=${receipt.state}` +
+                 (receipt.next_step ? `, next_step=${receipt.next_step}` : "") +
+                 ". Check anki_recent_operations before retrying.", receipt);
+      return;
+    }
+    line(receipt.unchanged ? `이미 있는 같은 이미지입니다: ${receipt.filename} (${size})`
+                           : `저장됨: ${receipt.filename} (${size})`, "ok");
+    await tell(`Image stored with the Anki upload widget: filename=${receipt.filename}, ` +
+               `${receipt.width}x${receipt.height} ${receipt.format}, ${receipt.bytes} bytes, ` +
+               `state=${receipt.state}, sync=${receipt.sync}. Reference it in a field as <img src="${receipt.filename}">.`,
+               receipt);
+    await request("ui/message", {
+      role: "user",
+      content: [{ type: "text", text: `업로드 위젯으로 이미지를 저장했습니다: ${receipt.filename} (${size})` }],
+    }, 15000).catch(() => {});
+  };
+
+  input.addEventListener("change", async () => {
+    const file = input.files && input.files[0];
+    input.value = "";
+    if (!file || busy) return;
+    busy = true;
+    pick.className = "off";
+    try {
+      line(`선택: ${file.name || "이미지"} · ${Math.max(1, Math.round(file.size / 1024))} KB`, "muted");
+      const ready = await fit(file);
+      const value = await ticket();
+      line("올리는 중…", "muted");
+      await report(await upload(ready, value));
+    } catch (err) {
+      line(err.message || String(err), "bad");
+      if (err.unknown) {
+        await tell("The Anki upload widget got no response for an upload; the image may have been stored. " +
+                   "Check anki_recent_operations before asking the user to upload again.", {});
+      }
+    } finally {
+      busy = false;
+      pick.className = "";
+    }
+  });
+
+  request("ui/initialize", {
+    appInfo: { name: "anki-upload-image", version: "1.0.0" },
+    appCapabilities: {},
+    protocolVersion: "2026-01-26",
+  }, 10000).then(() => {
+    notify("ui/notifications/initialized", {});
+    pick.className = "";
+    resize();
+  }, () => {
+    line("이 앱에서는 업로드 창을 쓸 수 없습니다.", "bad");
+  });
+  resize();
+})();
+</script>
+</body>
+</html>
