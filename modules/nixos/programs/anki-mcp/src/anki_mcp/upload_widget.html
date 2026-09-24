@@ -7,12 +7,15 @@
   :root { color-scheme: light dark; --bg: #ffffff; --fg: #111111; --muted: #666666; --border: #cccccc; --ok: #1a7f37; --bad: #cf222e; }
   @media (prefers-color-scheme: dark) { :root { --bg: #1b1b1b; --fg: #f2f2f2; --muted: #a0a0a0; --border: #444444; --ok: #3fb950; --bad: #f85149; } }
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  /* Hosts may reset html/body/#root spacing (ChatGPT zeroes their vertical padding), so the gutter lives here. */
+  .app { padding: 16px; }
   #pick { display: block; border: 2px dashed var(--border); border-radius: 8px; padding: 20px 12px; text-align: center; cursor: pointer; }
   #pick.off { opacity: 0.5; pointer-events: none; }
   #pick small { display: block; color: var(--muted); margin-top: 4px; }
   input[type=file] { display: none; }
   #log { margin-top: 12px; word-break: break-all; }
+  #log:empty { display: none; }
   #log div { padding: 2px 0; }
   .muted { color: var(--muted); }
   .ok { color: var(--ok); }
@@ -20,11 +23,13 @@
 </style>
 </head>
 <body>
+<main class="app">
   <label id="pick" class="off">이미지 선택
     <small id="hint"></small>
     <input id="file" type="file" accept="image/jpeg,image/png,image/gif,image/webp" />
   </label>
   <div id="log"></div>
+</main>
 <script>
 (() => {
   // MCP Apps (SEP-1865) widget: postMessage JSON-RPC with the host, plain multipart fetch to the server.
