@@ -1263,6 +1263,16 @@ let
       cond = pjLingerOn;
     }
     {
+      # 근거는 codex-remote-control.nix의 PrivateTmp 주석 — 살아남는 데몬(KillMode=process)의
+      # /tmp 소켓이 private /tmp와 함께 지워지는 조합을 막는다.
+      name = "Test CRC1: codex-remote-control-ensure는 데몬이 호스트 /tmp에 소켓을 두도록 PrivateTmp를 쓰지 않는다";
+      cond =
+        let
+          svc = nixosCfg.systemd.services.codex-remote-control-ensure.serviceConfig;
+        in
+        svc.KillMode == "process" && !(svc.PrivateTmp or false);
+    }
+    {
       name = "Test D28a: C 정책의 persistent additional working roots는 exact Workspace-only여야 함";
       cond = claudeSettings.permissions.additionalDirectories == expectedClaudeAdditionalDirectories;
     }
