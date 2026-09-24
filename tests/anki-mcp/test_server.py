@@ -22,6 +22,7 @@ from anki_mcp.authoring import AUTHORING_GUIDANCE
 from anki_mcp.config import Settings
 from anki_mcp.metadata import export_catalog
 from anki_mcp.server import build, serve
+from anki_mcp.upload import ticket_request_id
 
 FQDN = "minipc.example.ts.net"
 PUBLIC_HOST = f"{FQDN}:8443"
@@ -528,7 +529,8 @@ async def test_upload_gate_is_public_only_and_shares_tickets_with_the_mcp_tool(t
 
 @pytest.mark.anyio
 async def test_serve_keeps_upload_tickets_out_of_the_access_log(tmp_path, monkeypatch):
-    # uvicorn 접근 로그는 경로를 쿼리 문자열까지 남긴다. serve()가 건 필터가 uvicorn 로깅 설정 뒤에도 남아 입장권을 가려야 한다.
+    # uvicorn 접근 로그는 경로를 쿼리 문자열까지 남긴다. serve()가 건 필터가 uvicorn 로깅 설정 뒤에도 남아
+    # 입장권 대신 그 업로드의 원장 request_id를 적어야 한다.
     async def idle(self, sockets=None):
         return None
 
@@ -542,7 +544,7 @@ async def test_serve_keeps_upload_tickets_out_of_the_access_log(tmp_path, monkey
                                    ("127.0.0.1:1", "POST", "/upload?ticket=secret-value&x=1", "1.1", 401), None)
         assert access.filter(record)
         line = AccessFormatter('%(request_line)s %(status_code)s').format(record)
-        assert "secret-value" not in line and "/upload?ticket=<redacted>&x=1" in line
+        assert "secret-value" not in line and f"/upload?ticket={ticket_request_id('secret-value')}&x=1" in line
     finally:
         access.filters[:] = before
 

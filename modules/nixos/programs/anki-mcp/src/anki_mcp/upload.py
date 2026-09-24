@@ -22,7 +22,7 @@ import time
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote_plus, urlsplit
 
 from starlette.datastructures import UploadFile
 from starlette.requests import Request
@@ -46,7 +46,7 @@ _SOF = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 
 # No cookies or credentials: the ticket is the only authority, so any widget origin may send it.
 _CORS = [(b"access-control-allow-origin", b"*"), (b"access-control-allow-methods", b"POST, OPTIONS"),
          (b"access-control-allow-headers", b"Content-Type"), (b"access-control-max-age", b"600")]
-_TICKET_QUERY = re.compile(r"([?&]ticket=)[^&\s]*")
+_TICKET_QUERY = re.compile(r"([?&]ticket=)([^&\s]*)")
 
 
 class UnsupportedImage(ValueError):
@@ -114,6 +114,11 @@ def media_filename(data: bytes, image_format: str) -> str:
     return f"paste-{hashlib.sha1(data, usedforsecurity=False).hexdigest()}.{EXTENSIONS[image_format]}"
 
 
+def ticket_request_id(ticket: str) -> str:
+    """Ledger request_id of the upload a ticket authorizes; the access log shows it in place of the ticket."""
+    return "upload-" + hashlib.sha256(ticket.encode()).hexdigest()[:32]
+
+
 def origin(url: str) -> str:
     parts = urlsplit(url)
     return f"{parts.scheme}://{parts.netloc}"
@@ -152,12 +157,15 @@ class UploadTickets:
 
 
 class RedactTickets(logging.Filter):
-    """uvicorn's access log records the request path with its query string; keep ticket values out of it."""
+    """uvicorn's access log records the request path with its query string. Write the upload's request_id
+    instead of the ticket: the secret stays out of the journal, while a reused ticket and the ledger entry
+    of an upload can still be matched."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.args, tuple):
-            record.args = tuple(_TICKET_QUERY.sub(r"\1<redacted>", arg) if isinstance(arg, str) else arg
-                                for arg in record.args)
+            record.args = tuple(
+                _TICKET_QUERY.sub(lambda m: m.group(1) + ticket_request_id(unquote_plus(m.group(2))), arg)
+                if isinstance(arg, str) else arg for arg in record.args)
         return True
 
 
@@ -266,7 +274,7 @@ class UploadGate:
         except UnsupportedImage as err:
             return 415, {"error": str(err), **({"hint": err.hint} if err.hint else {})}
         filename = media_filename(data, info["format"])
-        request_id = "upload-" + hashlib.sha256(ticket.encode()).hexdigest()[:32]
+        request_id = ticket_request_id(ticket)
         params = {"filename": filename, "data": base64.b64encode(data).decode("ascii")}
         try:
             operation = await self._operations.run("store_media", params, request_id=request_id)

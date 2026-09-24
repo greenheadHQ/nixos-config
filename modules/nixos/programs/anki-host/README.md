@@ -241,7 +241,8 @@ Claude는 저장을 시도하지 않는다.
   - 서버는 입장권을 본문보다 먼저 확인한다. 확인된 업로드만 본문을 `uploadReadTimeoutSecs` 안에
     `maxRequestBodyBytes`까지 읽는다.
   - 응답은 CORS `*`이고 쿠키·자격 증명을 쓰지 않는다. 서버는 URL을 가져오지 않는다.
-  - 입장권 값은 로그에 남기지 않는다. uvicorn 접근 로그의 `ticket=` 값은 `<redacted>`로 가린다.
+  - 입장권 값은 로그에 남기지 않는다. uvicorn 접근 로그의 `ticket=` 값은 그 업로드의 원장 `request_id`
+    (`upload-<입장권 SHA-256 앞 32자>`)로 바꿔 적는다. 같은 값이 두 번 찍히면 재사용이고, 원장 기록과 바로 이어진다.
   - 위젯·입장권 도구는 호출만으로는 저장하지 않으므로 `readOnlyHint: true`다. 저장은 사용자의 파일 선택으로만 일어난다.
 - **클라이언트 동작** (2026-09-24 lab 실측)
   - ChatGPT(웹·iPhone)와 Claude(웹·iPhone) 모두 위젯을 렌더링하고, 원본을 바이트 그대로 전달했다.
