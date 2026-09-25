@@ -22,7 +22,7 @@ Desktop Anki Note Linker와 AnkiMobile 카드 템플릿이 같은 값을 각 클
 두 adapter의 설치·실제 탭·복습 복귀 동작은 각각 확인한다.
 
 배포 후 인증된 `initialize`·`tools/list` 응답에서 지침을 확인한다. 서버 응답만으로 ChatGPT 적용 완료라고 판단하지 않는다.
-ChatGPT 개발자 모드 연결은 연결 설정에서 **새로 고침(Refresh)**을 실행하고 변경된 도구 설명을 확인한다.
+ChatGPT 개발자 모드 연결은 앱 설정 `앱 관리`의 **도구 새로 고침**(Refresh)을 실행하고 변경된 도구 설명을 확인한다.
 게시된 플러그인의 도구 정의는 정기 스캔과 자동 검사를 거쳐 갱신되며, 통과 전에는 이전 정의가 유지된다.
 제출 정보·imported skill 변경은 새 버전 제출·게시가 필요하다 ([개발 연결 새로 고침](https://developers.openai.com/plugins/deploy/connect-chatgpt#refresh-metadata),
 [게시 도구의 지속 검토](https://developers.openai.com/plugins/deploy/app-review#continuous-review-and-tool-updates)).
@@ -35,8 +35,12 @@ ChatGPT 개발자 모드 연결은 연결 설정에서 **새로 고침(Refresh)*
 
 1. **서버**: 배포한 소스와 실행 서비스의 SDK·설정으로 내보낸 명세를 `full` 범위로 대조한다.
    인증된 `initialize`·`tools/list` 응답도 확인한다. 서비스 재시작 성공만으로 완료하지 않는다.
-2. **ChatGPT 등록**: 개발 연결을 Refresh한 뒤 등록 화면의 전체 도구 이름·설명·입력 스키마·읽기/쓰기
-   분류를 저장하고 `registration` 범위로 대조한다. 누락·차이·필수 항목 미관측이면 갱신 확인은 미완료다.
+2. **ChatGPT 등록**: 개발 연결에서 **도구 새로 고침**을 실행한 뒤 등록 화면의 전체 도구 이름·설명·입력 스키마·
+   읽기/쓰기 분류를 저장하고 `registration` 범위로 대조한다. 누락·차이·필수 항목 미관측이면 갱신 확인은 미완료다.
+   2026-09-25 현재 등록 화면(플러그인 설정의 **세부 정보 보기** → `앱` 목록의 항목)은 읽기/쓰기 구역별 도구 이름과
+   설명만 보여 주고 입력 스키마는 보여 주지 않는다. 보이는 필드만 관측으로 저장하면 `compare`는 입력 스키마를
+   미관측으로 보고 `unknown`(종료 코드 2)을 낸다. 이때는 이름·설명·읽기/쓰기의 일치 여부와 "입력 스키마 미관측"을
+   함께 기록한다. 이 세 필드에 차이가 있으면 `drift`다.
 3. **Chat 실행**: 새 Chat에서 변경된 도구를 실제로 검색해 노출을 확인한다. 모델·시각·검색 인자와
    반환 목록을 남긴다. 쓰기 실행·iPhone 동작은 승인된 검증에서 별도로 확인한다.
 
@@ -80,8 +84,9 @@ PYTHONPATH=modules/nixos/programs/anki-mcp/src nix shell .#ankiMcpTestEnv -c \
 `readOnlyHint`를 필수로 비교하며 추가로 관측한 필드의 차이도 검출한다. 배열과 설명은 임의로 정규화하지 않는다.
 등록 대조가 `match`여도 숨겨진 `outputSchema`·다른 annotation·초기화 지침이 있으면 `full_status=unknown`이다.
 불완전 목록과 `chat-turn`은 차이 내역을 보여 주되 등록 drift나 정상으로 확정하지 않는다.
-앱 전용 도구(`_meta.ui.visibility`에 `model`이 없는 `anki_upload_ticket`)는 호스트가 모델과 등록 목록에서 숨긴다.
-그래서 `chatgpt-registration`·`chat-turn` 관측에서 빠져 있으면 누락으로 세지 않고, 관측됐으면 다른 도구처럼 비교한다.
+앱 전용 도구(`_meta.ui.visibility`에 `model`이 없는 `anki_upload_ticket`)는 호스트가 모델에게 숨긴다. 등록 목록에서는
+빠질 수도 있고, 2026-09-25 ChatGPT 등록 화면처럼 읽기 도구로 함께 나열될 수도 있다. 그래서 `chatgpt-registration`·
+`chat-turn` 관측에서 빠져 있으면 누락으로 세지 않고, 관측됐으면 다른 도구처럼 비교한다.
 이 비교의 회귀 테스트와 인증된 ASGI 응답 대조는 기존 Anki MCP 테스트 및 required `check` CI에 포함된다.
 
 ## 변경 요청과 결과 확인
