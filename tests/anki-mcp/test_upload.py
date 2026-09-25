@@ -97,6 +97,9 @@ def test_widget_html_embeds_inert_config_and_the_standard_protocol():
     assert '"maxBytes": 5242880' in html and '"resizeLongEdge": 3072' in html
     assert '"ticketTool": "anki_upload_ticket"' in html and '"2026-01-26"' in html
     assert "ui/update-model-context" in html and "ui/message" in html
+    # Several files per pick, one summary listing every upload, and a note for the user before picking.
+    assert 'type="file" multiple' in html and "ankiUploads" in html
+    assert "AI는 여기서 올린 사진을 볼 수 없습니다. 내용을 보여 주려면 채팅에 첨부해 주세요." in html
 
 
 # --- tickets -----------------------------------------------------------------------------------------------
@@ -384,6 +387,7 @@ async def test_upload_tools_and_resource_follow_mcp_apps_metadata(tmp_path):
     assert box.meta == {"ui": {"resourceUri": WIDGET_URI}} and box.annotations.readOnlyHint is True
     assert ticket_tool.meta == {"ui": {"visibility": ["app"]}} and ticket_tool.annotations.readOnlyHint is True
     assert "chat attachments cannot be passed" in box.description and "paste-<SHA-1>" in box.description
+    assert "one or more images" in box.description and "Open one box per request" in box.description
     assert "use anki_upload_image" in tools["anki_store_media"].description
     resources = await mcp.list_resources()
     assert [(str(r.uri), r.mimeType, r.meta) for r in resources] == [
@@ -396,6 +400,8 @@ async def test_upload_tools_and_resource_follow_mcp_apps_metadata(tmp_path):
     assert shown.structuredContent == {"maxBytes": 5242880, "formats": ["jpeg", "png", "gif", "webp"],
                                        "resizeLongEdge": 3072}
     assert "upload box is shown" in shown.content[0].text
+    assert "You cannot see images uploaded through the box" in shown.content[0].text
+    assert "Do not open another box" in shown.content[0].text
     issued = await mcp.call_tool("anki_upload_ticket", {})
     value = issued.structuredContent["ticket"]
     assert issued.structuredContent["expiresInSeconds"] == 120 and value not in issued.content[0].text

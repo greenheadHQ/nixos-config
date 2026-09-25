@@ -49,17 +49,21 @@ MANAGED_RESTORE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idem
 UPLOAD_BOX = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 
 UPLOAD_IMAGE_DESCRIPTION = (
-    "Show an upload box where the user picks one image on their device; the server stores it in Anki media as sent "
-    "(JPEG, PNG, GIF or WebP up to 5 MiB; the box resizes larger JPEG/PNG/WebP photos to a 3072 px long edge). "
-    "Use this for images on the user's device, including images already attached to the chat: chat attachments "
-    "cannot be passed to this server, so ask the user to pick the same file in the box. The box reports the stored "
-    "filename (paste-<SHA-1>.<ext>) in the conversation; reference it in a field as <img src=\"FILENAME\">. "
-    "If the user sees no upload box, this app cannot show MCP Apps widgets."
+    "Show an upload box where the user picks one or more images on their device; the box uploads them one at a time "
+    "and the server stores each in Anki media as sent (JPEG, PNG, GIF or WebP up to 5 MiB each; the box resizes "
+    "larger JPEG/PNG/WebP photos to a 3072 px long edge). Open one box per request: the same box takes several "
+    "images and can be used again. Use this for images on the user's device, including images already attached to "
+    "the chat: chat attachments cannot be passed to this server, so ask the user to pick the same files in the box. "
+    "The box reports the stored filenames (paste-<SHA-1>.<ext>) in the conversation in one message; reference each "
+    "in a field as <img src=\"FILENAME\">. If the user sees no upload box, this app cannot show MCP Apps widgets."
 )
 UPLOAD_RESULT_TEXT = (
-    "The upload box is shown to the user. Wait until the user picks an image; the box stores it and reports the "
-    "stored filename in the conversation. If the user sees no upload box, this app cannot show MCP Apps widgets: "
-    "use anki_store_media only for a small file, or the user can add the image in Anki directly."
+    "The upload box is shown to the user. Wait until the user picks images; the box stores them and reports the "
+    "stored filenames in the conversation. You cannot see images uploaded through the box; if you need the content "
+    "of an uploaded image that is not already in the chat, ask the user to attach the same image to the chat. "
+    "Do not open another box for more images: the user can pick several at once or reuse this box. If the user "
+    "sees no upload box, this app cannot show MCP Apps widgets: use anki_store_media only for a small file, or the "
+    "user can add the image in Anki directly."
 )
 
 
