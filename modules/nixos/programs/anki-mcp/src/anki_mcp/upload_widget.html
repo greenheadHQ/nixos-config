@@ -187,26 +187,32 @@
     }
   };
 
-  // One context update and at most one message after all files: ChatGPT does not send a follow-up message while it
+  // No response, or a receipt in state "unknown": the write may have happened, so it is neither stored nor failed.
+  const unsure = (r) => r.unknown || Boolean(r.receipt && r.receipt.state === "unknown");
+
+  // After all files, at most one context update and one message: ChatGPT does not send a follow-up message while it
   // is still answering, and claude.ai does not pass the context to the model, so the message names failures too.
   const summarize = async (results, several) => {
     const stored = results.filter((r) => r.receipt && r.receipt.state === "applied");
-    const failed = results.filter((r) => !stored.includes(r));
+    const unconfirmed = results.filter(unsure);
+    const failed = results.filter((r) => !stored.includes(r) && !unconfirmed.includes(r));
     if (results.some((r) => r.receipt || r.unknown)) {
-      const parts = results.map(({ name, receipt, error, unknown }) => {
+      const parts = results.map((r) => {
+        const { name, receipt, error } = r;
         if (receipt && receipt.state === "applied") {
           return `stored ${receipt.filename} (${receipt.width}x${receipt.height} ${receipt.format}, ` +
                  `${receipt.bytes} bytes, sync=${receipt.sync}${receipt.unchanged ? ", already in Anki media" : ""})`;
         }
+        const label = unsure(r) ? "unconfirmed" : "not stored";
         if (receipt) {
-          return `not stored ${name}: state=${receipt.state}` +
+          return `${label} ${name}: state=${receipt.state}` +
                  (receipt.next_step ? `, next_step=${clause(receipt.next_step)}` : "");
         }
-        return `not stored ${name}: ${unknown ? "no response, the image may have been stored" : clause(error)}`;
+        return `${label} ${name}: ${r.unknown ? "no response, the image may have been stored" : clause(error)}`;
       });
       let text = `Anki upload widget results: ${parts.join("; ")}.`;
       if (stored.length) text += ' Reference each stored image in a field as <img src="FILENAME">.';
-      if (failed.some((r) => r.receipt || r.unknown)) {
+      if (results.some((r) => r.unknown || (r.receipt && r.receipt.state !== "applied"))) {
         text += " Check anki_recent_operations before asking the user to upload again.";
       }
       await tell(text, results.map((r) => r.receipt || { name: r.name, error: r.error, unknown: r.unknown }));
@@ -219,6 +225,10 @@
       if (failed.length) {
         text += `. 저장하지 못한 파일 ${failed.length}장: ` + failed.map(({ name, receipt, error }) =>
           `${name} — ${receipt ? `저장하지 못했습니다(${receipt.state})` : clause(error)}`).join("; ");
+      }
+      if (unconfirmed.length) {
+        text += `. 저장됐는지 확인하지 못한 파일 ${unconfirmed.length}장: ` + unconfirmed.map(({ name, receipt, error }) =>
+          `${name} — ${receipt ? `결과를 확인하지 못했습니다(${receipt.state})` : clause(error)}`).join("; ");
       }
     }
     await request("ui/message", { role: "user", content: [{ type: "text", text }] }, 15000).catch(() => {});
