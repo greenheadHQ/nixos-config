@@ -38,8 +38,10 @@
 
    ```bash
    : "${CLAUDE_RC_UNMANAGED_PID:?확인하고 승인받은 unmanaged 서버 PID를 설정하세요}"
-   kill "$CLAUDE_RC_UNMANAGED_PID" || exit 1
+   kill "$CLAUDE_RC_UNMANAGED_PID"
    ```
+
+   kill이 실패하면(권한 없음, 이미 종료됨 등) 4단계로 넘어가지 말고 다시 확인한다.
 
 4. `ps -p "$CLAUDE_RC_UNMANAGED_PID"`로 종료를 확인한 뒤 해당 Git 디렉토리에서 `claude-rc start`를
    실행한다. 서버가 아직 떠 있으면 `claude-rc start`는 같은 이유로 다시 거부한다. 선언 인스턴스는
