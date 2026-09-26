@@ -55,6 +55,8 @@ run_test "wt ls lists registered missing and nested worktrees" test_wt_ls_lists_
 run_test "wt ls lists nested unregistered worktree" test_wt_ls_lists_nested_unregistered_worktree
 run_test "wt ls marks locked worktree" test_wt_ls_marks_locked_worktree
 run_test "wt ls --json outputs parseable array" test_wt_ls_json_outputs_parseable_array
+run_test "wt ls --json empty list outputs empty array" test_wt_ls_json_empty_list_outputs_empty_array
+run_test "wt ls empty list prints notice" test_wt_ls_empty_list_prints_notice
 run_test "wt create conflict requires if-exists when noninteractive" test_wt_create_conflict_noninteractive_requires_if_exists
 run_test "wt create if-exists=reuse returns path" test_wt_create_if_exists_reuse_returns_path
 run_test "wt cd requires name when noninteractive" test_wt_cd_noninteractive_requires_name

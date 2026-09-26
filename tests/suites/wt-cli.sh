@@ -316,6 +316,73 @@ test_wt_ls_json_outputs_parseable_array() {
     || fail "wt ls --json must be a JSON array containing feature_one with boolean flags: $output"
 }
 
+# 조회 대상 worktree가 없으면 (과거) stdout이 완전히 비어 exit 0으로 성공했다 — 성공/빈
+# 목록과 파싱 실패를 호출자가 구분할 수 없었다 (#1378). JSON 모드에서는 빈 배열도 유효한
+# 값으로 나와야 한다.
+test_wt_ls_json_empty_list_outputs_empty_array() {
+  local sandbox home_dir repo_root output rc
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  # create_git_fixture_repo가 기본으로 만드는 feature_one worktree를 지워
+  # .claude/worktrees를 빈 상태로 만든다.
+  HOME="$home_dir" XDG_CONFIG_HOME="$home_dir/.config" \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+    git -C "$repo_root" worktree remove --force ".claude/worktrees/feature_one"
+
+  rc=0
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      CODEX_HOME="$home_dir/.codex" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" ls --json
+      ' 2>/dev/null
+  ) || rc=$?
+
+  [[ "$rc" -eq 0 ]] || fail "wt ls --json on empty list must exit 0, got $rc"
+  echo "$output" | jq -e 'type == "array" and length == 0' >/dev/null \
+    || fail "wt ls --json on empty list must output an empty JSON array: $output"
+}
+
+# 같은 빈 목록에서 일반(사람이 읽는) 출력은 기존 안내 문구를 그대로 유지해야 한다.
+test_wt_ls_empty_list_prints_notice() {
+  local sandbox home_dir repo_root output rc
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  HOME="$home_dir" XDG_CONFIG_HOME="$home_dir/.config" \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+    git -C "$repo_root" worktree remove --force ".claude/worktrees/feature_one"
+
+  rc=0
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      CODEX_HOME="$home_dir/.codex" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" ls
+      ' 2>&1
+  ) || rc=$?
+
+  [[ "$rc" -eq 0 ]] || fail "wt ls on empty list must exit 0, got $rc"
+  assert_contains "$output" "활성 worktree가 없습니다"
+}
+
 test_wt_cd_noninteractive_requires_name() {
   local sandbox home_dir repo_root output rc
   sandbox=$(new_sandbox)
