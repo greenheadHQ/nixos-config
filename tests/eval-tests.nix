@@ -443,11 +443,13 @@ let
     + "\n"
     + builtins.readFile hm.home.file.".tmux/tmux.conf".source;
   tmuxConfLines = hm: nixpkgsLib.splitString "\n" (tmuxDeployedConf hm);
-  tmuxBindLines =
-    hm:
-    builtins.filter (
-      line: builtins.match "[[:space:]]*(bind|bind-key|unbind|unbind-key)([[:space:]].*)?" line != null
-    ) (tmuxConfLines hm);
+  # 줄 맨 앞의 tmux 명령(별칭 포함)으로 거른다. 휠 바인딩처럼 인자 안에 든 명령은 세지 않는다.
+  tmuxCommandLines =
+    hm: commands:
+    builtins.filter (line: builtins.match "[[:space:]]*(${commands})([[:space:]].*)?" line != null) (
+      tmuxConfLines hm
+    );
+  tmuxBindLines = hm: tmuxCommandLines hm "bind|bind-key|unbind|unbind-key";
   tmuxOptionHasInfix =
     hm: option: needle:
     builtins.any (
@@ -455,8 +457,8 @@ let
     ) (tmuxConfLines hm);
   tmuxVanillaTests = label: guard: hm: [
     {
-      name = "Test TMX1 ${label}: tmux 플러그인이 비어 있어야 함";
-      cond = guard && hm.programs.tmux.plugins == [ ];
+      name = "Test TMX1 ${label}: tmux 플러그인이 비어 있고 sensible도 로드하지 않아야 함";
+      cond = guard && hm.programs.tmux.plugins == [ ] && !hm.programs.tmux.sensibleOnTop;
     }
     {
       name = "Test TMX2 ${label}: home.file에 .tmux/scripts/ 스크립트 링크가 없어야 함";
@@ -468,7 +470,9 @@ let
       cond = guard && !builtins.any (p: (p.pname or p.name or "") == "yq-go") hm.home.packages;
     }
     {
-      name = "Test TMX4 ${label}: createTmuxDirs가 없고 어떤 activation도 노트·resurrect 경로를 다루지 않아야 함";
+      # 노트와 세션 저장 파일이 든 상위 폴더(~/.tmux, ~/.local/share/tmux)까지 본다.
+      # 상위 폴더를 통째로 지우거나 옮기는 activation도 같은 데이터를 건드린다.
+      name = "Test TMX4 ${label}: createTmuxDirs가 없고 어떤 activation도 노트·resurrect 경로와 그 상위 폴더를 다루지 않아야 함";
       cond =
         guard
         && !(hm.home.activation ? createTmuxDirs)
@@ -477,7 +481,12 @@ let
           let
             data = entry.data or "";
           in
-          nixpkgsLib.hasInfix "pane-notes" data || nixpkgsLib.hasInfix "tmux/resurrect" data
+          builtins.any (needle: nixpkgsLib.hasInfix needle data) [
+            "pane-notes"
+            "tmux/resurrect"
+            ".tmux"
+            "share/tmux"
+          ]
         ) (builtins.attrValues hm.home.activation);
     }
     {
@@ -490,7 +499,9 @@ let
         );
     }
     {
-      name = "Test TMX6 ${label}: tmux 바인딩은 마우스 휠 두 줄뿐이고 칸 제목·노트·스크립트 참조가 없어야 함";
+      # bind 줄로 드러나지 않는 로드 경로도 막는다: 최상위 run-shell·if-shell은 외부 스크립트나
+      # 조건부 bind를 실행하고, 추가 source-file은 이 본문 밖의 설정을 읽는다.
+      name = "Test TMX6 ${label}: tmux 바인딩은 마우스 휠 두 줄뿐이고 run-shell·if-shell·추가 source-file과 칸 제목·노트·스크립트 참조가 없어야 함";
       cond =
         guard
         && (
@@ -501,6 +512,8 @@ let
           builtins.length binds == 2
           && builtins.any (nixpkgsLib.hasInfix "-n WheelUpPane ") binds
           && builtins.any (nixpkgsLib.hasInfix "-n WheelDownPane ") binds
+          && tmuxCommandLines hm "run-shell|run|if-shell|if" == [ ]
+          && tmuxCommandLines hm "source-file|source" == [ "source-file ~/.tmux/tmux.conf" ]
           && !nixpkgsLib.hasInfix "@custom_pane_title" conf
           && !nixpkgsLib.hasInfix "@pane_note_path" conf
           && !nixpkgsLib.hasInfix ".tmux/scripts" conf
