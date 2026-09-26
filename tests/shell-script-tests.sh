@@ -115,6 +115,9 @@ run_test "claude remote-control stop preserves held-lock registration" test_clau
 run_test "claude remote-control stop path removes stale registration" test_claude_remote_control_stop_path_removes_missing_registered_instance
 run_test "claude remote-control slug separates same basenames" test_claude_remote_control_slug_uses_hash_for_same_basename
 run_test "claude remote-control cleanup removes only orphan worktrees" test_claude_remote_control_cleanup_removes_only_orphan_worktrees
+run_test "claude remote-control cleanup preserves special-character worktrees" test_claude_remote_control_cleanup_preserves_special_character_worktrees
+run_test "claude remote-control cleanup skips sweep when worktree list fails" test_claude_remote_control_cleanup_skips_sweep_when_worktree_list_fails
+run_test "claude remote-control cleanup skips sweep on unparseable worktree list" test_claude_remote_control_cleanup_skips_sweep_on_unparseable_worktree_list
 run_test "claude remote-control maint reconciles declarations" test_claude_remote_control_maint_reconciles_declared_instances
 run_test "claude remote-control maint gates drift by effective spawn" test_claude_remote_control_maint_uses_effective_spawn_for_drift_gate
 run_test "claude remote-control maint rejects invalid declarations" test_claude_remote_control_maint_rejects_invalid_declared_instances
@@ -245,6 +248,11 @@ run_test "wt cleanup reports missing worktree prune hint" test_wt_cleanup_report
 run_test "wt cleanup skips locked worktree" test_wt_cleanup_skips_locked_worktree
 run_test "wt cleanup name prefers exact relative name" test_wt_cleanup_name_prefers_exact_relative_name
 run_test "wt cleanup refuses ambiguous name" test_wt_cleanup_refuses_ambiguous_name
+run_test "wt cleanup keeps unpreserved detached commit" test_wt_cleanup_keeps_unpreserved_detached_commit
+run_test "wt cleanup detached preservation scope" test_wt_cleanup_detached_preservation_scope
+run_test "wt cleanup detached lookup errors fail closed" test_wt_cleanup_detached_lookup_errors_fail_closed
+run_test "wt recreate warns unpreserved detached commit" test_wt_recreate_warns_unpreserved_detached_commit
+run_test "wt cleanup branch unpushed verdict unchanged" test_wt_cleanup_branch_unpushed_verdict_unchanged
 run_test "wt recreate refuses locked worktree" test_wt_recreate_refuses_locked_worktree
 run_test "wt cleanup name-filter merged without upstream needs no confirm" test_wt_cleanup_name_filter_merged_without_upstream_needs_no_confirm
 run_test "wt cleanup name-filter confirmed dirty merged removes" test_wt_cleanup_name_filter_confirmed_dirty_merged_removes
@@ -368,6 +376,11 @@ run_test "immich backup happy path creates dump atomically" test_immich_backup_h
 run_test "immich backup integrity failure exits nonzero" test_immich_backup_integrity_failure_exits_nonzero
 run_test "immich backup retention deletes only old dumps in dir" test_immich_backup_retention_deletes_only_old_dumps_in_dir
 run_test "immich backup retention zero keeps today's dump, deletes stale" test_immich_backup_retention_zero_keeps_todays_dump_deletes_stale
+run_test "immich backup unmounted target blocks write and exits nonzero" test_immich_backup_unmounted_target_blocks_write_and_exits_nonzero
+run_test "immich backup mount guard checks MOUNT_ROOT, not BACKUP_DIR" test_immich_backup_mount_guard_checks_mount_root_not_backup_dir
+run_test "immich backup destination outside mount blocks write and exits nonzero" test_immich_backup_destination_outside_mount_blocks_write_and_exits_nonzero
+run_test "immich backup rejects mount prefix without directory boundary" test_immich_backup_mount_prefix_without_directory_boundary_is_rejected
+run_test "immich backup unmounted target preserves existing backups and skips pg_dump" test_immich_backup_unmounted_target_preserves_existing_backups_and_skips_pg_dump
 run_test "karakeep backup happy path dated dir" test_karakeep_backup_happy_path_dated_dir
 run_test "karakeep backup missing db exits nonzero" test_karakeep_backup_missing_db_exits_nonzero
 run_test "karakeep backup retention scopes to backup dir" test_karakeep_backup_retention_scopes_to_backup_dir
@@ -400,6 +413,12 @@ run_test "worktree-path-guard allows sibling worktree file" test_worktree_path_g
 run_test "worktree-path-guard allows main repo plan path exception" test_worktree_path_guard_allows_main_repo_plan_path_exception
 run_test "worktree-path-guard empty and malformed input noop" test_worktree_path_guard_empty_and_malformed_input_noop
 run_test "immich originals mirror skips rsync on empty source" test_immich_originals_mirror_empty_source_skips_rsync
+run_test "immich originals mirror blocks rsync when target HDD unmounted" test_immich_originals_mirror_unmounted_target_blocks_rsync
+run_test "immich originals mirror runs rsync when target HDD mounted" test_immich_originals_mirror_mounted_target_runs_rsync
+run_test "immich originals mirror mount guard checks MOUNT_ROOT, not DEST_DIR" test_immich_originals_mirror_mount_guard_checks_mount_root_not_dest_dir
+run_test "immich originals mirror blocks rsync when destination outside mount" test_immich_originals_mirror_destination_outside_mount_blocks_rsync
+run_test "immich originals mirror rejects mount prefix without directory boundary" test_immich_originals_mirror_mount_prefix_without_directory_boundary_is_rejected
+run_test "immich originals mirror does not create dest dir before mount guard" test_immich_originals_mirror_unmounted_target_does_not_create_dest_dir
 run_test "immich cleanup paginates v3 nextPage string" test_immich_cleanup_v3_paginates_next_page_string
 run_test "immich cleanup preserves empty album notification" test_immich_cleanup_v3_empty_album_preserves_notification
 run_test "immich cleanup rejects invalid asset id" test_immich_cleanup_v3_rejects_invalid_asset_id

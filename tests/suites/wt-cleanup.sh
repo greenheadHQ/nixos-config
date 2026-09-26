@@ -49,6 +49,61 @@ add_stale_worktree() {
   mkdir -p "$broken_path"
   printf 'gitdir: /nonexistent/green/Workspace/nixos-config/.git/worktrees/aaa_broken\n' > "$broken_path/.git"
 }
+
+# fixture 조작용 git — 호스트 전역 설정·훅을 배제한다 (create_git_fixture_repo와 같은 격리).
+wt_fixture_git() {
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+    git -c core.hooksPath=/dev/null -c commit.gpgSign=false "$@"
+}
+
+# detached worktree fixture: HEAD를 브랜치에서 떼어 낸 뒤 커밋을 하나 더 만들어, 어떤
+# 참조도 포함하지 않는 커밋을 HEAD로 둔다. 그 OID를 stdout으로 낸다. 커밋 내용에
+# worktree 이름을 넣어 fixture끼리 같은 커밋이 되지 않게 한다 — 한 대조군의 보존 ref가
+# 다른 대조군의 커밋까지 포함하면 판정이 섞인다. 보존 ref는 각 테스트가 붙인다.
+add_detached_orphan_worktree() {
+  local repo_root="$1" wt_path="$2"
+  local label
+  label=$(basename "$wt_path")
+  wt_fixture_git -C "$repo_root" worktree add --detach "$wt_path" >/dev/null 2>&1
+  echo "orphan $label" > "$wt_path/orphan.txt"
+  wt_fixture_git -C "$wt_path" add orphan.txt
+  wt_fixture_git -C "$wt_path" commit -q -m "orphan $label"
+  wt_fixture_git -C "$wt_path" rev-parse HEAD
+}
+
+# fixture 저장소 루트에서 비대화형 wt를 실행한다. path_prefix는 PATH 앞에 붙일 대역
+# 디렉토리(끝에 `:` 포함, 없으면 빈 문자열)다. 출력 스트림 처리와 종료 코드는 호출자 몫이다.
+run_fixture_wt() {
+  local home_dir="$1" repo_root="$2" path_prefix="$3"
+  shift 3
+  env -u TMUX \
+    HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
+    PATH="${path_prefix}$FIXTURE_DIR/bin:$PATH" \
+    WT_NONINTERACTIVE=1 \
+    bash -c 'set -euo pipefail; cd "$1"; shift; exec "$@"' _ "$repo_root" "$home_dir/.local/bin/wt" "$@"
+}
+
+# `--contains` 참조 조회만 실패시키는 git 대역. 나머지 호출은 실제 git으로 넘기고,
+# 실패를 주입할 때마다 marker 파일을 남겨 오류 경로를 실제로 탔는지 테스트가 확인하게 한다.
+install_contains_failing_git() {
+  local stub_dir="$1" real_git
+  real_git=$(command -v git)
+  mkdir -p "$stub_dir"
+  cat > "$stub_dir/git" <<EOF
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [[ "\$arg" == --contains* ]]; then
+    : > "$stub_dir/injected"
+    echo "fatal: injected ref lookup failure" >&2
+    exit 128
+  fi
+done
+exec "$real_git" "\$@"
+EOF
+  chmod +x "$stub_dir/git"
+}
+
 test_wt_recreate_guard_uses_physical_paths() {
   local sandbox home_dir repo_root link_root target_path origin_dir output
   sandbox=$(new_sandbox)
@@ -716,6 +771,289 @@ test_wt_cleanup_refuses_ambiguous_name() {
   assert_contains "$exact_out" "정리 완료: 1개 삭제"
   [[ ! -d "$feat_path" ]] || fail "상대 경로로 지정한 worktree가 지워지지 않음: $exact_out"
   [[ -d "$bug_path" ]] || fail "지정하지 않은 bug/zz가 지워짐"
+}
+
+test_wt_cleanup_keeps_unpreserved_detached_commit() {
+  # #1373: detached worktree에는 upstream이 없어, 과거 판정은 detached면 곧바로 "잃을 커밋
+  # 없음"을 냈다. 그래서 clean이기만 하면 --yes 없는 이름 지정 정리가 확인 없이 지웠고,
+  # 그 커밋을 붙잡던 이 worktree의 HEAD·reflog도 함께 사라졌다. 그 둘은 정리하면 없어지는
+  # 참조라 보존으로 치지 않는다 — 무승인 경로는 남기고, --yes(위험 승인)는 기존대로 지운다.
+  local sandbox home_dir repo_root det_path head_oid ls_out out rc
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  det_path="$repo_root/.claude/worktrees/det"
+  head_oid=$(add_detached_orphan_worktree "$repo_root" "$det_path")
+  # 전제: 이 커밋을 붙잡는 것은 이 worktree의 HEAD와 reflog뿐이다.
+  [[ -z "$(wt_fixture_git -C "$repo_root" for-each-ref --contains="$head_oid")" ]] \
+    || fail "fixture: orphan 커밋을 포함하는 ref가 있음"
+  [[ "$(wt_fixture_git -C "$det_path" reflog -1 --format=%H)" == "$head_oid" ]] \
+    || fail "fixture: worktree HEAD reflog에 orphan 커밋이 없음"
+
+  ls_out=$(run_fixture_wt "$home_dir" "$repo_root" "" ls --json 2>/dev/null)
+  [[ "$(jq -r '.[] | select(.name == "det") | .unpushed' <<< "$ls_out")" == "true" ]] \
+    || fail "보존 참조 없는 detached 커밋은 unpushed:true여야 함: $ls_out"
+
+  rc=0
+  out=$(run_fixture_wt "$home_dir" "$repo_root" "" cleanup det 2>&1) || rc=$?
+  [[ "$rc" == "0" ]] || fail "cleanup det 비정상 종료 rc=$rc: $out"
+  assert_contains "$out" "det: push하지 않은 커밋"
+  assert_contains "$out" "비대화형: 확인 필요"
+  assert_contains "$out" "정리 완료: 0개 삭제"
+  [[ -d "$det_path" ]] || fail "무승인 정리가 detached worktree 디렉토리를 지움: $out"
+  wt_fixture_git -C "$repo_root" worktree list --porcelain | grep -qxF "worktree $det_path" \
+    || fail "무승인 정리가 detached worktree 등록을 지움: $out"
+  [[ "$(wt_fixture_git -C "$det_path" rev-parse HEAD)" == "$head_oid" ]] \
+    || fail "무승인 정리 뒤 detached HEAD가 바뀜: $out"
+
+  # 명시적 위험 승인(--yes)은 기존 정책대로 강제 삭제로 이어져야 한다 (과잉 차단 회귀 방지).
+  rc=0
+  out=$(run_fixture_wt "$home_dir" "$repo_root" "" cleanup det --yes 2>&1) || rc=$?
+  [[ "$rc" == "0" ]] || fail "cleanup det --yes 비정상 종료 rc=$rc: $out"
+  assert_contains "$out" "정리 완료: 1개 삭제"
+  [[ ! -d "$det_path" ]] || fail "--yes로 승인한 detached worktree가 지워지지 않음: $out"
+  if wt_fixture_git -C "$repo_root" worktree list --porcelain | grep -qxF "worktree $det_path"; then
+    fail "--yes 정리 뒤 detached worktree 등록이 남음: $out"
+  fi
+}
+
+test_wt_cleanup_detached_preservation_scope() {
+  # detached 커밋을 "보존됨"으로 인정하는 참조는 이 worktree를 지워도 남는 일반 참조 —
+  # 로컬 브랜치·태그·원격 추적 ref — 이고, 그중 하나가 그 커밋을 포함(조상으로 가짐)할 때만이다.
+  # stash, worktree별 ref(refs/worktree/, refs/bisect/), 다른 worktree의 detached HEAD는
+  # 커밋을 붙잡고 있어도 보존으로 치지 않는다.
+  # 보존으로 판정돼도 잠금·미커밋 변경의 기존 보호는 그대로 적용돼야 한다.
+  local sandbox home_dir repo_root base name ls_out verdicts out rc
+  local branch_oid child_oid tag_oid annotated_oid remote_oid stash_oid twin_oid locked_oid dirty_oid
+  local wtref_oid bisect_oid
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  base="$repo_root/.claude/worktrees"
+
+  # 보존 대조군. 브랜치는 자손 커밋을 가리키게 해 "조상으로 포함"을 확인한다.
+  branch_oid=$(add_detached_orphan_worktree "$repo_root" "$base/det_branch")
+  child_oid=$(wt_fixture_git -C "$repo_root" commit-tree -p "$branch_oid" -m "keep child" "$branch_oid^{tree}")
+  wt_fixture_git -C "$repo_root" update-ref refs/heads/keep-branch "$child_oid"
+  tag_oid=$(add_detached_orphan_worktree "$repo_root" "$base/det_tag")
+  wt_fixture_git -C "$repo_root" tag keep-tag "$tag_oid"
+  annotated_oid=$(add_detached_orphan_worktree "$repo_root" "$base/det_annotated")
+  wt_fixture_git -C "$repo_root" tag -a -m "keep" keep-annotated "$annotated_oid"
+  remote_oid=$(add_detached_orphan_worktree "$repo_root" "$base/det_remote")
+  wt_fixture_git -C "$repo_root" update-ref refs/remotes/origin/keep "$remote_oid"
+
+  # 보존 범위 밖의 참조만 있는 경우.
+  stash_oid=$(add_detached_orphan_worktree "$repo_root" "$base/det_stash")
+  echo "stashed" >> "$base/det_stash/orphan.txt"
+  wt_fixture_git -C "$base/det_stash" stash -q
+  # 전제: stash가 실제로 그 커밋을 포함해야 "범위 밖이라 보존으로 치지 않음"을 검증한다.
+  wt_fixture_git -C "$repo_root" for-each-ref --contains="$stash_oid" --format='%(refname)' \
+    | grep -qxF refs/stash || fail "fixture: stash가 det_stash 커밋을 포함하지 않음"
+  twin_oid=$(add_detached_orphan_worktree "$repo_root" "$base/det_twin_a")
+  wt_fixture_git -C "$repo_root" worktree add --detach "$base/det_twin_b" "$twin_oid" >/dev/null 2>&1
+  # worktree별 ref는 그 worktree 안에서 만들고 조회할 때만 보인다 — 판정도 그 안에서 조회하므로
+  # 범위를 refs/ 전체로 넓히면 이 두 대조군이 보존으로 뒤집힌다.
+  wtref_oid=$(add_detached_orphan_worktree "$repo_root" "$base/det_wtref")
+  wt_fixture_git -C "$base/det_wtref" update-ref refs/worktree/keep "$wtref_oid"
+  wt_fixture_git -C "$base/det_wtref" for-each-ref --contains="$wtref_oid" --format='%(refname)' \
+    | grep -qxF refs/worktree/keep || fail "fixture: refs/worktree/keep이 det_wtref 커밋을 포함하지 않음"
+  bisect_oid=$(add_detached_orphan_worktree "$repo_root" "$base/det_bisect")
+  wt_fixture_git -C "$base/det_bisect" update-ref refs/bisect/keep "$bisect_oid"
+  wt_fixture_git -C "$base/det_bisect" for-each-ref --contains="$bisect_oid" --format='%(refname)' \
+    | grep -qxF refs/bisect/keep || fail "fixture: refs/bisect/keep이 det_bisect 커밋을 포함하지 않음"
+
+  # 보존됐지만 다른 보호가 걸린 경우.
+  locked_oid=$(add_detached_orphan_worktree "$repo_root" "$base/det_locked")
+  wt_fixture_git -C "$repo_root" branch keep-locked "$locked_oid"
+  lock_fixture_worktree "$repo_root" "$base/det_locked" "bridge holds it"
+  dirty_oid=$(add_detached_orphan_worktree "$repo_root" "$base/det_dirty")
+  wt_fixture_git -C "$repo_root" branch keep-dirty "$dirty_oid"
+  echo "wip" > "$base/det_dirty/wip.txt"
+
+  ls_out=$(run_fixture_wt "$home_dir" "$repo_root" "" ls --json 2>/dev/null)
+  verdicts=$(jq -cS 'map(select(.name | startswith("det_")) | {(.name): .unpushed}) | add' <<< "$ls_out")
+  [[ "$verdicts" == '{"det_annotated":false,"det_bisect":true,"det_branch":false,"det_dirty":false,"det_locked":false,"det_remote":false,"det_stash":true,"det_tag":false,"det_twin_a":true,"det_twin_b":true,"det_wtref":true}' ]] \
+    || fail "detached 보존 판정이 기대와 다름: $verdicts"
+
+  rc=0
+  out=$(run_fixture_wt "$home_dir" "$repo_root" "" cleanup \
+    det_branch det_tag det_annotated det_remote det_stash det_twin_a det_wtref det_bisect \
+    det_locked det_dirty 2>&1) || rc=$?
+  [[ "$rc" == "0" ]] || fail "cleanup 비정상 종료 rc=$rc: $out"
+  assert_contains "$out" "det_stash: push하지 않은 커밋"
+  assert_contains "$out" "det_twin_a: push하지 않은 커밋"
+  assert_contains "$out" "det_wtref: push하지 않은 커밋"
+  assert_contains "$out" "det_bisect: push하지 않은 커밋"
+  assert_contains "$out" "잠긴 worktree 건너뜀: det_locked"
+  assert_contains "$out" "det_dirty: uncommitted 변경사항"
+  assert_not_contains "$out" "det_dirty: uncommitted 변경사항 push하지 않은 커밋"
+  assert_contains "$out" "정리 완료: 4개 삭제 (잠김 1개 건너뜀)"
+
+  for name in det_branch det_tag det_annotated det_remote; do
+    [[ ! -d "$base/$name" ]] || fail "보존 참조가 있는 detached worktree는 확인 없이 정리돼야 함: $name — $out"
+  done
+  # 정리는 detached worktree의 보존 참조를 지우지 않는다 — 판정 근거가 정리 뒤에도 남는다.
+  wt_fixture_git -C "$repo_root" show-ref --verify -q \
+    refs/heads/keep-branch refs/tags/keep-tag refs/tags/keep-annotated refs/remotes/origin/keep \
+    || fail "detached worktree 정리가 보존 참조를 지움"
+
+  for name in det_stash det_twin_a det_wtref det_bisect det_locked det_dirty; do
+    [[ -d "$base/$name" ]] || fail "보호 대상 worktree 디렉토리가 지워짐: $name — $out"
+    wt_fixture_git -C "$repo_root" worktree list --porcelain | grep -qxF "worktree $base/$name" \
+      || fail "보호 대상 worktree 등록이 사라짐: $name — $out"
+  done
+  [[ "$(wt_fixture_git -C "$base/det_stash" rev-parse HEAD)" == "$stash_oid" ]] \
+    || fail "det_stash HEAD가 바뀜"
+  [[ "$(wt_fixture_git -C "$base/det_twin_a" rev-parse HEAD)" == "$twin_oid" ]] \
+    || fail "det_twin_a HEAD가 바뀜"
+  [[ "$(wt_fixture_git -C "$base/det_wtref" rev-parse HEAD)" == "$wtref_oid" ]] \
+    || fail "det_wtref HEAD가 바뀜"
+  [[ "$(wt_fixture_git -C "$base/det_bisect" rev-parse HEAD)" == "$bisect_oid" ]] \
+    || fail "det_bisect HEAD가 바뀜"
+}
+
+test_wt_cleanup_detached_lookup_errors_fail_closed() {
+  # 보존을 확인하지 못한 것은 보존된 것이 아니다. HEAD OID를 읽지 못하거나 참조 조회가
+  # 실패하면 "잃을 커밋 있음"으로 다뤄야 한다 — 실패를 빈 결과처럼 흘리면 확인 없이 지워진다.
+  local sandbox home_dir repo_root base stub_dir refs_oid head_file ls_out verdicts out rc
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/git-stub"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  base="$repo_root/.claude/worktrees"
+
+  # 참조 조회 오류 대상. 로컬 브랜치가 보존하므로 조회가 성공하면 위험 없음이다 — 그래야
+  # 대역 아래에서 나온 true가 오류 처리의 결과임을 구분할 수 있다.
+  refs_oid=$(add_detached_orphan_worktree "$repo_root" "$base/det_refs")
+  wt_fixture_git -C "$repo_root" branch keep-refs "$refs_oid"
+  # HEAD 조회 오류 대상. HEAD가 존재하지 않는 객체를 가리키는 손상 상태로, gitdir은 유효해
+  # 손상(broken) 판정에는 걸리지 않고 detached로 읽힌다.
+  add_detached_orphan_worktree "$repo_root" "$base/det_bad_head" >/dev/null
+  head_file="$(wt_fixture_git -C "$base/det_bad_head" rev-parse --absolute-git-dir)/HEAD"
+  printf '1234567890abcdef1234567890abcdef12345678\n' > "$head_file"
+
+  ls_out=$(run_fixture_wt "$home_dir" "$repo_root" "" ls --json 2>/dev/null)
+  verdicts=$(jq -cS 'map(select(.name | startswith("det_")) | {(.name): .unpushed}) | add' <<< "$ls_out")
+  [[ "$verdicts" == '{"det_bad_head":true,"det_refs":false}' ]] \
+    || fail "대역 없는 판정이 기대와 다름 (HEAD 조회 오류는 위험, 보존된 커밋은 안전): $verdicts"
+
+  install_contains_failing_git "$stub_dir"
+  ls_out=$(run_fixture_wt "$home_dir" "$repo_root" "$stub_dir:" ls --json 2>/dev/null)
+  [[ -f "$stub_dir/injected" ]] || fail "참조 조회 오류가 주입되지 않음 — 대역이 조회 경로에 닿지 않았다"
+  verdicts=$(jq -cS 'map(select(.name | startswith("det_")) | {(.name): .unpushed}) | add' <<< "$ls_out")
+  [[ "$verdicts" == '{"det_bad_head":true,"det_refs":true}' ]] \
+    || fail "참조 조회 오류를 보존으로 오인함: $verdicts"
+
+  rc=0
+  out=$(run_fixture_wt "$home_dir" "$repo_root" "$stub_dir:" cleanup det_refs 2>&1) || rc=$?
+  [[ "$rc" == "0" ]] || fail "cleanup det_refs 비정상 종료 rc=$rc: $out"
+  assert_contains "$out" "det_refs: push하지 않은 커밋"
+  assert_contains "$out" "정리 완료: 0개 삭제"
+
+  rc=0
+  out=$(run_fixture_wt "$home_dir" "$repo_root" "" cleanup det_bad_head 2>&1) || rc=$?
+  [[ "$rc" == "0" ]] || fail "cleanup det_bad_head 비정상 종료 rc=$rc: $out"
+  assert_contains "$out" "det_bad_head: push하지 않은 커밋"
+  assert_contains "$out" "정리 완료: 0개 삭제"
+
+  for name in det_refs det_bad_head; do
+    [[ -d "$base/$name" ]] || fail "조회 오류 worktree 디렉토리가 지워짐: $name"
+    wt_fixture_git -C "$repo_root" worktree list --porcelain | grep -qxF "worktree $base/$name" \
+      || fail "조회 오류 worktree 등록이 사라짐: $name"
+  done
+  [[ "$(wt_fixture_git -C "$base/det_refs" rev-parse HEAD)" == "$refs_oid" ]] || fail "det_refs HEAD가 바뀜"
+  [[ "$(cat "$head_file")" == "1234567890abcdef1234567890abcdef12345678" ]] || fail "det_bad_head HEAD가 바뀜"
+}
+
+test_wt_recreate_warns_unpreserved_detached_commit() {
+  # 재생성은 기존 worktree 제거를 포함하므로 정리와 같은 손실 판정(_wt_has_unpushed)을 쓴다.
+  # 보존 참조 없는 detached 커밋이 있으면 경고하고, 비대화형 무승인 호출은 멈춰야 한다.
+  local sandbox home_dir repo_root det_path head_oid out rc
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  det_path="$repo_root/.claude/worktrees/det"
+  head_oid=$(add_detached_orphan_worktree "$repo_root" "$det_path")
+
+  rc=0
+  out=$(run_fixture_wt "$home_dir" "$repo_root" "" --if-exists=recreate det 2>&1) || rc=$?
+  [[ "$rc" != "0" ]] || fail "보존 참조 없는 detached worktree 재생성은 무승인으로 진행되면 안 됨: $out"
+  assert_contains "$out" "push하지 않은 커밋이 있습니다"
+  assert_contains "$out" "비대화형: 확인 필요"
+  [[ -d "$det_path" ]] || fail "재생성 거부 뒤 디렉토리가 사라짐: $out"
+  wt_fixture_git -C "$repo_root" worktree list --porcelain | grep -qxF "worktree $det_path" \
+    || fail "재생성 거부 뒤 등록이 사라짐: $out"
+  [[ "$(wt_fixture_git -C "$det_path" rev-parse HEAD)" == "$head_oid" ]] \
+    || fail "재생성 거부 뒤 HEAD가 바뀜: $out"
+}
+
+test_wt_cleanup_branch_unpushed_verdict_unchanged() {
+  # detached 판정을 더해도 브랜치 worktree의 판정은 그대로여야 한다: upstream과 같으면 위험
+  # 없음(확인 없이 정리), upstream보다 앞선 커밋이 있으면 위험(무승인 정리 거부), upstream이
+  # 없으면 보수적으로 위험.
+  local sandbox home_dir repo_root origin_dir target_path head_oid ls_out verdicts out rc
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  origin_dir="$sandbox/origin.git"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  wt_fixture_git init -q --bare "$origin_dir"
+  wt_fixture_git -C "$repo_root" remote add origin "$origin_dir"
+  target_path="$repo_root/.claude/worktrees/feature_one"
+  wt_fixture_git -C "$target_path" push -q -u origin feature-one 2>/dev/null
+  add_fixture_worktree "$repo_root" "$repo_root/.claude/worktrees/nopush" "nopush"
+
+  ls_out=$(run_fixture_wt "$home_dir" "$repo_root" "" ls --json 2>/dev/null)
+  verdicts=$(jq -cS 'map({(.name): .unpushed}) | add' <<< "$ls_out")
+  [[ "$verdicts" == '{"feature_one":false,"nopush":true}' ]] \
+    || fail "push한 브랜치는 false, upstream 없는 브랜치는 true여야 함: $verdicts"
+
+  echo "ahead" >> "$target_path/README.md"
+  wt_fixture_git -C "$target_path" commit -q -am "ahead"
+  head_oid=$(wt_fixture_git -C "$target_path" rev-parse HEAD)
+
+  ls_out=$(run_fixture_wt "$home_dir" "$repo_root" "" ls --json 2>/dev/null)
+  verdicts=$(jq -cS 'map({(.name): .unpushed}) | add' <<< "$ls_out")
+  [[ "$verdicts" == '{"feature_one":true,"nopush":true}' ]] \
+    || fail "upstream보다 앞선 브랜치는 true여야 함: $verdicts"
+
+  rc=0
+  out=$(run_fixture_wt "$home_dir" "$repo_root" "" cleanup feature_one 2>&1) || rc=$?
+  [[ "$rc" == "0" ]] || fail "cleanup feature_one 비정상 종료 rc=$rc: $out"
+  assert_contains "$out" "feature_one: push하지 않은 커밋"
+  assert_contains "$out" "정리 완료: 0개 삭제"
+  [[ -d "$target_path" ]] || fail "미전송 커밋이 있는 브랜치 worktree가 무승인으로 지워짐: $out"
+  [[ "$(wt_fixture_git -C "$target_path" rev-parse HEAD)" == "$head_oid" ]] || fail "feature_one HEAD가 바뀜"
+
+  wt_fixture_git -C "$target_path" push -q 2>/dev/null
+  rc=0
+  out=$(run_fixture_wt "$home_dir" "$repo_root" "" cleanup feature_one 2>&1) || rc=$?
+  [[ "$rc" == "0" ]] || fail "push 후 cleanup feature_one 비정상 종료 rc=$rc: $out"
+  assert_not_contains "$out" "push하지 않은 커밋"
+  assert_contains "$out" "정리 완료: 1개 삭제"
+  [[ ! -d "$target_path" ]] || fail "push를 마친 clean 브랜치 worktree가 정리되지 않음: $out"
 }
 
 test_wt_pr_status_returns_verified_oid_unit() {

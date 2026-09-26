@@ -4,12 +4,15 @@
 
 # 이 suite가 중첩으로 부르는 bash(PATH의 bash)가 병렬 경로를 쓰는지 판정한다. 하네스는 bash 4.3
 # 미만(wait -n 없음)에서 순차로 폴백하므로, 그때는 병렬 모드 전용 검사가 성립하지 않는다.
+# tests/suites/parallel-harness-markers.sh(#1432)도 이 헬퍼를 그대로 쓴다 — 이름을 바꾸면 거기도
+# 같이 고쳐야 한다. 한쪽만 개명하면 없는 함수 호출이 조용히 SKIP 로 빠질 뿐 에러가 나지 않는다.
 _phf_nested_bash_runs_parallel() {
   bash -c '[ "${BASH_VERSINFO[0]}" -gt 4 ] ||
     { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -ge 3 ]; }'
 }
 
 # 병렬 모드 전용 검사를 건너뛸 때 canonical SKIP 마커(실행 bash 역량 부족 → coverage gap)를 낸다.
+# tests/suites/parallel-harness-markers.sh(#1432)도 사용한다.
 _phf_skip_parallel_only() {
   echo "SKIP: $1 requires nested bash 4.3+ for the parallel harness path (found $(bash -c 'printf %s.%s "${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}"'))" >&2
 }

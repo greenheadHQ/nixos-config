@@ -306,6 +306,212 @@ test_claude_remote_control_cleanup_removes_only_orphan_worktrees() {
   [ ! -e "$orphan_dir" ] || fail "orphan worktree dir should be removed"
 }
 
+# git이 기록한 등록 상태를 NUL 경계 그대로 읽는다: 등록돼 있고 디렉터리가 살아 있으면
+# live, 등록은 남았지만 git이 prunable로 보면 prunable, 목록에 없으면 missing.
+# cleanup은 prune을 목록 조회보다 먼저 하므로, 잘못 지운 등록 worktree는 정리 직후
+# 목록에서 사라지지 않고 prunable로 남는다.
+_claude_rc_worktree_registration_state() {
+  local repo="$1" expected="$2" field state=missing in_target=false
+  while IFS= read -r -d '' field; do
+    if [ "$in_target" = true ]; then
+      case "$field" in
+        '') break ;;
+        prunable*) state=prunable ;;
+      esac
+    elif [ "$field" = "worktree $expected" ]; then
+      in_target=true
+      state=live
+    fi
+  done < <(
+    HOME="$(dirname "$repo")/home" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+      git -C "$repo" worktree list --porcelain -z
+  )
+  printf '%s\n' "$state"
+}
+
+_claude_rc_install_rm_spy() {
+  local log="$1" real_rm
+  real_rm="$(_claude_rc_find_tool rm)" || fail "required test tool not found: rm"
+  : >"$log"
+  {
+    printf '#!/usr/bin/env bash\nREAL_RM=%q\nRM_SPY_LOG=%q\n' "$real_rm" "$log"
+    cat <<'EOS'
+set -euo pipefail
+printf '%s\n' "$*" >>"$RM_SPY_LOG"
+exec "$REAL_RM" "$@"
+EOS
+  } >"$CLAUDE_RC_FAKE_BIN/rm"
+  chmod +x "$CLAUDE_RC_FAKE_BIN/rm"
+}
+
+# 목록 조회(`worktree list`)만 대역 출력과 종료 상태로 바꾸고 나머지 git 호출은 그대로 넘긴다.
+_claude_rc_install_worktree_list_stub() {
+  local status="$1" payload="$2" real_git
+  real_git="$(_claude_rc_find_tool git)" || fail "required test tool not found: git"
+  {
+    printf '#!/usr/bin/env bash\nREAL_GIT=%q\nSTUB_STATUS=%q\nSTUB_PAYLOAD=%q\n' \
+      "$real_git" "$status" "$payload"
+    cat <<'EOS'
+set -euo pipefail
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = worktree ] && [ "$arg" = list ]; then
+    cat "$STUB_PAYLOAD"
+    [ "$STUB_STATUS" -eq 0 ] || echo "fatal: synthetic worktree list failure" >&2
+    exit "$STUB_STATUS"
+  fi
+  prev="$arg"
+done
+exec "$REAL_GIT" "$@"
+EOS
+  } >"$CLAUDE_RC_FAKE_BIN/git"
+  chmod +x "$CLAUDE_RC_FAKE_BIN/git"
+}
+
+# 등록 worktree(feature_one)에 표식을 두고 rm 대역을 설치한 뒤, 정상 목록으로 한 번
+# 정리해 orphan 삭제가 이 rm 대역을 거친다는 것을 먼저 보인다. 이후 guard 단언의
+# "삭제 0회"가 대역이 연결되지 않아서 나온 값이 아님을 보장하기 위한 것이다.
+_claude_rc_cleanup_guard_fixture() {
+  local sandbox="$1" repo wt_root
+  repo="$sandbox/repo"
+  wt_root="$repo/.claude/worktrees"
+  create_git_fixture_repo "$repo"
+  _claude_rc_setup "$sandbox"
+  CLAUDE_RC_RM_SPY_LOG="$sandbox/rm-calls.log"
+  _claude_rc_install_rm_spy "$CLAUDE_RC_RM_SPY_LOG"
+  printf 'marker:feature_one\n' >"$wt_root/feature_one/marker.txt"
+  mkdir "$wt_root/orphan_control"
+
+  _claude_rc_run "$repo" bash "$(_claude_rc_wrapper_script)" cleanup >/dev/null
+  [ ! -e "$wt_root/orphan_control" ] || fail "control orphan dir should be removed"
+  [ "$(_claude_rc_rm_calls_under "$wt_root/")" = 1 ] \
+    || fail "control orphan removal should go through the rm spy: $(cat "$CLAUDE_RC_RM_SPY_LOG")"
+  : >"$CLAUDE_RC_RM_SPY_LOG"
+}
+
+_claude_rc_rm_calls_under() {
+  grep -cF -- "$1" "$CLAUDE_RC_RM_SPY_LOG" || true
+}
+
+_claude_rc_assert_cleanup_guard_kept_everything() {
+  local repo="$1" label="$2" wt_root
+  wt_root="$repo/.claude/worktrees"
+  [ -d "$wt_root/orphan_guard" ] || fail "$label: orphan dir must survive a skipped sweep"
+  [ "$(cat "$wt_root/feature_one/marker.txt")" = "marker:feature_one" ] \
+    || fail "$label: registered worktree marker must survive"
+  [ "$(_claude_rc_worktree_registration_state "$repo" "$wt_root/feature_one")" = live ] \
+    || fail "$label: registered worktree must stay live"
+  [ "$(_claude_rc_rm_calls_under "$wt_root/")" = 0 ] \
+    || fail "$label: no rm under worktrees expected: $(cat "$CLAUDE_RC_RM_SPY_LOG")"
+}
+
+test_claude_remote_control_cleanup_preserves_special_character_worktrees() {
+  local sandbox repo wt_root path i
+  local -a names markers
+  sandbox="$(_claude_rc_new_sandbox)"
+  repo="$sandbox/repo"
+  wt_root="$repo/.claude/worktrees"
+  create_git_fixture_repo "$repo"
+  _claude_rc_setup "$sandbox"
+  names=(
+    "feature_one"
+    "with space"
+    "한글-작업"
+    $'tab\there'
+    "quote'and\"double"
+    'back\slash'
+    $'new\nline'
+    $'trailing-newline\n'
+  )
+  markers=(
+    "marker:plain"
+    "marker:space"
+    "marker:hangul"
+    "marker:tab"
+    "marker:quotes"
+    "marker:backslash"
+    "marker:newline"
+    "marker:trailing-newline"
+  )
+  for ((i = 0; i < ${#names[@]}; i++)); do
+    path="$wt_root/${names[$i]}"
+    if [ "$i" -gt 0 ]; then
+      add_fixture_worktree "$repo" "$path" "special-$i" || fail "fixture worktree add failed: ${names[$i]}"
+    fi
+    printf '%s\n' "${markers[$i]}" >"$path/marker.txt"
+    [ "$(_claude_rc_worktree_registration_state "$repo" "$path")" = live ] \
+      || fail "fixture worktree should be registered before cleanup: ${names[$i]}"
+  done
+  mkdir "$wt_root/orphan_empty"
+
+  _claude_rc_run "$repo" bash "$(_claude_rc_wrapper_script)" cleanup >/dev/null
+
+  [ ! -e "$wt_root/orphan_empty" ] || fail "unregistered empty orphan dir should be removed"
+  for ((i = 0; i < ${#names[@]}; i++)); do
+    path="$wt_root/${names[$i]}"
+    [ -d "$path" ] || fail "registered worktree dir removed: ${names[$i]}"
+    [ "$(cat "$path/marker.txt")" = "${markers[$i]}" ] \
+      || fail "untracked marker changed or removed: ${names[$i]}"
+    [ "$(_claude_rc_worktree_registration_state "$repo" "$path")" = live ] \
+      || fail "registered worktree should stay live: ${names[$i]}"
+  done
+}
+
+test_claude_remote_control_cleanup_skips_sweep_when_worktree_list_fails() {
+  local sandbox repo payload out rc
+  sandbox="$(_claude_rc_new_sandbox)"
+  repo="$sandbox/repo"
+  _claude_rc_cleanup_guard_fixture "$sandbox"
+  # 실패한 조회가 형식상 온전한 부분 목록(main만)을 내더라도 종료 상태로 막아야 한다.
+  payload="$sandbox/list-payload"
+  printf 'worktree %s\0HEAD 0000000000000000000000000000000000000000\0branch refs/heads/main\0\0' \
+    "$repo" >"$payload"
+  _claude_rc_install_worktree_list_stub 128 "$payload"
+  mkdir "$repo/.claude/worktrees/orphan_guard"
+
+  rc=0
+  out="$(_claude_rc_run "$repo" bash "$(_claude_rc_wrapper_script)" cleanup 2>&1)" || rc=$?
+  [ "$rc" -ne 0 ] || fail "cleanup must fail when worktree list fails: $out"
+  assert_contains "$out" "git worktree list 실패 — orphan sweep 건너뜀"
+  _claude_rc_assert_cleanup_guard_kept_everything "$repo" "list failure"
+}
+
+test_claude_remote_control_cleanup_skips_sweep_on_unparseable_worktree_list() {
+  local sandbox repo payload out rc label main_record
+  sandbox="$(_claude_rc_new_sandbox)"
+  repo="$sandbox/repo"
+  _claude_rc_cleanup_guard_fixture "$sandbox"
+  payload="$sandbox/list-payload"
+  # 온전한 main 레코드 하나. 이 뒤에서 목록이 끊기거나 어긋나면, 앞부분만으로는
+  # 형식이 맞아 보여도 feature_one이 빠진 목록이 된다.
+  main_record="worktree $repo"$'\n'"HEAD 0000000000000000000000000000000000000000"$'\n'"branch refs/heads/main"$'\n'$'\n'
+  for label in nul-less truncated-field unterminated-record empty bad-header; do
+    case "$label" in
+      nul-less) printf '%s' "$main_record" >"$payload" ;;
+      truncated-field)
+        { printf '%s' "$main_record" | tr '\n' '\0'; printf 'worktree %s/.claude/work' "$repo"; } >"$payload"
+        ;;
+      unterminated-record)
+        printf 'worktree %s\0HEAD 0000000000000000000000000000000000000000\0' "$repo" >"$payload"
+        ;;
+      empty) : >"$payload" ;;
+      bad-header)
+        { printf '%s' "$main_record" | tr '\n' '\0'; printf 'HEAD 0000000000000000000000000000000000000000\0\0'; } \
+          >"$payload"
+        ;;
+    esac
+    _claude_rc_install_worktree_list_stub 0 "$payload"
+    mkdir -p "$repo/.claude/worktrees/orphan_guard"
+    : >"$CLAUDE_RC_RM_SPY_LOG"
+
+    rc=0
+    out="$(_claude_rc_run "$repo" bash "$(_claude_rc_wrapper_script)" cleanup 2>&1)" || rc=$?
+    [ "$rc" -ne 0 ] || fail "$label: cleanup must fail on unparseable worktree list: $out"
+    assert_contains "$out" "orphan sweep 건너뜀"
+    _claude_rc_assert_cleanup_guard_kept_everything "$repo" "$label"
+  done
+}
+
 test_claude_remote_control_maint_reconciles_declared_instances() {
   local sandbox declared_path manual_path payload status registered_at
   sandbox="$(_claude_rc_new_sandbox)"
