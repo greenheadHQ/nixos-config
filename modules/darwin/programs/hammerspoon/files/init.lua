@@ -62,7 +62,7 @@ command_shift_space_bind = hs.hotkey.bind({'cmd', 'shift'}, 'space', function()
     command_shift_space_bind:enable()
 end)
 
--- Ctrl + B → 영어 전환 후 tmux prefix 전달 (전역)
+-- Ctrl + B → 영어 전환 후 Ctrl+B 전달 (전역: tmux prefix, Claude Code 백그라운드 전환 등)
 local ctrl_b_bind
 ctrl_b_bind = hs.hotkey.bind({'ctrl'}, 'b', function()
     convertToEngAndSendKey(ctrl_b_bind, {'ctrl'}, 'b')

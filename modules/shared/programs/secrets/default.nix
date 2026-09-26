@@ -173,13 +173,6 @@
         path = "${config.xdg.configHome}/pushover/share";
         mode = "0400";
       };
-      # Pane Notepad 링크 파일 (회사 대시보드 등)
-      # 사용처: pane-note.sh에서 새 노트 생성 시 Links 섹션에 포함
-      pane-note-links = {
-        file = ../../../../secrets/pane-note-links.age;
-        path = "${config.xdg.configHome}/pane-note/links.txt";
-        mode = "0400";
-      };
     }
     # Immich CLI 업로드 시크릿은 macOS FolderAction에서 사용
     // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
