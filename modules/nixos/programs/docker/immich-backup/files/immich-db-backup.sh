@@ -25,6 +25,32 @@ trap cleanup_on_error EXIT
 
 echo "=== Immich PostgreSQL backup start: $(date -Iseconds) ==="
 
+# 0. 마운트 가드 (#1369) — 대상 HDD는 nofail이라 미마운트여도 부팅은 계속된다. 이 검사가
+#    없으면 MOUNT_ROOT가 루트 파일시스템의 일반 디렉터리로 존재하는 상태에서도 백업이
+#    SSD에 쓰이고 성공으로 오인될 수 있다. systemd RequiresMountsFor가 1차 방어이고,
+#    이 스크립트를 직접 실행하는 경로(수동 디버깅 등)를 위한 2차 방어다.
+if ! mountpoint -q "$MOUNT_ROOT"; then
+  echo "ERROR: $MOUNT_ROOT is not a mount point (target HDD not mounted)" >&2
+  send_notification "Immich DB Backup" \
+    "대상 HDD 마운트 확인 필요 ($MOUNT_ROOT 미마운트). 백업 중단." 1
+  exit 1
+fi
+echo "Mount check OK: $MOUNT_ROOT is mounted"
+
+# 0b. 목적지 소속 가드 — MOUNT_ROOT가 마운트돼 있어도 BACKUP_DIR이 그 아래가 아니면(설정
+#     오류) 마운트 확인만으로는 잡지 못한다. 경로 문자열상 BACKUP_DIR이 MOUNT_ROOT 아래인지만
+#     본다(디렉터리 경계 기준 접두 비교) — `..`·심볼릭 링크·중첩 마운트까지 해석하는 실제
+#     파일시스템 소속 판정은 아니다.
+case "$BACKUP_DIR/" in
+  "$MOUNT_ROOT"/*) ;;
+  *)
+    echo "ERROR: BACKUP_DIR ($BACKUP_DIR) is not under MOUNT_ROOT ($MOUNT_ROOT)" >&2
+    send_notification "Immich DB Backup" \
+      "백업 목적지 설정 오류 (BACKUP_DIR가 MOUNT_ROOT 밖). 백업 중단." 1
+    exit 1
+    ;;
+esac
+
 # 1. 디스크 공간 검사 (5GB 미만이면 중단)
 AVAIL_KB=$(df --output=avail "$BACKUP_DIR" | tail -1)
 AVAIL_GB=$((AVAIL_KB / 1024 / 1024))

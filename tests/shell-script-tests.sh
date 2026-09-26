@@ -376,6 +376,11 @@ run_test "immich backup happy path creates dump atomically" test_immich_backup_h
 run_test "immich backup integrity failure exits nonzero" test_immich_backup_integrity_failure_exits_nonzero
 run_test "immich backup retention deletes only old dumps in dir" test_immich_backup_retention_deletes_only_old_dumps_in_dir
 run_test "immich backup retention zero keeps today's dump, deletes stale" test_immich_backup_retention_zero_keeps_todays_dump_deletes_stale
+run_test "immich backup unmounted target blocks write and exits nonzero" test_immich_backup_unmounted_target_blocks_write_and_exits_nonzero
+run_test "immich backup mount guard checks MOUNT_ROOT, not BACKUP_DIR" test_immich_backup_mount_guard_checks_mount_root_not_backup_dir
+run_test "immich backup destination outside mount blocks write and exits nonzero" test_immich_backup_destination_outside_mount_blocks_write_and_exits_nonzero
+run_test "immich backup rejects mount prefix without directory boundary" test_immich_backup_mount_prefix_without_directory_boundary_is_rejected
+run_test "immich backup unmounted target preserves existing backups and skips pg_dump" test_immich_backup_unmounted_target_preserves_existing_backups_and_skips_pg_dump
 run_test "karakeep backup happy path dated dir" test_karakeep_backup_happy_path_dated_dir
 run_test "karakeep backup missing db exits nonzero" test_karakeep_backup_missing_db_exits_nonzero
 run_test "karakeep backup retention scopes to backup dir" test_karakeep_backup_retention_scopes_to_backup_dir
@@ -408,6 +413,12 @@ run_test "worktree-path-guard allows sibling worktree file" test_worktree_path_g
 run_test "worktree-path-guard allows main repo plan path exception" test_worktree_path_guard_allows_main_repo_plan_path_exception
 run_test "worktree-path-guard empty and malformed input noop" test_worktree_path_guard_empty_and_malformed_input_noop
 run_test "immich originals mirror skips rsync on empty source" test_immich_originals_mirror_empty_source_skips_rsync
+run_test "immich originals mirror blocks rsync when target HDD unmounted" test_immich_originals_mirror_unmounted_target_blocks_rsync
+run_test "immich originals mirror runs rsync when target HDD mounted" test_immich_originals_mirror_mounted_target_runs_rsync
+run_test "immich originals mirror mount guard checks MOUNT_ROOT, not DEST_DIR" test_immich_originals_mirror_mount_guard_checks_mount_root_not_dest_dir
+run_test "immich originals mirror blocks rsync when destination outside mount" test_immich_originals_mirror_destination_outside_mount_blocks_rsync
+run_test "immich originals mirror rejects mount prefix without directory boundary" test_immich_originals_mirror_mount_prefix_without_directory_boundary_is_rejected
+run_test "immich originals mirror does not create dest dir before mount guard" test_immich_originals_mirror_unmounted_target_does_not_create_dest_dir
 run_test "immich cleanup paginates v3 nextPage string" test_immich_cleanup_v3_paginates_next_page_string
 run_test "immich cleanup preserves empty album notification" test_immich_cleanup_v3_empty_album_preserves_notification
 run_test "immich cleanup rejects invalid asset id" test_immich_cleanup_v3_rejects_invalid_asset_id
