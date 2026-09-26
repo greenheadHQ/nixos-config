@@ -155,6 +155,8 @@ stdin fixture와 같이 `__SESSION_URL__` 자리표시로 두고 runner가 실�
 
 검사 자체의 내부 오류(깨진 lib, 쓸 수 없는 `TMPDIR`)는 세션 URL이 있어도 경고 후 exit 0이어야 한다.
 이 계약은 fixture 파일 없이 runner의 `test_commit_msg_pinning_internal_error_fail_open`이 검증한다.
+비UTF-8 바이트가 섞인 메시지를 `/usr/bin`의 sed·grep(macOS에서는 BSD)으로 검사해도 세션 URL이 차단되는지는
+`test_commit_msg_pinning_non_utf8_with_system_tools`가 검증한다 (`/usr/bin/sed`가 없는 호스트에서는 건너뜀).
 
 lefthook.yml의 commit-msg 배선이 이 종료 코드를 git까지 전달하는지는 `tests/suites/lefthook.sh`의
 `test_lefthook_commit_msg_pinning_blocks_only_session_url`이 격리 저장소의 실제 `git commit`으로 검증한다.

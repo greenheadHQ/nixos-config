@@ -63,22 +63,30 @@ scan_commit_msg() {
     exit 0
   fi
 
-  # commit msg 본문을 임시 파일에 정제 저장한다. git이 실제로 남기는 메시지만 검사하려고
+  # commit msg 본문을 임시 파일에 정제 저장한다. 기준은 편집기 경로에서 git이 남기는 메시지다:
   # `git commit -v`(또는 `--cleanup=scissors`)의 scissors 줄부터 끝까지(안내 주석과 diff)를
-  # 먼저 잘라낸 뒤 남은 `#` 주석 줄을 지운다.
+  # 먼저 잘라낸 뒤 남은 `#` 주석 줄을 지운다. 편집기 없는 `-m`/`-F` commit은 git 기본 cleanup이
+  # `#` 줄을 메시지에 남기지만, 이 검사는 `#`로 시작하는 줄을 보지 않는다 (그 줄의 세션 URL은
+  # 차단되지 않는다).
+  # sed는 LC_ALL=C로 돌린다. 패턴이 ASCII뿐이라 결과는 같고, UTF-8 로케일의 BSD sed(devShell 밖
+  # macOS PATH)가 비UTF-8 바이트에서 `illegal byte sequence`로 실패해 검사가 내부 오류로 끝나는
+  # 것을 막는다.
   # 모든 grep을 파일 직접 읽기로 처리 — `echo "$VAR" | grep` 조합은 큰 메시지 + grep -q 조기
   # 종료 시 echo가 SIGPIPE를 받아 set -o pipefail 환경에서 pipeline이 nonzero를 반환하고
   # warn이 silent fail 한다 (PoC 검증). bash here-string도 동일 위험.
   CLEAN_MSG=$(mktemp)
   trap 'rm -f "$CLEAN_MSG"' EXIT
-  sed -e '/^# ------------------------ >8 ------------------------$/,$d' -e '/^#/d' \
+  LC_ALL=C sed -e '/^# ------------------------ >8 ------------------------$/,$d' -e '/^#/d' \
     "$COMMIT_MSG_FILE" > "$CLEAN_MSG"
 
   # Loop over the shared structured records. Verbose warn message is emitted
   # once per category (when the category code transitions). The shared category
   # label line is also printed so commit-msg output matches the guard/alert
   # rendering contract.
-  records=$(pinning_findings_records "$CLEAN_MSG")
+  # 공유 lib의 grep도 LC_ALL=C로 돌린다. UTF-8 로케일의 BSD grep은 같은 줄에서 비UTF-8 바이트 뒤에
+  # 오는 매치를 오류 없이 놓쳐 세션 URL이 조용히 통과한다. 유효한 UTF-8 입력에서는 GNU·BSD grep
+  # 모두 로케일과 무관하게 같은 레코드를 낸다 (한글 인접 토큰 포함, #1422에서 확인).
+  records=$(LC_ALL=C pinning_findings_records "$CLEAN_MSG")
   warned=0
   blocked=0
 

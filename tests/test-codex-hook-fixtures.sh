@@ -1334,6 +1334,39 @@ test_commit_msg_pinning_internal_error_fail_open() {
   done
 }
 
+# devShell 밖 macOS PATH에서는 /usr/bin의 BSD sed·grep이 잡힌다. UTF-8 로케일에서 BSD sed는 비UTF-8
+# 바이트에 `illegal byte sequence`로 실패하고(정제 단계가 내부 오류로 빠져 fail-open), BSD grep은 같은
+# 줄에서 그 바이트 뒤에 오는 매치를 조용히 놓친다. 어느 쪽이든 세션 URL이 통과하면 안 된다.
+# /usr/bin/sed가 없는 호스트(NixOS 등)에서는 재현할 구현이 없어 건너뛴다.
+test_commit_msg_pinning_non_utf8_with_system_tools() {
+  local hook="$REPO_ROOT/scripts/ai/commit-msg-pinning.sh"
+  local sandbox msg stderr_log exit_code tool
+
+  if [ ! -x /usr/bin/sed ]; then
+    echo "    (skip: /usr/bin/sed 없음)"
+    return 0
+  fi
+  sandbox=$(new_hook_sandbox)
+  for tool in sed grep awk; do
+    if [ -x "/usr/bin/$tool" ]; then
+      ln -s "/usr/bin/$tool" "$sandbox/bin-stubs/$tool"
+    fi
+  done
+  msg="$sandbox/non-utf8-session-url.msg"
+  printf 'feat: caf\xe9 fix\n\ncaf\xe9 %s\n' "$PINNING_SESSION_URL_FIXTURE" > "$msg"
+  stderr_log="$sandbox/non-utf8.stderr.log"
+
+  if _exec_with_sandbox_env "$sandbox" "LC_ALL=en_US.UTF-8" "$hook" "$msg" 2>"$stderr_log"; then
+    exit_code=0
+  else
+    exit_code=$?
+  fi
+  assert_eq "$exit_code" "1" \
+    "[7c] non-UTF-8 message with system tools: session URL must still block the commit"
+  grep -Fq '[ERROR] pinning:' "$stderr_log" \
+    || fail "[7c] non-UTF-8 message with system tools: expected the session URL error; stderr: $(cat "$stderr_log")"
+}
+
 # ─── supervised wrapper 해석 + marker 잔존 탐지기 (live fixture 공통 — issue #1228 1단계) ───
 
 _supervised_source_has_setsid_assignment() {
@@ -2083,6 +2116,8 @@ run_test "commit-msg pinning behavioral" \
   test_commit_msg_pinning_behavioral
 run_test "commit-msg pinning internal error fail-open (#1422)" \
   test_commit_msg_pinning_internal_error_fail_open
+run_test "commit-msg pinning non-UTF-8 message with system tools (#1422)" \
+  test_commit_msg_pinning_non_utf8_with_system_tools
 run_test "supervised setsid predicate self-test (#1228)" \
   test_supervised_setsid_predicate_self
 run_test "marker residual detector negative control (#1228)" \
