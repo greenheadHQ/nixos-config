@@ -825,10 +825,12 @@ test_wt_cleanup_keeps_unpreserved_detached_commit() {
 test_wt_cleanup_detached_preservation_scope() {
   # detached 커밋을 "보존됨"으로 인정하는 참조는 이 worktree를 지워도 남는 일반 참조 —
   # 로컬 브랜치·태그·원격 추적 ref — 이고, 그중 하나가 그 커밋을 포함(조상으로 가짐)할 때만이다.
-  # stash나 다른 worktree의 detached HEAD는 커밋을 붙잡고 있어도 보존으로 치지 않는다.
+  # stash, worktree별 ref(refs/worktree/, refs/bisect/), 다른 worktree의 detached HEAD는
+  # 커밋을 붙잡고 있어도 보존으로 치지 않는다.
   # 보존으로 판정돼도 잠금·미커밋 변경의 기존 보호는 그대로 적용돼야 한다.
   local sandbox home_dir repo_root base name ls_out verdicts out rc
   local branch_oid child_oid tag_oid annotated_oid remote_oid stash_oid twin_oid locked_oid dirty_oid
+  local wtref_oid bisect_oid
   sandbox=$(new_sandbox)
   home_dir="$sandbox/home"
   repo_root="$sandbox/repo"
@@ -858,6 +860,16 @@ test_wt_cleanup_detached_preservation_scope() {
     | grep -qxF refs/stash || fail "fixture: stash가 det_stash 커밋을 포함하지 않음"
   twin_oid=$(add_detached_orphan_worktree "$repo_root" "$base/det_twin_a")
   wt_fixture_git -C "$repo_root" worktree add --detach "$base/det_twin_b" "$twin_oid" >/dev/null 2>&1
+  # worktree별 ref는 그 worktree 안에서 만들고 조회할 때만 보인다 — 판정도 그 안에서 조회하므로
+  # 범위를 refs/ 전체로 넓히면 이 두 대조군이 보존으로 뒤집힌다.
+  wtref_oid=$(add_detached_orphan_worktree "$repo_root" "$base/det_wtref")
+  wt_fixture_git -C "$base/det_wtref" update-ref refs/worktree/keep "$wtref_oid"
+  wt_fixture_git -C "$base/det_wtref" for-each-ref --contains="$wtref_oid" --format='%(refname)' \
+    | grep -qxF refs/worktree/keep || fail "fixture: refs/worktree/keep이 det_wtref 커밋을 포함하지 않음"
+  bisect_oid=$(add_detached_orphan_worktree "$repo_root" "$base/det_bisect")
+  wt_fixture_git -C "$base/det_bisect" update-ref refs/bisect/keep "$bisect_oid"
+  wt_fixture_git -C "$base/det_bisect" for-each-ref --contains="$bisect_oid" --format='%(refname)' \
+    | grep -qxF refs/bisect/keep || fail "fixture: refs/bisect/keep이 det_bisect 커밋을 포함하지 않음"
 
   # 보존됐지만 다른 보호가 걸린 경우.
   locked_oid=$(add_detached_orphan_worktree "$repo_root" "$base/det_locked")
@@ -869,15 +881,18 @@ test_wt_cleanup_detached_preservation_scope() {
 
   ls_out=$(run_fixture_wt "$home_dir" "$repo_root" "" ls --json 2>/dev/null)
   verdicts=$(jq -cS 'map(select(.name | startswith("det_")) | {(.name): .unpushed}) | add' <<< "$ls_out")
-  [[ "$verdicts" == '{"det_annotated":false,"det_branch":false,"det_dirty":false,"det_locked":false,"det_remote":false,"det_stash":true,"det_tag":false,"det_twin_a":true,"det_twin_b":true}' ]] \
+  [[ "$verdicts" == '{"det_annotated":false,"det_bisect":true,"det_branch":false,"det_dirty":false,"det_locked":false,"det_remote":false,"det_stash":true,"det_tag":false,"det_twin_a":true,"det_twin_b":true,"det_wtref":true}' ]] \
     || fail "detached 보존 판정이 기대와 다름: $verdicts"
 
   rc=0
   out=$(run_fixture_wt "$home_dir" "$repo_root" "" cleanup \
-    det_branch det_tag det_annotated det_remote det_stash det_twin_a det_locked det_dirty 2>&1) || rc=$?
+    det_branch det_tag det_annotated det_remote det_stash det_twin_a det_wtref det_bisect \
+    det_locked det_dirty 2>&1) || rc=$?
   [[ "$rc" == "0" ]] || fail "cleanup 비정상 종료 rc=$rc: $out"
   assert_contains "$out" "det_stash: push하지 않은 커밋"
   assert_contains "$out" "det_twin_a: push하지 않은 커밋"
+  assert_contains "$out" "det_wtref: push하지 않은 커밋"
+  assert_contains "$out" "det_bisect: push하지 않은 커밋"
   assert_contains "$out" "잠긴 worktree 건너뜀: det_locked"
   assert_contains "$out" "det_dirty: uncommitted 변경사항"
   assert_not_contains "$out" "det_dirty: uncommitted 변경사항 push하지 않은 커밋"
@@ -891,7 +906,7 @@ test_wt_cleanup_detached_preservation_scope() {
     refs/heads/keep-branch refs/tags/keep-tag refs/tags/keep-annotated refs/remotes/origin/keep \
     || fail "detached worktree 정리가 보존 참조를 지움"
 
-  for name in det_stash det_twin_a det_locked det_dirty; do
+  for name in det_stash det_twin_a det_wtref det_bisect det_locked det_dirty; do
     [[ -d "$base/$name" ]] || fail "보호 대상 worktree 디렉토리가 지워짐: $name — $out"
     wt_fixture_git -C "$repo_root" worktree list --porcelain | grep -qxF "worktree $base/$name" \
       || fail "보호 대상 worktree 등록이 사라짐: $name — $out"
@@ -900,6 +915,10 @@ test_wt_cleanup_detached_preservation_scope() {
     || fail "det_stash HEAD가 바뀜"
   [[ "$(wt_fixture_git -C "$base/det_twin_a" rev-parse HEAD)" == "$twin_oid" ]] \
     || fail "det_twin_a HEAD가 바뀜"
+  [[ "$(wt_fixture_git -C "$base/det_wtref" rev-parse HEAD)" == "$wtref_oid" ]] \
+    || fail "det_wtref HEAD가 바뀜"
+  [[ "$(wt_fixture_git -C "$base/det_bisect" rev-parse HEAD)" == "$bisect_oid" ]] \
+    || fail "det_bisect HEAD가 바뀜"
 }
 
 test_wt_cleanup_detached_lookup_errors_fail_closed() {

@@ -247,6 +247,13 @@ _wt_is_dirty() {
 #     서로를 근거로 삼으면 둘 다 지워진다.
 #   - refs/stash, worktree별 ref(refs/worktree/, refs/bisect/) 등 그 밖의 ref — 보존용
 #     참조가 아니다 (stash는 drop·clear로, worktree별 ref는 정리와 함께 사라진다).
+# 범위 안의 심볼릭 ref는 대상을 따라 평가된다 — refs/remotes/origin/HEAD가 범위 밖 ref를
+# 가리키면 그 대상이 보존 근거가 된다 (실측). 정상 구성(origin/HEAD → origin/<branch>)에서는
+# 대상도 범위 안이다.
+# 이 판정은 "worktree를 지워도 남는 참조"만 본다. 재생성은 판정 뒤 요청 브랜치
+# (refs/heads/<branch_name>)를 지우므로, HEAD가 그 브랜치에 있지 않을 때(detached인데 그
+# 브랜치만 커밋을 보존하거나, 다른 브랜치를 checkout한 경우)의 손실은 여기서 막지 못한다 —
+# 재사용·재생성 전에 실제 checkout을 요청 브랜치와 대조하는 쪽(#1375)이 닫는다.
 # HEAD OID나 참조 조회에 실패하면 보존을 확인하지 못한 것이므로 1을 반환한다
 # (fail-closed) — 호출자는 이를 "잃을 커밋 있음"으로 다룬다.
 _wt_detached_head_preserved() {
