@@ -1,0 +1,8 @@
+[WARN] pinning: 라운드 카운터(`Round N`) 박제 감지. 영구 산출물에는 자연어 설명으로 표현하라.
+  - Round counter 박제: 'Round N'
+         1: Round 5
+[ERROR] pinning: Claude 세션 URL 박제 감지. 이 범주는 warn-only의 예외로 커밋을 차단한다.
+  - Claude 세션 URL 박제: 세션 URL과 'Claude-Session:' 트레일러 줄을 빼고 다시 시도
+         3: __SESSION_URL__
+[WARN] pinning: 위 경고는 차단하지 않습니다 (warn-only). 검토 후 amend로 정정하거나 의도적 사용이면 무시하세요.
+[ERROR] pinning: 커밋을 중단했다. 메시지에서 세션 URL과 'Claude-Session:' 트레일러 줄을 지운 뒤 다시 커밋하라.

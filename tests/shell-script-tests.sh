@@ -336,6 +336,7 @@ run_test "install-lefthook ignores global lefthook.yml config keys" test_install
 run_test "lefthook.yml self-check hook list matches config" test_lefthook_self_check_hook_list_matches_config
 run_test "lefthook.yml self-check bodies stay in sync" test_lefthook_self_check_bodies_stay_in_sync
 run_test "lefthook auto-sync cannot drop the staged-config guard" test_lefthook_auto_sync_cannot_drop_guard_end_to_end
+run_test "lefthook commit-msg pinning blocks only session URLs" test_lefthook_commit_msg_pinning_blocks_only_session_url
 run_test "webhook-bridge crawled payload sends notification" test_webhook_bridge_crawled_payload_sends_notification
 run_test "webhook-bridge non-crawled payload skips notification" test_webhook_bridge_non_crawled_payload_skips_notification
 run_test "webhook-bridge invalid JSON keeps 200 without notification" test_webhook_bridge_invalid_json_keeps_200_without_notification

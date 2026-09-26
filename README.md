@@ -117,12 +117,13 @@ pre-commit 정책:
 
 **commit-msg**:
 - `lefthook-guard-self-check` — pre-commit self-check의 복제. `git commit --allow-empty`처럼 staged files가 0이라 pre-commit command가 skip되는 경로까지 차단한다
-- `pinning` — commit message LLM 박제 패턴 감지 (warn-only) ([`scripts/ai/commit-msg-pinning.sh`](./scripts/ai/commit-msg-pinning.sh))
+- `pinning` — commit message LLM 박제 패턴 감지 ([`scripts/ai/commit-msg-pinning.sh`](./scripts/ai/commit-msg-pinning.sh)). 라운드 카운터·finding ID·DA 키워드는 warn-only, Claude 세션 URL(`Claude-Session:` 트레일러 포함)만 커밋을 차단한다 (#1422)
 
 **LLM durable-output pinning guard layers**:
 - Runtime hard-fail: Claude/Codex PreToolUse `pinning-guard.sh` blocks new volatile review/session metadata before supported edit/apply_patch tools and targeted git/gh durable commands write eligible markdown, shell, notebook, body-temp, commit, PR, or issue text.
 - Runtime warn-only: Claude/Codex PostToolUse `pinning-alert.sh` remains as a second signal after supported edit/apply_patch tools run.
-- Commit-message warn-only: `commit-msg-pinning.sh` still reports the same shared pattern family for commit messages.
+- Commit-message layer: `commit-msg-pinning.sh` reports the same shared pattern family for commit messages. It is warn-only except for Claude session URLs, which fail the commit because they can also arrive through paths the PreToolUse guard does not see (manual commits, tools without the guard, indirect message files).
+- Session-link source: the managed Claude `settings.json` sets `attribution.sessionUrl` to `false`, so Claude Code stops asking the model to append the session link to commits and PR bodies in the first place.
 - Shared source: pattern definitions and reporting live in [`modules/shared/programs/claude/files/lib/pinning-patterns.sh`](./modules/shared/programs/claude/files/lib/pinning-patterns.sh); Codex fixture coverage is in [`tests/fixtures/codex-hooks/README.md`](./tests/fixtures/codex-hooks/README.md).
 - Codex config ownership: `hooks.PreToolUse` is now template-owned like `UserPromptSubmit`, `Stop`, and `PostToolUse`; add user hooks under events not declared by the template unless `sync-codex-config.py` is changed.
 

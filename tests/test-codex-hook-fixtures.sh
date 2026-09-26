@@ -1247,6 +1247,18 @@ $unexpected"
 
 # ─── 카테고리 7c: commit-msg pinning behavioral ───
 # commit-msg-pinning.sh도 guard/alert와 같은 shared pinning records helper를 소비한다.
+# 범주 A~C는 warn-only(exit 0), 세션 URL 범주(D, #1422)만 exit 1로 커밋을 막는다. 기대 종료
+# 코드는 선택적 `<name>.exit` sidecar로 지정하고, 없으면 0이다.
+_materialize_commit_msg_fixture() {
+  local fixture="$1" sandbox="$2"
+  local materialized token_sed
+  materialized="$sandbox/$(basename "$fixture")"
+  token_sed="$(sed_replacement_escape "$PINNING_SESSION_URL_TOKEN")"
+  sed "s#__SESSION_URL__#${token_sed}#g" "$fixture" > "$materialized"
+  sed "s#__SESSION_URL__#${token_sed}#g" "${fixture%.msg}.expected" > "${materialized%.msg}.expected"
+  printf '%s\n' "$materialized"
+}
+
 _assert_commit_msg_expectation() {
   local fixture="$1" stderr_log="$2"
   local expected="${fixture%.msg}.expected"
@@ -1260,20 +1272,26 @@ $diff_out"
 
 test_commit_msg_pinning_behavioral() {
   local hook="$REPO_ROOT/scripts/ai/commit-msg-pinning.sh"
-  local fixture sandbox stderr_log exit_code
+  local fixture sandbox materialized stderr_log exit_code expected_exit
 
   for fixture in "$FIXTURE_DIR"/commit-msg/*.msg; do
     assert_file_exists "${fixture%.msg}.expected" "7c/$(basename "$fixture")"
     sandbox=$(new_hook_sandbox)
+    materialized="$(_materialize_commit_msg_fixture "$fixture" "$sandbox")"
     stderr_log="$sandbox/commit-msg-stderr.log"
+    expected_exit=0
+    if [ -f "${fixture%.msg}.exit" ]; then
+      expected_exit="$(cat "${fixture%.msg}.exit")"
+    fi
 
-    if _exec_with_sandbox_env "$sandbox" "" "$hook" "$fixture" 2>"$stderr_log"; then
+    if _exec_with_sandbox_env "$sandbox" "" "$hook" "$materialized" 2>"$stderr_log"; then
       exit_code=0
     else
       exit_code=$?
     fi
-    assert_eq "$exit_code" "0" "[7c] $(basename "$fixture"): warn-only contract 위반 (exit must be 0)"
-    _assert_commit_msg_expectation "$fixture" "$stderr_log"
+    assert_eq "$exit_code" "$expected_exit" \
+      "[7c] $(basename "$fixture"): exit code contract (A~C warn-only=0, session URL block=1)"
+    _assert_commit_msg_expectation "$materialized" "$stderr_log"
   done
 }
 

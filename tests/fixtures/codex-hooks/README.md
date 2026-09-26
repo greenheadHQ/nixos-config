@@ -138,13 +138,20 @@ PostToolUse `pinning-alert.sh` and commit-msg-pinning.sh keep emitting both sub-
 ### commit-msg/ 카테고리 7c fixture (commit-msg-pinning behavioral)
 
 각 `*.msg` 옆에 동일 basename의 `*.expected`가 있다. 빈 expected는 clean pass.
+기대 종료 코드는 선택적 `*.exit` sidecar로 지정하고, 없으면 0(warn-only)이다. 세션 URL은
+stdin fixture와 같이 `__SESSION_URL__` 자리표시로 두고 runner가 실행 전에 치환한다.
 
 | 파일 | 시나리오 | 기대 |
 |------|----------|------|
-| `clean.msg` | 박제 패턴 없는 정상 commit msg | 빈 파일 (warn 없음) |
-| `line-token-a-positive.msg` | PATTERN_A (Round counter) | A 라벨 + line:token warn |
-| `line-token-b-positive.msg` | PATTERN_B (Bundle finding ID) | B 라벨 + line:token warn |
-| `line-token-c-positive.msg` | PATTERN_C (DA 실행 키워드) | C 라벨 + line:token warn |
+| `clean.msg` | 박제 패턴 없는 정상 commit msg | 빈 파일 (warn 없음), exit 0 |
+| `line-token-a-positive.msg` | PATTERN_A (Round counter) | A 라벨 + line:token warn, exit 0 |
+| `line-token-b-positive.msg` | PATTERN_B (Bundle finding ID) | B 라벨 + line:token warn, exit 0 |
+| `line-token-c-positive.msg` | PATTERN_C (DA 실행 키워드) | C 라벨 + line:token warn, exit 0 |
+| `session-url-block.msg` | PATTERN_D (`Claude-Session:` 트레일러의 세션 URL, #1422) | D 라벨 + line:token error, exit 1 |
+| `line-token-a-and-session-url-block.msg` | PATTERN_A와 PATTERN_D 혼합 | A는 warn, D는 error, exit 1 |
+
+lefthook.yml의 commit-msg 배선이 이 종료 코드를 git까지 전달하는지는 `tests/suites/lefthook.sh`의
+`test_lefthook_commit_msg_pinning_blocks_only_session_url`이 격리 저장소의 실제 `git commit`으로 검증한다.
 
 ## 외부 contract만 디렉토리로 노출
 

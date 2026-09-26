@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
 # commit-msg-pinning.sh
-# 목적: commit message에서 LLM 박제(pinning) 패턴을 감지하고 경고. 영구 산출물(commit/PR/이슈)에
-#       세션 내부 메타데이터(라운드 번호/finding ID/DA 실행 키워드)가 박혀 drift나 stale 참조를
-#       일으키는 것을 경고한다.
+# 목적: commit message에서 LLM 박제(pinning) 패턴을 감지한다. 영구 산출물(commit/PR/이슈)에
+#       세션 내부 메타데이터(라운드 번호/finding ID/DA 실행 키워드/Claude 세션 URL)가 박혀 drift나
+#       stale 참조, 불필요한 세션 메타데이터 공개를 일으키는 것을 경고하거나 막는다.
 # 정책:
-# - warn-only: 매치 시 stderr 경고만 출력하고 exit 0. commit 차단하지 않음. lefthook 단계 자체를
-#   건너뛰려면 lefthook 표준 메커니즘 (`LEFTHOOK=0`, `--no-verify`)을 사용한다.
+# - 범주 A~C(라운드 카운터/finding ID/DA 키워드)는 warn-only: 매치 시 stderr 경고만 출력하고
+#   commit을 막지 않는다. #583 ADR은 정규식 오탐이 정상 commit을 막아 작업 흐름을 해치는 것을
+#   피하려고 차단 모드를 기각했다.
+# - 범주 D(Claude 세션 URL, #1422)만 예외로 exit 1로 commit을 막는다. claude.ai의
+#   `/code/session_<id>` 고정 형식이라 오탐 여지가 좁고, 차단은 사용자가 결정했다. 세션 URL은
+#   PreToolUse 가드가 보지 못하는 경로(사람의 직접 commit, 가드 없는 도구, 파일 간접 참조)로도
+#   들어오므로 commit 단계에서 한 번 더 막는다.
+# - lefthook 단계 자체를 건너뛰려면 lefthook 표준 메커니즘 (`LEFTHOOK=0`, `--no-verify`)을 사용한다.
 # 작동 범위: 이 hook은 신규 commit message만 검사한다. 과거 commit / squash commit body /
 #   PR · 이슈 본문에 이미 박힌 잔존 박제는 **소급해서 수정하지 않으며** 본 hook 범위 밖이다.
 set -euo pipefail
 
-# Shared pattern/helper library. Missing library is fail-open because this
-# hook is warn-only and must not block commits on provisioning drift.
+# Shared pattern/helper library. Missing library is fail-open: commit-msg must
+# not block commits on provisioning drift (the PreToolUse guard fails closed).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PINNING_LIB="${PINNING_PATTERNS_LIB:-$REPO_ROOT/modules/shared/programs/claude/files/lib/pinning-patterns.sh}"
@@ -43,32 +49,38 @@ warn() {
   echo "[WARN] pinning: $1" >&2
 }
 
+error() {
+  echo "[ERROR] pinning: $1" >&2
+}
+
 # Category code → user-facing remediation message mapping. category code is
-# the stable ID returned by pinning_findings_records (A/B/C); the message
+# the stable ID returned by pinning_findings_records (A/B/C/D); the message
 # stays here in commit-msg context to preserve existing UX wording without
 # embedding it in the shared lib.
 WARN_A="라운드 카운터(\`Round N\`) 박제 감지. 영구 산출물에는 자연어 설명으로 표현하라."
 WARN_B="DA finding ID 박제 감지. 라운드/finding ID는 휘발성 보고에만 사용하고 commit message에는 박지 마라."
 WARN_C="DA 키워드 박제 감지. 검토 라운드/모드 표기는 commit message에 박지 말고 PR 코멘트 또는 휘발성 작업 노트에 둬라."
+ERROR_D="Claude 세션 URL 박제 감지. 이 범주는 warn-only의 예외로 커밋을 차단한다."
 
 # Loop over the shared structured records. Verbose warn message is emitted
 # once per category (when the category code transitions). The shared category
 # label line is also printed so commit-msg output matches the guard/alert
 # rendering contract.
 records=$(pinning_findings_records "$CLEAN_MSG")
-found=0
+warned=0
+blocked=0
 
 if [ -n "$records" ]; then
-  found=1
   prev_code=""
   while IFS=$'\t' read -r code label entry _sub_tag; do
     [ -n "$code" ] || continue
     if [ "$code" != "$prev_code" ]; then
       case "$code" in
-        A) warn "$WARN_A"; printf '  - %s\n' "$label" >&2 ;;
-        B) warn "$WARN_B"; printf '  - %s\n' "$label" >&2 ;;
-        C) warn "$WARN_C"; printf '  - %s\n' "$label" >&2 ;;
-        *) warn "$label" ;;
+        A) warn "$WARN_A"; printf '  - %s\n' "$label" >&2; warned=1 ;;
+        B) warn "$WARN_B"; printf '  - %s\n' "$label" >&2; warned=1 ;;
+        C) warn "$WARN_C"; printf '  - %s\n' "$label" >&2; warned=1 ;;
+        D) error "$ERROR_D"; printf '  - %s\n' "$label" >&2; blocked=1 ;;
+        *) warn "$label"; warned=1 ;;
       esac
       prev_code="$code"
     fi
@@ -76,8 +88,13 @@ if [ -n "$records" ]; then
   done <<< "$records"
 fi
 
-if [ "$found" -eq 1 ]; then
+if [ "$warned" -eq 1 ]; then
   warn "위 경고는 차단하지 않습니다 (warn-only). 검토 후 amend로 정정하거나 의도적 사용이면 무시하세요."
+fi
+
+if [ "$blocked" -eq 1 ]; then
+  error "커밋을 중단했다. 메시지에서 세션 URL과 'Claude-Session:' 트레일러 줄을 지운 뒤 다시 커밋하라."
+  exit 1
 fi
 
 exit 0
