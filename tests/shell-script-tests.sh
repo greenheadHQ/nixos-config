@@ -115,6 +115,9 @@ run_test "claude remote-control stop preserves held-lock registration" test_clau
 run_test "claude remote-control stop path removes stale registration" test_claude_remote_control_stop_path_removes_missing_registered_instance
 run_test "claude remote-control slug separates same basenames" test_claude_remote_control_slug_uses_hash_for_same_basename
 run_test "claude remote-control cleanup removes only orphan worktrees" test_claude_remote_control_cleanup_removes_only_orphan_worktrees
+run_test "claude remote-control cleanup preserves special-character worktrees" test_claude_remote_control_cleanup_preserves_special_character_worktrees
+run_test "claude remote-control cleanup skips sweep when worktree list fails" test_claude_remote_control_cleanup_skips_sweep_when_worktree_list_fails
+run_test "claude remote-control cleanup skips sweep on unparseable worktree list" test_claude_remote_control_cleanup_skips_sweep_on_unparseable_worktree_list
 run_test "claude remote-control maint reconciles declarations" test_claude_remote_control_maint_reconciles_declared_instances
 run_test "claude remote-control maint gates drift by effective spawn" test_claude_remote_control_maint_uses_effective_spawn_for_drift_gate
 run_test "claude remote-control maint rejects invalid declarations" test_claude_remote_control_maint_rejects_invalid_declared_instances
@@ -381,6 +384,11 @@ run_test "immich backup happy path creates dump atomically" test_immich_backup_h
 run_test "immich backup integrity failure exits nonzero" test_immich_backup_integrity_failure_exits_nonzero
 run_test "immich backup retention deletes only old dumps in dir" test_immich_backup_retention_deletes_only_old_dumps_in_dir
 run_test "immich backup retention zero keeps today's dump, deletes stale" test_immich_backup_retention_zero_keeps_todays_dump_deletes_stale
+run_test "immich backup unmounted target blocks write and exits nonzero" test_immich_backup_unmounted_target_blocks_write_and_exits_nonzero
+run_test "immich backup mount guard checks MOUNT_ROOT, not BACKUP_DIR" test_immich_backup_mount_guard_checks_mount_root_not_backup_dir
+run_test "immich backup destination outside mount blocks write and exits nonzero" test_immich_backup_destination_outside_mount_blocks_write_and_exits_nonzero
+run_test "immich backup rejects mount prefix without directory boundary" test_immich_backup_mount_prefix_without_directory_boundary_is_rejected
+run_test "immich backup unmounted target preserves existing backups and skips pg_dump" test_immich_backup_unmounted_target_preserves_existing_backups_and_skips_pg_dump
 run_test "karakeep backup happy path dated dir" test_karakeep_backup_happy_path_dated_dir
 run_test "karakeep backup missing db exits nonzero" test_karakeep_backup_missing_db_exits_nonzero
 run_test "karakeep backup retention scopes to backup dir" test_karakeep_backup_retention_scopes_to_backup_dir
@@ -413,6 +421,12 @@ run_test "worktree-path-guard allows sibling worktree file" test_worktree_path_g
 run_test "worktree-path-guard allows main repo plan path exception" test_worktree_path_guard_allows_main_repo_plan_path_exception
 run_test "worktree-path-guard empty and malformed input noop" test_worktree_path_guard_empty_and_malformed_input_noop
 run_test "immich originals mirror skips rsync on empty source" test_immich_originals_mirror_empty_source_skips_rsync
+run_test "immich originals mirror blocks rsync when target HDD unmounted" test_immich_originals_mirror_unmounted_target_blocks_rsync
+run_test "immich originals mirror runs rsync when target HDD mounted" test_immich_originals_mirror_mounted_target_runs_rsync
+run_test "immich originals mirror mount guard checks MOUNT_ROOT, not DEST_DIR" test_immich_originals_mirror_mount_guard_checks_mount_root_not_dest_dir
+run_test "immich originals mirror blocks rsync when destination outside mount" test_immich_originals_mirror_destination_outside_mount_blocks_rsync
+run_test "immich originals mirror rejects mount prefix without directory boundary" test_immich_originals_mirror_mount_prefix_without_directory_boundary_is_rejected
+run_test "immich originals mirror does not create dest dir before mount guard" test_immich_originals_mirror_unmounted_target_does_not_create_dest_dir
 run_test "immich cleanup paginates v3 nextPage string" test_immich_cleanup_v3_paginates_next_page_string
 run_test "immich cleanup preserves empty album notification" test_immich_cleanup_v3_empty_album_preserves_notification
 run_test "immich cleanup rejects invalid asset id" test_immich_cleanup_v3_rejects_invalid_asset_id
@@ -465,6 +479,56 @@ run_test "interaction-limits-renewal missing PAT exits nonzero" test_ilr_missing
 # korean-particle-expansion suite (tests/suites/korean-particle-expansion.sh)
 run_test "korean particle expansions stay brace-bounded" test_korean_particle_expansion_is_brace_bounded
 run_test "SA health check lifecycle and secret handling" test_opnix_health_check_lifecycle
+
+# git-cleanup suite (tests/suites/git-cleanup.sh) — 날짜 계산 도구 선택 계약 (#1376)
+run_test "git-cleanup BSD-only date dry-run succeeds" test_git_cleanup_bsd_only_date_dry_run_succeeds
+run_test "git-cleanup GNU-only date dry-run succeeds" test_git_cleanup_gnu_only_date_dry_run_succeeds
+run_test "git-cleanup stale boundary consistent across date tools" test_git_cleanup_stale_boundary_consistent_across_date_tools
+run_test "git-cleanup stale boundary is timezone independent" test_git_cleanup_stale_boundary_is_timezone_independent
+run_test "git-cleanup date command failure stops before candidates" test_git_cleanup_date_command_failure_stops_before_candidates
+run_test "git-cleanup date non-numeric output stops before candidates" test_git_cleanup_date_non_numeric_output_stops_before_candidates
+run_test "git-cleanup dry-run does not delete stale branch" test_git_cleanup_dry_run_does_not_delete_stale_branch
+run_test "git-cleanup stale boundary uses fixed seconds not calendar days across DST" test_git_cleanup_stale_boundary_uses_fixed_seconds_not_calendar_days_across_dst
+run_test "git-cleanup date command absent stops before candidates" test_git_cleanup_date_command_absent_stops_before_candidates
+
+# update-script-arg-parse suite (tests/suites/update-script-arg-parse.sh) — #1383
+run_test "immich-update --help exits 0 without side effects" test_immich_update_help_flag_exits_zero_without_side_effects
+run_test "immich-update rejects unknown option" test_immich_update_rejects_unknown_option
+run_test "immich-update rejects excess argument" test_immich_update_rejects_excess_argument
+run_test "immich-update rejects bare positional argument" test_immich_update_rejects_bare_positional_argument
+run_test "immich-update --help avoids boundaries with env wired" test_immich_update_help_flag_avoids_boundaries_with_env
+run_test "immich-update rejects unknown option with env wired" test_immich_update_rejects_unknown_option_with_env
+run_test "immich-update rejects excess argument with env wired" test_immich_update_rejects_excess_argument_with_env
+run_test "immich-update no-args preserves existing update flow" test_immich_update_no_args_preserves_existing_update_flow
+run_test "immich-update --dry-run skips mutating boundaries" test_immich_update_dry_run_skips_mutating_boundaries
+run_test "copyparty-update --help exits 0 without side effects" test_copyparty_update_help_flag_exits_zero_without_side_effects
+run_test "copyparty-update rejects unknown option" test_copyparty_update_rejects_unknown_option
+run_test "copyparty-update rejects excess argument" test_copyparty_update_rejects_excess_argument
+run_test "copyparty-update rejects bare positional argument" test_copyparty_update_rejects_bare_positional_argument
+run_test "copyparty-update --help avoids boundaries with env wired" test_copyparty_update_help_flag_avoids_boundaries_with_env
+run_test "copyparty-update rejects unknown option with env wired" test_copyparty_update_rejects_unknown_option_with_env
+run_test "copyparty-update rejects excess argument with env wired" test_copyparty_update_rejects_excess_argument_with_env
+run_test "copyparty-update no-args preserves existing update flow" test_copyparty_update_no_args_preserves_existing_update_flow
+run_test "copyparty-update --dry-run skips mutating boundaries" test_copyparty_update_dry_run_skips_mutating_boundaries
+run_test "uptime-kuma-update --help exits 0 without side effects" test_uptime_kuma_update_help_flag_exits_zero_without_side_effects
+run_test "uptime-kuma-update rejects unknown option" test_uptime_kuma_update_rejects_unknown_option
+run_test "uptime-kuma-update rejects excess argument" test_uptime_kuma_update_rejects_excess_argument
+run_test "uptime-kuma-update rejects bare positional argument" test_uptime_kuma_update_rejects_bare_positional_argument
+run_test "uptime-kuma-update --help avoids boundaries with env wired" test_uptime_kuma_update_help_flag_avoids_boundaries_with_env
+run_test "uptime-kuma-update rejects unknown option with env wired" test_uptime_kuma_update_rejects_unknown_option_with_env
+run_test "uptime-kuma-update rejects excess argument with env wired" test_uptime_kuma_update_rejects_excess_argument_with_env
+run_test "uptime-kuma-update no-args preserves existing update flow" test_uptime_kuma_update_no_args_preserves_existing_update_flow
+run_test "uptime-kuma-update --dry-run skips mutating boundaries" test_uptime_kuma_update_dry_run_skips_mutating_boundaries
+run_test "karakeep-update --help exits 0 without side effects" test_karakeep_update_help_flag_exits_zero_without_side_effects
+run_test "karakeep-update rejects unknown option" test_karakeep_update_rejects_unknown_option
+run_test "karakeep-update rejects excess argument" test_karakeep_update_rejects_excess_argument
+run_test "karakeep-update rejects bare positional argument" test_karakeep_update_rejects_bare_positional_argument
+run_test "karakeep-update --help avoids boundaries with env wired" test_karakeep_update_help_flag_avoids_boundaries_with_env
+run_test "karakeep-update rejects unknown option with env wired" test_karakeep_update_rejects_unknown_option_with_env
+run_test "karakeep-update rejects excess argument with env wired" test_karakeep_update_rejects_excess_argument_with_env
+run_test "karakeep-update no-args still requires ack-bridge-risk" test_karakeep_update_no_args_still_requires_ack_bridge_risk
+run_test "karakeep-update ack-bridge-risk preserves existing update flow" test_karakeep_update_ack_bridge_risk_preserves_existing_update_flow
+run_test "karakeep-update --dry-run skips mutating boundaries" test_karakeep_update_dry_run_skips_mutating_boundaries
 
 # 퇴역 키 로더는 tomlkit 없이도 도는 순수 셸 계약이라 아래 게이트 밖에 둔다.
 run_test "codex-config retired keys loader" test_codex_config_retired_keys_loader
