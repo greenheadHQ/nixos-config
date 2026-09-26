@@ -806,6 +806,12 @@ let
     ) expectedDarwinHosts
   );
 
+  # ── #1369: 백업 대상 HDD(mediaData)가 nofail이라 미마운트여도 부팅은 계속되므로,
+  # 세 백업/미러 유닛이 RequiresMountsFor로 실제 마운트를 실행 전제로 요구하는지 확인한다
+  # (미마운트 시 목적지가 루트 파일시스템의 일반 디렉터리가 되어 백업이 SSD에 오기록·성공 오인될 위험).
+  immichDbBackup = nixosCfg.systemd.services."immich-db-backup";
+  immichOriginalsMirror = nixosCfg.systemd.services."immich-originals-mirror";
+
   # ── headless Anki (#1306): loopback 전용·인스턴스 격리·sync/backup 타이머 계약 고정
   ankiHostCfg = nixosCfg.homeserver.ankiHost;
   ankiRuntimeCheck = flake.checks.x86_64-linux.anki-host-runtime;
@@ -1671,6 +1677,22 @@ let
           success = true;
           value = 0;
         };
+    }
+    {
+      # #1369: nofail HDD가 미마운트여도 부팅은 계속되므로, 백업 실행 자체를 systemd가
+      # 막아야 한다 — mediaData가 일반 디렉터리로 존재하면 이 유닛이 시작하지 않아야 함.
+      name = "Test MG1: immich-db-backup은 대상 HDD(mediaData) 마운트를 RequiresMountsFor로 요구해야 함";
+      cond = builtins.elem constants.paths.mediaData (immichDbBackup.unitConfig.RequiresMountsFor or [ ]);
+    }
+    {
+      name = "Test MG2: immich-originals-mirror은 대상 HDD(mediaData) 마운트를 RequiresMountsFor로 요구해야 함";
+      cond = builtins.elem constants.paths.mediaData (
+        immichOriginalsMirror.unitConfig.RequiresMountsFor or [ ]
+      );
+    }
+    {
+      name = "Test MG3: anki-host-backup은 대상 HDD(mediaData) 마운트를 RequiresMountsFor로 요구해야 함";
+      cond = builtins.elem constants.paths.mediaData (ankiHostBackup.unitConfig.RequiresMountsFor or [ ]);
     }
   ]
   ++ darwinIntentTests

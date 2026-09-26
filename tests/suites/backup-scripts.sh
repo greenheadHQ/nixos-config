@@ -81,6 +81,16 @@ STUB
   chmod +x "$path"
 }
 
+_backup_scripts_install_mountpoint_stub() {
+  local path="$1"
+  local exit_code="${2:-0}"
+  cat > "$path" <<STUB
+#!/usr/bin/env bash
+exit $exit_code
+STUB
+  chmod +x "$path"
+}
+
 _backup_scripts_prepare_sandbox() {
   local sandbox="$1"
   mkdir -p "$sandbox/stub-bin" "$sandbox/backup" "$sandbox/src"
@@ -93,6 +103,9 @@ send_notification() {
 STUB
   _backup_scripts_install_podman_stub "$sandbox/stub-bin/podman"
   _backup_scripts_install_sqlite3_stub "$sandbox/stub-bin/sqlite3"
+  # 기본은 "정상 마운트"(exit 0) — #1369 마운트 가드를 넣어도 기존 happy-path 테스트가
+  # 그대로 초록을 유지해야 한다. 미마운트 시나리오만 개별 테스트에서 exit 1로 덮어쓴다.
+  _backup_scripts_install_mountpoint_stub "$sandbox/stub-bin/mountpoint" 0
 }
 
 _backup_scripts_run() {
@@ -105,6 +118,7 @@ _backup_scripts_run() {
   env \
     PATH="$sandbox/stub-bin:$PATH" \
     BACKUP_DIR="$sandbox/backup" \
+    MOUNT_ROOT="$sandbox/backup" \
     RETENTION_DAYS="$retention_days" \
     SRC_DIR="$sandbox/src" \
     PUSHOVER_CRED_FILE="$sandbox/pushover" \
@@ -208,6 +222,27 @@ test_immich_backup_retention_zero_keeps_todays_dump_deletes_stale() {
   [ -e "$sandbox/backup/immich-db-fresh.dump" ] || fail "expected <24h-old immich dump to remain with RETENTION_DAYS=0"
   dump_count=$(find "$sandbox/backup" -maxdepth 1 -type f -name 'immich-db-*.dump' | wc -l)
   [ "$dump_count" = "2" ] || fail "expected pre-existing fresh dump + today's new dump to remain with RETENTION_DAYS=0, got $dump_count dump(s)"
+}
+
+test_immich_backup_unmounted_target_blocks_write_and_exits_nonzero() {
+  local sandbox stdout_path stderr_path status dump_count tmp_count notifications
+  sandbox=$(new_sandbox)
+  _backup_scripts_prepare_sandbox "$sandbox"
+  # #1369: 대상 HDD(MOUNT_ROOT)가 일반 디렉터리로만 존재하는 미마운트 상황을 흉내낸다.
+  _backup_scripts_install_mountpoint_stub "$sandbox/stub-bin/mountpoint" 1
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  status=0
+  _backup_scripts_run "$_immich_backup_script" "$sandbox" "$stdout_path" "$stderr_path" || status=$?
+  [ "$status" -ne 0 ] || fail "expected immich backup to fail when target HDD is not mounted"
+
+  dump_count=$(find "$sandbox/backup" -maxdepth 1 -type f -name 'immich-db-*.dump' | wc -l)
+  tmp_count=$(find "$sandbox/backup" -maxdepth 1 -type f -name '*.tmp' | wc -l)
+  [ "$dump_count" = "0" ] || fail "expected no immich dump written when target HDD is unmounted"
+  [ "$tmp_count" = "0" ] || fail "expected no immich tmp file left when target HDD is unmounted"
+  notifications=$(cat "$sandbox/notifications.log")
+  assert_contains "$notifications" "마운트"
 }
 
 test_karakeep_backup_happy_path_dated_dir() {
