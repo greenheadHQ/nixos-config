@@ -453,6 +453,29 @@ run_test "interaction-limits-renewal missing PAT exits nonzero" test_ilr_missing
 run_test "korean particle expansions stay brace-bounded" test_korean_particle_expansion_is_brace_bounded
 run_test "SA health check lifecycle and secret handling" test_opnix_health_check_lifecycle
 
+# update-script-arg-parse suite (tests/suites/update-script-arg-parse.sh) — #1383
+run_test "immich-update --help exits 0 without side effects" test_immich_update_help_flag_exits_zero_without_side_effects
+run_test "immich-update rejects unknown option" test_immich_update_rejects_unknown_option
+run_test "immich-update rejects excess argument" test_immich_update_rejects_excess_argument
+run_test "immich-update no-args preserves existing update flow" test_immich_update_no_args_preserves_existing_update_flow
+run_test "immich-update --dry-run skips mutating boundaries" test_immich_update_dry_run_skips_mutating_boundaries
+run_test "copyparty-update --help exits 0 without side effects" test_copyparty_update_help_flag_exits_zero_without_side_effects
+run_test "copyparty-update rejects unknown option" test_copyparty_update_rejects_unknown_option
+run_test "copyparty-update rejects excess argument" test_copyparty_update_rejects_excess_argument
+run_test "copyparty-update no-args preserves existing update flow" test_copyparty_update_no_args_preserves_existing_update_flow
+run_test "copyparty-update --dry-run skips mutating boundaries" test_copyparty_update_dry_run_skips_mutating_boundaries
+run_test "uptime-kuma-update --help exits 0 without side effects" test_uptime_kuma_update_help_flag_exits_zero_without_side_effects
+run_test "uptime-kuma-update rejects unknown option" test_uptime_kuma_update_rejects_unknown_option
+run_test "uptime-kuma-update rejects excess argument" test_uptime_kuma_update_rejects_excess_argument
+run_test "uptime-kuma-update no-args preserves existing update flow" test_uptime_kuma_update_no_args_preserves_existing_update_flow
+run_test "uptime-kuma-update --dry-run skips mutating boundaries" test_uptime_kuma_update_dry_run_skips_mutating_boundaries
+run_test "karakeep-update --help exits 0 without side effects" test_karakeep_update_help_flag_exits_zero_without_side_effects
+run_test "karakeep-update rejects unknown option" test_karakeep_update_rejects_unknown_option
+run_test "karakeep-update rejects excess argument" test_karakeep_update_rejects_excess_argument
+run_test "karakeep-update no-args still requires ack-bridge-risk" test_karakeep_update_no_args_still_requires_ack_bridge_risk
+run_test "karakeep-update ack-bridge-risk preserves existing update flow" test_karakeep_update_ack_bridge_risk_preserves_existing_update_flow
+run_test "karakeep-update --dry-run skips mutating boundaries" test_karakeep_update_dry_run_skips_mutating_boundaries
+
 # 퇴역 키 로더는 tomlkit 없이도 도는 순수 셸 계약이라 아래 게이트 밖에 둔다.
 run_test "codex-config retired keys loader" test_codex_config_retired_keys_loader
 

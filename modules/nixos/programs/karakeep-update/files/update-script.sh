@@ -3,6 +3,38 @@
 # 이미지 pull → digest 비교 → 컨테이너 재시작 → 헬스체크 → 결과 알림
 set -euo pipefail
 
+usage() {
+  cat <<'EOF'
+Usage: karakeep-update [--dry-run] [--ack-bridge-risk]
+
+  --dry-run            수행 예정 단계만 출력
+  --ack-bridge-risk    Karakeep 내부 동작/로그 형식 변경 시 브릿지 장애 위험을 인지하고 실행
+EOF
+}
+
+DRY_RUN=false
+ACK_BRIDGE_RISK=false
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN=true
+      ;;
+    --ack-bridge-risk)
+      ACK_BRIDGE_RISK=true
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "ERROR: Unknown option: $1"
+      usage
+      exit 2
+      ;;
+  esac
+  shift
+done
+
 # 환경변수 (래퍼에서 주입)
 : "${PUSHOVER_CRED_FILE:?PUSHOVER_CRED_FILE is required}"
 : "${SERVICE_LIB:?SERVICE_LIB is required}"
@@ -21,15 +53,6 @@ source "$SERVICE_LIB"
 # Pushover credentials 로드
 # shellcheck disable=SC1090
 source "$PUSHOVER_CRED_FILE"
-
-usage() {
-  cat <<'EOF'
-Usage: karakeep-update [--dry-run] [--ack-bridge-risk]
-
-  --dry-run            수행 예정 단계만 출력
-  --ack-bridge-risk    Karakeep 내부 동작/로그 형식 변경 시 브릿지 장애 위험을 인지하고 실행
-EOF
-}
 
 print_bridge_risk_notice() {
   cat >&2 <<'EOF'
@@ -58,29 +81,6 @@ check_bridge_guard_services() {
   done
   return "$failed"
 }
-
-DRY_RUN=false
-ACK_BRIDGE_RISK=false
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --dry-run)
-      DRY_RUN=true
-      ;;
-    --ack-bridge-risk)
-      ACK_BRIDGE_RISK=true
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      echo "ERROR: Unknown option: $1"
-      usage
-      exit 2
-      ;;
-  esac
-  shift
-done
 
 if ! $DRY_RUN && ! $ACK_BRIDGE_RISK; then
   print_bridge_risk_notice
