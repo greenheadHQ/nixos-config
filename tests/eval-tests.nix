@@ -15,6 +15,18 @@ let
 
   # NixOS config (greenhead-minipc)
   nixosCfg = flake.nixosConfigurations.greenhead-minipc.config;
+  nixosBase = flake.nixosConfigurations.greenhead-minipc;
+
+  # 옵션 타입이 특정 값을 거부/허용하는지 evalModules 레벨에서 확인하는 헬퍼.
+  # extendModules로 실 config 위에 해당 leaf만 오버라이드해 강제 평가한다 —
+  # lazy evaluation이라 다른 옵션은 재평가되지 않고, 오버라이드한 leaf의 타입 체크만 트리거된다.
+  # (#1367: immichBackup/karakeepBackup.retentionDays가 int라 음수를 받아들이던 결함)
+  retentionDaysEval =
+    optionPath: value:
+    builtins.tryEval (
+      nixpkgsLib.getAttrFromPath optionPath
+        (nixosBase.extendModules { modules = [ (nixpkgsLib.setAttrByPath optionPath value) ]; }).config
+    );
 
   # Darwin intent 검증은 여기서 직접 수행한다.
   # 범위: evaluation-safe value-level 설정만 검증.
@@ -1633,6 +1645,32 @@ let
         && builtins.elem constants.paths.ankiHostStatusRun ankiHostSyncMain.serviceConfig.ReadWritePaths
         && builtins.elem "d ${constants.paths.ankiHostStatusRun} 0750 ${constants.ankiHost.user} ${constants.ankiHost.user} -" nixosCfg.systemd.tmpfiles.rules
         && nixpkgsLib.hasPrefix "${constants.paths.ankiHostStatusRun}/" ankiMcpSvc.environment.ANKI_SYNC_STATUS_FILE;
+    }
+    {
+      # #1367: find -mtime +"$RETENTION_DAYS"로 정리하는 백업이므로 음수는 방금 만든 백업까지 지우는 위험한 값.
+      name = "Test BR1: homeserver.immichBackup.retentionDays에 음수를 넣으면 평가가 실패해야 함";
+      cond = !(retentionDaysEval [ "homeserver" "immichBackup" "retentionDays" ] (-1)).success;
+    }
+    {
+      # 0 = find -mtime +0으로 24시간 넘은 백업을 지우고 당일 백업만 남기는 설정으로 허용.
+      name = "Test BR2: homeserver.immichBackup.retentionDays에 0을 넣으면 평가를 통과해야 함";
+      cond =
+        (retentionDaysEval [ "homeserver" "immichBackup" "retentionDays" ] 0) == {
+          success = true;
+          value = 0;
+        };
+    }
+    {
+      name = "Test BR3: homeserver.karakeepBackup.retentionDays에 음수를 넣으면 평가가 실패해야 함";
+      cond = !(retentionDaysEval [ "homeserver" "karakeepBackup" "retentionDays" ] (-1)).success;
+    }
+    {
+      name = "Test BR4: homeserver.karakeepBackup.retentionDays에 0을 넣으면 평가를 통과해야 함";
+      cond =
+        (retentionDaysEval [ "homeserver" "karakeepBackup" "retentionDays" ] 0) == {
+          success = true;
+          value = 0;
+        };
     }
   ]
   ++ darwinIntentTests
