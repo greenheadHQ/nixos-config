@@ -3,14 +3,16 @@
 # SC2154: 공통 변수(REPO_ROOT 등)는 aggregator/test-common이 정의. SC2164: set -euo pipefail 런타임 상속.
 # shellcheck disable=SC2154,SC2164
 
-# 재사용 가능한 fixture: 가짜 시계, 상태 디렉터리, curl/jq(GitHub·Pushover) 대역.
-# S06(#1385) 등 같은 클러스터의 다른 version-check 이슈도 아래 헬퍼를 그대로 재사용할 수 있다.
+# 재사용 가능한 fixture: 가짜 시계, 상태 디렉터리, curl(GitHub·Pushover) 대역.
+# 다른 version-check 테스트도 아래 헬퍼를 재사용할 수 있다.
 #   - _write_fake_clock_stub dir clock_file        : date +%s 를 clock_file의 epoch로 고정
 #   - _write_version_check_curl_stub dir github_status_file github_body_file notify_log
 #                                                   : GitHub/Pushover 요청을 상태 파일로 대역
 #   - _run_generic_version_check stub_dir service_lib pushover_cred state_dir \
 #         container_name container_image github_repo display_name
 #                                                   : generic-version-check.sh 1회 실행
+#   - _write_immich_version_check_curl_stub / _run_immich_version_check
+#                                                   : 위와 동일 계약 + Immich API 현재 버전 조회 대역
 
 _version_check_service_lib_path() {
   printf '%s\n' "$REPO_ROOT/modules/nixos/lib/service-lib.sh"
@@ -246,9 +248,43 @@ test_version_check_failure_at_threshold_triggers_watchdog_warning() {
     || fail "GitHub fetch failure must still exit 0"
 
   assert_file_contains "$state_dir/last-success" "1000000"
-  local warnings
-  warnings=$(grep -c "Version Check" "$notify_log" || true)
-  [ "$warnings" -ge 1 ] || fail "watchdog must warn once the 3-day threshold is reached"
+  # 제목("Version Check")은 ERR trap 알림과도 겹치므로 워치독 특유의 메시지 본문을 리터럴로 확인한다.
+  assert_file_contains "$notify_log" "message=버전 체크가 3일간 성공하지 못했습니다. 서비스 상태를 확인하세요."
+}
+
+test_version_check_failure_just_before_threshold_no_warning() {
+  local sandbox stub_dir state_dir clock_file github_status github_body notify_log cred
+  sandbox=$(new_sandbox)
+  stub_dir="$sandbox/bin"
+  state_dir="$sandbox/state"
+  clock_file="$sandbox/clock"
+  github_status="$sandbox/github-status"
+  github_body="$sandbox/github-body"
+  notify_log="$sandbox/notify.log"
+  cred="$sandbox/pushover-cred"
+
+  mkdir -p "$state_dir"
+  _write_fake_clock_stub "$stub_dir" "$clock_file"
+  _write_version_check_curl_stub "$stub_dir" "$github_status" "$github_body" "$notify_log"
+  _write_version_check_pushover_cred "$cred"
+
+  printf '1000000\n' > "$clock_file"
+  printf '0\n' > "$github_status"
+  printf '{"tag_name":"v1.2.3","body":"first release notes"}\n' > "$github_body"
+  _run_generic_version_check "$stub_dir" "$(_version_check_service_lib_path)" "$cred" "$state_dir" \
+    "demo" "demo:1.2" "demo/demo" "Demo" \
+    || fail "initial run must exit 0"
+  : > "$notify_log"
+
+  # 72시간에서 1초 모자란 시점(259199초 경과), 조회는 계속 실패.
+  printf '%s\n' "$((1000000 + 259199))" > "$clock_file"
+  printf '1\n' > "$github_status"
+  _run_generic_version_check "$stub_dir" "$(_version_check_service_lib_path)" "$cred" "$state_dir" \
+    "demo" "demo:1.2" "demo/demo" "Demo" \
+    || fail "GitHub fetch failure must still exit 0"
+
+  [ ! -s "$notify_log" ] || fail "watchdog must not warn one second before the 3-day threshold"
+  assert_file_contains "$state_dir/last-success" "1000000"
 }
 
 test_version_check_recovery_updates_last_success_without_new_version_notification() {
@@ -280,9 +316,7 @@ test_version_check_recovery_updates_last_success_without_new_version_notificatio
   _run_generic_version_check "$stub_dir" "$(_version_check_service_lib_path)" "$cred" "$state_dir" \
     "demo" "demo:1.2" "demo/demo" "Demo" \
     || fail "GitHub fetch failure must still exit 0"
-  local warnings_before
-  warnings_before=$(grep -c "Version Check" "$notify_log" || true)
-  [ "$warnings_before" -ge 1 ] || fail "expected a watchdog warning before recovery"
+  assert_file_contains "$notify_log" "message=버전 체크가 4일간 성공하지 못했습니다. 서비스 상태를 확인하세요."
   : > "$notify_log"
 
   local recovery_time=$((1000000 + 4 * 86400 + 3600))
@@ -331,8 +365,8 @@ test_version_check_initial_failure_records_nothing() {
   [ ! -s "$notify_log" ] || fail "failed initial fetch must not send any notification"
 }
 
-# 범위 확장(G1): check_initial_run은 immich-update/files/version-check.sh도 같이 쓰므로
-# service-lib.sh의 수정이 이 호출자에도 그대로 적용되는지 별도로 검증한다.
+# check_initial_run은 immich-update/files/version-check.sh도 함께 쓴다. service-lib.sh의
+# 수정이 이 호출자에도 적용되는지 별도로 검증한다.
 test_immich_version_check_initial_success_records_last_success() {
   local sandbox stub_dir state_dir clock_file github_status github_body notify_log cred
   local immich_status immich_body api_key_file immich_url
@@ -370,4 +404,50 @@ test_immich_version_check_initial_success_records_last_success() {
   [ -f "$state_dir/last-success" ] || fail "immich initial success run must record last-success"
   assert_file_contains "$state_dir/last-success" "1000000"
   [ ! -s "$notify_log" ] || fail "immich initial run must not send any notification"
+}
+
+# 위 테스트의 "알림 없음" 단언이 대역 연결로 성립함을 보이기 위해, 새 버전을 한 번 실제로
+# 알리는 양성 사례를 별도로 둔다.
+test_immich_version_check_new_version_notifies_and_records() {
+  local sandbox stub_dir state_dir clock_file github_status github_body notify_log cred
+  local immich_status immich_body api_key_file immich_url
+  sandbox=$(new_sandbox)
+  stub_dir="$sandbox/bin"
+  state_dir="$sandbox/state"
+  clock_file="$sandbox/clock"
+  github_status="$sandbox/github-status"
+  github_body="$sandbox/github-body"
+  notify_log="$sandbox/notify.log"
+  cred="$sandbox/pushover-cred"
+  immich_status="$sandbox/immich-status"
+  immich_body="$sandbox/immich-body"
+  api_key_file="$sandbox/api-key"
+  immich_url="http://immich.invalid:2283"
+
+  mkdir -p "$state_dir"
+  _write_fake_clock_stub "$stub_dir" "$clock_file"
+  _write_immich_version_check_curl_stub "$stub_dir" "$immich_url" "$immich_status" "$immich_body" \
+    "$github_status" "$github_body" "$notify_log"
+  _write_version_check_pushover_cred "$cred"
+  printf 'IMMICH_API_KEY=test-key\n' > "$api_key_file"
+
+  printf '1000000\n' > "$clock_file"
+  printf '0\n' > "$immich_status"
+  printf '{"major":1,"minor":2,"patch":3}\n' > "$immich_body"
+  printf '0\n' > "$github_status"
+  printf '{"tag_name":"v1.2.3","body":"first release notes"}\n' > "$github_body"
+  _run_immich_version_check "$stub_dir" "$(_version_check_service_lib_path)" "$cred" "$state_dir" \
+    "$immich_url" "$api_key_file" \
+    || fail "immich initial run must exit 0"
+
+  # 현재 버전은 그대로(1.2.3)이고 GitHub에 새 버전(1.3.0)이 올라온 경우.
+  printf '%s\n' "$((1000000 + 3600))" > "$clock_file"
+  printf '{"tag_name":"v1.3.0","body":"second release notes"}\n' > "$github_body"
+  _run_immich_version_check "$stub_dir" "$(_version_check_service_lib_path)" "$cred" "$state_dir" \
+    "$immich_url" "$api_key_file" \
+    || fail "immich new-version run must exit 0"
+
+  assert_file_contains "$notify_log" "title=Immich 업데이트 알림"
+  assert_file_contains "$state_dir/last-notified-version" "1.3.0"
+  assert_file_contains "$state_dir/last-success" "$((1000000 + 3600))"
 }

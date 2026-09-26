@@ -476,9 +476,11 @@ run_test "SA health check lifecycle and secret handling" test_opnix_health_check
 run_test "version-check initial success records last-success without notification" test_version_check_initial_success_records_last_success_without_notification
 run_test "version-check subsequent failure below threshold keeps last-success" test_version_check_subsequent_failure_below_threshold_keeps_last_success
 run_test "version-check failure at threshold triggers watchdog warning" test_version_check_failure_at_threshold_triggers_watchdog_warning
+run_test "version-check failure just before threshold does not warn" test_version_check_failure_just_before_threshold_no_warning
 run_test "version-check recovery updates last-success without new-version notification" test_version_check_recovery_updates_last_success_without_new_version_notification
 run_test "version-check initial failure records nothing" test_version_check_initial_failure_records_nothing
-run_test "immich version-check initial success records last-success (G1)" test_immich_version_check_initial_success_records_last_success
+run_test "immich version-check initial success records last-success" test_immich_version_check_initial_success_records_last_success
+run_test "immich version-check new version notifies and records" test_immich_version_check_new_version_notifies_and_records
 
 # 퇴역 키 로더는 tomlkit 없이도 도는 순수 셸 계약이라 아래 게이트 밖에 둔다.
 run_test "codex-config retired keys loader" test_codex_config_retired_keys_loader
