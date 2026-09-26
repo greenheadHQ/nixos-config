@@ -86,7 +86,7 @@ cmd_create() {
 # 읽기만 하므로 거부해도 worktree·브랜치·등록·마지막 경로 기록은 그대로다.
 _wt_verify_requested_checkout() {
   local worktree_dir="$1" branch_name="$2" git_root="$3"
-  local dir_name head_ref state rc=0
+  local dir_name head_ref state rc=0 detached_hint=""
   local hint="재사용·재생성은 이 경로에 요청 브랜치가 checkout돼 있을 때만 합니다 (브랜치명의 '/'는 '_'로 바뀌어 다른 브랜치와 경로가 겹칠 수 있음)"
   dir_name=$(basename "$worktree_dir")
 
@@ -101,6 +101,8 @@ _wt_verify_requested_checkout() {
       state="브랜치 '${head_ref#refs/heads/}' checkout"
     elif (( rc == 1 )); then
       state="detached HEAD"
+      # 자기 브랜치에서 rebase·bisect 중이어도 HEAD는 detached다 — 겹침 설명만으로는 이유를 모른다.
+      detached_hint="rebase·bisect가 진행 중일 수 있습니다 — 이동만 필요하면: wt cd $(printf '%q' "$dir_name")"
     else
       state="checkout 조회 실패"
     fi
@@ -108,6 +110,9 @@ _wt_verify_requested_checkout() {
 
   _warn "기존 worktree 사용 불가: $dir_name (요청 브랜치 '$branch_name', 확인된 상태: $state)"
   _warn "  $hint"
+  if [[ -n "$detached_hint" ]]; then
+    _warn "  $detached_hint"
+  fi
   return 1
 }
 

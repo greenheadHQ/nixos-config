@@ -1112,6 +1112,7 @@ test_wt_existing_worktree_refuses_switched_checkout() {
   assert_wt_existing_refused "$home_dir" "$repo_root" "" "$wt_path" \
     "기존 worktree 사용 불가: sw (요청 브랜치 'sw', 확인된 상태: 브랜치 'other' checkout)" \
     --if-exists=reuse sw
+  assert_not_contains "$(cat "$sandbox/refused.err")" "rebase·bisect가 진행 중일 수 있습니다"
   assert_wt_existing_refused "$home_dir" "$repo_root" "" "$wt_path" \
     "기존 worktree 사용 불가: sw (요청 브랜치 'sw', 확인된 상태: 브랜치 'other' checkout)" \
     --yes --if-exists=recreate sw
@@ -1151,6 +1152,8 @@ test_wt_recreate_keeps_requested_branch_preserving_detached_commit() {
   assert_wt_existing_refused "$home_dir" "$repo_root" "" "$wt_path" \
     "기존 worktree 사용 불가: keep (요청 브랜치 'keep', 확인된 상태: detached HEAD)" \
     --if-exists=reuse keep
+  # detached는 경로 겹침이 아니라 rebase·bisect 중인 자기 브랜치일 수도 있어 따로 안내한다.
+  assert_contains "$(cat "$sandbox/refused.err")" "rebase·bisect가 진행 중일 수 있습니다 — 이동만 필요하면: wt cd keep"
   [[ "$(wt_fixture_git -C "$repo_root" rev-parse refs/heads/keep)" == "$only_oid" ]] \
     || fail "요청 브랜치가 보존하던 detached 커밋을 잃음"
 }
@@ -1192,6 +1195,50 @@ test_wt_recreate_keeps_unpushed_requested_branch_under_other_checkout() {
     --if-exists=reuse solo
   [[ "$(wt_fixture_git -C "$repo_root" rev-parse refs/heads/solo)" == "$only_oid" ]] \
     || fail "upstream 없는 요청 브랜치의 커밋을 잃음"
+}
+
+test_wt_recreate_matching_checkout_still_confirms_loss() {
+  # checkout 대조(#1375)를 통과한 재생성도 기존 손실 확인을 그대로 거친다. 요청 브랜치가 실제로
+  # checkout된 worktree에 upstream 없는 커밋이나 미커밋 파일이 있으면 경고하고, 비대화형 무승인
+  # 호출은 확인 단계에서 멈춰 아무것도 바꾸지 않아야 한다. detached는 대조가 먼저 거부하므로
+  # 이 확인 가드는 브랜치가 일치하는 worktree로만 도달할 수 있다.
+  local sandbox home_dir repo_root origin_dir base err
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  origin_dir="$sandbox/origin.git"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  base="$repo_root/.claude/worktrees"
+  wt_fixture_git init -q --bare "$origin_dir"
+  wt_fixture_git -C "$repo_root" remote add origin "$origin_dir"
+
+  # (a) upstream 없는 브랜치에 커밋이 있다 (미커밋 변경은 없다).
+  add_fixture_worktree "$repo_root" "$base/ahead" "ahead"
+  echo "ahead" > "$base/ahead/ahead.txt"
+  wt_fixture_git -C "$base/ahead" add ahead.txt
+  wt_fixture_git -C "$base/ahead" commit -q -m "ahead"
+  assert_wt_existing_refused "$home_dir" "$repo_root" "" "$base/ahead" \
+    "  - push하지 않은 커밋이 있습니다" \
+    --if-exists=recreate ahead
+  err=$(cat "$sandbox/refused.err")
+  assert_contains "$err" "비대화형: 확인 필요 — '정말 재생성하시겠습니까? (모든 변경사항 삭제)'"
+  assert_not_contains "$err" "uncommitted 변경사항이 있습니다"
+  assert_not_contains "$err" "기존 worktree 사용 불가"
+
+  # (b) push를 마친 브랜치에 미커밋 파일이 있다 (전송하지 않은 커밋은 없다).
+  add_fixture_worktree "$repo_root" "$base/dirty" "dirty"
+  wt_fixture_git -C "$base/dirty" push -q -u origin dirty 2>/dev/null
+  echo "wip" > "$base/dirty/wip.txt"
+  assert_wt_existing_refused "$home_dir" "$repo_root" "" "$base/dirty" \
+    "  - uncommitted 변경사항이 있습니다" \
+    --if-exists=recreate dirty
+  err=$(cat "$sandbox/refused.err")
+  assert_contains "$err" "비대화형: 확인 필요 — '정말 재생성하시겠습니까? (모든 변경사항 삭제)'"
+  assert_not_contains "$err" "push하지 않은 커밋이 있습니다"
+  assert_not_contains "$err" "기존 worktree 사용 불가"
 }
 
 test_wt_existing_worktree_lookup_errors_fail_closed() {

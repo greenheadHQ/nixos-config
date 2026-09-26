@@ -253,6 +253,7 @@ run_test "wt existing worktree refuses mapped branch collision" test_wt_existing
 run_test "wt existing worktree refuses switched checkout" test_wt_existing_worktree_refuses_switched_checkout
 run_test "wt recreate keeps requested branch preserving detached commit" test_wt_recreate_keeps_requested_branch_preserving_detached_commit
 run_test "wt recreate keeps unpushed requested branch under other checkout" test_wt_recreate_keeps_unpushed_requested_branch_under_other_checkout
+run_test "wt recreate matching checkout still confirms loss" test_wt_recreate_matching_checkout_still_confirms_loss
 run_test "wt existing worktree lookup errors fail closed" test_wt_existing_worktree_lookup_errors_fail_closed
 run_test "wt existing worktree interactive choice checks checkout unit" test_wt_existing_worktree_interactive_choice_checks_checkout_unit
 run_test "wt create existing path contracts unchanged" test_wt_create_existing_path_contracts_unchanged
