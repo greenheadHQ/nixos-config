@@ -247,6 +247,10 @@ cmd_ls() {
 
   if (( ${#worktrees[@]} == 0 )); then
     _info "활성 worktree가 없습니다"
+    # --json: 빈 목록도 유효한 JSON 값(빈 배열)이어야 한다 — stdout이 완전히 비면
+    # 호출자가 정상 빈 목록과 파싱 실패를 구분할 수 없다 (#1378). 안내 문구는
+    # 위 _info로 이미 stderr에 나갔으므로 stdout에는 JSON 값 하나만 둔다.
+    [[ "$as_json" == "true" ]] && echo '[]'
     return 0
   fi
 
