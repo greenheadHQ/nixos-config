@@ -245,6 +245,11 @@ run_test "wt cleanup reports missing worktree prune hint" test_wt_cleanup_report
 run_test "wt cleanup skips locked worktree" test_wt_cleanup_skips_locked_worktree
 run_test "wt cleanup name prefers exact relative name" test_wt_cleanup_name_prefers_exact_relative_name
 run_test "wt cleanup refuses ambiguous name" test_wt_cleanup_refuses_ambiguous_name
+run_test "wt cleanup keeps unpreserved detached commit" test_wt_cleanup_keeps_unpreserved_detached_commit
+run_test "wt cleanup detached preservation scope" test_wt_cleanup_detached_preservation_scope
+run_test "wt cleanup detached lookup errors fail closed" test_wt_cleanup_detached_lookup_errors_fail_closed
+run_test "wt recreate warns unpreserved detached commit" test_wt_recreate_warns_unpreserved_detached_commit
+run_test "wt cleanup branch unpushed verdict unchanged" test_wt_cleanup_branch_unpushed_verdict_unchanged
 run_test "wt recreate refuses locked worktree" test_wt_recreate_refuses_locked_worktree
 run_test "wt cleanup name-filter merged without upstream needs no confirm" test_wt_cleanup_name_filter_merged_without_upstream_needs_no_confirm
 run_test "wt cleanup name-filter confirmed dirty merged removes" test_wt_cleanup_name_filter_confirmed_dirty_merged_removes
