@@ -8,9 +8,9 @@ TUI 렌더링이 깨지는 문제의 워크어라운드.
 """
 
 import argparse
+import itertools
 import os
 import re
-import shutil
 import sqlite3
 import sys
 from datetime import datetime
@@ -34,14 +34,44 @@ def find_korean_entries(cursor):
     return [(row[0], row[1]) for row in cursor.fetchall() if row[1] and KOREAN_PATTERN.search(row[1])]
 
 
-def backup_db(db_path):
+def reserve_backup_path(db_path):
+    # 같은 초에 다시 실행해도 기존 백업을 덮어쓰지 않도록 O_EXCL로 새 이름을 선점한다.
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    backup_path = f"{db_path}.bak.{timestamp}"
+    base = f"{db_path}.bak.{timestamp}"
+    for n in itertools.count():
+        candidate = base if n == 0 else f"{base}-{n}"
+        try:
+            fd = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            continue
+        os.close(fd)
+        return candidate
+
+
+def backup_db(conn, db_path):
+    # 본체 파일 복사는 WAL에만 커밋된 행을 놓치므로, 열린 연결의 온라인 백업 API로
+    # SQLite가 확정한 상태 전체를 동반 파일 없이 열 수 있는 단독 사본에 담는다.
+    backup_path = None
+    completed = False
     try:
-        shutil.copy2(db_path, backup_path)
-    except OSError as e:
+        backup_path = reserve_backup_path(db_path)
+        target = sqlite3.connect(backup_path)
+        try:
+            conn.backup(target)
+        finally:
+            target.close()
+        completed = True
+    except (OSError, sqlite3.Error) as e:
         print(f"백업 실패: {e}", file=sys.stderr)
         sys.exit(1)
+    finally:
+        # 실패·중단 시 남은 불완전 사본이 정상 복원점처럼 보이지 않게 지운다.
+        if not completed and backup_path is not None:
+            for suffix in ("", "-journal", "-wal", "-shm"):
+                try:
+                    os.unlink(backup_path + suffix)
+                except FileNotFoundError:
+                    pass
     return backup_path
 
 
@@ -101,7 +131,7 @@ def main():
         return
 
     # 백업
-    backup_path = backup_db(db_path)
+    backup_path = backup_db(conn, db_path)
     print(f"백업 완료: {backup_path}")
 
     # 삭제
