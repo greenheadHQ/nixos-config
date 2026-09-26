@@ -27,6 +27,7 @@ _FEATURE_FILES = (
     "sync-addon/note-link-renderer.html",
     "sync-addon/code-highlight-renderer.html",
     "sync-addon/code-highlight.css",
+    "sync-addon/text-size-controls.html",
     "code-highlighting/dist/manifest.json",
 )
 
@@ -150,6 +151,17 @@ def _check_features(root: Path, definition: dict, asset_name: str) -> None:
         if (side.count(guarded_highlight) != 1
                 or "anki-code-highlight-v1" in side.replace(guarded_highlight, "")):
             _fail("highlight-fragment-mismatch")
+
+    # The text-size control re-attaches inside the card ID row after that
+    # script rewrites it, so it must follow the card ID fragment on the front
+    # and share its card-generation guard.
+    text_size = _guard(_text(root, "sync-addon/text-size-controls.html"), mode, names)
+    if (front.count(text_size) != 1
+            or "anki-text-size-v1" in front.replace(text_size, "")
+            or "anki-text-size-v1" in back
+            or not (front.index(guarded) + len(guarded) <= front.index(text_size)
+                    < front.index(guarded_highlight))):
+        _fail("text-size-fragment-mismatch")
 
 
 def _assemble(anki_host_path: str | Path) -> tuple[dict, dict[str, bytes]]:

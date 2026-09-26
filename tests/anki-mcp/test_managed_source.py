@@ -60,7 +60,7 @@ def test_build_round_trip_preserves_definition_and_actual_asset_bytes(source, tm
 def test_source_inventory_is_sorted_exact_and_excludes_unmanaged_assets():
     paths = source_paths(HOST)
     assert paths == tuple(sorted(set(paths)))
-    assert len(paths) == 12
+    assert len(paths) == 13
     assert VERSION_PATH in paths
     assert all((HOST / path).is_file() for path in paths)
     assert not any(".license.txt" in path or "node_modules" in path for path in paths)
@@ -103,6 +103,7 @@ def test_version_requires_exact_schema_and_digest_without_git_provenance(source,
     ("sync-addon/note-link-renderer.html", "note-link-fragment-mismatch"),
     ("sync-addon/code-highlight-renderer.html", "highlight-fragment-mismatch"),
     ("sync-addon/code-highlight.css", "highlight-fragment-mismatch"),
+    ("sync-addon/text-size-controls.html", "text-size-fragment-mismatch"),
 ])
 def test_feature_source_change_cannot_silently_leave_full_template_stale(source, relative, reason):
     path = source / relative
@@ -116,11 +117,32 @@ def test_feature_source_change_cannot_silently_leave_full_template_stale(source,
     ("back.html", "const inline =", "const inlineChanged =", "note-link-fragment-mismatch"),
     ("back.html", "ignoreIllegals: true", "ignoreIllegals: false", "highlight-fragment-mismatch"),
     ("front.html", "{{^질문}}{{#맥락}}", "{{#맥락}}", "card-id-fragment-mismatch"),
+    ("front.html", 'const KEY = "AnkiTextSizeV1"', 'const KEY = "AnkiTextSizeV2"', "text-size-fragment-mismatch"),
+    ("front.html", "{{^질문}}{{#맥락}}<!-- anki-text-size-v1 -->", "{{#맥락}}<!-- anki-text-size-v1 -->",
+     "text-size-fragment-mismatch"),
 ])
 def test_full_template_cannot_silently_fork_feature_or_generation_guards(source, name, old, new, reason):
     path = source / SOURCE_DIR / name
     path.write_bytes(path.read_bytes().replace(old.encode(), new.encode()))
     with pytest.raises(ManagedBundleError, match=reason):
+        generated_version(source)
+
+
+@pytest.mark.parametrize("placement", ["before-card-id", "after-highlight", "copied-to-back"])
+def test_text_size_control_must_follow_the_card_id_row_on_the_front_only(source, placement):
+    front_path = source / SOURCE_DIR / "front.html"
+    front = front_path.read_bytes().decode("utf-8")
+    start = front.index("{{#질문}}<!-- anki-text-size-v1 -->")
+    end = front.index("{{#질문}}<!-- anki-code-highlight-v1 -->")
+    fragment, rest = front[start:end], front[:start] + front[end:]
+    if placement == "copied-to-back":
+        back = source / SOURCE_DIR / "back.html"
+        back.write_bytes(back.read_bytes() + fragment.encode("utf-8"))
+    else:
+        # It re-attaches inside the row that the card ID script rewrites.
+        front_path.write_bytes((fragment + rest if placement == "before-card-id"
+                                else rest + fragment).encode("utf-8"))
+    with pytest.raises(ManagedBundleError, match="text-size-fragment-mismatch"):
         generated_version(source)
 
 
