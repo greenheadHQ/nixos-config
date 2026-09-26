@@ -58,10 +58,10 @@ push "$(uname -sr)"
 # IP 주소 분기 예시는 위 "핵심 명령어" 섹션 참조
 ```
 
-### 3. tmux-thumbs와 연계
+### 3. tmux copy-mode와 연계
 
 ```bash
-# 1. prefix + F → 힌트 선택 → tmux buffer에 복사
+# 1. prefix + [ → Space로 선택 시작 → 이동 → Enter로 tmux buffer에 복사
 # 2. push (인자 없이 실행)
 push
 ```

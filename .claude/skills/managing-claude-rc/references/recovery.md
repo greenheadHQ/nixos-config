@@ -1,23 +1,70 @@
-# 마이그레이션과 복구
+# 재시작과 복구
 
-## 기존 tmux bridge에서 마이그레이션
+## 같은 cwd의 unmanaged 서버 정리
 
-구 tmux 기반 bridge가 같은 디렉토리에서 아직 떠 있으면 새 `claude-rc-maint`는
-`unmanaged-server-present`로 기동을 거부한다. 같은 디렉토리에 두 번째 서버를 띄우면
-삭제 불가능한 유령 환경이 생기므로, 이 거부가 정상 안전장치다.
+`claude-rc` 관리 밖에서 띄운 `claude remote-control` 서버가 같은 디렉토리에서 아직 떠 있으면
+`claude-rc-maint`는 `unmanaged-server-present`로 기동을 거부한다. 같은 디렉토리에 두 번째 서버를
+띄우면 삭제 불가능한 유령 환경이 생기므로, 이 거부가 정상 안전장치다. 아래 확인은 코드
+(`modules/nixos/scripts/claude-rc-lib.sh`의 `find_bridge_pids_for_path`)와 같은 기준을 따른다.
 
-먼저 `tmux list-panes -a -F '#{session_id} #{window_id} #{pane_id} #{pane_pid} #{pane_tty} #{pane_current_path} #{pane_current_command}'`로 세션과 pane을 식별한다. `pane_pid`는 pane의 첫 프로세스이므로 bridge를 시작한 셸일 수 있다. 그 PID 자체와 자손을 프로세스 트리 및 pane TTY와 대조해 실제 `claude remote-control` 프로세스를 찾고, 그 PID의 전체 argv와 실제 cwd로 같은 디렉토리의 구 bridge인지 확인한다. TTY나 표시용 command/path만으로 bridge를 확정하지 않는다. 그 세션의 모든 window/pane에 다른 작업이 없는지 확인하고, 이름이 `claude-rc`라는 이유만으로 세션을 종료하지 않는다.
+1. 후보를 모은다. 패턴은 코드의 `BRIDGE_PROCESS_PATTERN`과 같아서 `remote-control`과 공식 별칭
+   `rc`를 모두 잡는다. 결과는 후보 목록일 뿐 종료 대상이 아니다.
 
-확인한 실제 `session_id`를 `CLAUDE_RC_SESSION_ID`에 설정하고, 그 대상에 대한 작업 직전 승인을 받은 뒤 해당 Git 디렉토리에서 아래를 실행한다. 대상이나 실행 중 작업이 달라졌으면 먼저 다시 확인한다. 세션에 다른 작업이 있거나 bridge를 식별할 수 없으면 세션 전체를 종료하지 않는다.
+   ```bash
+   pgrep -u "$(id -u)" -fl 'remote-control|[[:space:]]rc([[:space:]]|$)'
+   ```
 
-```bash
-: "${CLAUDE_RC_SESSION_ID:?확인하고 승인받은 tmux session_id를 설정하세요}"
-tmux kill-session -t "$CLAUDE_RC_SESSION_ID" || exit 1
-claude-rc start
-```
+2. 후보마다 아래를 모두 확인하고, 하나라도 맞지 않으면 대상에서 뺀다.
+   - argv: `ps -ww -o args= -p <PID>`에서 CLI 명령 자리에 `remote-control` 또는 `rc`가 있다.
+     `-p`·`--print`·`--` 뒤에 나오는 같은 글자는 명령이 아니라 데이터다.
+   - cwd: 심링크를 푼 인스턴스 디렉토리 경로(`pwd -P`)와 같다.
+     - NixOS: `readlink /proc/<PID>/cwd`
+     - macOS: `lsof -a -p <PID> -d cwd -Fn`의 `n` 행
+   - 실행 파일: 버전 디렉토리 `~/.local/share/claude/versions`(코드의 `VERSIONS_DIR` 기본값)에 있는
+     Claude 바이너리다. flock, `claude-rc-launch-group`, nohup, 셸 같은 래퍼는 argv에
+     `remote-control`이 있어도 서버가 아니며, flock 프로세스는 항상 뺀다.
+     - NixOS: `readlink /proc/<PID>/exe`. 삭제된 구버전이면 끝에 ` (deleted)`가 붙는다.
+     - macOS: `lsof -a -p <PID> -d txt -Fn`의 첫 `n` 행. 같은 파일의 하드링크 별칭 경로가 나올 수
+       있으므로, 버전 디렉토리 밖 경로면
+       `[ "<실행 파일 경로>" -ef ~/.local/share/claude/versions/<버전> ]`로 같은 파일인지 확인한다.
+   - `claude-rc ls`가 관리하는 서버가 아니다.
 
-선언 인스턴스는 수동 `claude-rc start` 대신 다음 ensure 주기에 자동 기동시켜도 된다.
-같은 디렉토리 경로이므로 기존 claude.ai 환경을 회수한다.
+   프로세스 이름, 세션 이름, 표시용 command/path만으로 대상을 확정하지 않는다. 대상은 서버 PID
+   하나이며, 그 서버를 띄운 터미널·셸·부모 프로세스는 다른 작업이 있을 수 있으므로 종료하지 않는다.
+
+   대상으로 확정한 PID의 시작 시각과 argv를 기록한다. 3단계는 이 기록과 같은 셸에서 실행한다.
+
+   ```bash
+   CLAUDE_RC_UNMANAGED_PID=<확인한 PID>
+   CLAUDE_RC_UNMANAGED_LSTART="$(ps -o lstart= -p "$CLAUDE_RC_UNMANAGED_PID")"
+   CLAUDE_RC_UNMANAGED_ARGS="$(ps -ww -o args= -p "$CLAUDE_RC_UNMANAGED_PID")"
+   ```
+
+3. 그 대상에 대한 작업 직전 승인을 받은 뒤 아래를 실행한다. 서버를 식별할 수 없으면 종료하지
+   않는다.
+
+   ```bash
+   : "${CLAUDE_RC_UNMANAGED_PID:?2단계에서 확인하고 승인받은 PID를 설정하세요}"
+   : "${CLAUDE_RC_UNMANAGED_LSTART:?2단계에서 기록한 시작 시각을 설정하세요}"
+   : "${CLAUDE_RC_UNMANAGED_ARGS:?2단계에서 기록한 argv를 설정하세요}"
+   # 승인을 기다리는 사이 서버가 끝나고 OS가 PID를 재사용했을 수 있다. 신호 직전에 시작 시각과
+   # argv를 다시 읽어 기록과 같을 때만 kill한다. 재사용된 PID가 같은 초에 시작하고 argv까지 같을
+   # 수는 사실상 없으므로, 2단계에서 확인한 cwd·실행 파일은 다시 보지 않는다.
+   if [ "$(ps -o lstart= -p "$CLAUDE_RC_UNMANAGED_PID" 2>/dev/null)" = "$CLAUDE_RC_UNMANAGED_LSTART" ] &&
+     [ "$(ps -ww -o args= -p "$CLAUDE_RC_UNMANAGED_PID" 2>/dev/null)" = "$CLAUDE_RC_UNMANAGED_ARGS" ]; then
+     kill "$CLAUDE_RC_UNMANAGED_PID"
+   else
+     echo "대상이 바뀌었으니 2단계부터 다시 확인한다" >&2
+   fi
+   ```
+
+   kill이 실패하거나(권한 없음, 이미 종료됨 등) 대상이 바뀌었다는 안내가 나오면 4단계로 넘어가지
+   말고 2단계부터 다시 확인한다.
+
+4. `ps -p "$CLAUDE_RC_UNMANAGED_PID"`로 종료를 확인한 뒤 해당 Git 디렉토리에서 `claude-rc start`를
+   실행한다. 서버가 아직 떠 있으면 `claude-rc start`는 같은 이유로 다시 거부한다. 선언 인스턴스는
+   수동 `claude-rc start` 대신 다음 ensure 주기에 자동 기동시켜도 된다. 같은 디렉토리 경로이므로
+   기존 claude.ai 환경을 회수한다.
 
 ## 트러블슈팅
 
@@ -27,7 +74,7 @@ claude-rc start
 claude-rc ls
 cat ~/.local/state/claude-rc/status.json
 tail -50 ~/.local/state/claude-rc/<slug>/server.log
-pgrep -fl 'remote-control'
+pgrep -u "$(id -u)" -fl 'remote-control|[[:space:]]rc([[:space:]]|$)'
 ```
 
 `pgrep` 행은 launcher basename과 무관한 후보 수집용이다. 결과를 managed process로 단정하거나
