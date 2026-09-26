@@ -128,6 +128,12 @@ _copy_active_codex_auth() {
 
 HOOK_REPO_DIR="$REPO_ROOT/modules/shared/programs/codex/files/hooks"
 PINNING_LIB_REPO_FILE="$REPO_ROOT/modules/shared/programs/claude/files/lib/pinning-patterns.sh"
+# 합성 Claude 세션 URL (#1422). 이 파일(.sh)과 fixture에 세션 URL을 리터럴로 두면 pinning-guard가
+# 편집을 막고 저장소에도 세션 URL 모양이 남으므로, 조각을 조합해 두고 fixture는 스킴을 뺀
+# `__SESSION_URL__` 자리표시로 참조한다 (_materialize_pinning_fixture가 이 토큰으로 치환).
+# id는 실제 세션 id와 같은 영숫자 24자로 둔다 (PATTERN_D는 20자 이상만 잡는다).
+PINNING_SESSION_URL_TOKEN="claude.ai/code/""session_01FixtureSessionIdXyz123"
+PINNING_SESSION_URL_FIXTURE="https://$PINNING_SESSION_URL_TOKEN"
 HOOK_RUNTIME_LIB_REPO_FILE="$REPO_ROOT/modules/shared/programs/claude/files/lib/hook-runtime.sh"
 # verify-ai-compat의 _TEMPLATE 분기와 동일하게 host platform에 맞는 template을 sync-preservation
 # 검증에 사용한다. Darwin은 platform별로 다른 managed leaves를 가질 수 있으므로
@@ -946,6 +952,37 @@ STUB
     "[7/lib] should_check fallback must fail closed for existing symlink targets"
 }
 
+# 세션 URL 범주(D, #1422): claude.ai의 `/code/session_<id>` 주소 중 id가 영숫자 20자 이상인 것만
+# 잡는다. 다른 claude.ai 주소와 문서 링크, 모양만 설명하는 텍스트, 문서에 흔한 짧은 영숫자
+# 자리표시(`session_XXXXXXXX`·`session_abc123`·`session_id`)는 통과시킨다.
+test_pinning_session_url_category_behavioral() {
+  local sandbox scan_file expected session_prefix
+  sandbox=$(new_hook_sandbox)
+  scan_file="$sandbox/pinning-session-url-scan.txt"
+  session_prefix="claude.ai/code/""session_"
+  {
+    printf '%s\n' "Claude-Session: $PINNING_SESSION_URL_FIXTURE"
+    printf '%s\n' "https://claude.ai/code"
+    printf '%s\n' "https://claude.ai/code/artifact/0123abcd"
+    printf '%s\n' "https://code.claude.com/docs/en/settings"
+    printf '%s\n' "주소 형태는 ${session_prefix}<id>이다"
+    printf '%s\n' "PR 본문 끝 링크: $PINNING_SESSION_URL_FIXTURE"
+    printf '%s\n' "예: https://${session_prefix}XXXXXXXX"
+    printf '%s\n' "예: ${session_prefix}abc123"
+    printf '%s\n' "예: ${session_prefix}id"
+    printf '%s\n' "19자: ${session_prefix}0123456789012345678"
+    printf '%s\n' "20자: ${session_prefix}01234567890123456789"
+  } > "$scan_file"
+
+  # shellcheck source=../modules/shared/programs/claude/files/lib/pinning-patterns.sh
+  . "$PINNING_LIB_REPO_FILE"
+
+  expected="$(printf 'D\t1: %s\nD\t6: %s\nD\t11: %s' \
+    "$PINNING_SESSION_URL_TOKEN" "$PINNING_SESSION_URL_TOKEN" "${session_prefix}01234567890123456789")"
+  assert_eq "$(pinning_findings_records "$scan_file" | cut -f1,3)" "$expected" \
+    "[7/lib] session URL category must match only claude.ai/code/session_<id> addresses with a 20+ char id"
+}
+
 _assert_pinning_expectation() {
   local fixture="$1" stderr_log="$2"
   local expected="${fixture%.json}.expected"
@@ -1057,6 +1094,7 @@ _materialize_pinning_fixture() {
     -e "s#/tmp/fixture-pinning-#${sandbox_sed}/fixture-pinning-#g"
     -e "s#/tmp/fixture-pinning/#${sandbox_sed}/fixture-pinning/#g"
     -e "s#/tmp/fixture-pretooluse-#${sandbox_sed}/fixture-pretooluse-#g"
+    -e "s#__SESSION_URL__#$(sed_replacement_escape "$PINNING_SESSION_URL_TOKEN")#g"
   )
   local i
 
@@ -1218,6 +1256,18 @@ $unexpected"
 
 # ─── 카테고리 7c: commit-msg pinning behavioral ───
 # commit-msg-pinning.sh도 guard/alert와 같은 shared pinning records helper를 소비한다.
+# 범주 A~C는 warn-only(exit 0), 세션 URL 범주(D, #1422)만 exit 1로 커밋을 막는다. 기대 종료
+# 코드는 선택적 `<name>.exit` sidecar로 지정하고, 없으면 0이다.
+_materialize_commit_msg_fixture() {
+  local fixture="$1" sandbox="$2"
+  local materialized token_sed
+  materialized="$sandbox/$(basename "$fixture")"
+  token_sed="$(sed_replacement_escape "$PINNING_SESSION_URL_TOKEN")"
+  sed "s#__SESSION_URL__#${token_sed}#g" "$fixture" > "$materialized"
+  sed "s#__SESSION_URL__#${token_sed}#g" "${fixture%.msg}.expected" > "${materialized%.msg}.expected"
+  printf '%s\n' "$materialized"
+}
+
 _assert_commit_msg_expectation() {
   local fixture="$1" stderr_log="$2"
   local expected="${fixture%.msg}.expected"
@@ -1231,21 +1281,90 @@ $diff_out"
 
 test_commit_msg_pinning_behavioral() {
   local hook="$REPO_ROOT/scripts/ai/commit-msg-pinning.sh"
-  local fixture sandbox stderr_log exit_code
+  local fixture sandbox materialized stderr_log exit_code expected_exit
 
   for fixture in "$FIXTURE_DIR"/commit-msg/*.msg; do
     assert_file_exists "${fixture%.msg}.expected" "7c/$(basename "$fixture")"
     sandbox=$(new_hook_sandbox)
+    materialized="$(_materialize_commit_msg_fixture "$fixture" "$sandbox")"
     stderr_log="$sandbox/commit-msg-stderr.log"
+    expected_exit=0
+    if [ -f "${fixture%.msg}.exit" ]; then
+      expected_exit="$(cat "${fixture%.msg}.exit")"
+    fi
 
-    if _exec_with_sandbox_env "$sandbox" "" "$hook" "$fixture" 2>"$stderr_log"; then
+    if _exec_with_sandbox_env "$sandbox" "" "$hook" "$materialized" 2>"$stderr_log"; then
       exit_code=0
     else
       exit_code=$?
     fi
-    assert_eq "$exit_code" "0" "[7c] $(basename "$fixture"): warn-only contract 위반 (exit must be 0)"
-    _assert_commit_msg_expectation "$fixture" "$stderr_log"
+    assert_eq "$exit_code" "$expected_exit" \
+      "[7c] $(basename "$fixture"): exit code contract (A~C warn-only=0, session URL block=1)"
+    _assert_commit_msg_expectation "$materialized" "$stderr_log"
   done
+}
+
+# commit-msg는 프로비저닝 drift나 실행 환경 문제로 커밋을 막지 않는다. 세션 URL이 든 메시지라도
+# 검사 자체가 내부 오류로 끝나면(lib source 실패, 임시 파일 생성 실패) 경고만 하고 0으로 끝나야 한다.
+test_commit_msg_pinning_internal_error_fail_open() {
+  local hook="$REPO_ROOT/scripts/ai/commit-msg-pinning.sh"
+  local sandbox msg broken_lib stderr_log exit_code case_name env_pairs
+
+  sandbox=$(new_hook_sandbox)
+  msg="$sandbox/session-url.msg"
+  printf 'feat: x\n\nClaude-Session: %s\n' "$PINNING_SESSION_URL_FIXTURE" > "$msg"
+  broken_lib="$sandbox/broken-pinning-patterns.sh"
+  printf 'if then fi\n' > "$broken_lib"
+
+  for case_name in broken-lib unwritable-tmpdir; do
+    case "$case_name" in
+      broken-lib) env_pairs="PINNING_PATTERNS_LIB=$broken_lib" ;;
+      unwritable-tmpdir) env_pairs="TMPDIR=$sandbox/missing-tmpdir" ;;
+    esac
+    stderr_log="$sandbox/$case_name.stderr.log"
+    if _exec_with_sandbox_env "$sandbox" "$env_pairs" "$hook" "$msg" 2>"$stderr_log"; then
+      exit_code=0
+    else
+      exit_code=$?
+    fi
+    assert_eq "$exit_code" "0" \
+      "[7c] $case_name: commit-msg internal error must not block the commit"
+    grep -Fq '[WARN] pinning: 내부 오류' "$stderr_log" \
+      || fail "[7c] $case_name: commit-msg internal error must leave a warning; stderr: $(cat "$stderr_log")"
+  done
+}
+
+# devShell 밖 macOS PATH에서는 /usr/bin의 BSD sed·grep이 잡힌다. UTF-8 로케일에서 BSD sed는 비UTF-8
+# 바이트에 `illegal byte sequence`로 실패하고(정제 단계가 내부 오류로 빠져 fail-open), BSD grep은 같은
+# 줄에서 그 바이트 뒤에 오는 매치를 조용히 놓친다. 어느 쪽이든 세션 URL이 통과하면 안 된다.
+# /usr/bin/sed가 없는 호스트(NixOS 등)에서는 재현할 구현이 없어 건너뛴다.
+test_commit_msg_pinning_non_utf8_with_system_tools() {
+  local hook="$REPO_ROOT/scripts/ai/commit-msg-pinning.sh"
+  local sandbox msg stderr_log exit_code tool
+
+  if [ ! -x /usr/bin/sed ]; then
+    echo "    (skip: /usr/bin/sed 없음)"
+    return 0
+  fi
+  sandbox=$(new_hook_sandbox)
+  for tool in sed grep awk; do
+    if [ -x "/usr/bin/$tool" ]; then
+      ln -s "/usr/bin/$tool" "$sandbox/bin-stubs/$tool"
+    fi
+  done
+  msg="$sandbox/non-utf8-session-url.msg"
+  printf 'feat: caf\xe9 fix\n\ncaf\xe9 %s\n' "$PINNING_SESSION_URL_FIXTURE" > "$msg"
+  stderr_log="$sandbox/non-utf8.stderr.log"
+
+  if _exec_with_sandbox_env "$sandbox" "LC_ALL=en_US.UTF-8" "$hook" "$msg" 2>"$stderr_log"; then
+    exit_code=0
+  else
+    exit_code=$?
+  fi
+  assert_eq "$exit_code" "1" \
+    "[7c] non-UTF-8 message with system tools: session URL must still block the commit"
+  grep -Fq '[ERROR] pinning:' "$stderr_log" \
+    || fail "[7c] non-UTF-8 message with system tools: expected the session URL error; stderr: $(cat "$stderr_log")"
 }
 
 # ─── supervised wrapper 해석 + marker 잔존 탐지기 (live fixture 공통 — issue #1228 1단계) ───
@@ -1985,6 +2104,8 @@ run_test "inline shim delegates existing targets transparently" \
 
 run_test "pinning shared library behavioral" \
   test_pinning_shared_library_behavioral
+run_test "pinning session URL category (#1422)" \
+  test_pinning_session_url_category_behavioral
 run_test "pinning-alert behavioral (#606)" \
   test_pinning_alert_behavioral
 run_test "pretooluse pinning-guard behavioral (#587)" \
@@ -1993,6 +2114,10 @@ run_test "pretooluse pinning-guard meta behavioral (#587)" \
   test_pretooluse_pinning_guard_meta_behavioral
 run_test "commit-msg pinning behavioral" \
   test_commit_msg_pinning_behavioral
+run_test "commit-msg pinning internal error fail-open (#1422)" \
+  test_commit_msg_pinning_internal_error_fail_open
+run_test "commit-msg pinning non-UTF-8 message with system tools (#1422)" \
+  test_commit_msg_pinning_non_utf8_with_system_tools
 run_test "supervised setsid predicate self-test (#1228)" \
   test_supervised_setsid_predicate_self
 run_test "marker residual detector negative control (#1228)" \

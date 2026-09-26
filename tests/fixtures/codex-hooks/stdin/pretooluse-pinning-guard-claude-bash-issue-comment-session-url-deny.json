@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh issue comment 1422 --body \"진행 기록: https://__SESSION_URL__\""
+  }
+}

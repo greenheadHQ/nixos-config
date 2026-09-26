@@ -1293,6 +1293,17 @@ let
       cond = claudeSettings.env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD == "1";
     }
     {
+      # #1422: 커밋 트레일러·PR 본문에 세션 링크를 붙이는 기본 동작을 끈다. attribution.commit/pr을
+      # 설정하면 includeCoAuthoredBy=false가 무시되므로 sessionUrl 하나만 둔다. `attribution: false`
+      # 전체형은 v2.1.281 미만이 settings 파일 전체를 건너뛰게 만들어 쓰지 않는다.
+      name = "Test D28c: Claude 세션 URL attribution은 sessionUrl=false 단일 키로 꺼져 있어야 함";
+      cond =
+        (claudeSettings.attribution or null) == {
+          sessionUrl = false;
+        }
+        && claudeSettings.includeCoAuthoredBy == false;
+    }
+    {
       name = "Test D31: Claude RC의 플랫폼별 flock selector가 exact 구현을 반환해야 함";
       cond = claudeRcLinuxFlock == "util-linux" && claudeRcDarwinFlock == "discoteq-flock";
     }

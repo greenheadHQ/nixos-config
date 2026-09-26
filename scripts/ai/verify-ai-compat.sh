@@ -441,6 +441,8 @@ else
       continue
     fi
 
+    # 플러그인 링크 허용 기준은 activation 고아 정리의 무경고 보존 기준과 같아야 한다
+    # (modules/shared/programs/codex/files/project-codex-skills.sh) — 한쪽만 바꾸지 않는다.
     if [ -L "$entry" ]; then
       target="$(readlink "$entry")"
       if [[ "$target" = /* ]] && [ -f "$entry/SKILL.md" ]; then
@@ -905,7 +907,7 @@ _pinning_hooks=(
   "$REPO_ROOT/modules/shared/programs/codex/files/hooks/pinning-alert.sh"
   "$REPO_ROOT/modules/shared/programs/codex/files/hooks/pinning-guard.sh"
 )
-for _var in PATTERN_A PATTERN_B PATTERN_C PINNING_REPORT_INDENT PINNING_PATTERN_A_LABEL PINNING_PATTERN_B_LABEL PINNING_PATTERN_C_LABEL; do
+for _var in PATTERN_A PATTERN_B PATTERN_C PATTERN_D PINNING_REPORT_INDENT PINNING_PATTERN_A_LABEL PINNING_PATTERN_B_LABEL PINNING_PATTERN_C_LABEL PINNING_PATTERN_D_LABEL; do
   _lib_line="$(grep -m1 -E "^${_var}=" "$_pinning_lib" || true)"
   if [ -n "$_lib_line" ]; then
     pass "pinning $_var shared lib 정의 OK"

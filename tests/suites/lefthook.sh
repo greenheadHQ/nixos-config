@@ -898,3 +898,91 @@ test_lefthook_auto_sync_cannot_drop_guard_end_to_end() {
     || fail "auto-sync dropped the staged-config guard despite $LEFTHOOK_NO_AUTO_INSTALL_FLAG"
   assert_hook_call_line "$hook_path" "pre-commit"
 }
+
+extract_commit_msg_pinning_command_block() {
+  # lefthook.yml의 commit-msg.commands.pinning 블록(주석 포함)을 그대로 뽑는다. 배선 검증이
+  # 사본이 아니라 실제 설정 줄을 실행하게 하려는 것이다.
+  awk '
+    $0 == "commit-msg:" { in_top = 1; next }
+    in_top && /^[^[:space:]#]/ { exit }
+    in_top && /^    pinning:$/ { in_cmd = 1; print; next }
+    in_cmd && /^    [^[:space:]]/ { exit }
+    in_cmd && NF { print }
+  ' "$REPO_ROOT/lefthook.yml"
+}
+
+test_lefthook_commit_msg_pinning_blocks_only_session_url() {
+  # commit-msg pinning 배선이 스크립트 종료 코드를 git까지 전달하는지 실제 lefthook과 git commit으로
+  # 확인한다 (#1422). 세션 URL은 커밋을 막고, A~C 범주(라운드 카운터 등)는 경고만 하며, 스크립트가
+  # 없는 checkout(lefthook.yml만 받은 경우)은 조용히 통과해야 한다. lib가 깨져 검사가 내부 오류로
+  # 끝나면 세션 URL이 있어도 경고만 하고 커밋을 통과시킨다.
+  # 박제 토큰과 세션 URL은 이 파일이 pinning-guard에 걸리지 않도록 조각을 조합한다.
+  local sandbox repo_root stub_dir home_dir pinning_block session_url head_before head_after output rc
+  if ! command -v lefthook >/dev/null 2>&1; then
+    fail "real lefthook binary not found on PATH; this suite runs inside the nix devShell"
+  fi
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  home_dir="$sandbox/home"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"  # stub_dir는 PATH에 넣지 않는다
+  session_url="https://claude.ai/code/""session_01FixtureSessionIdXyz123"
+
+  pinning_block=$(extract_commit_msg_pinning_command_block)
+  [[ -n "$pinning_block" ]] || fail "could not extract commit-msg pinning command from lefthook.yml"
+  {
+    printf 'pre-commit:\n  jobs:\n    - name: noop\n      run: "true"\n'
+    printf 'commit-msg:\n  commands:\n%s\n' "$pinning_block"
+    printf 'pre-push:\n  jobs:\n    - name: noop\n      run: "true"\n'
+  } > "$repo_root/lefthook.yml"
+  (
+    cd "$repo_root"
+    export HOME="$home_dir"
+    export XDG_CONFIG_HOME="$home_dir/.config"
+    export GIT_CONFIG_GLOBAL=/dev/null
+    export GIT_CONFIG_NOSYSTEM=1
+    bash "$REPO_ROOT/scripts/ai/install-lefthook-hooks.sh"
+  ) >/dev/null 2>&1 || fail "real-lefthook install failed"
+
+  pinning_fixture_commit() {
+    # 실제 git이 commit-msg hook을 부르게 한다. 호스트의 lefthook 우회 변수와 pinning lib 경로가
+    # 새지 않도록 지운다.
+    rc=0
+    output=$(
+      cd "$repo_root" \
+        && env -u LEFTHOOK -u LEFTHOOK_CONFIG -u PINNING_PATTERNS_LIB \
+          HOME="$home_dir" XDG_CONFIG_HOME="$home_dir/.config" \
+          GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+          git -c commit.gpgSign=false commit --allow-empty -q -F "$1" 2>&1
+    ) || rc=$?
+  }
+  printf 'feat: x\n\nClaude-Session: %s\n' "$session_url" > "$sandbox/session-url.msg"
+  printf 'fix: track %s baseline\n' "Ro""und 5" > "$sandbox/pattern-a.msg"
+
+  # ── 스크립트 없는 checkout: 조용히 통과 ──
+  pinning_fixture_commit "$sandbox/session-url.msg"
+  [[ "$rc" == "0" ]] || fail "commit-msg must silently pass when commit-msg-pinning.sh is absent; rc=$rc output: $output"
+
+  # ── 스크립트 있음: 세션 URL은 차단하고 HEAD는 그대로 ──
+  mkdir -p "$repo_root/scripts/ai" "$repo_root/modules/shared/programs/claude/files/lib"
+  cp "$REPO_ROOT/scripts/ai/commit-msg-pinning.sh" "$repo_root/scripts/ai/"
+  cp "$REPO_ROOT/modules/shared/programs/claude/files/lib/pinning-patterns.sh" \
+    "$repo_root/modules/shared/programs/claude/files/lib/"
+  head_before=$(install_lefthook_isolated_git "$repo_root" rev-parse HEAD)
+  pinning_fixture_commit "$sandbox/session-url.msg"
+  head_after=$(install_lefthook_isolated_git "$repo_root" rev-parse HEAD)
+  [[ "$rc" != "0" ]] || fail "commit-msg must block a session URL through the lefthook.yml wiring; output: $output"
+  [[ "$head_before" == "$head_after" ]] || fail "blocked commit must not move HEAD ($head_before -> $head_after)"
+  assert_contains "$output" "[ERROR] pinning:"
+
+  # ── A~C 범주는 경고만 하고 커밋은 성공 ──
+  pinning_fixture_commit "$sandbox/pattern-a.msg"
+  [[ "$rc" == "0" ]] || fail "A~C categories must stay warn-only through the lefthook.yml wiring; rc=$rc output: $output"
+  assert_contains "$output" "[WARN] pinning:"
+
+  # ── lib가 깨진 checkout: 내부 오류는 경고만 하고 커밋은 성공 ──
+  printf 'if then fi\n' > "$repo_root/modules/shared/programs/claude/files/lib/pinning-patterns.sh"
+  pinning_fixture_commit "$sandbox/session-url.msg"
+  [[ "$rc" == "0" ]] || fail "commit-msg internal errors must not block commits through the lefthook.yml wiring; rc=$rc output: $output"
+  assert_contains "$output" "[WARN] pinning: 내부 오류"
+}

@@ -1,0 +1,7 @@
+{
+  "_fixture_existing_content": "세션 URL 범주를 추가한다.\n\nClaude-Session: https://__SESSION_URL__",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh pr merge 1422 --squash --body-file __SANDBOX_BODY_FILE__"
+  }
+}

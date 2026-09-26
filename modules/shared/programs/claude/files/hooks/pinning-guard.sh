@@ -50,7 +50,7 @@ _targeted_bash_command() {
   local cmd="$1"
   case "$cmd" in
     *"git commit"* | *"git -"*" commit"* | \
-    *"gh pr create"* | *"gh pr edit"* | *"gh pr comment"* | *"gh pr review"* | \
+    *"gh pr create"* | *"gh pr edit"* | *"gh pr comment"* | *"gh pr review"* | *"gh pr merge"* | \
     *"gh issue create"* | *"gh issue edit"* | *"gh issue comment"* | \
     *"gh api"*"issues/"*"comments"* | *"gh api"*"pulls/"*"comments"* | *"gh api"*"pulls/"*"reviews"*) return 0 ;;
     *) return 1 ;;

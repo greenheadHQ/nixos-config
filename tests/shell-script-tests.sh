@@ -94,6 +94,11 @@ run_test "wt cleanup removes exact Claude local plugin manifest entries" test_wt
 run_test "wt cleanup stops when plugin manifest cleanup fails" test_wt_cleanup_stops_when_plugin_manifest_cleanup_fails
 run_test "wt plugin manifest missing and invalid inputs are safe" test_wt_plugin_manifest_missing_and_invalid_are_safe
 run_test "codex activation .agents symlink guard static" test_codex_activation_agents_symlink_guard_static
+run_test "codex activation orphan cleanup removes only managed links" test_codex_activation_orphan_cleanup_removes_only_managed_links
+run_test "codex activation projection fails closed without git" test_codex_activation_projection_fails_closed_without_git
+run_test "codex activation projection skips tracked dir and replaces untracked dir" test_codex_activation_projection_tracked_dir_skipped_untracked_dir_replaced
+run_test "codex activation projection keeps real dir when tracking check fails" test_codex_activation_projection_keeps_real_dir_when_tracking_check_fails
+run_test "codex activation projection dry-run leaves tree unchanged" test_codex_activation_projection_dry_run_leaves_tree_unchanged
 run_test "create-issue documented body lifecycle is safe" test_create_issue_documented_body_lifecycle_is_safe
 run_test "claude remote-control start requires git repo" test_claude_remote_control_start_requires_git_repo
 run_test "claude remote-control start registers manual instance" test_claude_remote_control_start_registers_manual_instance
@@ -336,6 +341,7 @@ run_test "install-lefthook ignores global lefthook.yml config keys" test_install
 run_test "lefthook.yml self-check hook list matches config" test_lefthook_self_check_hook_list_matches_config
 run_test "lefthook.yml self-check bodies stay in sync" test_lefthook_self_check_bodies_stay_in_sync
 run_test "lefthook auto-sync cannot drop the staged-config guard" test_lefthook_auto_sync_cannot_drop_guard_end_to_end
+run_test "lefthook commit-msg pinning blocks only session URLs" test_lefthook_commit_msg_pinning_blocks_only_session_url
 run_test "webhook-bridge crawled payload sends notification" test_webhook_bridge_crawled_payload_sends_notification
 run_test "webhook-bridge non-crawled payload skips notification" test_webhook_bridge_non_crawled_payload_skips_notification
 run_test "webhook-bridge invalid JSON keeps 200 without notification" test_webhook_bridge_invalid_json_keeps_200_without_notification

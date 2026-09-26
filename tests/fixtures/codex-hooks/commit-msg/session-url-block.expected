@@ -1,0 +1,4 @@
+[ERROR] pinning: Claude 세션 URL 박제 감지. 이 범주는 warn-only의 예외로 커밋을 차단한다.
+  - Claude 세션 URL 박제: 세션 URL과 'Claude-Session:' 트레일러 줄을 빼고 다시 시도
+         3: __SESSION_URL__
+[ERROR] pinning: 커밋을 중단했다. 메시지에서 세션 URL과 'Claude-Session:' 트레일러 줄을 지운 뒤 다시 커밋하라.
