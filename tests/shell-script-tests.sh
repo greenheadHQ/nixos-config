@@ -461,6 +461,8 @@ run_test "git-cleanup stale boundary is timezone independent" test_git_cleanup_s
 run_test "git-cleanup date command failure stops before candidates" test_git_cleanup_date_command_failure_stops_before_candidates
 run_test "git-cleanup date non-numeric output stops before candidates" test_git_cleanup_date_non_numeric_output_stops_before_candidates
 run_test "git-cleanup dry-run does not delete stale branch" test_git_cleanup_dry_run_does_not_delete_stale_branch
+run_test "git-cleanup stale boundary uses fixed seconds not calendar days across DST" test_git_cleanup_stale_boundary_uses_fixed_seconds_not_calendar_days_across_dst
+run_test "git-cleanup date command absent stops before candidates" test_git_cleanup_date_command_absent_stops_before_candidates
 
 # 퇴역 키 로더는 tomlkit 없이도 도는 순수 셸 계약이라 아래 게이트 밖에 둔다.
 run_test "codex-config retired keys loader" test_codex_config_retired_keys_loader
