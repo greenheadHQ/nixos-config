@@ -457,21 +457,37 @@ run_test "SA health check lifecycle and secret handling" test_opnix_health_check
 run_test "immich-update --help exits 0 without side effects" test_immich_update_help_flag_exits_zero_without_side_effects
 run_test "immich-update rejects unknown option" test_immich_update_rejects_unknown_option
 run_test "immich-update rejects excess argument" test_immich_update_rejects_excess_argument
+run_test "immich-update rejects bare positional argument" test_immich_update_rejects_bare_positional_argument
+run_test "immich-update --help avoids boundaries with env wired" test_immich_update_help_flag_avoids_boundaries_with_env
+run_test "immich-update rejects unknown option with env wired" test_immich_update_rejects_unknown_option_with_env
+run_test "immich-update rejects excess argument with env wired" test_immich_update_rejects_excess_argument_with_env
 run_test "immich-update no-args preserves existing update flow" test_immich_update_no_args_preserves_existing_update_flow
 run_test "immich-update --dry-run skips mutating boundaries" test_immich_update_dry_run_skips_mutating_boundaries
 run_test "copyparty-update --help exits 0 without side effects" test_copyparty_update_help_flag_exits_zero_without_side_effects
 run_test "copyparty-update rejects unknown option" test_copyparty_update_rejects_unknown_option
 run_test "copyparty-update rejects excess argument" test_copyparty_update_rejects_excess_argument
+run_test "copyparty-update rejects bare positional argument" test_copyparty_update_rejects_bare_positional_argument
+run_test "copyparty-update --help avoids boundaries with env wired" test_copyparty_update_help_flag_avoids_boundaries_with_env
+run_test "copyparty-update rejects unknown option with env wired" test_copyparty_update_rejects_unknown_option_with_env
+run_test "copyparty-update rejects excess argument with env wired" test_copyparty_update_rejects_excess_argument_with_env
 run_test "copyparty-update no-args preserves existing update flow" test_copyparty_update_no_args_preserves_existing_update_flow
 run_test "copyparty-update --dry-run skips mutating boundaries" test_copyparty_update_dry_run_skips_mutating_boundaries
 run_test "uptime-kuma-update --help exits 0 without side effects" test_uptime_kuma_update_help_flag_exits_zero_without_side_effects
 run_test "uptime-kuma-update rejects unknown option" test_uptime_kuma_update_rejects_unknown_option
 run_test "uptime-kuma-update rejects excess argument" test_uptime_kuma_update_rejects_excess_argument
+run_test "uptime-kuma-update rejects bare positional argument" test_uptime_kuma_update_rejects_bare_positional_argument
+run_test "uptime-kuma-update --help avoids boundaries with env wired" test_uptime_kuma_update_help_flag_avoids_boundaries_with_env
+run_test "uptime-kuma-update rejects unknown option with env wired" test_uptime_kuma_update_rejects_unknown_option_with_env
+run_test "uptime-kuma-update rejects excess argument with env wired" test_uptime_kuma_update_rejects_excess_argument_with_env
 run_test "uptime-kuma-update no-args preserves existing update flow" test_uptime_kuma_update_no_args_preserves_existing_update_flow
 run_test "uptime-kuma-update --dry-run skips mutating boundaries" test_uptime_kuma_update_dry_run_skips_mutating_boundaries
 run_test "karakeep-update --help exits 0 without side effects" test_karakeep_update_help_flag_exits_zero_without_side_effects
 run_test "karakeep-update rejects unknown option" test_karakeep_update_rejects_unknown_option
 run_test "karakeep-update rejects excess argument" test_karakeep_update_rejects_excess_argument
+run_test "karakeep-update rejects bare positional argument" test_karakeep_update_rejects_bare_positional_argument
+run_test "karakeep-update --help avoids boundaries with env wired" test_karakeep_update_help_flag_avoids_boundaries_with_env
+run_test "karakeep-update rejects unknown option with env wired" test_karakeep_update_rejects_unknown_option_with_env
+run_test "karakeep-update rejects excess argument with env wired" test_karakeep_update_rejects_excess_argument_with_env
 run_test "karakeep-update no-args still requires ack-bridge-risk" test_karakeep_update_no_args_still_requires_ack_bridge_risk
 run_test "karakeep-update ack-bridge-risk preserves existing update flow" test_karakeep_update_ack_bridge_risk_preserves_existing_update_flow
 run_test "karakeep-update --dry-run skips mutating boundaries" test_karakeep_update_dry_run_skips_mutating_boundaries

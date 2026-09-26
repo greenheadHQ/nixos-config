@@ -4,9 +4,17 @@
 # shellcheck disable=SC2154
 
 # ─── 공통 대역(double) 설치 ──────────────────────────────────────────
-# 세 명령(podman/systemctl/curl) 호출을 하나의 로그 파일에 순서대로 기록해, 잠금·자격 로드·
-# 환경 검증보다 인자 파서가 먼저 실행되는지(빈 로그) 그리고 무인자/--dry-run 실행이 기존 순서를
-# 유지하는지(로그의 상대 순서)를 같은 방식으로 검증한다.
+# 세 명령(podman/systemctl/curl) 호출을 하나의 로그 파일(calls.log)에 순서대로 기록한다.
+# 스크립트별로 두 갈래 테스트를 쓴다.
+#   (1) env·PATH를 전혀 주지 않고 직접 실행 — --help가 자격 파일·환경변수 없이도 동작하는지만
+#       본다(이슈 검증 절차 3). 대역이 연결돼 있지 않으므로 calls.log는 보지 않는다.
+#   (2) `_<svc>_update_run`으로 env·PATH·대역을 모두 연결해 실행(`_with_env` 접미사) —
+#       --help·잘못된 인자가 실제로 잠금·조회·백업 경계를 건드리지 않는지 calls.log가 비어
+#       있는지, STATE_DIR/lock 아래에 아무것도 생기지 않는지로 확인한다. (1)만으로는 파서
+#       앞에 몰래 들어간 curl 호출이나 별도 fd로 여는 잠금 같은 변이를 잡지 못한다.
+# 무인자/--ack-bridge-risk/--dry-run 테스트는 항상 (2)를 쓰고, calls.log의 상대 순서로 기존
+# 순서가 유지되는지도 함께 검증한다 — 그 실행이 로그를 남긴다는 사실 자체가 (2) 계열 테스트에서
+# 대역이 실제로 연결돼 있음을 증명한다.
 
 _update_arg_parse_install_podman_stub() {
   local path="$1"
@@ -103,6 +111,13 @@ _immich_update_prepare_sandbox() {
   # 잠금 경로가 하드코딩(/var/lib/immich-update/.lock)이라 격리 재현처럼 사본에서 경로만 바꾼다.
   sed "s#/var/lib/immich-update/\.lock#$sandbox/lock/.lock#" \
     "$_immich_update_script_original" > "$sandbox/update-script.sh"
+
+  # sed 치환이 조용히 no-op이 되면(원본의 하드코딩 경로 문구가 바뀌는 등) 아래 모든 lock 부재
+  # 단언이 원본 경로를 한 번도 건드리지 않아 항상 거짓으로 통과하므로, 여기서 치환 자체를 가드한다.
+  grep -Fq "$sandbox/lock/.lock" "$sandbox/update-script.sh" \
+    || fail "expected immich sandbox copy to use the substituted lock path"
+  ! grep -Fq "/var/lib/immich-update/.lock" "$sandbox/update-script.sh" \
+    || fail "expected immich sandbox copy to have no leftover hardcoded lock path"
 }
 
 _immich_update_run() {
@@ -167,8 +182,78 @@ test_immich_update_rejects_excess_argument() {
   [ ! -e "$sandbox/lock/.lock" ] || fail "expected rejected excess argument not to create the lock file"
 }
 
+test_immich_update_rejects_bare_positional_argument() {
+  local sandbox stdout_path stderr_path rc
+  sandbox=$(new_sandbox)
+  _immich_update_prepare_sandbox "$sandbox"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  # --dryrun(오타)과는 별개로, 옵션 형태가 아닌 위치 인자도 거부되는지 확인한다(이슈 절차 2).
+  rc=0
+  _immich_update_run "$sandbox" "$stdout_path" "$stderr_path" foo || rc=$?
+  [ "$rc" -ne 0 ] || fail "expected bare positional argument foo to exit non-zero"
+
+  assert_file_contains "$stdout_path" "ERROR: Unknown option: foo"
+  [ ! -s "$sandbox/calls.log" ] || fail "expected rejected positional argument not to call podman/systemctl/curl"
+  [ ! -e "$sandbox/lock/.lock" ] || fail "expected rejected positional argument not to create the lock file"
+  [ -z "$(ls -A "$sandbox/backups")" ] || fail "expected rejected positional argument not to touch backups dir"
+}
+
+test_immich_update_help_flag_avoids_boundaries_with_env() {
+  local sandbox stdout_path stderr_path
+  sandbox=$(new_sandbox)
+  _immich_update_prepare_sandbox "$sandbox"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  # env·PATH·대역을 모두 연결한 경로로 --help를 실행해, 파서 앞에 몰래 들어간 curl 호출이나
+  # 별도 fd로 여는 잠금 같은 변이를 calls.log/lock/backups로 잡을 수 있는지 확인한다.
+  _immich_update_run "$sandbox" "$stdout_path" "$stderr_path" --help \
+    || fail "expected --help to exit 0 with full env/double wired"
+
+  assert_file_contains "$stdout_path" "Usage: immich-update [--dry-run]"
+  [ ! -s "$sandbox/calls.log" ] || fail "expected --help not to call podman/systemctl/curl"
+  [ ! -e "$sandbox/lock/.lock" ] || fail "expected --help not to create the lock file"
+  [ -z "$(ls -A "$sandbox/backups")" ] || fail "expected --help not to touch backups dir"
+}
+
+test_immich_update_rejects_unknown_option_with_env() {
+  local sandbox stdout_path stderr_path rc
+  sandbox=$(new_sandbox)
+  _immich_update_prepare_sandbox "$sandbox"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  rc=0
+  _immich_update_run "$sandbox" "$stdout_path" "$stderr_path" --dryrun || rc=$?
+  [ "$rc" -ne 0 ] || fail "expected unknown option --dryrun to exit non-zero with full env/double wired"
+
+  assert_file_contains "$stdout_path" "ERROR: Unknown option: --dryrun"
+  [ ! -s "$sandbox/calls.log" ] || fail "expected rejected option not to call podman/systemctl/curl"
+  [ ! -e "$sandbox/lock/.lock" ] || fail "expected rejected option not to create the lock file"
+  [ -z "$(ls -A "$sandbox/backups")" ] || fail "expected rejected option not to touch backups dir"
+}
+
+test_immich_update_rejects_excess_argument_with_env() {
+  local sandbox stdout_path stderr_path rc
+  sandbox=$(new_sandbox)
+  _immich_update_prepare_sandbox "$sandbox"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  rc=0
+  _immich_update_run "$sandbox" "$stdout_path" "$stderr_path" --dry-run extra || rc=$?
+  [ "$rc" -ne 0 ] || fail "expected excess argument to exit non-zero with full env/double wired"
+
+  assert_file_contains "$stdout_path" "ERROR: Unknown option: extra"
+  [ ! -s "$sandbox/calls.log" ] || fail "expected rejected excess argument not to call podman/systemctl/curl"
+  [ ! -e "$sandbox/lock/.lock" ] || fail "expected rejected excess argument not to create the lock file"
+  [ -z "$(ls -A "$sandbox/backups")" ] || fail "expected rejected excess argument not to touch backups dir"
+}
+
 test_immich_update_no_args_preserves_existing_update_flow() {
-  local sandbox stdout_path stderr_path output pull_line stop_line start_line
+  local sandbox stdout_path stderr_path output backup_line pull_line stop_line start_line
   sandbox=$(new_sandbox)
   _immich_update_prepare_sandbox "$sandbox"
   stdout_path="$sandbox/stdout"
@@ -181,13 +266,16 @@ test_immich_update_no_args_preserves_existing_update_flow() {
   assert_contains "$output" "Update completed successfully"
   [ -e "$sandbox/lock/.lock" ] || fail "expected real run to create the lock file"
 
-  # 기존 순서(백업 → pull → stop → start)가 이번 변경으로 흐트러지지 않았는지 확인한다.
-  grep -Fq "podman exec" "$sandbox/calls.log" || fail "expected DB backup boundary to be called"
+  # 기존 순서(백업 → pull → stop → start)가 이번 변경으로 흐트러지지 않았는지 확인한다. 이 실행이
+  # calls.log를 채운다는 사실 자체가 위 _with_env 테스트들의 "빈 로그" 단언이 실제로 대역에
+  # 연결돼 있음을 증명한다.
+  backup_line=$(grep -n "^podman exec" "$sandbox/calls.log" | head -1 | cut -d: -f1)
   pull_line=$(grep -n "^podman pull" "$sandbox/calls.log" | head -1 | cut -d: -f1)
   stop_line=$(grep -n "^systemctl stop" "$sandbox/calls.log" | head -1 | cut -d: -f1)
   start_line=$(grep -n "^systemctl start" "$sandbox/calls.log" | head -1 | cut -d: -f1)
-  [ -n "$pull_line" ] && [ -n "$stop_line" ] && [ -n "$start_line" ] \
-    || fail "expected pull/stop/start boundaries to be recorded"
+  [ -n "$backup_line" ] && [ -n "$pull_line" ] && [ -n "$stop_line" ] && [ -n "$start_line" ] \
+    || fail "expected backup/pull/stop/start boundaries to be recorded"
+  [ "$backup_line" -lt "$pull_line" ] || fail "expected backup to precede pull"
   [ "$pull_line" -lt "$stop_line" ] || fail "expected pull to precede stop"
   [ "$stop_line" -lt "$start_line" ] || fail "expected stop to precede start"
 }
@@ -290,6 +378,72 @@ test_copyparty_update_rejects_excess_argument() {
   [ ! -e "$sandbox/state/.lock" ] || fail "expected rejected excess argument not to create the lock file"
 }
 
+test_copyparty_update_rejects_bare_positional_argument() {
+  local sandbox stdout_path stderr_path rc
+  sandbox=$(new_sandbox)
+  _copyparty_update_prepare_sandbox "$sandbox"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  # --dryrun(오타)과는 별개로, 옵션 형태가 아닌 위치 인자도 거부되는지 확인한다(이슈 절차 2).
+  rc=0
+  _copyparty_update_run "$sandbox" "$stdout_path" "$stderr_path" foo || rc=$?
+  [ "$rc" -ne 0 ] || fail "expected bare positional argument foo to exit non-zero"
+
+  assert_file_contains "$stdout_path" "ERROR: Unknown option: foo"
+  [ ! -s "$sandbox/calls.log" ] || fail "expected rejected positional argument not to call podman/systemctl/curl"
+  [ -z "$(ls -A "$sandbox/state")" ] || fail "expected rejected positional argument not to touch state dir"
+}
+
+test_copyparty_update_help_flag_avoids_boundaries_with_env() {
+  local sandbox stdout_path stderr_path
+  sandbox=$(new_sandbox)
+  _copyparty_update_prepare_sandbox "$sandbox"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  # env·PATH·대역을 모두 연결한 경로로 --help를 실행해, 파서 앞에 몰래 들어간 curl 호출이나
+  # 별도 fd로 여는 잠금 같은 변이를 calls.log/state 디렉터리로 잡을 수 있는지 확인한다.
+  _copyparty_update_run "$sandbox" "$stdout_path" "$stderr_path" --help \
+    || fail "expected --help to exit 0 with full env/double wired"
+
+  assert_file_contains "$stdout_path" "Usage: copyparty-update [--dry-run]"
+  [ ! -s "$sandbox/calls.log" ] || fail "expected --help not to call podman/systemctl/curl"
+  [ -z "$(ls -A "$sandbox/state")" ] || fail "expected --help not to touch state dir"
+}
+
+test_copyparty_update_rejects_unknown_option_with_env() {
+  local sandbox stdout_path stderr_path rc
+  sandbox=$(new_sandbox)
+  _copyparty_update_prepare_sandbox "$sandbox"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  rc=0
+  _copyparty_update_run "$sandbox" "$stdout_path" "$stderr_path" --dryrun || rc=$?
+  [ "$rc" -ne 0 ] || fail "expected unknown option --dryrun to exit non-zero with full env/double wired"
+
+  assert_file_contains "$stdout_path" "ERROR: Unknown option: --dryrun"
+  [ ! -s "$sandbox/calls.log" ] || fail "expected rejected option not to call podman/systemctl/curl"
+  [ -z "$(ls -A "$sandbox/state")" ] || fail "expected rejected option not to touch state dir"
+}
+
+test_copyparty_update_rejects_excess_argument_with_env() {
+  local sandbox stdout_path stderr_path rc
+  sandbox=$(new_sandbox)
+  _copyparty_update_prepare_sandbox "$sandbox"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  rc=0
+  _copyparty_update_run "$sandbox" "$stdout_path" "$stderr_path" --dry-run extra || rc=$?
+  [ "$rc" -ne 0 ] || fail "expected excess argument to exit non-zero with full env/double wired"
+
+  assert_file_contains "$stdout_path" "ERROR: Unknown option: extra"
+  [ ! -s "$sandbox/calls.log" ] || fail "expected rejected excess argument not to call podman/systemctl/curl"
+  [ -z "$(ls -A "$sandbox/state")" ] || fail "expected rejected excess argument not to touch state dir"
+}
+
 test_copyparty_update_no_args_preserves_existing_update_flow() {
   local sandbox stdout_path stderr_path output pull_line stop_line start_line
   sandbox=$(new_sandbox)
@@ -304,6 +458,8 @@ test_copyparty_update_no_args_preserves_existing_update_flow() {
   assert_contains "$output" "Update completed successfully"
   [ -e "$sandbox/state/.lock" ] || fail "expected real run to create the lock file"
 
+  # 이 실행이 calls.log를 채운다는 사실 자체가 위 _with_env 테스트들의 "빈 로그" 단언이 실제로
+  # 대역에 연결돼 있음을 증명한다.
   pull_line=$(grep -n "^podman pull" "$sandbox/calls.log" | head -1 | cut -d: -f1)
   stop_line=$(grep -n "^systemctl stop" "$sandbox/calls.log" | head -1 | cut -d: -f1)
   start_line=$(grep -n "^systemctl start" "$sandbox/calls.log" | head -1 | cut -d: -f1)
@@ -413,6 +569,76 @@ test_uptime_kuma_update_rejects_excess_argument() {
   [ ! -e "$sandbox/state/.lock" ] || fail "expected rejected excess argument not to create the lock file"
 }
 
+test_uptime_kuma_update_rejects_bare_positional_argument() {
+  local sandbox stdout_path stderr_path rc
+  sandbox=$(new_sandbox)
+  _uptime_kuma_update_prepare_sandbox "$sandbox"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  # --dryrun(오타)과는 별개로, 옵션 형태가 아닌 위치 인자도 거부되는지 확인한다(이슈 절차 2).
+  rc=0
+  _uptime_kuma_update_run "$sandbox" "$stdout_path" "$stderr_path" foo || rc=$?
+  [ "$rc" -ne 0 ] || fail "expected bare positional argument foo to exit non-zero"
+
+  assert_file_contains "$stdout_path" "ERROR: Unknown option: foo"
+  [ ! -s "$sandbox/calls.log" ] || fail "expected rejected positional argument not to call podman/systemctl/curl"
+  [ -z "$(ls -A "$sandbox/state")" ] || fail "expected rejected positional argument not to touch state dir"
+  [ -z "$(ls -A "$sandbox/backups")" ] || fail "expected rejected positional argument not to touch backups dir"
+}
+
+test_uptime_kuma_update_help_flag_avoids_boundaries_with_env() {
+  local sandbox stdout_path stderr_path
+  sandbox=$(new_sandbox)
+  _uptime_kuma_update_prepare_sandbox "$sandbox"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  # env·PATH·대역을 모두 연결한 경로로 --help를 실행해, 파서 앞에 몰래 들어간 curl 호출이나
+  # 별도 fd로 여는 잠금 같은 변이를 calls.log/state/backups 디렉터리로 잡을 수 있는지 확인한다.
+  _uptime_kuma_update_run "$sandbox" "$stdout_path" "$stderr_path" --help \
+    || fail "expected --help to exit 0 with full env/double wired"
+
+  assert_file_contains "$stdout_path" "Usage: uptime-kuma-update [--dry-run]"
+  [ ! -s "$sandbox/calls.log" ] || fail "expected --help not to call podman/systemctl/curl"
+  [ -z "$(ls -A "$sandbox/state")" ] || fail "expected --help not to touch state dir"
+  [ -z "$(ls -A "$sandbox/backups")" ] || fail "expected --help not to touch backups dir"
+}
+
+test_uptime_kuma_update_rejects_unknown_option_with_env() {
+  local sandbox stdout_path stderr_path rc
+  sandbox=$(new_sandbox)
+  _uptime_kuma_update_prepare_sandbox "$sandbox"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  rc=0
+  _uptime_kuma_update_run "$sandbox" "$stdout_path" "$stderr_path" --dryrun || rc=$?
+  [ "$rc" -ne 0 ] || fail "expected unknown option --dryrun to exit non-zero with full env/double wired"
+
+  assert_file_contains "$stdout_path" "ERROR: Unknown option: --dryrun"
+  [ ! -s "$sandbox/calls.log" ] || fail "expected rejected option not to call podman/systemctl/curl"
+  [ -z "$(ls -A "$sandbox/state")" ] || fail "expected rejected option not to touch state dir"
+  [ -z "$(ls -A "$sandbox/backups")" ] || fail "expected rejected option not to touch backups dir"
+}
+
+test_uptime_kuma_update_rejects_excess_argument_with_env() {
+  local sandbox stdout_path stderr_path rc
+  sandbox=$(new_sandbox)
+  _uptime_kuma_update_prepare_sandbox "$sandbox"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  rc=0
+  _uptime_kuma_update_run "$sandbox" "$stdout_path" "$stderr_path" --dry-run extra || rc=$?
+  [ "$rc" -ne 0 ] || fail "expected excess argument to exit non-zero with full env/double wired"
+
+  assert_file_contains "$stdout_path" "ERROR: Unknown option: extra"
+  [ ! -s "$sandbox/calls.log" ] || fail "expected rejected excess argument not to call podman/systemctl/curl"
+  [ -z "$(ls -A "$sandbox/state")" ] || fail "expected rejected excess argument not to touch state dir"
+  [ -z "$(ls -A "$sandbox/backups")" ] || fail "expected rejected excess argument not to touch backups dir"
+}
+
 test_uptime_kuma_update_no_args_preserves_existing_update_flow() {
   local sandbox stdout_path stderr_path output pull_line stop_line start_line
   sandbox=$(new_sandbox)
@@ -427,6 +653,8 @@ test_uptime_kuma_update_no_args_preserves_existing_update_flow() {
   assert_contains "$output" "Update completed successfully"
   [ -e "$sandbox/state/.lock" ] || fail "expected real run to create the lock file"
 
+  # 이 실행이 calls.log를 채운다는 사실 자체가 위 _with_env 테스트들의 "빈 로그" 단언이 실제로
+  # 대역에 연결돼 있음을 증명한다.
   pull_line=$(grep -n "^podman pull" "$sandbox/calls.log" | head -1 | cut -d: -f1)
   stop_line=$(grep -n "^systemctl stop" "$sandbox/calls.log" | head -1 | cut -d: -f1)
   start_line=$(grep -n "^systemctl start" "$sandbox/calls.log" | head -1 | cut -d: -f1)
@@ -534,6 +762,72 @@ test_karakeep_update_rejects_excess_argument() {
   [ ! -e "$sandbox/state/.lock" ] || fail "expected rejected excess argument not to create the lock file"
 }
 
+test_karakeep_update_rejects_bare_positional_argument() {
+  local sandbox stdout_path stderr_path rc
+  sandbox=$(new_sandbox)
+  _karakeep_update_prepare_sandbox "$sandbox"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  # --dryrun(오타)과는 별개로, 옵션 형태가 아닌 위치 인자도 거부되는지 확인한다(이슈 절차 2).
+  rc=0
+  _karakeep_update_run "$sandbox" "$stdout_path" "$stderr_path" foo || rc=$?
+  [ "$rc" -ne 0 ] || fail "expected bare positional argument foo to exit non-zero"
+
+  assert_file_contains "$stdout_path" "ERROR: Unknown option: foo"
+  [ ! -s "$sandbox/calls.log" ] || fail "expected rejected positional argument not to call podman/systemctl/curl"
+  [ -z "$(ls -A "$sandbox/state")" ] || fail "expected rejected positional argument not to touch state dir"
+}
+
+test_karakeep_update_help_flag_avoids_boundaries_with_env() {
+  local sandbox stdout_path stderr_path
+  sandbox=$(new_sandbox)
+  _karakeep_update_prepare_sandbox "$sandbox"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  # env·PATH·대역을 모두 연결한 경로로 --help를 실행해, 파서 앞에 몰래 들어간 curl 호출이나
+  # 별도 fd로 여는 잠금 같은 변이를 calls.log/state 디렉터리로 잡을 수 있는지 확인한다.
+  _karakeep_update_run "$sandbox" "$stdout_path" "$stderr_path" --help \
+    || fail "expected --help to exit 0 with full env/double wired"
+
+  assert_file_contains "$stdout_path" "Usage: karakeep-update [--dry-run] [--ack-bridge-risk]"
+  [ ! -s "$sandbox/calls.log" ] || fail "expected --help not to call podman/systemctl/curl"
+  [ -z "$(ls -A "$sandbox/state")" ] || fail "expected --help not to touch state dir"
+}
+
+test_karakeep_update_rejects_unknown_option_with_env() {
+  local sandbox stdout_path stderr_path rc
+  sandbox=$(new_sandbox)
+  _karakeep_update_prepare_sandbox "$sandbox"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  rc=0
+  _karakeep_update_run "$sandbox" "$stdout_path" "$stderr_path" --dryrun || rc=$?
+  [ "$rc" -ne 0 ] || fail "expected unknown option --dryrun to exit non-zero with full env/double wired"
+
+  assert_file_contains "$stdout_path" "ERROR: Unknown option: --dryrun"
+  [ ! -s "$sandbox/calls.log" ] || fail "expected rejected option not to call podman/systemctl/curl"
+  [ -z "$(ls -A "$sandbox/state")" ] || fail "expected rejected option not to touch state dir"
+}
+
+test_karakeep_update_rejects_excess_argument_with_env() {
+  local sandbox stdout_path stderr_path rc
+  sandbox=$(new_sandbox)
+  _karakeep_update_prepare_sandbox "$sandbox"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  rc=0
+  _karakeep_update_run "$sandbox" "$stdout_path" "$stderr_path" --dry-run extra || rc=$?
+  [ "$rc" -ne 0 ] || fail "expected excess argument to exit non-zero with full env/double wired"
+
+  assert_file_contains "$stdout_path" "ERROR: Unknown option: extra"
+  [ ! -s "$sandbox/calls.log" ] || fail "expected rejected excess argument not to call podman/systemctl/curl"
+  [ -z "$(ls -A "$sandbox/state")" ] || fail "expected rejected excess argument not to touch state dir"
+}
+
 test_karakeep_update_no_args_still_requires_ack_bridge_risk() {
   local sandbox stdout_path stderr_path rc
   sandbox=$(new_sandbox)
@@ -565,6 +859,8 @@ test_karakeep_update_ack_bridge_risk_preserves_existing_update_flow() {
   assert_contains "$output" "Update completed successfully"
   [ -e "$sandbox/state/.lock" ] || fail "expected real run to create the lock file"
 
+  # 이 실행이 calls.log를 채운다는 사실 자체가 위 _with_env 테스트들의 "빈 로그" 단언이 실제로
+  # 대역에 연결돼 있음을 증명한다.
   pull_line=$(grep -n "^podman pull" "$sandbox/calls.log" | head -1 | cut -d: -f1)
   stop_line=$(grep -n "^systemctl stop" "$sandbox/calls.log" | head -1 | cut -d: -f1)
   start_line=$(grep -n "^systemctl start" "$sandbox/calls.log" | head -1 | cut -d: -f1)
