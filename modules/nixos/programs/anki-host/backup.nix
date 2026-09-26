@@ -56,8 +56,9 @@ in
         # nofail HDD가 미마운트여도 부팅은 계속되므로, 이 유닛은 mediaData가 실제로
         # 마운트된 뒤에만 시작해야 한다 — 그렇지 않으면 목적지가 루트 파일시스템의 일반
         # 디렉터리가 되어 백업이 SSD에 오기록·성공으로 오인될 수 있다 (#1369). 이 유닛은
-        # systemd timer로만 실행되도록 배선돼(LoadCredential·CREDENTIALS_DIRECTORY 의존) 직접
-        # 실행 경로가 없으므로 스크립트 자체의 마운트 검증은 두지 않는다.
+        # 타이머·systemctl start 등 systemd 유닛 경유로만 실행되도록 배선돼(LoadCredential·
+        # CREDENTIALS_DIRECTORY 의존) 직접 실행 경로가 없으므로 스크립트 자체의 마운트
+        # 검증은 두지 않는다.
         RequiresMountsFor = [ mediaData ];
       };
 

@@ -1694,6 +1694,22 @@ let
       name = "Test MG3: anki-host-backup은 대상 HDD(mediaData) 마운트를 RequiresMountsFor로 요구해야 함";
       cond = builtins.elem constants.paths.mediaData (ankiHostBackup.unitConfig.RequiresMountsFor or [ ]);
     }
+    {
+      # 리뷰: MOUNT_ROOT가 실제 mediaData와 다른 값으로 새거나(오타 등) mediaData 자체가
+      # fileSystems에 등록되지 않은 상태로 갈라지지 않도록, 스크립트를 직접 실행하는 두 유닛의
+      # MOUNT_ROOT가 fileSystems 키 집합에 실제로 있는지 확인한다.
+      name = "Test MG4: immich-db-backup·immich-originals-mirror의 MOUNT_ROOT가 nixosCfg.fileSystems에 등록된 마운트 지점이어야 함";
+      cond =
+        immichDbBackup.environment.MOUNT_ROOT == constants.paths.mediaData
+        && immichOriginalsMirror.environment.MOUNT_ROOT == constants.paths.mediaData
+        && builtins.elem constants.paths.mediaData (builtins.attrNames nixosCfg.fileSystems);
+    }
+    {
+      # 완료 조건 "nofail 부팅 정책을 유지한다" — mediaData 파일시스템 옵션에 nofail이 있어야
+      # 이 이슈의 마운트 가드가 부팅 실패를 유발하지 않는다는 전제가 성립한다.
+      name = "Test MG5: fileSystems.\${mediaData}.options에 nofail이 있어야 함(부팅 정책 유지)";
+      cond = builtins.elem "nofail" nixosCfg.fileSystems.${constants.paths.mediaData}.options;
+    }
   ]
   ++ darwinIntentTests
   ++ [

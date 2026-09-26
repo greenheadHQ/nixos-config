@@ -47,9 +47,19 @@ if ! mountpoint -q "$MOUNT_ROOT"; then
 fi
 echo "Mount check OK: $MOUNT_ROOT is mounted"
 
-# 3. 목적지 준비 + 디스크 여유 하한(플로어) 검사.
+# 3. 목적지 소속 가드 — MOUNT_ROOT가 마운트돼 있어도 DEST_DIR이 그 아래가 아니면(설정
+#    오류) 마운트 확인만으로는 잡지 못한다. mkdir 전에 검사해야 한다 — mkdir 자체도 쓰기다.
+case "$DEST_DIR/" in
+  "$MOUNT_ROOT"/*) ;;
+  *)
+    echo "ERROR: DEST_DIR ($DEST_DIR) is not under MOUNT_ROOT ($MOUNT_ROOT) — 목적지 쓰기 중단" >&2
+    exit 1
+    ;;
+esac
+
+# 4. 목적지 준비 + 디스크 여유 하한(플로어) 검사.
 #    하한 가드일 뿐이며, 초회 전체 복사에 필요한 정확한 용량 부족은 rsync가 자체 종료
-#    코드로 잡는다(아래 5번). immich-backup.nix의 5GB 검사 패턴을 준용한다.
+#    코드로 잡는다(아래 6번). immich-backup.nix의 5GB 검사 패턴을 준용한다.
 mkdir -p "$DEST_DIR"
 AVAIL_KB=$(df --output=avail "$DEST_DIR" | tail -1)
 AVAIL_GB=$((AVAIL_KB / 1024 / 1024))
@@ -59,13 +69,13 @@ if [ "$AVAIL_GB" -lt 5 ]; then
 fi
 echo "Destination disk space OK: ${AVAIL_GB}GB available"
 
-# 4. rsync 미러 실행 (--delete: 삭제 전파, 상단 주석의 계층 설계 근거).
+# 5. rsync 미러 실행 (--delete: 삭제 전파, 상단 주석의 계층 설계 근거).
 #    --stats 요약은 stdout으로 journald에 남긴다.
 echo "Running rsync mirror: $SRC_DIR/ -> $DEST_DIR/"
 RSYNC_RC=0
 rsync --archive --delete --human-readable --stats "$SRC_DIR/" "$DEST_DIR/" || RSYNC_RC=$?
 
-# 5. rsync 종료 코드 처리.
+# 6. rsync 종료 코드 처리.
 #    0  = 정상.
 #    24 = 전송 중 소스 파일이 사라짐(라이브 업로드 중 파일 이동은 자연 현상) → 경고 후 정상.
 #    그 외 non-zero = 실패(trap이 Pushover 알림).

@@ -37,6 +37,18 @@ if ! mountpoint -q "$MOUNT_ROOT"; then
 fi
 echo "Mount check OK: $MOUNT_ROOT is mounted"
 
+# 0b. 목적지 소속 가드 — MOUNT_ROOT가 마운트돼 있어도 BACKUP_DIR이 그 아래가 아니면(설정
+#     오류) 마운트 확인만으로는 잡지 못한다. BACKUP_DIR이 실제로 MOUNT_ROOT 아래에 있는지 확인한다.
+case "$BACKUP_DIR/" in
+  "$MOUNT_ROOT"/*) ;;
+  *)
+    echo "ERROR: BACKUP_DIR ($BACKUP_DIR) is not under MOUNT_ROOT ($MOUNT_ROOT)" >&2
+    send_notification "Immich DB Backup" \
+      "백업 목적지 설정 오류 (BACKUP_DIR가 MOUNT_ROOT 밖). 백업 중단." 1
+    exit 1
+    ;;
+esac
+
 # 1. 디스크 공간 검사 (5GB 미만이면 중단)
 AVAIL_KB=$(df --output=avail "$BACKUP_DIR" | tail -1)
 AVAIL_GB=$((AVAIL_KB / 1024 / 1024))

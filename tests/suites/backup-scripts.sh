@@ -12,6 +12,11 @@ _backup_scripts_install_podman_stub() {
 #!/usr/bin/env bash
 set -euo pipefail
 
+# 호출 순서 회귀 검사용 — PODMAN_STUB_CALL_LOG가 설정된 테스트에서만 기록한다.
+if [ -n "${PODMAN_STUB_CALL_LOG:-}" ]; then
+  printf '%s\n' "$*" >> "$PODMAN_STUB_CALL_LOG"
+fi
+
 if [ "${1:-}" = "inspect" ]; then
   printf 'running\n'
   exit 0
@@ -86,6 +91,11 @@ _backup_scripts_install_mountpoint_stub() {
   local exit_code="${2:-0}"
   cat > "$path" <<STUB
 #!/usr/bin/env bash
+# argv 검증용 — MOUNTPOINT_STUB_ARGV_LOG가 설정된 테스트에서만 기록한다.
+# (BACKUP_DIR·DEST_DIR로 인자를 바꿔치는 변이가 exit code만 보는 검사를 통과하는 것을 막는다.)
+if [ -n "\${MOUNTPOINT_STUB_ARGV_LOG:-}" ]; then
+  printf '%s\n' "\$*" >> "\$MOUNTPOINT_STUB_ARGV_LOG"
+fi
 exit $exit_code
 STUB
   chmod +x "$path"
@@ -114,11 +124,15 @@ _backup_scripts_run() {
   local stdout_path="$3"
   local stderr_path="$4"
   local retention_days="${5:-30}"
+  # 기본 MOUNT_ROOT는 BACKUP_DIR의 부모(=sandbox)다 — 프로덕션(mediaData가 마운트, BACKUP_DIR은
+  # 그 아래 하위 디렉터리)과 같은 모양으로 두 값을 서로 다르게 유지해야, "가드가 MOUNT_ROOT가
+  # 아니라 BACKUP_DIR을 검사하는" 변이를 argv 검증 테스트가 잡을 수 있다.
+  local mount_root="${6:-$sandbox}"
 
   env \
     PATH="$sandbox/stub-bin:$PATH" \
     BACKUP_DIR="$sandbox/backup" \
-    MOUNT_ROOT="$sandbox/backup" \
+    MOUNT_ROOT="$mount_root" \
     RETENTION_DAYS="$retention_days" \
     SRC_DIR="$sandbox/src" \
     PUSHOVER_CRED_FILE="$sandbox/pushover" \
@@ -243,6 +257,75 @@ test_immich_backup_unmounted_target_blocks_write_and_exits_nonzero() {
   [ "$tmp_count" = "0" ] || fail "expected no immich tmp file left when target HDD is unmounted"
   notifications=$(cat "$sandbox/notifications.log")
   assert_contains "$notifications" "마운트"
+}
+
+# 리뷰: 가드가 mountpoint를 부를 때 실제로 MOUNT_ROOT를 넘기는지 확인한다 — exit code만 보는
+# 검사는 "BACKUP_DIR을 검사하도록 바꿔치는" 변이도 통과시킨다(모두 항상 마운트됨 스텁이므로).
+test_immich_backup_mount_guard_checks_mount_root_not_backup_dir() {
+  local sandbox stdout_path stderr_path argv_log
+  local MOUNTPOINT_STUB_ARGV_LOG
+  sandbox=$(new_sandbox)
+  _backup_scripts_prepare_sandbox "$sandbox"
+  argv_log="$sandbox/mountpoint-argv.log"
+  : > "$argv_log"
+  MOUNTPOINT_STUB_ARGV_LOG="$argv_log"
+  export MOUNTPOINT_STUB_ARGV_LOG
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  _backup_scripts_run "$_immich_backup_script" "$sandbox" "$stdout_path" "$stderr_path" \
+    || fail "expected immich backup happy path to exit 0 while recording mountpoint argv"
+
+  [ "$(cat "$argv_log")" = "-q $sandbox" ] \
+    || fail "expected mountpoint to be called as '-q $sandbox' (MOUNT_ROOT), got: $(cat "$argv_log")"
+}
+
+# 이슈 최소 수정 범위: "목적지가 기대한 마운트 아래에 있는지 검증". MOUNT_ROOT는 마운트돼 있어도
+# BACKUP_DIR이 그 아래가 아니면(설정 오류) 마운트 확인만으로는 잡지 못한다.
+test_immich_backup_destination_outside_mount_blocks_write_and_exits_nonzero() {
+  local sandbox stdout_path stderr_path status dump_count other_mount
+  sandbox=$(new_sandbox)
+  _backup_scripts_prepare_sandbox "$sandbox"
+  other_mount="$sandbox/other-mount"
+  mkdir -p "$other_mount"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  status=0
+  _backup_scripts_run "$_immich_backup_script" "$sandbox" "$stdout_path" "$stderr_path" 30 "$other_mount" \
+    || status=$?
+  [ "$status" -ne 0 ] || fail "expected immich backup to fail when BACKUP_DIR is outside MOUNT_ROOT"
+
+  dump_count=$(find "$sandbox/backup" -maxdepth 1 -type f -name 'immich-db-*.dump' | wc -l)
+  [ "$dump_count" = "0" ] || fail "expected no immich dump written when BACKUP_DIR is outside MOUNT_ROOT"
+}
+
+# 순서 회귀: 마운트 가드가 podman 호출·보관 정리보다 앞서야 한다 — 미마운트 시 기존(보관 기간을
+# 넘긴) 백업도 그대로 남고, podman이 한 번도 불리지 않아야 한다.
+test_immich_backup_unmounted_target_preserves_existing_backups_and_skips_pg_dump() {
+  local sandbox stdout_path stderr_path status old_dump
+  local PODMAN_STUB_CALL_LOG
+  sandbox=$(new_sandbox)
+  _backup_scripts_prepare_sandbox "$sandbox"
+  _backup_scripts_install_mountpoint_stub "$sandbox/stub-bin/mountpoint" 1
+  PODMAN_STUB_CALL_LOG="$sandbox/podman-calls.log"
+  : > "$PODMAN_STUB_CALL_LOG"
+  export PODMAN_STUB_CALL_LOG
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  old_dump="$sandbox/backup/immich-db-old.dump"
+  printf 'old\n' > "$old_dump"
+  touch -d '40 days ago' "$old_dump"
+
+  status=0
+  _backup_scripts_run "$_immich_backup_script" "$sandbox" "$stdout_path" "$stderr_path" || status=$?
+  [ "$status" -ne 0 ] || fail "expected immich backup to fail when target HDD is not mounted"
+
+  [ -e "$old_dump" ] \
+    || fail "expected pre-existing old dump to survive when target HDD is unmounted (mount guard must run before retention cleanup)"
+  [ ! -s "$PODMAN_STUB_CALL_LOG" ] \
+    || fail "expected podman to never be called when target HDD is not mounted (got: $(cat "$PODMAN_STUB_CALL_LOG"))"
 }
 
 test_karakeep_backup_happy_path_dated_dir() {

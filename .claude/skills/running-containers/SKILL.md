@@ -117,7 +117,7 @@ Immich: API 버전 조회 가능 → "현재 v2.5.5 → 최신 v2.6.0" 형태 �
 
 Immich DB 백업: `immich-db-backup` 서비스가 매일 05:30에 `podman exec immich-postgres pg_dump -Fc`로 커스텀 포맷 백업 생성. 대상 HDD(`mediaData`) 마운트 가드(`RequiresMountsFor` + 스크립트 `mountpoint` 검사), 디스크 공간 검사, pg_restore --list 무결성 검증, 원자적 파일 이동, 30일 보관. 실패 시 Pushover 알림 (`pushover-immich` 재사용). `sudo systemctl start immich-db-backup`으로 수동 실행.
 
-Immich 원본 미러·Anki(headless) 백업도 대상 HDD(`mediaData`) 마운트를 `RequiresMountsFor`로 요구한다 (`immich-originals-mirror`는 스크립트 자체에도 `mountpoint` 검사가 있다) — HDD는 `nofail`이라 미마운트여도 부팅은 계속되므로, 마운트 없이 쓰기·삭제·성공 기록이 진행되지 않도록 막는 가드다.
+Immich 원본 미러·Anki(headless) 백업도 대상 HDD(`mediaData`) 마운트를 `RequiresMountsFor`로 요구한다 (`immich-originals-mirror`는 스크립트 자체에도 `mountpoint` 검사가 있다) — HDD는 `nofail`이라 미마운트여도 부팅은 계속되므로, 마운트 없이 쓰기·삭제·성공 기록이 진행되지 않도록 막는 가드다. `RequiresMountsFor`가 막으면 스크립트가 아예 실행되지 않아 실패 Pushover 알림도 나가지 않는다 — 그 무실행은 스모크 테스트의 백업 신선도 검사(위 "런타임 스모크 테스트" 절)로 드러난다. 다만 원본 미러(`immich-originals-mirror`)는 신선도 검사 대상이 아니므로, 미마운트가 오래 지속되면 그 사이엔 드러나지 않는다.
 
 Uptime Kuma/Copyparty/Karakeep: pinned tag 기준 — 설정된 이미지를 pull → digest 비교 (같은 태그의 재빌드만 반영). GitHub latest는 새 버전 알림/안내용이며, 실제 버전 반영은 해당 서비스 모듈(`modules/nixos/programs/docker/*.nix`)의 image 태그 수정 후 `nrs`. 상세: [references/service-update-system.md](references/service-update-system.md)
 Karakeep 수동 업데이트는 `--ack-bridge-risk` 플래그가 필수다 (브릿지/로그 의존성 인지 강제).
