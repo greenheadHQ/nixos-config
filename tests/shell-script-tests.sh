@@ -358,9 +358,11 @@ run_test "karakeep fallback-sync unmatched notification is deduplicated" test_ka
 run_test "immich backup happy path creates dump atomically" test_immich_backup_happy_path_creates_dump_atomically
 run_test "immich backup integrity failure exits nonzero" test_immich_backup_integrity_failure_exits_nonzero
 run_test "immich backup retention deletes only old dumps in dir" test_immich_backup_retention_deletes_only_old_dumps_in_dir
+run_test "immich backup retention zero keeps today's dump, deletes stale" test_immich_backup_retention_zero_keeps_todays_dump_deletes_stale
 run_test "karakeep backup happy path dated dir" test_karakeep_backup_happy_path_dated_dir
 run_test "karakeep backup missing db exits nonzero" test_karakeep_backup_missing_db_exits_nonzero
 run_test "karakeep backup retention scopes to backup dir" test_karakeep_backup_retention_scopes_to_backup_dir
+run_test "karakeep backup retention zero keeps today, deletes stale" test_karakeep_backup_retention_zero_keeps_today_deletes_stale
 run_test "atuin-clean-kr backs up committed rows before delete" test_atuin_clean_kr_backup_contract
 run_test "fragile-hardcoding-guard line count word order independent" test_fragile_hardcoding_guard_line_count_word_order_independent
 run_test "fragile-hardcoding-guard line count true positive preserved" test_fragile_hardcoding_guard_line_count_true_positive_preserved
@@ -401,6 +403,9 @@ run_test "hook_parse_json_path preserves filter defaults" test_hook_parse_json_p
 run_test "hook_parse_json_path malformed input returns empty success" test_hook_parse_json_path_malformed_input_returns_empty_success
 run_test "pinning-guard survives set-but-unusable TMPDIR (e2e)" test_pinning_guard_survives_unusable_tmpdir
 run_test "parallel harness propagates coverage markers" test_parallel_harness_propagates_coverage_markers
+run_test "parallel harness classifies failures like sequential" test_parallel_harness_classifies_failures_like_sequential
+run_test "parallel harness fails closed when job dies before result" test_parallel_harness_fails_closed_when_job_dies_before_result
+run_test "parallel harness fails closed when job output is missing" test_parallel_harness_fails_closed_when_job_output_is_missing
 run_test "test runtime profile caches and invalidates by content" test_runtime_profile_build_cache_and_content_invalidation
 run_test "test runtime profile preserves last-good on failed rebuild" test_runtime_profile_failed_rebuild_preserves_last_good
 run_test "test runtime profile rejects unsafe lock and stamp nodes" test_runtime_profile_rejects_unsafe_lock_and_stamp_nodes
