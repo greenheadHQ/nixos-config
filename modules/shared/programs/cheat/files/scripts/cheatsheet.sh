@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # cheat + fzf 브라우징 (title/content 모드 전환)
-# 사용처: tmux prefix+C (display-popup), nvim <leader>C (Snacks.terminal), 터미널 직접 실행
+# 사용처: nvim <leader>C (Snacks.terminal), 터미널 직접 실행
 #
-# display-popup 셸의 PATH 불완전 방지를 위해 절대 경로 resolve
+# 호출 환경에 따라 PATH가 불완전할 수 있어 절대 경로 resolve
 cheat_cmd="$(command -v cheat 2>/dev/null || echo cheat)"
 fzf_cmd="$(command -v fzf 2>/dev/null || echo fzf)"
 

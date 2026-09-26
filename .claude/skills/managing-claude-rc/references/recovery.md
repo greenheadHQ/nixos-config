@@ -1,23 +1,24 @@
 # 마이그레이션과 복구
 
-## 기존 tmux bridge에서 마이그레이션
+## 같은 cwd의 unmanaged 서버 정리
 
-구 tmux 기반 bridge가 같은 디렉토리에서 아직 떠 있으면 새 `claude-rc-maint`는
-`unmanaged-server-present`로 기동을 거부한다. 같은 디렉토리에 두 번째 서버를 띄우면
-삭제 불가능한 유령 환경이 생기므로, 이 거부가 정상 안전장치다.
+`claude-rc` 관리 밖에서 띄운 `claude remote-control` 서버가 같은 디렉토리에서 아직 떠 있으면
+`claude-rc-maint`는 `unmanaged-server-present`로 기동을 거부한다. 같은 디렉토리에 두 번째 서버를
+띄우면 삭제 불가능한 유령 환경이 생기므로, 이 거부가 정상 안전장치다.
 
-먼저 `tmux list-panes -a -F '#{session_id} #{window_id} #{pane_id} #{pane_pid} #{pane_tty} #{pane_current_path} #{pane_current_command}'`로 세션과 pane을 식별한다. `pane_pid`는 pane의 첫 프로세스이므로 bridge를 시작한 셸일 수 있다. 그 PID 자체와 자손을 프로세스 트리 및 pane TTY와 대조해 실제 `claude remote-control` 프로세스를 찾고, 그 PID의 전체 argv와 실제 cwd로 같은 디렉토리의 구 bridge인지 확인한다. TTY나 표시용 command/path만으로 bridge를 확정하지 않는다. 그 세션의 모든 window/pane에 다른 작업이 없는지 확인하고, 이름이 `claude-rc`라는 이유만으로 세션을 종료하지 않는다.
+먼저 `pgrep -fl 'remote-control'`로 후보 PID를 모은다. 후보마다 전체 argv(`ps -o args= -p <PID>`)와 실제 cwd(`lsof -a -p <PID> -d cwd -Fn`)로 같은 디렉토리의 `claude remote-control` 서버인지 확인하고, `claude-rc ls`가 관리하는 서버가 아닌지 대조한다. 프로세스 이름이나 표시용 command/path만으로 대상을 확정하지 않는다. 그 서버를 띄운 터미널이나 세션에 다른 작업이 있을 수 있으므로 서버 PID만 대상으로 삼고, 이름이 `claude-rc`라는 이유만으로 세션이나 부모 프로세스를 종료하지 않는다.
 
-확인한 실제 `session_id`를 `CLAUDE_RC_SESSION_ID`에 설정하고, 그 대상에 대한 작업 직전 승인을 받은 뒤 해당 Git 디렉토리에서 아래를 실행한다. 대상이나 실행 중 작업이 달라졌으면 먼저 다시 확인한다. 세션에 다른 작업이 있거나 bridge를 식별할 수 없으면 세션 전체를 종료하지 않는다.
+확인한 PID를 `CLAUDE_RC_UNMANAGED_PID`에 설정하고, 그 대상에 대한 작업 직전 승인을 받은 뒤 해당 Git 디렉토리에서 아래를 실행한다. 대상이나 실행 중 작업이 달라졌으면 먼저 다시 확인한다. 서버를 식별할 수 없으면 종료하지 않는다.
 
 ```bash
-: "${CLAUDE_RC_SESSION_ID:?확인하고 승인받은 tmux session_id를 설정하세요}"
-tmux kill-session -t "$CLAUDE_RC_SESSION_ID" || exit 1
-claude-rc start
+: "${CLAUDE_RC_UNMANAGED_PID:?확인하고 승인받은 unmanaged 서버 PID를 설정하세요}"
+kill "$CLAUDE_RC_UNMANAGED_PID" || exit 1
 ```
 
-선언 인스턴스는 수동 `claude-rc start` 대신 다음 ensure 주기에 자동 기동시켜도 된다.
-같은 디렉토리 경로이므로 기존 claude.ai 환경을 회수한다.
+`ps -p "$CLAUDE_RC_UNMANAGED_PID"`로 종료를 확인한 뒤 `claude-rc start`를 실행한다. 서버가
+아직 떠 있으면 `claude-rc start`는 같은 이유로 다시 거부한다. 선언 인스턴스는 수동
+`claude-rc start` 대신 다음 ensure 주기에 자동 기동시켜도 된다. 같은 디렉토리 경로이므로
+기존 claude.ai 환경을 회수한다.
 
 ## 트러블슈팅
 
