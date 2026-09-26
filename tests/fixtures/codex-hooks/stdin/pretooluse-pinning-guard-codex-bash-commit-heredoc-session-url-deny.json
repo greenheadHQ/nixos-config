@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "git commit -F - <<'MSG'\nfeat(pinning): 세션 URL 범주 추가\n\nClaude-Session: https://__SESSION_URL__\nMSG"
+  }
+}

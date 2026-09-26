@@ -9,6 +9,9 @@
     "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1"
   },
   "includeCoAuthoredBy": false,
+  "attribution": {
+    "sessionUrl": false
+  },
   "permissions": {
     "deny": [
       "Bash(rm -rf /)",

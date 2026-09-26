@@ -16,11 +16,14 @@
 PINNING_REPORT_INDENT='         '
 
 # Category labels (per-PATTERN). pinning_findings_records emits the label as
-# a stable field so callers can map by category code (A/B/C) instead of
+# a stable field so callers can map by category code (A/B/C/D) instead of
 # substring-matching the human-readable text.
+# The D label carries its own retry hint because every consumer renders the
+# label, so the guard/alert/commit-msg outputs all tell the author what to drop.
 PINNING_PATTERN_A_LABEL="Round counter 박제: 'Round N'"
 PINNING_PATTERN_B_LABEL="Bundle finding ID 박제: 'Bundle-N'"
 PINNING_PATTERN_C_LABEL="DA 실행 키워드 박제"
+PINNING_PATTERN_D_LABEL="Claude 세션 URL 박제: 세션 URL과 'Claude-Session:' 트레일러 줄을 빼고 다시 시도"
 
 # Pattern A: progress counters.
 PATTERN_A='\b[Rr][Oo][Uu][Nn][Dd] [0-9]+\b'
@@ -53,6 +56,17 @@ PINNING_PATTERN_C_VOLATILE='\bDA 피드백|\bDA [Rr]ound\b|\bAuditor [A-Za-z_]+-
 # this variable is no longer read inside the library.
 # shellcheck disable=SC2034
 PATTERN_C="$PINNING_PATTERN_C_WORKFLOW|$PINNING_PATTERN_C_VOLATILE"
+
+# Pattern D: Claude Code session URLs (issue #1422) — the claude.ai `/code/session_<id>`
+# address that session attribution appends as a `Claude-Session:` commit trailer or a
+# PR-body link. Only that path shape is matched, so other claude.ai addresses and
+# documentation links pass. The id must be at least 20 ASCII alphanumerics: real session
+# ids are 24 (observed in session links the harness hands out), and the margin keeps
+# them caught if the length shifts slightly. Shorter or non-alphanumeric ids pass, so
+# documentation placeholders such as `session_<id>`, `session_XXXXXXXX`,
+# `session_abc123`, and `session_id` stay clean. The host is matched in lowercase only,
+# as the harness emits it.
+PATTERN_D='\bclaude\.ai/code/session_[A-Za-z0-9]{20,}'
 
 # Canonicalize a path for whitelist comparison. Returns the canonical path on
 # stdout when canonicalization succeeds, otherwise prints nothing. Callers
@@ -426,7 +440,7 @@ pinning_apply_patch_section_lines_for_path() {
   ' "$sections_file"
 }
 
-# Generic raw matcher for A/B — emits 3-column TSV records.
+# Generic raw matcher for A/B/D — emits 3-column TSV records.
 # PATTERN_C sub-pattern handling lives in `_pinning_pattern_c_records_sorted`,
 # which emits the optional 4-th `sub_tag` column (workflow / volatile) so
 # consumers can branch on the sub-pattern without re-parsing the matched
@@ -476,13 +490,13 @@ _pinning_pattern_c_records_sorted() {
 
 # Structured findings API. Output: TSV records, one per match.
 # Format: <category_code>\t<label>\t<line>:<token>[\t<sub>]
-# - category_code: stable identifier (A/B/C) — callers branch on this
+# - category_code: stable identifier (A/B/C/D) — callers branch on this
 #   without parsing the human-readable label, which keeps display-string
 #   changes from breaking branching logic.
 # - label: human-readable category label (sourced from PINNING_PATTERN_*_LABEL)
 # - line:token: 1-based line number from grep -n + matched token
 # - sub: optional sub-category tag (currently "workflow" / "volatile" for
-#   category C). Empty for A and B records. PreToolUse hard-fail consumers
+#   category C). Empty for A, B and D records. PreToolUse hard-fail consumers
 #   branch on this tag instead of re-parsing the matched token.
 pinning_findings_records() {
   local scan_file="$1"
@@ -490,6 +504,7 @@ pinning_findings_records() {
   _pinning_simple_records "$scan_file" "A" "$PATTERN_A" "$PINNING_PATTERN_A_LABEL"
   _pinning_simple_records "$scan_file" "B" "$PATTERN_B" "$PINNING_PATTERN_B_LABEL"
   _pinning_pattern_c_records_sorted "$scan_file"
+  _pinning_simple_records "$scan_file" "D" "$PATTERN_D" "$PINNING_PATTERN_D_LABEL"
 }
 
 _pinning_findings_records_for_prd_or_plan_state() {

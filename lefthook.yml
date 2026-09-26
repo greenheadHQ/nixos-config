@@ -144,8 +144,11 @@ commit-msg:
         fi
     pinning:
       # 워크트리/cherry-pick 시나리오에서 lefthook.yml만 받고 스크립트 미동반 시
-      # 차단 회피용 방어 가드 (silent skip).
-      run: '[ -f ./scripts/ai/commit-msg-pinning.sh ] && bash ./scripts/ai/commit-msg-pinning.sh {1} || true'
+      # 차단 회피용 방어 가드 (silent skip). 스크립트의 종료 코드는 그대로 전달한다 —
+      # 세션 URL 범주(#1422)만 exit 1로 커밋을 막고, 나머지 범주는 warn-only로 exit 0이다.
+      # pinning lib 누락은 조용히, lib 손상이나 임시 파일 생성 실패 같은 내부 오류는 경고 후
+      # 스크립트가 exit 0으로 끝내므로 커밋을 막지 않는다.
+      run: 'if [ -f ./scripts/ai/commit-msg-pinning.sh ]; then bash ./scripts/ai/commit-msg-pinning.sh {1}; fi'
 
 pre-push:
   # CIR: #1045는 CI가 advisory라 shell 전체 검증을 매 push마다 유지했다. #1090에서 main의

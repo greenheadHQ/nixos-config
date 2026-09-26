@@ -1,0 +1,4 @@
+[pinning-guard] Bash on durable shell command contains volatile review/session metadata:
+  - Claude 세션 URL 박제: 세션 URL과 'Claude-Session:' 트레일러 줄을 빼고 다시 시도
+         4: __SESSION_URL__
+Use stable identifiers or plain natural-language context before retrying.
