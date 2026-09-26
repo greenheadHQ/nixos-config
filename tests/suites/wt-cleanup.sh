@@ -84,16 +84,16 @@ run_fixture_wt() {
     bash -c 'set -euo pipefail; cd "$1"; shift; exec "$@"' _ "$repo_root" "$home_dir/.local/bin/wt" "$@"
 }
 
-# `--contains` 참조 조회만 실패시키는 git 대역. 나머지 호출은 실제 git으로 넘기고,
+# 인자 하나가 glob 패턴에 맞는 git 호출만 실패시키는 대역. 나머지 호출은 실제 git으로 넘기고,
 # 실패를 주입할 때마다 marker 파일을 남겨 오류 경로를 실제로 탔는지 테스트가 확인하게 한다.
-install_contains_failing_git() {
-  local stub_dir="$1" real_git
+install_arg_failing_git() {
+  local stub_dir="$1" pattern="$2" real_git
   real_git=$(command -v git)
   mkdir -p "$stub_dir"
   cat > "$stub_dir/git" <<EOF
 #!/usr/bin/env bash
 for arg in "\$@"; do
-  if [[ "\$arg" == --contains* ]]; then
+  if [[ "\$arg" == $pattern ]]; then
     : > "$stub_dir/injected"
     echo "fatal: injected ref lookup failure" >&2
     exit 128
@@ -102,6 +102,11 @@ done
 exec "$real_git" "\$@"
 EOF
   chmod +x "$stub_dir/git"
+}
+
+# `--contains` 참조 조회만 실패시키는 git 대역.
+install_contains_failing_git() {
+  install_arg_failing_git "$1" '--contains*'
 }
 
 test_wt_recreate_guard_uses_physical_paths() {
@@ -117,7 +122,10 @@ test_wt_recreate_guard_uses_physical_paths() {
   install_deployed_layout "$sandbox" "$repo_root"
   git init --bare "$origin_dir" >/dev/null 2>&1
   git -C "$repo_root" remote add origin "$origin_dir"
-  git -C "$repo_root/.claude/worktrees/feature_one" push -u origin feature-one >/dev/null 2>&1
+  # 재생성은 경로의 실제 checkout이 요청 브랜치일 때만 진행한다 (#1375) — fixture의
+  # feature-one을 feature_one 경로로 매핑되는 feature/one으로 바꿔 가드까지 도달하게 한다.
+  wt_fixture_git -C "$repo_root" branch -m feature-one feature/one
+  git -C "$repo_root/.claude/worktrees/feature_one" push -u origin feature/one >/dev/null 2>&1
   ln -s "$repo_root" "$link_root"
   target_path="$link_root/.claude/worktrees/feature_one"
 
@@ -153,6 +161,8 @@ test_wt_recreate_refuses_locked_worktree() {
   install_deployed_layout "$sandbox" "$repo_root"
 
   locked_path="$repo_root/.claude/worktrees/feature_one"
+  # 요청 브랜치(feature/one)가 이 경로에 실제로 checkout돼 있어야 잠금 가드까지 간다 (#1375).
+  wt_fixture_git -C "$repo_root" branch -m feature-one feature/one
   echo "precious" > "$locked_path/precious.txt"
   lock_fixture_worktree "$repo_root" "$locked_path" "bridge holds it"
 
@@ -978,9 +988,10 @@ test_wt_cleanup_detached_lookup_errors_fail_closed() {
   [[ "$(cat "$head_file")" == "1234567890abcdef1234567890abcdef12345678" ]] || fail "det_bad_head HEAD가 바뀜"
 }
 
-test_wt_recreate_warns_unpreserved_detached_commit() {
-  # 재생성은 기존 worktree 제거를 포함하므로 정리와 같은 손실 판정(_wt_has_unpushed)을 쓴다.
-  # 보존 참조 없는 detached 커밋이 있으면 경고하고, 비대화형 무승인 호출은 멈춰야 한다.
+test_wt_recreate_refuses_unpreserved_detached_commit() {
+  # 재생성은 기존 worktree 제거를 포함하므로 보존 참조 없는 detached 커밋을 잃으면 안 된다.
+  # #1373은 이를 손실 판정(_wt_has_unpushed)의 경고로 막았고, #1375부터는 그보다 앞의 checkout
+  # 대조가 detached HEAD를 요청 브랜치와 일치하지 않는 상태로 보고 재생성 자체를 거부한다.
   local sandbox home_dir repo_root det_path head_oid out rc
   sandbox=$(new_sandbox)
   home_dir="$sandbox/home"
@@ -996,13 +1007,334 @@ test_wt_recreate_warns_unpreserved_detached_commit() {
   rc=0
   out=$(run_fixture_wt "$home_dir" "$repo_root" "" --if-exists=recreate det 2>&1) || rc=$?
   [[ "$rc" != "0" ]] || fail "보존 참조 없는 detached worktree 재생성은 무승인으로 진행되면 안 됨: $out"
-  assert_contains "$out" "push하지 않은 커밋이 있습니다"
-  assert_contains "$out" "비대화형: 확인 필요"
+  assert_contains "$out" "기존 worktree 사용 불가: det (요청 브랜치 'det', 확인된 상태: detached HEAD)"
   [[ -d "$det_path" ]] || fail "재생성 거부 뒤 디렉토리가 사라짐: $out"
   wt_fixture_git -C "$repo_root" worktree list --porcelain | grep -qxF "worktree $det_path" \
     || fail "재생성 거부 뒤 등록이 사라짐: $out"
   [[ "$(wt_fixture_git -C "$det_path" rev-parse HEAD)" == "$head_oid" ]] \
     || fail "재생성 거부 뒤 HEAD가 바뀜: $out"
+}
+
+# 기존 worktree 거부 경계를 비교하는 상태 스냅샷 (#1375). worktree 안의 모든 파일(미추적
+# 파일과 .git 포인터 포함) 내용 해시, 저장소의 worktree 등록(각 HEAD·브랜치 포함), 모든 ref를
+# 한 문자열로 낸다. 인덱스처럼 조회만으로도 갱신될 수 있는 관리 파일은 넣지 않는다 — 읽기만
+# 한 경로를 변경으로 오판하지 않기 위해서다.
+wt_existing_state_snapshot() {
+  local repo_root="$1" wt_path="$2" file
+  echo "## files"
+  while IFS= read -r file; do
+    printf '%s %s\n' "$(cksum < "$wt_path/$file")" "$file"
+  done < <(cd "$wt_path" && find . -type f | LC_ALL=C sort)
+  echo "## worktrees"
+  wt_fixture_git -C "$repo_root" worktree list --porcelain
+  echo "## refs"
+  wt_fixture_git -C "$repo_root" for-each-ref --format='%(refname) %(objectname)'
+}
+
+# 기존 worktree를 쓰지 않고 거부하는 공개 경계 계약 (#1375). 비대화형 wt를 실행해 실패 종료,
+# stdout 경로 없음, stderr의 요청 브랜치·확인된 상태 설명, worktree 파일·등록·ref 불변, 마지막
+# 경로 기록 없음을 함께 확인한다. 나머지 인자는 wt에 그대로 넘긴다. stderr는 호출 뒤에도
+# <sandbox>/refused.err에 남아 추가 확인에 쓸 수 있다.
+assert_wt_existing_refused() {
+  local home_dir="$1" repo_root="$2" path_prefix="$3" wt_path="$4" expected_err="$5"
+  shift 5
+  local sandbox before after err rc=0
+  sandbox=$(dirname "$repo_root")
+  before=$(wt_existing_state_snapshot "$repo_root" "$wt_path")
+  run_fixture_wt "$home_dir" "$repo_root" "$path_prefix" "$@" \
+    >"$sandbox/refused.out" 2>"$sandbox/refused.err" || rc=$?
+  after=$(wt_existing_state_snapshot "$repo_root" "$wt_path")
+  err=$(cat "$sandbox/refused.err")
+  [[ "$rc" != "0" ]] || fail "wt $* 는 실패해야 함: $err"
+  [[ ! -s "$sandbox/refused.out" ]] || fail "wt $* 가 실패하면서 stdout에 경로를 냄: $(cat "$sandbox/refused.out")"
+  [[ "$err" == *"$expected_err"* ]] || fail "wt $* 의 stderr에 기대 설명이 없음: $expected_err — 실제: $err"
+  [[ "$before" == "$after" ]] || fail "wt $* 거부 뒤 worktree 파일·등록·ref가 바뀜: $err
+--- before
+$before
+--- after
+$after"
+  [[ ! -e "$repo_root/.claude/worktrees/.wt-last" ]] || fail "wt $* 거부 뒤 마지막 경로 기록이 남음: $err"
+}
+
+test_wt_existing_worktree_refuses_mapped_branch_collision() {
+  # #1375: 디렉토리명은 브랜치명의 `/`를 `_`로 바꾼 값이라 feat/a와 feat_a가 같은 경로로
+  # 매핑된다. 경로가 있다는 이유만으로 재사용하면 다른 브랜치의 경로를 성공으로 돌려주고,
+  # 재생성하면 요청하지 않은 브랜치의 worktree를 미커밋 파일째 지운다. 두 방향 모두, 재사용과
+  # 재생성(--yes 승인 포함) 모두 거부해야 한다.
+  local sandbox home_dir repo_root base
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  base="$repo_root/.claude/worktrees"
+
+  # 슬래시 브랜치가 차지한 경로를 언더스코어 브랜치로 요청한다.
+  add_fixture_worktree "$repo_root" "$base/feat_a" "feat/a"
+  echo "wip" > "$base/feat_a/wip.txt"
+  assert_wt_existing_refused "$home_dir" "$repo_root" "" "$base/feat_a" \
+    "기존 worktree 사용 불가: feat_a (요청 브랜치 'feat_a', 확인된 상태: 브랜치 'feat/a' checkout)" \
+    --if-exists=reuse feat_a
+  assert_wt_existing_refused "$home_dir" "$repo_root" "" "$base/feat_a" \
+    "기존 worktree 사용 불가: feat_a (요청 브랜치 'feat_a', 확인된 상태: 브랜치 'feat/a' checkout)" \
+    --yes --if-exists=recreate feat_a
+
+  # 반대 방향: 언더스코어 브랜치가 차지한 경로를 슬래시 브랜치로 요청한다.
+  add_fixture_worktree "$repo_root" "$base/feat_b" "feat_b"
+  echo "wip" > "$base/feat_b/wip.txt"
+  assert_wt_existing_refused "$home_dir" "$repo_root" "" "$base/feat_b" \
+    "기존 worktree 사용 불가: feat_b (요청 브랜치 'feat/b', 확인된 상태: 브랜치 'feat_b' checkout)" \
+    --if-exists=reuse feat/b
+  assert_wt_existing_refused "$home_dir" "$repo_root" "" "$base/feat_b" \
+    "기존 worktree 사용 불가: feat_b (요청 브랜치 'feat/b', 확인된 상태: 브랜치 'feat_b' checkout)" \
+    --yes --if-exists=recreate feat/b
+}
+
+test_wt_existing_worktree_refuses_switched_checkout() {
+  # 이름이 겹치지 않아도 worktree 안에서 브랜치를 직접 전환하면 경로는 그대로이고 checkout만
+  # 바뀐다. 재사용·재생성은 경로가 아니라 실제 checkout으로 판단해야 한다.
+  local sandbox home_dir repo_root wt_path
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  wt_path="$repo_root/.claude/worktrees/sw"
+  add_fixture_worktree "$repo_root" "$wt_path" "sw"
+  wt_fixture_git -C "$wt_path" checkout -q -b other
+  echo "wip" > "$wt_path/wip.txt"
+
+  assert_wt_existing_refused "$home_dir" "$repo_root" "" "$wt_path" \
+    "기존 worktree 사용 불가: sw (요청 브랜치 'sw', 확인된 상태: 브랜치 'other' checkout)" \
+    --if-exists=reuse sw
+  assert_wt_existing_refused "$home_dir" "$repo_root" "" "$wt_path" \
+    "기존 worktree 사용 불가: sw (요청 브랜치 'sw', 확인된 상태: 브랜치 'other' checkout)" \
+    --yes --if-exists=recreate sw
+}
+
+test_wt_recreate_keeps_requested_branch_preserving_detached_commit() {
+  # 재생성 손실 경로 (1): worktree가 detached이고 그 HEAD 커밋을 요청 브랜치만 보존한다. 손실
+  # 판정은 worktree의 현재 HEAD를 보므로 "보존됨"을 내 확인 없이 진행했고, 곧바로 요청 브랜치를
+  # 지워 그 커밋이 경고 없이 사라졌다. detached HEAD는 요청 브랜치와 일치하는 checkout이 아니다.
+  local sandbox home_dir repo_root wt_path only_oid
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  wt_path="$repo_root/.claude/worktrees/keep"
+  add_fixture_worktree "$repo_root" "$wt_path" "keep"
+  echo "only on keep" > "$wt_path/keep.txt"
+  wt_fixture_git -C "$wt_path" add keep.txt
+  wt_fixture_git -C "$wt_path" commit -q -m "only on keep"
+  only_oid=$(wt_fixture_git -C "$wt_path" rev-parse HEAD)
+  wt_fixture_git -C "$wt_path" checkout -q --detach
+  # 전제: 이 커밋을 보존하는 참조는 요청 브랜치 하나뿐이다.
+  [[ "$(wt_fixture_git -C "$repo_root" for-each-ref --contains="$only_oid" --format='%(refname)')" == "refs/heads/keep" ]] \
+    || fail "fixture: 요청 브랜치만 detached 커밋을 보존해야 함"
+
+  # 무승인 재생성이 확인 없이 진행되던 경로다 — --yes 없이도, 승인해도 거부돼야 한다.
+  assert_wt_existing_refused "$home_dir" "$repo_root" "" "$wt_path" \
+    "기존 worktree 사용 불가: keep (요청 브랜치 'keep', 확인된 상태: detached HEAD)" \
+    --if-exists=recreate keep
+  assert_wt_existing_refused "$home_dir" "$repo_root" "" "$wt_path" \
+    "기존 worktree 사용 불가: keep (요청 브랜치 'keep', 확인된 상태: detached HEAD)" \
+    --yes --if-exists=recreate keep
+  assert_wt_existing_refused "$home_dir" "$repo_root" "" "$wt_path" \
+    "기존 worktree 사용 불가: keep (요청 브랜치 'keep', 확인된 상태: detached HEAD)" \
+    --if-exists=reuse keep
+  [[ "$(wt_fixture_git -C "$repo_root" rev-parse refs/heads/keep)" == "$only_oid" ]] \
+    || fail "요청 브랜치가 보존하던 detached 커밋을 잃음"
+}
+
+test_wt_recreate_keeps_unpushed_requested_branch_under_other_checkout() {
+  # 재생성 손실 경로 (2): worktree가 요청 브랜치가 아닌 push된 브랜치를 checkout했고, upstream
+  # 없는 요청 브랜치에 커밋이 있다. 손실 판정은 현재 HEAD(push된 브랜치)를 보고 "잃을 커밋
+  # 없음"을 내 확인 없이 진행했고, 이어서 요청 브랜치를 지웠다.
+  local sandbox home_dir repo_root origin_dir wt_path only_oid ls_out
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  origin_dir="$sandbox/origin.git"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  wt_fixture_git init -q --bare "$origin_dir"
+  wt_fixture_git -C "$repo_root" remote add origin "$origin_dir"
+
+  wt_path="$repo_root/.claude/worktrees/solo"
+  add_fixture_worktree "$repo_root" "$wt_path" "solo"
+  echo "only on solo" > "$wt_path/solo.txt"
+  wt_fixture_git -C "$wt_path" add solo.txt
+  wt_fixture_git -C "$wt_path" commit -q -m "only on solo"
+  only_oid=$(wt_fixture_git -C "$wt_path" rev-parse HEAD)
+  wt_fixture_git -C "$wt_path" checkout -q -b shipped main
+  wt_fixture_git -C "$wt_path" push -q -u origin shipped 2>/dev/null
+  # 전제: 현재 HEAD 기준 판정은 "잃을 커밋 없음"이다 — 이 판정만 믿으면 확인 없이 진행된다.
+  ls_out=$(run_fixture_wt "$home_dir" "$repo_root" "" ls --json 2>/dev/null)
+  [[ "$(jq -c '.[] | select(.name == "solo") | {branch, unpushed}' <<< "$ls_out")" == '{"branch":"shipped","unpushed":false}' ]] \
+    || fail "fixture: solo는 push된 shipped를 checkout해 unpushed:false여야 함: $ls_out"
+
+  assert_wt_existing_refused "$home_dir" "$repo_root" "" "$wt_path" \
+    "기존 worktree 사용 불가: solo (요청 브랜치 'solo', 확인된 상태: 브랜치 'shipped' checkout)" \
+    --if-exists=recreate solo
+  assert_wt_existing_refused "$home_dir" "$repo_root" "" "$wt_path" \
+    "기존 worktree 사용 불가: solo (요청 브랜치 'solo', 확인된 상태: 브랜치 'shipped' checkout)" \
+    --if-exists=reuse solo
+  [[ "$(wt_fixture_git -C "$repo_root" rev-parse refs/heads/solo)" == "$only_oid" ]] \
+    || fail "upstream 없는 요청 브랜치의 커밋을 잃음"
+}
+
+test_wt_existing_worktree_lookup_errors_fail_closed() {
+  # checkout을 확인하지 못한 것은 요청 브랜치와 일치한 것이 아니다. worktree가 손상돼(gitdir
+  # 무효) git이 읽지 못하거나, 유효한 worktree에서 HEAD 조회가 실패하면 재사용·재생성 모두
+  # 거부해야 한다.
+  local sandbox home_dir repo_root base stale_path wt_path stub_dir out
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/git-stub"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  base="$repo_root/.claude/worktrees"
+
+  # 손상 조건: .git이 존재하지 않는 gitdir을 가리킨다 (사용자명 마이그레이션 잔재 모사).
+  stale_path="$base/stale"
+  mkdir -p "$stale_path"
+  printf 'gitdir: %s\n' "$sandbox/missing-gitdir" > "$stale_path/.git"
+  echo "wip" > "$stale_path/wip.txt"
+  assert_wt_existing_refused "$home_dir" "$repo_root" "" "$stale_path" \
+    "기존 worktree 사용 불가: stale (요청 브랜치 'stale', 확인된 상태: 손상된 worktree)" \
+    --if-exists=reuse stale
+  assert_contains "$(cat "$sandbox/refused.err")" "gitdir 무효 — 수동 정리: rm -rf"
+  assert_wt_existing_refused "$home_dir" "$repo_root" "" "$stale_path" \
+    "기존 worktree 사용 불가: stale (요청 브랜치 'stale', 확인된 상태: 손상된 worktree)" \
+    --yes --if-exists=recreate stale
+
+  # 조회 오류: 요청 브랜치가 실제로 checkout된 유효한 worktree에서 HEAD 조회만 실패시킨다.
+  wt_path="$base/lookup"
+  add_fixture_worktree "$repo_root" "$wt_path" "lookup"
+  install_arg_failing_git "$stub_dir" 'symbolic-ref'
+  assert_wt_existing_refused "$home_dir" "$repo_root" "$stub_dir:" "$wt_path" \
+    "기존 worktree 사용 불가: lookup (요청 브랜치 'lookup', 확인된 상태: checkout 조회 실패)" \
+    --if-exists=reuse lookup
+  [[ -f "$stub_dir/injected" ]] || fail "HEAD 조회 오류가 주입되지 않음 — 대역이 대조 경로에 닿지 않았다"
+  rm -f "$stub_dir/injected"
+  assert_wt_existing_refused "$home_dir" "$repo_root" "$stub_dir:" "$wt_path" \
+    "기존 worktree 사용 불가: lookup (요청 브랜치 'lookup', 확인된 상태: checkout 조회 실패)" \
+    --yes --if-exists=recreate lookup
+  [[ -f "$stub_dir/injected" ]] || fail "재생성 경로에 HEAD 조회 오류가 주입되지 않음"
+
+  # 대조군: 같은 요청이 대역 없이는 성공해야 위 거부가 조회 오류 때문임이 드러난다.
+  out=$(run_fixture_wt "$home_dir" "$repo_root" "" --if-exists=reuse lookup 2>/dev/null)
+  [[ "$out" == "$wt_path" ]] || fail "대역 없는 reuse는 기존 경로를 반환해야 함: $out"
+}
+
+test_wt_existing_worktree_interactive_choice_checks_checkout_unit() {
+  # 대화형 선택도 재사용·재생성과 같은 진입점의 checkout 대조를 거친다 — 일치하지 않는
+  # worktree는 선택지를 묻지 않고 거부하고, 일치하면 기존대로 선택을 받는다. 대화형은 stdin
+  # tty가 필요해 공개 경계로 태울 수 없어, 판정(_wt_interactive)과 선택(_choose)만 대역으로
+  # 바꾸고 진입 함수를 직접 호출한다.
+  local sandbox repo_root base marker
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  base="$repo_root/.claude/worktrees"
+  add_fixture_worktree "$repo_root" "$base/feat_a" "feat/a"
+  marker="$sandbox/choose-called"
+
+  (
+    set -euo pipefail
+    # WORKTREE_DIR·WT_LAST_FILE은 평소 wt.sh가 정의한다 — 헬퍼만 source하므로 직접 세운다.
+    # shellcheck disable=SC2034
+    WORKTREE_DIR=".claude/worktrees"
+    # shellcheck disable=SC2034
+    WT_LAST_FILE=".claude/worktrees/.wt-last"
+    local helper out rc
+    for helper in ui tmux git-state bootstrap create; do
+      # shellcheck source=/dev/null
+      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
+    done
+    _wt_interactive() { return 0; }
+    _choose() { printf '%s\n' "$1" >> "$marker"; printf '기존 열기\n'; }
+    cd "$repo_root"
+
+    rc=0
+    out=$(_handle_existing_worktree "$base/feat_a" "feat_a" "$repo_root" "main" "" 2>"$sandbox/mismatch.err") || rc=$?
+    [[ "$rc" == "1" ]] || fail "불일치 worktree의 대화형 처리는 실패해야 함 (rc=$rc): $out"
+    [[ -z "$out" ]] || fail "불일치 거부가 경로를 냄: $out"
+    [[ ! -e "$marker" ]] || fail "불일치 worktree인데 선택지를 물음: $(cat "$marker")"
+    assert_contains "$(cat "$sandbox/mismatch.err")" \
+      "기존 worktree 사용 불가: feat_a (요청 브랜치 'feat_a', 확인된 상태: 브랜치 'feat/a' checkout)"
+    [[ ! -e "$base/.wt-last" ]] || fail "불일치 거부가 마지막 경로를 기록함"
+
+    out=$(_handle_existing_worktree "$base/feat_a" "feat/a" "$repo_root" "main" "" 2>/dev/null)
+    [[ "$out" == "$base/feat_a" ]] || fail "일치하는 worktree의 '기존 열기'는 경로를 내야 함: $out"
+    [[ -s "$marker" ]] || fail "일치하는 worktree에서 선택지를 묻지 않음"
+    [[ "$(cat "$base/.wt-last")" == "$repo_root" ]] || fail "기존 열기가 마지막 경로를 기록하지 않음"
+  )
+}
+
+test_wt_create_existing_path_contracts_unchanged() {
+  # checkout 대조를 더해도 기존 계약은 그대로다: 비대화형 충돌은 명시 선택을 요구하고,
+  # --if-exists=fail은 실패하며, 신규 생성·기존 브랜치 사용은 슬래시→언더스코어 경로에 요청
+  # 브랜치를 checkout하고, 일치하는 worktree는 재사용되며 --yes 승인으로 재생성된다.
+  local sandbox home_dir repo_root base out rc
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  base="$repo_root/.claude/worktrees"
+  add_fixture_worktree "$repo_root" "$base/feat_a" "feat/a"
+  echo "wip" > "$base/feat_a/wip.txt"
+
+  rc=0
+  run_fixture_wt "$home_dir" "$repo_root" "" feat/a >"$sandbox/out" 2>"$sandbox/err" || rc=$?
+  [[ "$rc" != "0" && ! -s "$sandbox/out" ]] || fail "비대화형 충돌은 경로 없이 실패해야 함 (rc=$rc): $(cat "$sandbox/out")"
+  assert_contains "$(cat "$sandbox/err")" \
+    "worktree 'feat/a'이(가) 이미 존재합니다 — 비대화형에서는 --if-exists=reuse|recreate|fail로 명시하세요"
+
+  rc=0
+  run_fixture_wt "$home_dir" "$repo_root" "" --if-exists=fail feat/a >"$sandbox/out" 2>"$sandbox/err" || rc=$?
+  [[ "$rc" != "0" && ! -s "$sandbox/out" ]] || fail "--if-exists=fail은 경로 없이 실패해야 함 (rc=$rc): $(cat "$sandbox/out")"
+  assert_contains "$(cat "$sandbox/err")" "worktree 'feat/a'이(가) 이미 존재합니다 (--if-exists=fail)"
+
+  out=$(run_fixture_wt "$home_dir" "$repo_root" "" feat/new 2>/dev/null)
+  [[ "$out" == "$base/feat_new" ]] || fail "신규 생성은 변환된 경로를 내야 함: $out"
+  [[ "$(wt_fixture_git -C "$base/feat_new" symbolic-ref HEAD)" == "refs/heads/feat/new" ]] \
+    || fail "신규 생성 worktree가 요청 브랜치를 checkout하지 않음"
+
+  wt_fixture_git -C "$repo_root" branch feat/old main
+  out=$(run_fixture_wt "$home_dir" "$repo_root" "" --if-exists=reuse feat/old 2>/dev/null)
+  [[ "$out" == "$base/feat_old" ]] || fail "기존 브랜치 사용은 변환된 경로를 내야 함: $out"
+  [[ "$(wt_fixture_git -C "$base/feat_old" symbolic-ref HEAD)" == "refs/heads/feat/old" ]] \
+    || fail "기존 브랜치 worktree가 요청 브랜치를 checkout하지 않음"
+
+  out=$(run_fixture_wt "$home_dir" "$repo_root" "" --if-exists=reuse feat/a 2>/dev/null)
+  [[ "$out" == "$base/feat_a" ]] || fail "일치하는 worktree 재사용은 기존 경로를 내야 함: $out"
+  [[ -f "$base/feat_a/wip.txt" ]] || fail "재사용이 기존 worktree를 바꿈"
+
+  out=$(run_fixture_wt "$home_dir" "$repo_root" "" --yes --if-exists=recreate feat/a 2>/dev/null)
+  [[ "$out" == "$base/feat_a" ]] || fail "일치하는 worktree 재생성은 같은 경로를 내야 함: $out"
+  [[ ! -e "$base/feat_a/wip.txt" ]] || fail "재생성이 기존 worktree를 새로 만들지 않음"
+  [[ "$(wt_fixture_git -C "$base/feat_a" symbolic-ref HEAD)" == "refs/heads/feat/a" ]] \
+    || fail "재생성 worktree가 요청 브랜치를 checkout하지 않음"
 }
 
 test_wt_cleanup_branch_unpushed_verdict_unchanged() {

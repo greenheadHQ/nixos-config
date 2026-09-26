@@ -76,24 +76,64 @@ cmd_create() {
   _wt_emit_worktree_path "$worktree_dir"
 }
 
+# 기존 worktree 경로의 실제 checkout이 요청 브랜치인지 대조한다 (#1375).
+# 경로는 브랜치명의 `/`를 `_`로 바꿔 정하므로 서로 다른 브랜치(feat/a, feat_a)가 같은 경로로
+# 매핑되고, worktree 안에서 브랜치를 직접 전환해도 경로는 그대로다. 경로가 있다는 사실만으로
+# 진행하면 재사용은 다른 브랜치의 경로를 성공으로 돌려주고, 재생성은 worktree의 현재 HEAD로
+# 손실을 판정한 뒤 요청 브랜치를 지워 그 브랜치에만 있던 커밋을 경고 없이 잃는다.
+# 일치를 확인했을 때만 0이다. 손상·다른 브랜치·detached·조회 실패는 요청 브랜치와 확인된
+# 상태를 알리고 1을 반환한다 — 확인하지 못한 것은 일치한 것이 아니다 (fail-closed).
+# 읽기만 하므로 거부해도 worktree·브랜치·등록·마지막 경로 기록은 그대로다.
+_wt_verify_requested_checkout() {
+  local worktree_dir="$1" branch_name="$2" git_root="$3"
+  local dir_name head_ref state rc=0
+  local hint="재사용·재생성은 이 경로에 요청 브랜치가 checkout돼 있을 때만 합니다 (브랜치명의 '/'는 '_'로 바뀌어 다른 브랜치와 경로가 겹칠 수 있음)"
+  dir_name=$(basename "$worktree_dir")
+
+  if _wt_is_broken "$worktree_dir"; then
+    state="손상된 worktree"
+    hint=$(_wt_broken_hint "$git_root" "$worktree_dir")
+  else
+    # symbolic-ref --quiet: 브랜치면 0, detached면 1, 그 밖의 조회 오류는 128.
+    head_ref=$(git -C "$worktree_dir" symbolic-ref --quiet HEAD 2>/dev/null) || rc=$?
+    if (( rc == 0 )); then
+      [[ "$head_ref" == "refs/heads/$branch_name" ]] && return 0
+      state="브랜치 '${head_ref#refs/heads/}' checkout"
+    elif (( rc == 1 )); then
+      state="detached HEAD"
+    else
+      state="checkout 조회 실패"
+    fi
+  fi
+
+  _warn "기존 worktree 사용 불가: $dir_name (요청 브랜치 '$branch_name', 확인된 상태: $state)"
+  _warn "  $hint"
+  return 1
+}
+
 # 기존 worktree 처리
 _handle_existing_worktree() {
   local worktree_dir="$1" branch_name="$2" git_root="$3" parent_branch="$4" if_exists="${5:-}"
   local dir_name
   dir_name=$(basename "$worktree_dir")
 
-  local choice
-  if [[ -n "$if_exists" ]]; then
-    case "$if_exists" in
-      reuse)    choice="기존 열기" ;;
-      recreate) choice="재생성" ;;
-      fail)     _die "worktree '$branch_name'이(가) 이미 존재합니다 (--if-exists=fail)" ;;
-    esac
-  elif ! _wt_interactive; then
+  # 부작용 없이 끝나는 두 거부(fail, 비대화형 미지정)는 기존 계약 그대로 먼저 낸다.
+  if [[ "$if_exists" == "fail" ]]; then
+    _die "worktree '$branch_name'이(가) 이미 존재합니다 (--if-exists=fail)"
+  elif [[ -z "$if_exists" ]] && ! _wt_interactive; then
     _die "worktree '$branch_name'이(가) 이미 존재합니다 — 비대화형에서는 --if-exists=reuse|recreate|fail로 명시하세요"
-  else
-    choice=$(_choose "worktree '$branch_name'이(가) 이미 존재합니다" "기존 열기" "재생성" "취소") || return 1
   fi
+
+  # 재사용·재생성·대화형 선택이 공유하는 진입점. 요청 브랜치와 다른 checkout이면 선택지를
+  # 묻지도 않는다 — 어느 쪽을 골라도 요청과 다른 worktree를 다루게 된다.
+  _wt_verify_requested_checkout "$worktree_dir" "$branch_name" "$git_root" || return 1
+
+  local choice
+  case "$if_exists" in
+    reuse)    choice="기존 열기" ;;
+    recreate) choice="재생성" ;;
+    *)        choice=$(_choose "worktree '$branch_name'이(가) 이미 존재합니다" "기존 열기" "재생성" "취소") || return 1 ;;
+  esac
 
   case "$choice" in
     "기존 열기")
