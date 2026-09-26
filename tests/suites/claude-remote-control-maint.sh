@@ -197,8 +197,9 @@ test_claude_remote_control_maint_start_classifies_login_required() {
   ' <<<"$status" >/dev/null \
     || fail "login failure must be classified separately from start-failed: $status"
   for needle in \
+    "Claude 원격 제어 재로그인 필요 · test-host" \
     "• $repo: login-required" \
-    "원인: 재로그인 필요 — Claude 로그인이 풀려" \
+    "원인: 재로그인 필요 — claude.ai 로그인 자격이 없거나 거부돼" \
     "조치: test-host에서 'claude auth login'"; do
     grep -Fq -- "$needle" "$CLAUDE_RC_ALERT_LOG" \
       || fail "login alert missing '$needle': $(cat "$CLAUDE_RC_ALERT_LOG")"

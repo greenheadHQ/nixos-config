@@ -570,7 +570,7 @@ record_restart_outcome() {
             ;;
         login-required)
             record_instance_result \
-                "$path" "" "$running_version" "$DESIRED_VERSION" "$outcome"
+                "$path" "" "${started_version:-$running_version}" "$DESIRED_VERSION" "$outcome"
             log_error "restart failed; Claude login required: $path"
             ;;
         *)
@@ -1060,7 +1060,7 @@ action_explain() {
             ;;
         login-required)
             printf '%s\t%s' \
-                "재로그인 필요 — Claude 로그인이 풀려 bridge가 시작 직후 종료됨" \
+                "재로그인 필요 — claude.ai 로그인 자격이 없거나 거부돼 bridge가 시작 직후 종료됨" \
                 "${CLAUDE_RC_ALERT_HOST}에서 'claude auth login'(또는 claude 실행 후 /login)으로 로그인. 재시도로는 풀리지 않으며, 로그인 후 다음 ensure가 복구"
             ;;
         unmanaged-server-present)
@@ -1120,6 +1120,17 @@ action_explain() {
             printf '%s\t%s' "분류되지 않은 실패 ($action)" "managing-claude-rc 스킬의 트러블슈팅 표와 ensure 로그 확인"
             ;;
     esac
+}
+
+# 잠금화면 미리보기에는 제목만 보인다. 재시도로 풀리지 않고 사용자가 로그인해야 하는 실패는
+# 본문을 열지 않아도 알 수 있게 제목에서 드러낸다.
+failure_alert_title() {
+    if [ -s "$RESULTS_FILE" ] \
+        && jq -s -e 'any(.[]; .action == "login-required")' "$RESULTS_FILE" >/dev/null 2>&1; then
+        printf '%s' "Claude 원격 제어 재로그인 필요"
+    else
+        printf '%s' "Claude 원격 제어 실패"
+    fi
 }
 
 failure_alert_body() {
@@ -1188,7 +1199,7 @@ send_alerts() {
     fi
     if [ $((now - last)) -ge "$ALERT_COOLDOWN_SECONDS" ]; then
         summary=$(failure_alert_body "$exit_code")
-        send_notification "Claude 원격 제어 실패 · ${CLAUDE_RC_ALERT_HOST}" "$summary" 0
+        send_notification "$(failure_alert_title) · ${CLAUDE_RC_ALERT_HOST}" "$summary" 0
         echo "$now" >"$last_failure_file"
     fi
     echo "failed" >"$state_file"

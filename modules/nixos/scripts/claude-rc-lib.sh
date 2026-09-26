@@ -110,17 +110,6 @@ lock_is_free() {
     flock -n "$lock_path" true
 }
 
-rotate_log_if_needed() {
-    local log_path="$1" size
-    if [ ! -f "$log_path" ]; then
-        return 0
-    fi
-    size=$(wc -c <"$log_path" | tr -d '[:space:]')
-    if [ "${size:-0}" -gt "$LOG_MAX_BYTES" ]; then
-        mv -f "$log_path" "$log_path.1"
-    fi
-}
-
 log_size_bytes() {
     local log_path="$1" size
     [ -f "$log_path" ] || { echo 0; return 0; }
@@ -128,9 +117,19 @@ log_size_bytes() {
     echo "${size:-0}"
 }
 
+rotate_log_if_needed() {
+    local log_path="$1"
+    if [ ! -f "$log_path" ]; then
+        return 0
+    fi
+    if [ "$(log_size_bytes "$log_path")" -gt "$LOG_MAX_BYTES" ]; then
+        mv -f "$log_path" "$log_path.1"
+    fi
+}
+
 # 로그인 자격이 없거나 서버가 자격을 거부하면 bridge는 upstream 로그인 안내를 남기고 곧바로
 # 종료한다. 토큰이 없을 때는 "You must be logged in ..."을, 401 응답일 때는 오류 뒤에
-# "... only available with claude.ai subscriptions ..." 안내를 붙인다 (2.1.246·2.1.283 실측).
+# "... only available with claude.ai subscriptions ..." 안내를 붙인다 (2026-09 2.1.246·2.1.283에서 관측).
 # offset 이후 바이트만 보는 이유는 server.log가 append-only라 이전 실행의 로그인 오류가
 # 남아 있기 때문이다. 기준점 이후 회전돼 파일이 줄었으면 새 파일 전체가 이번 시도의
 # 출력이다. 문구가 바뀌면 판정이 빠져 일반 launch 실패로 남을 뿐이다.
