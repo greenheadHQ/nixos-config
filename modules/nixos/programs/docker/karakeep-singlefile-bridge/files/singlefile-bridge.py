@@ -6,6 +6,7 @@ import signal
 import sqlite3
 import subprocess
 import tempfile
+import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
@@ -665,10 +666,29 @@ class SingleFileBridgeHandler(BaseHTTPRequestHandler):
 
 def main() -> None:
     server = ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), SingleFileBridgeHandler)
+    shutdown_requested = threading.Event()
 
     def _shutdown(signum, _frame) -> None:
+        # server.shutdown() blocks until serve_forever()'s loop notices the
+        # request and exits. serve_forever() runs on this same (main) thread,
+        # so calling shutdown() directly from here deadlocks: the loop can't
+        # notice anything while this handler hasn't returned. Hand the
+        # request off to a throwaway thread instead.
+        #
+        # shutdown_requested makes repeat signals (two SIGTERMs, or
+        # SIGTERM+SIGINT) a no-op so at most one shutdown ever starts.
+        #
+        # In-flight requests run on ThreadingHTTPServer's daemon connection
+        # threads (daemon_threads=True) and are not waited for here: once
+        # serve_forever() returns the process is free to exit and those
+        # daemon threads are cut off. That is the bridge's pre-existing
+        # behavior and keeps shutdown bounded regardless of
+        # REQUEST_TIMEOUT_SEC.
+        if shutdown_requested.is_set():
+            return
+        shutdown_requested.set()
         log(f"received signal {signum}, shutting down...")
-        server.shutdown()
+        threading.Thread(target=server.shutdown, daemon=True).start()
 
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
