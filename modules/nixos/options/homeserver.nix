@@ -30,7 +30,7 @@
         description = "OnCalendar time for daily backup";
       };
       retentionDays = lib.mkOption {
-        type = lib.types.ints.unsigned; # 0 = find -mtime +0으로 24시간 넘은 백업을 지우고 당일 백업만 남긴다. 음수는 방금 만든 백업까지 지우는 위험한 값이라 거부한다 (#1367)
+        type = lib.types.ints.unsigned; # 0 = find -mtime +0으로 24시간 넘은 백업을 지운다(RandomizedDelaySec 5m 때문에 전날 백업이 24시간 안쪽으로 남는 날도 있음). 음수는 방금 만든 백업까지 지우는 위험한 값이라 거부한다 (#1367)
         default = 30;
         description = "Number of days to retain backups";
       };
@@ -116,7 +116,7 @@
         description = "OnCalendar time for daily backup";
       };
       retentionDays = lib.mkOption {
-        type = lib.types.ints.unsigned; # 0 = find -mtime +0으로 24시간 넘은 백업을 지우고 당일 백업만 남긴다. 음수는 방금 만든 백업까지 지우는 위험한 값이라 거부한다 (#1367)
+        type = lib.types.ints.unsigned; # 0 = find -mtime +0으로 24시간 넘은 백업을 지운다(RandomizedDelaySec 5m 때문에 전날 백업이 24시간 안쪽으로 남는 날도 있음). 음수는 방금 만든 백업까지 지우는 위험한 값이라 거부한다 (#1367)
         default = 30;
         description = "Number of days to retain backups";
       };
@@ -325,7 +325,7 @@
         description = "OnCalendar time for the daily .colpkg HDD backup of the instances with backup.enable";
       };
       retentionDays = lib.mkOption {
-        type = lib.types.ints.positive; # find -mtime +0은 24시간 넘은 백업을 모두 지우므로 0은 허용하지 않는다(#1367). 음수는 새 백업까지 지운다
+        type = lib.types.ints.positive; # 타입은 #1307에서 도입, immich·karakeep과 경계를 통일하지 않기로 한 결정은 #1362 G1 — find -mtime +0은 24시간 넘은 백업을 모두 지우므로 0은 이 타입에서 이미 거부된다(#1367은 이 설명만 정정). 음수는 새 백업까지 지운다
         default = 14;
         # 다른 백업(immich·karakeep)의 30일보다 짧은 근거: 미디어 포함 .colpkg가 ≈200MB/일이라 30일이면 6GB이고,
         # 원본은 AnkiWeb과 anki-study 백업에 별도로 있어 이 사본은 "최근 2주 복원점"이면 충분하다.
