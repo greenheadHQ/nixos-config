@@ -27,14 +27,17 @@ pushover-claude-stop.age wasn't created.
 해결: `age` CLI를 직접 호출하되, 임시 파일 경유로 암호화. stdin 파이프는 `nix-shell --run` 내부 셸에서 특수문자(`!`, `$`, `` ` `` 등)가 이스케이프되어 `\!`처럼 백슬래시가 추가될 수 있다.
 
 ```bash
-# 임시 파일 경유 (특수문자 안전)
-printf 'KEY=value\n' > /tmp/secret
+# 임시 파일 경유 (특수문자 안전) — 제한 권한 디렉터리 + 정상/오류/중단 시 자동 정리
+TMPDIR_SECRET=$(umask 077 && mktemp -d)
+trap 'rm -rf "$TMPDIR_SECRET"' EXIT INT TERM
+printf 'KEY=value\n' > "$TMPDIR_SECRET/secret"
+chmod 0600 "$TMPDIR_SECRET/secret"
 nix-shell -p age --run \
-  'age -r "ssh-ed25519 <key1>" -r "ssh-ed25519 <key2>" -o secrets/<name>.age /tmp/secret'
-rm /tmp/secret
+  "age -r 'ssh-ed25519 <key1>' -r 'ssh-ed25519 <key2>' -o secrets/<name>.age '$TMPDIR_SECRET/secret'"
 
-# 암호화 결과 검증 (xxd로 바이트 단위 확인)
-# 배포 후: sudo cat /run/agenix/<name> | xxd
+# 배포 후 검증 (원문은 출력하지 않음) — 존재/비어있지 않음, 필수 키 유무만 확인
+sudo test -s /run/agenix/<name> && echo "배포됨/비어있지 않음" || echo "미배포/비어있음"
+sudo grep -q '^KEY=' /run/agenix/<name> && echo "KEY 있음" || echo "KEY 없음"
 ```
 
 ---
@@ -61,10 +64,11 @@ cat ~/.ssh/id_ed25519.pub
 # secrets/secrets.nix의 allHosts에 포함되어 있는지 확인
 ```
 
-해결: identity path를 명시적으로 지정하여 복호화.
+해결: identity path를 명시적으로 지정해 복호화가 성공하는지 확인 (원문은 출력하지 않음).
 
 ```bash
-nix-shell -p age --run 'age -d -i ~/.ssh/id_ed25519 secrets/<name>.age'
+nix-shell -p age --run 'age -d -i ~/.ssh/id_ed25519 secrets/<name>.age' >/dev/null \
+  && echo "복호화 성공" || echo "복호화 실패"
 ```
 
 키가 포함되어 있지 않다면 `secrets/secrets.nix`에 공개키 추가 후 `cd secrets && nix run github:ryantm/agenix -- -r`로 재암호화 필요.

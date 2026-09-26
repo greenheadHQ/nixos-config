@@ -21,11 +21,25 @@ ls -la /var/lib/docker-data/copyparty/config/copyparty.conf  # 설정 파일 존
 
 증상: 웹 UI에서 greenhead 계정으로 로그인 불가
 
-진단:
+진단 (원문은 출력하지 않음 — 존재/계정 유무/값 일치/이스케이프 포함 여부만 확인):
 ```bash
-sudo cat /run/agenix/copyparty-password              # 복호화된 비밀번호 확인
-sudo cat /var/lib/docker-data/copyparty/config/copyparty.conf  # 설정 파일 내 계정 확인
-sudo cat /run/agenix/copyparty-password | xxd         # 바이트 레벨 확인 (이스케이프 문자)
+CONF=/var/lib/docker-data/copyparty/config/copyparty.conf
+
+sudo test -s /run/agenix/copyparty-password \
+  && echo "비밀번호 파일: 존재/비어있지 않음" || echo "비밀번호 파일: 없음/비어있음"
+
+sudo grep -q '^\s*greenhead:' "$CONF" \
+  && echo "설정 파일 계정: 있음" || echo "설정 파일 계정: 없음"
+
+# agenix 파일 값과 설정 파일 값 일치 여부 (trailing newline 보정 후 비교)
+cmp -s \
+  <(sudo tr -d '\n' < /run/agenix/copyparty-password) \
+  <(sudo sed -nE 's/^[[:space:]]*greenhead:[[:space:]]*//p' "$CONF" | tr -d '\n') \
+  && echo "값 비교: 일치" || echo "값 비교: 불일치"
+
+# 이스케이프 문자(\) 포함 여부
+sudo grep -qF '\' /run/agenix/copyparty-password \
+  && echo "이스케이프 문자: 포함" || echo "이스케이프 문자: 없음"
 ```
 
 해결:
@@ -67,14 +81,17 @@ sudo systemctl restart podman-copyparty
 
 ## 5. 설정 파일 내용 확인
 
-진단: 설정 파일이 올바르게 생성되었는지 확인
+진단: 설정 파일이 올바르게 생성되었는지 확인 (`[accounts]` 섹션의 비밀번호 값은 마스킹)
 
 ```bash
-# 설정 파일 전체 확인
-sudo cat /var/lib/docker-data/copyparty/config/copyparty.conf
+CONF=/var/lib/docker-data/copyparty/config/copyparty.conf
+MASK='/^\[accounts\]/,/^\[/{ s/^([[:space:]]*[^:[:space:]]+:)[[:space:]]*[^[:space:]]+/\1 ***/ }'
+
+# 설정 파일 구조 확인
+sudo sed -E "$MASK" "$CONF"
 
 # 공백/탭 등 whitespace 문제 확인
-sudo cat /var/lib/docker-data/copyparty/config/copyparty.conf | cat -A
+sudo sed -E "$MASK" "$CONF" | cat -A
 ```
 
 정상 설정 예시 (정본은 `modules/nixos/programs/docker/copyparty.nix`의 `configScript`):

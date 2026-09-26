@@ -148,7 +148,7 @@ macOS에서 `~/FolderActions/upload-immich/`에 파일을 넣으면 Immich에 �
 3. IP 바인딩 실패: `tailscale-wait.nix`가 올바르게 import 되었는지 확인
 4. DB 비밀번호 오류: `secrets/immich-db-password.age` 존재 확인, `cd secrets && nix run github:ryantm/agenix -- -r` 재암호화
 5. Uptime Kuma에서 localhost 서비스 모니터링 불가: `--network=host` 필수 (기본 브릿지에서는 `127.0.0.1` 접근 불가)
-6. Caddy HTTPS 인증서 발급 실패: Cloudflare API 토큰 확인 (`sudo cat /run/caddy/env`), `systemctl status caddy-env`
+6. Caddy HTTPS 인증서 발급 실패: Cloudflare API 토큰 키 존재 확인 (원문 미출력, `sudo grep -q '^CLOUDFLARE_API_TOKEN=' /run/caddy/env && echo 설정됨 || echo 없음`), `systemctl status caddy-env`
 
 ## 레퍼런스
 
