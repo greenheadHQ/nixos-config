@@ -277,7 +277,7 @@ test_release_rebuild_lock_preserves_caller_stderr() {
       acquire_rebuild_lock
       release_rebuild_lock
       echo "held_after_first_release=$NRS_REBUILD_LOCK_HELD"
-      # 이미 해제된 상태에서 재호출해도 stderr 대상이 다시 바뀌지 않아야 함(S01-4).
+      # 이미 해제된 상태에서 재호출해도 stderr 대상이 다시 바뀌지 않아야 함.
       release_rebuild_lock
       acquire_rebuild_lock
       release_rebuild_lock
