@@ -96,6 +96,7 @@ run_test "wt plugin manifest missing and invalid inputs are safe" test_wt_plugin
 run_test "codex activation .agents symlink guard static" test_codex_activation_agents_symlink_guard_static
 run_test "codex activation orphan cleanup removes only managed links" test_codex_activation_orphan_cleanup_removes_only_managed_links
 run_test "codex activation projection fails closed without git" test_codex_activation_projection_fails_closed_without_git
+run_test "codex activation projection skips tracked dir and replaces untracked dir" test_codex_activation_projection_tracked_dir_skipped_untracked_dir_replaced
 run_test "codex activation projection keeps real dir when tracking check fails" test_codex_activation_projection_keeps_real_dir_when_tracking_check_fails
 run_test "codex activation projection dry-run leaves tree unchanged" test_codex_activation_projection_dry_run_leaves_tree_unchanged
 run_test "create-issue documented body lifecycle is safe" test_create_issue_documented_body_lifecycle_is_safe

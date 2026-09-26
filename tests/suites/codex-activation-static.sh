@@ -150,16 +150,50 @@ test_codex_activation_projection_fails_closed_without_git() {
   _codex_projection_assert_state_unchanged "projection with missing git path" "$before" "$after"
 }
 
+# 원본과 이름이 같은 실디렉토리는 git 추적 판정으로 갈린다. 추적(ls-files rc 0)이면 건드리지 않고
+# Skipping을 출력하고, 미추적(rc 1)이면 관리 링크로 교체한다. 교체는 현재 동작을 그대로 고정한
+# 것이다 (그 rm -rf가 미추적 초안까지 지우는 문제는 #1366 범위 밖).
+test_codex_activation_projection_tracked_dir_skipped_untracked_dir_replaced() {
+  local sandbox project output rc
+  local script="$REPO_ROOT/modules/shared/programs/codex/files/project-codex-skills.sh"
+  sandbox="$(new_sandbox)"
+  project="$sandbox/project"
+  mkdir -p "$project/.claude/skills/tracked-legacy" "$project/.claude/skills/untracked-legacy" \
+    "$project/.agents/skills/tracked-legacy" "$project/.agents/skills/untracked-legacy"
+  printf 'tracked source\n' > "$project/.claude/skills/tracked-legacy/SKILL.md"
+  printf 'untracked source\n' > "$project/.claude/skills/untracked-legacy/SKILL.md"
+  printf 'tracked copy\n' > "$project/.agents/skills/tracked-legacy/SKILL.md"
+  printf 'untracked copy\n' > "$project/.agents/skills/untracked-legacy/SKILL.md"
+  _codex_projection_git "$project" init -q
+  _codex_projection_git "$project" add .agents/skills/tracked-legacy/SKILL.md
+
+  rc=0
+  output="$(GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 DRY_RUN_CMD='' bash "$script" "$project" 2>&1)" || rc=$?
+  [ "$rc" -eq 0 ] || fail "projection script exited $rc: $output"
+  [ ! -L "$project/.agents/skills/tracked-legacy" ] \
+    && [ "$(cat "$project/.agents/skills/tracked-legacy/SKILL.md")" = "tracked copy" ] \
+    || fail "git-tracked real directory was changed"
+  assert_contains "$output" 'Skipping .agents/skills/tracked-legacy: git-tracked directory'
+  [ "$(readlink "$project/.agents/skills/untracked-legacy")" = "../../.claude/skills/untracked-legacy" ] \
+    || fail "untracked real directory was not replaced with the managed link"
+  assert_not_contains "$output" 'Skipping .agents/skills/untracked-legacy'
+  assert_not_contains "$output" 'Warning: keeping .agents/skills/tracked-legacy'
+  assert_not_contains "$output" 'Warning: keeping .agents/skills/untracked-legacy'
+}
+
 # 추적 판정 명령 자체가 실패하면(저장소가 아님 등) 그 실디렉토리를 "미추적"으로 보지 않고 보존한다.
+# 보존한 항목 뒤의 원본도 계속 투영하고 고아 정리도 계속한다 (legacy < modern 순으로 순회된다).
 test_codex_activation_projection_keeps_real_dir_when_tracking_check_fails() {
   local sandbox project output rc
   local script="$REPO_ROOT/modules/shared/programs/codex/files/project-codex-skills.sh"
   sandbox="$(new_sandbox)"
   project="$sandbox/project"
-  mkdir -p "$project/.claude/skills/legacy" "$project/.agents/skills/legacy"
+  mkdir -p "$project/.claude/skills/legacy" "$project/.claude/skills/modern" "$project/.agents/skills/legacy"
   printf 'legacy source\n' > "$project/.claude/skills/legacy/SKILL.md"
+  printf 'modern source\n' > "$project/.claude/skills/modern/SKILL.md"
   printf 'legacy copy\n' > "$project/.agents/skills/legacy/SKILL.md"
   printf 'untracked draft\n' > "$project/.agents/skills/legacy/draft.md"
+  ln -s ../../.claude/skills/gone "$project/.agents/skills/gone"
 
   rc=0
   output="$(GIT_CEILING_DIRECTORIES="$sandbox" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
@@ -172,12 +206,16 @@ test_codex_activation_projection_keeps_real_dir_when_tracking_check_fails() {
   [ "$(cat "$project/.agents/skills/legacy/draft.md")" = "untracked draft" ] \
     || fail "untracked draft removed although git tracking check failed"
   assert_contains "$output" 'Warning: keeping .agents/skills/legacy'
+  [ "$(readlink "$project/.agents/skills/modern")" = "../../.claude/skills/modern" ] \
+    || fail "projection stopped after keeping a directory with unknown git tracking"
+  [ ! -e "$project/.agents/skills/gone" ] && [ ! -L "$project/.agents/skills/gone" ] \
+    || fail "orphan cleanup stopped after keeping a directory with unknown git tracking"
 }
 
 # dry-run(DRY_RUN_CMD=echo)은 변경 명령을 출력만 하고 파일 시스템을 바꾸지 않는다. 거부 가드는
 # dry-run에서도 돈다. DRY_RUN_CMD가 아예 없으면(Home Manager activation 밖 호출) 바꾸지 않고 실패한다.
 test_codex_activation_projection_dry_run_leaves_tree_unchanged() {
-  local sandbox project guarded before after output rc
+  local sandbox project guarded bare before after output rc
   local script="$REPO_ROOT/modules/shared/programs/codex/files/project-codex-skills.sh"
   sandbox="$(new_sandbox)"
   project="$sandbox/project"
@@ -216,4 +254,18 @@ test_codex_activation_projection_dry_run_leaves_tree_unchanged() {
   [ "$rc" -ne 0 ] || fail "projection without DRY_RUN_CMD exited 0: $output"
   after="$(_codex_projection_state "$project")"
   _codex_projection_assert_state_unchanged "projection without DRY_RUN_CMD" "$before" "$after"
+
+  # .agents/skills가 아직 없는 프로젝트에서도 dry-run은 디렉토리를 만들지 않는다.
+  bare="$sandbox/bare"
+  mkdir -p "$bare/.claude/skills/fresh"
+  printf 'fresh source\n' > "$bare/.claude/skills/fresh/SKILL.md"
+  _codex_projection_git "$bare" init -q
+  before="$(_codex_projection_state "$bare")"
+  rc=0
+  output="$(GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 DRY_RUN_CMD='echo' \
+    bash "$script" "$bare" 2>&1)" || rc=$?
+  [ "$rc" -eq 0 ] || fail "dry-run projection without .agents/skills exited $rc: $output"
+  after="$(_codex_projection_state "$bare")"
+  _codex_projection_assert_state_unchanged "dry-run projection without .agents/skills" "$before" "$after"
+  assert_contains "$output" "mkdir -p $bare/.agents/skills"
 }
