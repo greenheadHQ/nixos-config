@@ -37,6 +37,13 @@ _claude_rc_concat_script() {
   printf '%s\n' "$out"
 }
 
+# 로그인 자격이 없을 때 2.1.246 bridge가 server.log에 남긴 출력 그대로 (MiniPC 2026-09 실측).
+_claude_rc_login_error_text() {
+  printf '%s\n\n%s' \
+    'Error: You must be logged in to use Remote Control.' \
+    'Remote Control is only available with claude.ai subscriptions. Please use `/login` to sign in with your claude.ai account.'
+}
+
 _claude_rc_sha256() {
   if command -v shasum >/dev/null 2>&1; then
     printf '%s' "$1" | shasum -a 256 | awk '{print $1}'

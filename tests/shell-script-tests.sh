@@ -139,6 +139,9 @@ run_test "claude remote-control maint reports missing path with live lock" test_
 run_test "claude remote-control maint propagates result write failure" test_claude_remote_control_maint_propagates_result_write_failure
 run_test "claude remote-control maint propagates status write failure" test_claude_remote_control_maint_propagates_status_write_failure
 run_test "claude remote-control start failure preserves unknown state" test_claude_remote_control_start_failure_preserves_unknown_state
+run_test "claude remote-control maint start classifies login required" test_claude_remote_control_maint_start_classifies_login_required
+run_test "claude remote-control maint start ignores stale login error" test_claude_remote_control_maint_start_ignores_stale_login_error
+run_test "claude remote-control login required log scan uses attempt bytes" test_claude_remote_control_login_required_log_scan_uses_attempt_bytes
 run_test "claude remote-control maint accepts previous generation flock" test_claude_remote_control_maint_accepts_previous_generation_flock
 run_test "claude remote-control maint rejects bridge with separate lock holder" test_claude_remote_control_maint_rejects_bridge_with_separate_lock_holder
 run_test "claude remote-control session matcher honors option terminator" test_claude_remote_control_session_matcher_honors_option_terminator
@@ -154,6 +157,7 @@ run_test "claude remote-control maint reports lock setup failure" test_claude_re
 run_test "claude remote-control maint waits for parent lock release" test_claude_remote_control_maint_waits_for_parent_lock_release
 run_test "claude remote-control maint restart rejects mismatched version" test_claude_remote_control_maint_restart_rejects_mismatched_version
 run_test "claude remote-control maint restart rejects unverifiable version" test_claude_remote_control_maint_restart_rejects_unverifiable_version
+run_test "claude remote-control maint restart classifies login required" test_claude_remote_control_maint_restart_classifies_login_required
 run_test "claude remote-control maint action taxonomy" test_claude_remote_control_maint_action_taxonomy
 run_test "claude remote-control maint accepts hardlink aliased exe" test_claude_remote_control_maint_accepts_hardlink_aliased_exe
 run_test "claude remote-control exe identity rejects unrelated binary" test_claude_remote_control_exe_identity_rejects_unrelated_binary
@@ -172,6 +176,7 @@ run_test "claude remote-control interactive lifecycle propagates callback failur
 run_test "claude remote-control interactive registry lock failure prevents callback" test_claude_remote_control_interactive_registry_lock_failure_prevents_callback
 run_test "claude remote-control interactive start requires verified managed identity" test_claude_remote_control_interactive_start_requires_verified_managed_identity
 run_test "claude remote-control interactive start ignores ambient claude bin" test_claude_remote_control_interactive_start_ignores_ambient_claude_bin
+run_test "claude remote-control start reports login required" test_claude_remote_control_start_reports_login_required
 run_test "claude remote-control rejects unmanaged rc alias" test_claude_remote_control_rejects_unmanaged_rc_alias
 run_test "claude remote-control rejects unmanaged global option prefix" test_claude_remote_control_rejects_unmanaged_global_option_prefix
 run_test "claude remote-control rejects unmanaged valued global option prefix" test_claude_remote_control_rejects_unmanaged_valued_global_option_prefix

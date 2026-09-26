@@ -163,6 +163,108 @@ test_claude_remote_control_start_failure_preserves_unknown_state() {
     || fail "unverified launch failure must preserve unknown state: $status"
 }
 
+# 로그인이 풀린 bridge는 재시도로 살아나지 않는다. start-failed로 뭉뚱그리면 30분마다 같은
+# "핸드셰이크 확인 실패" 알림만 오고 원인은 server.log를 열어야 보였다 (2026-09 MiniPC).
+test_claude_remote_control_maint_start_classifies_login_required() {
+  local sandbox repo status out rc lock_path needle
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  _claude_rc_make_alerting "$sandbox"
+  repo="$sandbox/repo"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  _claude_rc_write_instance "$repo" "worktree" "null" "bypassPermissions" "manual"
+
+  rc=0
+  out="$(_claude_rc_run_maint "$repo" env \
+    STARTED_IDENTITY_POLL_ATTEMPTS=2 \
+    STARTED_IDENTITY_POLL_INTERVAL_SECONDS=0.01 \
+    FAKE_CLAUDE_RC=1 \
+    FAKE_CLAUDE_ERR="$(_claude_rc_login_error_text)" \
+    CLAUDE_RC_ALERT_HOST=test-host \
+    ALERT_LOG="$CLAUDE_RC_ALERT_LOG" \
+    SERVICE_LIB="$CLAUDE_RC_SERVICE_LIB" \
+    PUSHOVER_CRED_FILE="$CLAUDE_RC_PUSHOVER_CRED" \
+    bash "$(_claude_rc_maint_script)" ensure 2>&1)" || rc=$?
+  [ "$rc" -ne 0 ] || fail "login failure must fail ensure: $out"
+  assert_contains "$out" "start failed; Claude login required: $repo"
+  status="$(cat "$CLAUDE_RC_STATE/status.json")"
+  jq -e '
+    .action == "failed"
+    and (.instances | length == 1)
+    and .instances[0].action == "login-required"
+    and .instances[0].processState == "unknown"
+    and .instances[0].runningVersion == ""
+  ' <<<"$status" >/dev/null \
+    || fail "login failure must be classified separately from start-failed: $status"
+  for needle in \
+    "Claude 원격 제어 재로그인 필요 · test-host" \
+    "• $repo: login-required" \
+    "원인: 재로그인 필요 — claude.ai 로그인 자격이 없거나 거부돼" \
+    "조치: test-host에서 'claude auth login'"; do
+    grep -Fq -- "$needle" "$CLAUDE_RC_ALERT_LOG" \
+      || fail "login alert missing '$needle': $(cat "$CLAUDE_RC_ALERT_LOG")"
+  done
+  lock_path="$CLAUDE_RC_STATE/$(_claude_rc_slug "$repo")/lock"
+  "$CLAUDE_RC_REAL_FLOCK" -n "$lock_path" true \
+    || fail "login failure must not leave the instance lock held: $out"
+}
+
+# server.log는 append-only라 과거 실행의 로그인 오류가 남아 있다. 그 흔적으로 이번의 다른
+# 실패를 login-required로 오분류하면 재로그인해도 풀리지 않는 알림이 된다.
+test_claude_remote_control_maint_start_ignores_stale_login_error() {
+  local sandbox repo slug status out rc
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  repo="$sandbox/repo"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  _claude_rc_write_instance "$repo" "worktree" "null" "bypassPermissions" "manual"
+  slug="$(_claude_rc_slug "$repo")"
+  mkdir -p "$CLAUDE_RC_STATE/$slug"
+  _claude_rc_login_error_text >"$CLAUDE_RC_STATE/$slug/server.log"
+
+  rc=0
+  out="$(_claude_rc_run_maint "$repo" env \
+    STARTED_IDENTITY_POLL_ATTEMPTS=2 \
+    STARTED_IDENTITY_POLL_INTERVAL_SECONDS=0.01 \
+    FAKE_CLAUDE_RC=1 \
+    FAKE_CLAUDE_ERR="fake claude failure" \
+    bash "$(_claude_rc_maint_script)" ensure 2>&1)" || rc=$?
+  [ "$rc" -ne 0 ] || fail "generic launch failure must fail ensure: $out"
+  grep -Fq "fake claude failure" "$CLAUDE_RC_STATE/$slug/server.log" \
+    || fail "fixture launch did not reach the fake claude: $(cat "$CLAUDE_RC_STATE/$slug/server.log")"
+  status="$(cat "$CLAUDE_RC_STATE/status.json")"
+  jq -e '.instances[0].action == "start-failed"' <<<"$status" >/dev/null \
+    || fail "stale login error must not classify a new failure: $status"
+}
+
+test_claude_remote_control_login_required_log_scan_uses_attempt_bytes() (
+  local sandbox log offset
+  # shellcheck source=/dev/null
+  source "$(_claude_rc_maint_script)"
+  sandbox="$(new_sandbox)"
+  log="$sandbox/server.log"
+
+  if server_log_reports_login_required "$log" 0; then
+    fail "missing log must not report login required"
+  fi
+  _claude_rc_login_error_text >"$log"
+  server_log_reports_login_required "$log" 0 \
+    || fail "login error written by this attempt must be detected"
+  offset="$(log_size_bytes "$log")"
+  printf 'fake claude failure\n' >>"$log"
+  if server_log_reports_login_required "$log" "$offset"; then
+    fail "login error before the attempt offset must be ignored"
+  fi
+  # 기준점 뒤 회전으로 파일이 줄었으면 새 파일 전체가 이번 시도의 출력이다.
+  _claude_rc_login_error_text >"$log"
+  server_log_reports_login_required "$log" $((offset * 10)) \
+    || fail "rotated log must be scanned from the beginning"
+  # 실행 중 401로 끊긴 bridge도 같은 안내를 붙인다.
+  printf '%s\n' 'Error: Poll: Authentication failed (401): OAuth access token has expired. Re-authenticate to continue.. Remote Control is only available with claude.ai subscriptions. Please use `/login` to sign in with your claude.ai account.' >"$log"
+  server_log_reports_login_required "$log" 0 \
+    || fail "401 bridge error must be detected"
+)
+
 test_claude_remote_control_slug_uses_hash_for_same_basename() {
   local sandbox repo_a repo_b slug_a slug_b status
   sandbox="$(_claude_rc_new_sandbox)"
@@ -1140,6 +1242,45 @@ test_claude_remote_control_maint_restart_rejects_unverifiable_version() {
   _claude_rc_release_server "$repo"
 }
 
+# drift 재시작의 교체 서버가 로그인 오류로 죽어도 restart-failed가 아니라 재로그인 안내가 나가야 한다.
+test_claude_remote_control_maint_restart_classifies_login_required() {
+  local sandbox repo status out rc
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  repo="$sandbox/repo"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  : > "$CLAUDE_RC_HOLD_FILE"
+
+  FAKE_CLAUDE_STARTED_EXE="$CLAUDE_RC_SERVER_EXE" \
+    _claude_rc_run "$repo" bash "$(_claude_rc_wrapper_script)" start >/dev/null
+  _claude_rc_wait_fake_claude_log "remote-control --spawn worktree" \
+    || fail "initial fake server did not start before login restart test"
+
+  rc=0
+  out="$(
+    CLAUDE_RC_DRIFT_POLICY=automatic \
+      _claude_rc_run_maint "$repo" env \
+      STARTED_IDENTITY_POLL_ATTEMPTS=2 \
+      STARTED_IDENTITY_POLL_INTERVAL_SECONDS=0.01 \
+      FAKE_CLAUDE_RC=1 \
+      FAKE_CLAUDE_ERR="$(_claude_rc_login_error_text)" \
+      bash "$(_claude_rc_maint_script)" ensure 2>&1
+  )" || rc=$?
+  [ "$rc" -ne 0 ] || fail "restart with a logged-out replacement must fail: $out"
+  assert_contains "$out" "restart failed; Claude login required: $repo"
+  status="$(cat "$CLAUDE_RC_STATE/status.json")"
+  jq -e '
+    .action == "failed"
+    and .instances[0].action == "login-required"
+    and .instances[0].processState == "unknown"
+    and .instances[0].runningVersion == ""
+    and .instances[0].observedVersion == "claude-server"
+    and .instances[0].desiredVersion == "claude-new"
+  ' <<<"$status" >/dev/null || fail "restart login failure status mismatch: $status"
+
+  _claude_rc_release_server "$repo"
+}
+
 test_claude_remote_control_maint_action_taxonomy() {
   local script operator_doc actual action expected_state expected_failure
   local expected_snapshot expected_keys actual_keys
@@ -1166,6 +1307,7 @@ start-version-mismatch	stopped	true
 restart-version-mismatch	stopped	true
 restart-gate-failed	running	true
 start-failed	dynamic	true
+login-required	unknown	true
 invalid-spawn	dynamic	true
 invalid-capacity	unknown	true
 invalid-permission-mode	unknown	true

@@ -110,15 +110,37 @@ lock_is_free() {
     flock -n "$lock_path" true
 }
 
-rotate_log_if_needed() {
+log_size_bytes() {
     local log_path="$1" size
+    [ -f "$log_path" ] || { echo 0; return 0; }
+    size=$(wc -c <"$log_path" | tr -d '[:space:]') || size=0
+    echo "${size:-0}"
+}
+
+rotate_log_if_needed() {
+    local log_path="$1"
     if [ ! -f "$log_path" ]; then
         return 0
     fi
-    size=$(wc -c <"$log_path" | tr -d '[:space:]')
-    if [ "${size:-0}" -gt "$LOG_MAX_BYTES" ]; then
+    if [ "$(log_size_bytes "$log_path")" -gt "$LOG_MAX_BYTES" ]; then
         mv -f "$log_path" "$log_path.1"
     fi
+}
+
+# 로그인 자격이 없거나 서버가 자격을 거부하면 bridge는 upstream 로그인 안내를 남기고 곧바로
+# 종료한다. 토큰이 없을 때는 "You must be logged in ..."을, 401 응답일 때는 오류 뒤에
+# "... only available with claude.ai subscriptions ..." 안내를 붙인다 (2026-09 2.1.246·2.1.283에서 관측).
+# offset 이후 바이트만 보는 이유는 server.log가 append-only라 이전 실행의 로그인 오류가
+# 남아 있기 때문이다. 기준점 이후 회전돼 파일이 줄었으면 새 파일 전체가 이번 시도의
+# 출력이다. 문구가 바뀌면 판정이 빠져 일반 launch 실패로 남을 뿐이다.
+server_log_reports_login_required() {
+    local log_path="$1" offset="$2"
+    [ -f "$log_path" ] || return 1
+    [ "$(log_size_bytes "$log_path")" -ge "$offset" ] || offset=0
+    grep -qF \
+        -e 'You must be logged in to use Remote Control' \
+        -e 'Remote Control is only available with claude.ai subscriptions' \
+        < <(tail -c "+$((offset + 1))" "$log_path")
 }
 
 init_instances_file() {
@@ -1307,11 +1329,13 @@ stop_verified_started_server() {
 launch_and_verify_server() {
     local path="$1" spawn="$2" capacity="$3" permission_mode="$4" launcher="$5"
     local result_status_var="$6" result_pid_var="$7" result_version_var="$8"
-    local lock_path launch_guard_pid launcher_pid launch_group_pid started_identity resolved_pid resolved_version
+    local lock_path log_path log_offset launch_guard_pid launcher_pid launch_group_pid started_identity resolved_pid resolved_version
     printf -v "$result_status_var" '%s' "launch-failed"
     printf -v "$result_pid_var" '%s' ""
     printf -v "$result_version_var" '%s' ""
     lock_path=$(lock_path_for_path "$path") || return 1
+    log_path=$(log_path_for_path "$path") || return 1
+    log_offset=$(log_size_bytes "$log_path")
 
     if ! spawn_guarded_server_launch \
         "$path" "$spawn" "$capacity" "$permission_mode" "$launcher" \
@@ -1340,5 +1364,10 @@ launch_and_verify_server() {
         && wait_until_instance_lock_free "$lock_path" \
         && [ "${!result_status_var}" = "identity-unresolvable" ]; then
         printf -v "$result_status_var" '%s' "identity-unresolvable-cleaned"
+    fi
+    # 재시도로는 풀리지 않는 실패라 일반 launch 실패와 구분해 재로그인을 안내하게 한다.
+    if [ "${!result_status_var}" = "launch-failed" ] \
+        && server_log_reports_login_required "$log_path" "$log_offset"; then
+        printf -v "$result_status_var" '%s' "login-required"
     fi
 }
