@@ -6,7 +6,8 @@
 # run_test는 출력을 모으지 않고 그대로 내보낸다. 그래서 "통과한 job의 상세 출력은 숨기고
 # SKIP:/N/A: 마커만 전파한다"는 계약은 병렬 경로 전용이다(#1432). 판정·SKIP 헬퍼는
 # tests/suites/parallel-harness-failures.sh(#1363/#1430 선례)의 _phf_nested_bash_runs_parallel /
-# _phf_skip_parallel_only를 그대로 쓴다 — find … | sort 로드 순서상 이 파일보다 먼저 source된다.
+# _phf_skip_parallel_only를 그대로 쓴다 — aggregator(tests/shell-script-tests.sh)가 두 suite를
+# 모두 source한 뒤 run_test로 호출하므로, 이 파일이 실행되는 시점에는 이미 정의돼 있다.
 test_parallel_harness_propagates_coverage_markers() (
   local output
   output="$(TEST_JOBS=2 bash -c '
@@ -39,7 +40,7 @@ test_parallel_harness_propagates_coverage_markers() (
     || fail "nested N/A marker must propagate exactly once"
 
   if ! _phf_nested_bash_runs_parallel; then
-    _phf_skip_parallel_only "hidden detail suppression (sequential fallback does not buffer output)"
+    _phf_skip_parallel_only "parallel barrier marker propagation and hidden detail suppression (sequential fallback does not buffer output)"
     return 0
   fi
 
