@@ -453,6 +453,15 @@ run_test "interaction-limits-renewal missing PAT exits nonzero" test_ilr_missing
 run_test "korean particle expansions stay brace-bounded" test_korean_particle_expansion_is_brace_bounded
 run_test "SA health check lifecycle and secret handling" test_opnix_health_check_lifecycle
 
+# git-cleanup suite (tests/suites/git-cleanup.sh) — 날짜 계산 도구 선택 계약 (#1376)
+run_test "git-cleanup BSD-only date dry-run succeeds" test_git_cleanup_bsd_only_date_dry_run_succeeds
+run_test "git-cleanup GNU-only date dry-run succeeds" test_git_cleanup_gnu_only_date_dry_run_succeeds
+run_test "git-cleanup stale boundary consistent across date tools" test_git_cleanup_stale_boundary_consistent_across_date_tools
+run_test "git-cleanup stale boundary is timezone independent" test_git_cleanup_stale_boundary_is_timezone_independent
+run_test "git-cleanup date command failure stops before candidates" test_git_cleanup_date_command_failure_stops_before_candidates
+run_test "git-cleanup date non-numeric output stops before candidates" test_git_cleanup_date_non_numeric_output_stops_before_candidates
+run_test "git-cleanup dry-run does not delete stale branch" test_git_cleanup_dry_run_does_not_delete_stale_branch
+
 # 퇴역 키 로더는 tomlkit 없이도 도는 순수 셸 계약이라 아래 게이트 밖에 둔다.
 run_test "codex-config retired keys loader" test_codex_config_retired_keys_loader
 
