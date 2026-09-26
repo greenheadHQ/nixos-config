@@ -3,7 +3,7 @@ name: syncing-atuin
 description: |
   Sync Atuin shell history, 암호화 키 복구, atuin-clean-kr.
   Trigger: 'atuin 동기화 오류', 'encryption key', 'atuin-clean-kr', '한글 히스토리 삭제', 'atuin 설정'.
-  NOT for tmux (use managing-tmux). NOT for SSH (use managing-ssh).
+  NOT for SSH (use managing-ssh).
 ---
 
 # Atuin 히스토리 동기화

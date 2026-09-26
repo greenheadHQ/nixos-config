@@ -432,6 +432,117 @@ let
       && builtins.isString activation.${name}.data
     ) shottrActivationEntryNames;
 
+  # tmux 순정 계약 (#1101): 플러그인·직접 만든 키·pane 노트 스크립트 배선이 없고,
+  # 호환 설정·상태줄·pane 테두리의 Git 브랜치 표시는 남는다. darwin 호스트 루프와
+  # NixOS 전역 리스트가 같은 판정을 공유한다(guard가 false면 hm을 평가하지 않는다).
+  # 실제 로드 본문은 HM이 만든 ~/.config/tmux/tmux.conf와, 그 마지막 줄의
+  # source-file이 읽는 ~/.tmux/tmux.conf 링크 원본을 이어 붙인 것이다.
+  tmuxDeployedConf =
+    hm:
+    hm.xdg.configFile."tmux/tmux.conf".text
+    + "\n"
+    + builtins.readFile hm.home.file.".tmux/tmux.conf".source;
+  tmuxConfLines = hm: nixpkgsLib.splitString "\n" (tmuxDeployedConf hm);
+  # 줄 맨 앞의 tmux 명령(별칭 포함)으로 거른다. 휠 바인딩처럼 인자 안에 든 명령은 세지 않는다.
+  tmuxCommandLines =
+    hm: commands:
+    builtins.filter (line: builtins.match "[[:space:]]*(${commands})([[:space:]].*)?" line != null) (
+      tmuxConfLines hm
+    );
+  tmuxBindLines = hm: tmuxCommandLines hm "bind|bind-key|unbind|unbind-key";
+  tmuxOptionHasInfix =
+    hm: option: needle:
+    builtins.any (
+      line: nixpkgsLib.hasPrefix "set -g ${option} " line && nixpkgsLib.hasInfix needle line
+    ) (tmuxConfLines hm);
+  tmuxVanillaTests = label: guard: hm: [
+    {
+      name = "Test TMX1 ${label}: tmux 플러그인이 비어 있고 sensible도 로드하지 않아야 함";
+      cond = guard && hm.programs.tmux.plugins == [ ] && !hm.programs.tmux.sensibleOnTop;
+    }
+    {
+      name = "Test TMX2 ${label}: home.file에 .tmux/scripts/ 스크립트 링크가 없어야 함";
+      cond =
+        guard && !builtins.any (nixpkgsLib.hasInfix ".tmux/scripts/") (builtins.attrNames hm.home.file);
+    }
+    {
+      name = "Test TMX3 ${label}: home.packages에 yq-go가 없어야 함";
+      cond = guard && !builtins.any (p: (p.pname or p.name or "") == "yq-go") hm.home.packages;
+    }
+    {
+      # 노트와 세션 저장 파일이 든 상위 폴더(~/.tmux, ~/.local/share/tmux)까지 본다.
+      # 상위 폴더를 통째로 지우거나 옮기는 activation도 같은 데이터를 건드린다.
+      name = "Test TMX4 ${label}: createTmuxDirs가 없고 어떤 activation도 노트·resurrect 경로와 그 상위 폴더를 다루지 않아야 함";
+      cond =
+        guard
+        && !(hm.home.activation ? createTmuxDirs)
+        && !builtins.any (
+          entry:
+          let
+            data = entry.data or "";
+          in
+          builtins.any (needle: nixpkgsLib.hasInfix needle data) [
+            "pane-notes"
+            "tmux/resurrect"
+            ".tmux"
+            "share/tmux"
+          ]
+        ) (builtins.attrValues hm.home.activation);
+    }
+    {
+      name = "Test TMX5 ${label}: age.secrets에 pane-note-links가 없어야 함";
+      cond =
+        guard
+        && !(hm.age.secrets ? "pane-note-links")
+        && !builtins.any (secret: nixpkgsLib.hasInfix "pane-note" secret.path) (
+          builtins.attrValues hm.age.secrets
+        );
+    }
+    {
+      # bind 줄로 드러나지 않는 로드 경로도 막는다: 최상위 run-shell·if-shell은 외부 스크립트나
+      # 조건부 bind를 실행하고, 추가 source-file은 이 본문 밖의 설정을 읽는다.
+      name = "Test TMX6 ${label}: tmux 바인딩은 마우스 휠 두 줄뿐이고 run-shell·if-shell·추가 source-file과 칸 제목·노트·스크립트 참조가 없어야 함";
+      cond =
+        guard
+        && (
+          let
+            binds = tmuxBindLines hm;
+            conf = tmuxDeployedConf hm;
+          in
+          builtins.length binds == 2
+          && builtins.any (nixpkgsLib.hasInfix "-n WheelUpPane ") binds
+          && builtins.any (nixpkgsLib.hasInfix "-n WheelDownPane ") binds
+          && tmuxCommandLines hm "run-shell|run|if-shell|if" == [ ]
+          && tmuxCommandLines hm "source-file|source" == [ "source-file ~/.tmux/tmux.conf" ]
+          && !nixpkgsLib.hasInfix "@custom_pane_title" conf
+          && !nixpkgsLib.hasInfix "@pane_note_path" conf
+          && !nixpkgsLib.hasInfix ".tmux/scripts" conf
+        );
+    }
+    {
+      # 제거 과정에서 유지 대상이 함께 사라지는 회귀를 잡는 잠금. source-file 연결과
+      # mouse는 아래 설정·휠 바인딩이 실제로 로드되기 위한 전제다.
+      name = "Test TMX7 ${label}: 호환 설정과 상태줄·테두리의 Git 브랜치 표시가 유지되어야 함";
+      cond =
+        guard
+        && (
+          let
+            lines = tmuxConfLines hm;
+          in
+          nixpkgsLib.hasInfix "source-file ~/.tmux/tmux.conf" hm.xdg.configFile."tmux/tmux.conf".text
+          && hm.programs.tmux.mouse
+          && builtins.elem "set -g extended-keys-format csi-u" lines
+          && builtins.elem ''set -ga terminal-overrides ",xterm-256color:Tc"'' lines
+          && builtins.elem ''set -ga terminal-overrides ",xterm-ghostty:Tc"'' lines
+          && builtins.elem ''set -ga terminal-overrides ",tmux-256color:Tc"'' lines
+          && builtins.elem "set -g allow-passthrough on" lines
+          && builtins.elem "set -g set-clipboard on" lines
+          && tmuxOptionHasInfix hm "pane-border-format" "git symbolic-ref"
+          && tmuxOptionHasInfix hm "status-right" "git symbolic-ref"
+        );
+    }
+  ];
+
   darwinIntentTests = builtins.concatLists (
     map (
       hostName:
@@ -803,6 +914,7 @@ let
             );
         }
       ]
+      ++ tmuxVanillaTests hostName hasHost hm
     ) expectedDarwinHosts
   );
 
@@ -1711,6 +1823,7 @@ let
       cond = builtins.elem "nofail" nixosCfg.fileSystems.${constants.paths.mediaData}.options;
     }
   ]
+  ++ tmuxVanillaTests "greenhead-minipc" true nixosHm
   ++ darwinIntentTests
   ++ [
     {

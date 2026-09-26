@@ -33,7 +33,7 @@ mini.nvim 0.17.0 (2025-12)에서 `echasnovski` → `nvim-mini` 조직으로 이�
 `clipboard = "unnamedplus"` 설정:
 - macOS 로컬: 시스템 클립보드 직접 연동
 - SSH + tmux: tmux-yank + OSC 52 (터미널 앱이 지원하는 경우)
-- Termius: OSC 52 미지원 → tmux-thumbs (`prefix+F`)로 보완
+- Termius: OSC 52 미지원 (알려진 Termius 제한)
 
 ## 주요 키맵
 
