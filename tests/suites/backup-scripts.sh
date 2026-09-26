@@ -100,11 +100,12 @@ _backup_scripts_run() {
   local sandbox="$2"
   local stdout_path="$3"
   local stderr_path="$4"
+  local retention_days="${5:-30}"
 
   env \
     PATH="$sandbox/stub-bin:$PATH" \
     BACKUP_DIR="$sandbox/backup" \
-    RETENTION_DAYS=30 \
+    RETENTION_DAYS="$retention_days" \
     SRC_DIR="$sandbox/src" \
     PUSHOVER_CRED_FILE="$sandbox/pushover" \
     SERVICE_LIB="$sandbox/service-lib" \
@@ -184,6 +185,25 @@ test_immich_backup_retention_deletes_only_old_dumps_in_dir() {
   [ -e "$sandbox/backup/sub/immich-db-old2.dump" ] || fail "expected nested immich dump to remain"
 }
 
+test_immich_backup_retention_zero_keeps_todays_dump_deletes_stale() {
+  local sandbox stdout_path stderr_path dump_count
+  sandbox=$(new_sandbox)
+  _backup_scripts_prepare_sandbox "$sandbox"
+  _backup_scripts_require_immich_disk_space "$sandbox/backup" || return 0
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  printf 'stale\n' > "$sandbox/backup/immich-db-stale.dump"
+  touch -d '2 days ago' "$sandbox/backup/immich-db-stale.dump"
+
+  _backup_scripts_run "$_immich_backup_script" "$sandbox" "$stdout_path" "$stderr_path" 0 \
+    || fail "expected immich backup with RETENTION_DAYS=0 to exit 0"
+
+  [ ! -e "$sandbox/backup/immich-db-stale.dump" ] || fail "expected >24h-old immich dump to be deleted with RETENTION_DAYS=0"
+  dump_count=$(find "$sandbox/backup" -maxdepth 1 -type f -name 'immich-db-*.dump' | wc -l)
+  [ "$dump_count" = "1" ] || fail "expected today's immich dump to remain with RETENTION_DAYS=0, got $dump_count dump(s)"
+}
+
 test_karakeep_backup_happy_path_dated_dir() {
   local sandbox stdout_path stderr_path today
   sandbox=$(new_sandbox)
@@ -235,4 +255,26 @@ test_karakeep_backup_retention_scopes_to_backup_dir() {
   [ ! -e "$old_dir" ] || fail "expected old karakeep backup dir to be deleted"
   [ -d "$today_dir" ] || fail "expected current karakeep backup dir to remain"
   [ -f "$today_dir/db.db.gz" ] || fail "expected current karakeep db.db.gz backup"
+}
+
+test_karakeep_backup_retention_zero_keeps_today_deletes_stale() {
+  local sandbox stdout_path stderr_path today old_dir today_dir
+  sandbox=$(new_sandbox)
+  _backup_scripts_prepare_sandbox "$sandbox"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+  today=$(date +%Y-%m-%d)
+  old_dir="$sandbox/backup/20200101"
+  today_dir="$sandbox/backup/$today"
+  printf 'main db\n' > "$sandbox/src/db.db"
+  mkdir -p "$old_dir"
+  printf 'stale backup\n' > "$old_dir/db.db.gz"
+  touch -d '2 days ago' "$old_dir"
+
+  _backup_scripts_run "$_karakeep_backup_script" "$sandbox" "$stdout_path" "$stderr_path" 0 \
+    || fail "expected karakeep backup with RETENTION_DAYS=0 to exit 0"
+
+  [ ! -e "$old_dir" ] || fail "expected >24h-old karakeep backup dir to be deleted with RETENTION_DAYS=0"
+  [ -d "$today_dir" ] || fail "expected today's karakeep backup dir to remain with RETENTION_DAYS=0"
+  [ -f "$today_dir/db.db.gz" ] || fail "expected today's karakeep db.db.gz backup to remain with RETENTION_DAYS=0"
 }
