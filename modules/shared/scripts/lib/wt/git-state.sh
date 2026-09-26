@@ -253,7 +253,8 @@ _wt_is_dirty() {
 # 이 판정은 "worktree를 지워도 남는 참조"만 본다. 재생성은 판정 뒤 요청 브랜치
 # (refs/heads/<branch_name>)를 지우므로, HEAD가 그 브랜치에 있지 않을 때(detached인데 그
 # 브랜치만 커밋을 보존하거나, 다른 브랜치를 checkout한 경우)의 손실은 여기서 막지 못한다 —
-# 재사용·재생성 전에 실제 checkout을 요청 브랜치와 대조하는 쪽(#1375)이 닫는다.
+# create.sh의 _wt_verify_requested_checkout이 재사용·재생성 전에 실제 checkout을 요청
+# 브랜치와 대조해, 그런 worktree는 재생성까지 가지 않는다 (#1375).
 # HEAD OID나 참조 조회에 실패하면 보존을 확인하지 못한 것이므로 1을 반환한다
 # (fail-closed) — 호출자는 이를 "잃을 커밋 있음"으로 다룬다.
 _wt_detached_head_preserved() {

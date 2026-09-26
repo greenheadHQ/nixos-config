@@ -265,6 +265,8 @@ test_wt_create_conflict_noninteractive_requires_if_exists() {
 # `cd "$(wt <branch>)"`가 stdout만 캡처하므로, 경로가 stderr로 새면 래퍼는 이동하지
 # 않고 `cd ""`가 no-op으로 성공해 조용히 잘못된 디렉토리에 남는다. 그래서 이 테스트만은
 # stderr를 합치지 않고(2>/dev/null) 채널을 구분해 고정한다.
+# 재사용은 경로의 실제 checkout이 요청 브랜치일 때만 성립하므로(#1375), 요청 브랜치(feat/a)를
+# 변환 경로(feat_a)에 checkout한 worktree를 대상으로 한다.
 test_wt_create_if_exists_reuse_returns_path() {
   local sandbox home_dir repo_root output expected_path
   sandbox=$(new_sandbox)
@@ -274,7 +276,8 @@ test_wt_create_if_exists_reuse_returns_path() {
   repo_root="$(cd "$repo_root" && pwd -P)"
   install_deployed_layout "$sandbox" "$repo_root"
 
-  expected_path="$repo_root/.claude/worktrees/feature_one"
+  expected_path="$repo_root/.claude/worktrees/feat_a"
+  add_fixture_worktree "$repo_root" "$expected_path" "feat/a"
   output=$(
     env -u TMUX \
       HOME="$home_dir" \
@@ -284,11 +287,11 @@ test_wt_create_if_exists_reuse_returns_path() {
       bash -c '
         set -euo pipefail
         cd "'"$repo_root"'"
-        "'"$home_dir/.local/bin/wt"'" --if-exists=reuse feature_one
+        "'"$home_dir/.local/bin/wt"'" --if-exists=reuse feat/a
       ' 2>/dev/null
   )
 
-  assert_contains "$output" "$expected_path"
+  [[ "$output" == "$expected_path" ]] || fail "reuse must print exactly the existing path: $output"
 }
 
 test_wt_ls_json_outputs_parseable_array() {
@@ -535,7 +538,9 @@ test_wt_create_reuse_noninteractive_in_tmux_prints_path() {
   repo_root="$(cd "$repo_root" && pwd -P)"
   install_deployed_layout "$sandbox" "$repo_root"
 
-  expected_path="$repo_root/.claude/worktrees/feature_one"
+  # 재사용 대상은 요청 브랜치(feat/a)가 실제로 checkout된 worktree여야 한다 (#1375).
+  expected_path="$repo_root/.claude/worktrees/feat_a"
+  add_fixture_worktree "$repo_root" "$expected_path" "feat/a"
 
   # tmux stub: select-window/new-window 호출 시 marker를 남겨 미호출을 검증한다.
   mkdir -p "$stub_dir"
@@ -561,7 +566,7 @@ STUB
     bash -c '
       set -euo pipefail
       cd "'"$repo_root"'"
-      "'"$home_dir/.local/bin/wt"'" --if-exists=reuse feature_one
+      "'"$home_dir/.local/bin/wt"'" --if-exists=reuse feat/a
     ' 2>&1
   )
 
