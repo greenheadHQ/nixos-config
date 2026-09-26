@@ -76,7 +76,7 @@ get_image_digest() {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# 워치독: 장기 실패 감지 (3일 초과 시 경고)
+# 워치독: 장기 실패 감지 (3일 이상 경과 시 경고)
 # ═══════════════════════════════════════════════════════════════
 check_watchdog() {
   local state_dir="$1"
@@ -96,7 +96,11 @@ check_watchdog() {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# 최초 실행 시 현재 버전만 기록
+# 최초 실행 시 현재 버전과 조회 성공 시각 기록
+# 최초 조회도 정상적인 버전 조회 성공이므로 last-success도 함께 남긴다
+# (record_success) — 그래야 워치독(check_watchdog)이 이후 조회가 계속
+# 실패해도 이 시각을 기준으로 장기 실패를 감지할 수 있다. 알림 전송
+# 여부(last-notified-version)와 조회 성공 시각(last-success)은 별개 상태다.
 # return 0: 최초 실행 (호출측에서 종료해야 함)
 # return 1: 이전 실행 존재 (계속 진행)
 # ═══════════════════════════════════════════════════════════════
@@ -108,6 +112,7 @@ check_initial_run() {
   if [ ! -f "$last_notified_file" ]; then
     echo "First run: recording version $current_version"
     echo "$current_version" > "$last_notified_file"
+    record_success "$state_dir"
     return 0
   fi
   return 1

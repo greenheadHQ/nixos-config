@@ -480,6 +480,16 @@ run_test "interaction-limits-renewal missing PAT exits nonzero" test_ilr_missing
 run_test "korean particle expansions stay brace-bounded" test_korean_particle_expansion_is_brace_bounded
 run_test "SA health check lifecycle and secret handling" test_opnix_health_check_lifecycle
 
+# version-check suite (tests/suites/version-check.sh)
+run_test "version-check initial success records last-success without notification" test_version_check_initial_success_records_last_success_without_notification
+run_test "version-check subsequent failure below threshold keeps last-success" test_version_check_subsequent_failure_below_threshold_keeps_last_success
+run_test "version-check failure at threshold triggers watchdog warning" test_version_check_failure_at_threshold_triggers_watchdog_warning
+run_test "version-check failure just before threshold does not warn" test_version_check_failure_just_before_threshold_no_warning
+run_test "version-check recovery updates last-success without new-version notification" test_version_check_recovery_updates_last_success_without_new_version_notification
+run_test "version-check initial failure records nothing" test_version_check_initial_failure_records_nothing
+run_test "immich version-check initial success records last-success" test_immich_version_check_initial_success_records_last_success
+run_test "immich version-check new version notifies and records" test_immich_version_check_new_version_notifies_and_records
+
 # git-cleanup suite (tests/suites/git-cleanup.sh) — 날짜 계산 도구 선택 계약 (#1376)
 run_test "git-cleanup BSD-only date dry-run succeeds" test_git_cleanup_bsd_only_date_dry_run_succeeds
 run_test "git-cleanup GNU-only date dry-run succeeds" test_git_cleanup_gnu_only_date_dry_run_succeeds
