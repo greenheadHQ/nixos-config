@@ -348,13 +348,21 @@ test_wt_ls_json_empty_list_outputs_empty_array() {
   ) || rc=$?
 
   [[ "$rc" -eq 0 ]] || fail "wt ls --json on empty list must exit 0, got $rc"
-  echo "$output" | jq -e 'type == "array" and length == 0' >/dev/null \
-    || fail "wt ls --json on empty list must output an empty JSON array: $output"
+  # jq -e는 마지막 값만 판정한다 — stdout에 여러 JSON 값이 섞여 나와도(예: 안내 문구가
+  # 우연히 유효한 JSON이거나 배열이 두 번 나온 경우) 마지막 값만 배열이면 통과해버린다.
+  # -se(slurp)로 전체 stdout을 하나의 배열로 모아 "정확히 값 하나, 그 값은 빈 배열"까지
+  # 고정한다.
+  echo "$output" | jq -se 'length == 1 and .[0] == []' >/dev/null \
+    || fail "wt ls --json on empty list must output exactly one JSON value, an empty array: $output"
 }
 
 # 같은 빈 목록에서 일반(사람이 읽는) 출력은 기존 안내 문구를 그대로 유지해야 한다.
+# stdout/stderr를 합쳐 캡처하면 채널 계약(JSON은 stdout 전용, 안내는 stderr 전용)을
+# 고정하지 못한다 — as_json 체크 없이 무조건 echo '[]' 하는 변이나, 안내를 stdout으로
+# 옮기는 변이도 합쳐진 텍스트에는 "활성 worktree가 없습니다"가 여전히 들어 있어 통과해
+# 버린다. 두 채널을 분리 캡처해 각각 검사한다.
 test_wt_ls_empty_list_prints_notice() {
-  local sandbox home_dir repo_root output rc
+  local sandbox home_dir repo_root stdout_file stderr_file stderr_content rc
   sandbox=$(new_sandbox)
   home_dir="$sandbox/home"
   repo_root="$sandbox/repo"
@@ -366,21 +374,71 @@ test_wt_ls_empty_list_prints_notice() {
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
     git -C "$repo_root" worktree remove --force ".claude/worktrees/feature_one"
 
+  stdout_file="$sandbox/ls-empty.out"
+  stderr_file="$sandbox/ls-empty.err"
   rc=0
-  output=$(
-    env -u TMUX \
-      HOME="$home_dir" \
-      CODEX_HOME="$home_dir/.codex" \
-      PATH="$FIXTURE_DIR/bin:$PATH" \
-      bash -c '
-        set -euo pipefail
-        cd "'"$repo_root"'"
-        "'"$home_dir/.local/bin/wt"'" ls
-      ' 2>&1
-  ) || rc=$?
+  env -u TMUX \
+    HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/wt"'" ls
+    ' >"$stdout_file" 2>"$stderr_file" || rc=$?
 
   [[ "$rc" -eq 0 ]] || fail "wt ls on empty list must exit 0, got $rc"
-  assert_contains "$output" "활성 worktree가 없습니다"
+  [[ ! -s "$stdout_file" ]] \
+    || fail "wt ls (plain) on empty list must not write to stdout: $(cat "$stdout_file")"
+  stderr_content=$(cat "$stderr_file")
+  assert_contains "$stderr_content" "활성 worktree가 없습니다"
+}
+
+# _get_repo_root 실패(Git 저장소가 아닌 경로)는 이번에 고친 "빈 목록" 조기 반환과는
+# 별개의 실패 경로다. 그 경로를 정상 빈 배열/빈 목록으로 합쳐버리면 호출자가 오류를
+# 성공으로 오인한다 (#1378 완료 기준: 오류 결과를 정상 빈 배열로 숨기지 않는다).
+test_wt_ls_non_git_directory_fails_with_error() {
+  local sandbox home_dir notgit_dir stdout_file stderr_file rc
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  notgit_dir="$sandbox/notgit"
+  mkdir -p "$notgit_dir"
+  install_deployed_layout "$sandbox"
+
+  stdout_file="$sandbox/ls-notgit.out"
+  stderr_file="$sandbox/ls-notgit.err"
+
+  rc=0
+  env -u TMUX \
+    HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    bash -c '
+      cd "'"$notgit_dir"'"
+      "'"$home_dir/.local/bin/wt"'" ls --json
+    ' >"$stdout_file" 2>"$stderr_file" || rc=$?
+
+  [[ "$rc" -ne 0 ]] || fail "wt ls --json in a non-git directory must exit non-zero"
+  [[ ! -s "$stdout_file" ]] \
+    || fail "wt ls --json in a non-git directory must not write to stdout: $(cat "$stdout_file")"
+  [[ -s "$stderr_file" ]] \
+    || fail "wt ls --json in a non-git directory must write an error to stderr"
+
+  rc=0
+  env -u TMUX \
+    HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    bash -c '
+      cd "'"$notgit_dir"'"
+      "'"$home_dir/.local/bin/wt"'" ls
+    ' >"$stdout_file" 2>"$stderr_file" || rc=$?
+
+  [[ "$rc" -ne 0 ]] || fail "wt ls (plain) in a non-git directory must exit non-zero"
+  [[ ! -s "$stdout_file" ]] \
+    || fail "wt ls (plain) in a non-git directory must not write to stdout: $(cat "$stdout_file")"
+  [[ -s "$stderr_file" ]] \
+    || fail "wt ls (plain) in a non-git directory must write an error to stderr"
 }
 
 test_wt_cd_noninteractive_requires_name() {
