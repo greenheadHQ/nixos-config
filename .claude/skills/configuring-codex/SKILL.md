@@ -213,6 +213,8 @@ Codex CLI는 디렉토리 심링크를 `follow_links(true)`로 순회한다 (PR 
 
 원칙은 `nrs` 실행이다.  
 환경 제약으로 `nrs`를 실행하지 못하면, Codex 모듈 activation과 동등한 절차로 재생성해도 된다.
+그 절차는 저장소 루트에서 `DRY_RUN_CMD='' bash modules/shared/programs/codex/files/project-codex-skills.sh "$PWD"`다.
+`DRY_RUN_CMD=echo`면 변경 명령만 출력하고, `DRY_RUN_CMD`를 생략하거나 git을 찾지 못하면 아무것도 바꾸지 않고 실패한다.
 
 ## 검증 명령
 

@@ -3,17 +3,31 @@
 # 호출자: home.activation.createCodexProjectSymlinks (modules/shared/programs/codex/default.nix).
 # 이전 시도(5ef4e67)의 sync-codex-from-claude.sh 로직을 Nix activation으로 이식한 본체이며,
 # 동작 fixture(tests/suites/codex-activation-static.sh)로 검증하려고 Nix 문자열에서 분리했다.
-# activation이 git을 PATH에 넣어 호출한다. DRY_RUN_CMD는 Home Manager activation이 export한
-# 값을 그대로 쓴다 (dry-run이면 echo — 변경 명령만 출력되고 실행되지 않는다).
+#
+# 사용: DRY_RUN_CMD=<빈 값|echo> project-codex-skills.sh <project-dir> [git]
+# - git: activation은 git의 store 절대경로를 넘긴다. 생략하면 PATH의 git을 쓴다. 찾지 못하면
+#   git 추적 실디렉토리 방어가 판정을 못 하므로 아무것도 바꾸지 않고 실패한다.
+# - DRY_RUN_CMD: Home Manager activation이 항상 export한다 (live면 빈 값, dry-run이면 echo —
+#   변경 명령만 출력되고 실행되지 않는다). 변수가 아예 없으면 activation 밖 호출이라 dry-run
+#   여부를 알 수 없으므로 아무것도 바꾸지 않고 실패한다. activation 인라인 원본이 set -u로
+#   멈추던 것과 같은 실패 모드다. 수동 실행은 `DRY_RUN_CMD='' bash ...`처럼 값을 명시한다.
 set -euo pipefail
 
-if [ "$#" -ne 1 ]; then
-  printf 'usage: %s <project-dir>\n' "$0" >&2
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+  printf 'usage: DRY_RUN_CMD=<""|echo> %s <project-dir> [git]\n' "$0" >&2
+  exit 2
+fi
+if [ -z "${DRY_RUN_CMD+set}" ]; then
+  echo "Refusing to project Codex skills: DRY_RUN_CMD is not set (set DRY_RUN_CMD='' for a live run or DRY_RUN_CMD=echo for a dry run)" >&2
   exit 2
 fi
 
-DRY_RUN_CMD="${DRY_RUN_CMD:-}"
 PROJECT_DIR="$1"
+GIT_BIN="${2:-git}"
+if ! command -v "$GIT_BIN" >/dev/null 2>&1; then
+  echo "Refusing to project Codex skills: git not found ($GIT_BIN), so git-tracked directories cannot be protected" >&2
+  exit 1
+fi
 SOURCE_SKILLS="$PROJECT_DIR/.claude/skills"
 TARGET_SKILLS="$PROJECT_DIR/.agents/skills"
 
@@ -72,8 +86,17 @@ for source_skill_dir in "$SOURCE_SKILLS"/*/; do
   # 향후 디렉토리→심링크 전환이 발생할 때, git pull 전에 nrs가 실행되어
   # HEAD와 파일시스템이 불일치하는 것을 방지 (PR#38 사후 분석에서 도출)
   if [ -d "$target_link" ] && [ ! -L "$target_link" ]; then
-    if git -C "$PROJECT_DIR" ls-files --error-unmatch "$target_link/SKILL.md" >/dev/null 2>&1; then
+    tracked_rc=0
+    "$GIT_BIN" -C "$PROJECT_DIR" ls-files --error-unmatch "$target_link/SKILL.md" >/dev/null 2>&1 \
+      || tracked_rc=$?
+    if [ "$tracked_rc" -eq 0 ]; then
       echo "Skipping .agents/skills/$skill_name: git-tracked directory (run 'git pull' first)"
+      continue
+    fi
+    # --error-unmatch는 미추적이면 1로 끝난다. 그 밖의 실패(저장소가 아님 등)는 추적 여부를
+    # 모른다는 뜻이므로 미추적으로 간주하지 않고 보존한다.
+    if [ "$tracked_rc" -ne 1 ]; then
+      echo "Warning: keeping .agents/skills/$skill_name: cannot tell whether it is git-tracked (git ls-files exit $tracked_rc)" >&2
       continue
     fi
   fi

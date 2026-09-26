@@ -234,10 +234,11 @@ in
   # nrs 실행 시 자동으로 .agents/skills/ 동기화. 본체는 동작 fixture로 검증할 수 있도록
   # ./files/project-codex-skills.sh에 둔다 — 투영·고아 정리 계약은 그 파일 주석이 SoT다.
   # 거부 가드가 실패하면 non-zero로 끝나 activation(set -e)을 중단시킨다.
+  # git은 store 절대경로로 넘겨 PATH에 좌우되지 않게 한다 (git 추적 실디렉토리 방어의 판정 도구).
   # DRY_RUN_CMD는 Home Manager가 export하므로 스크립트 안의 변경 명령에 그대로 적용된다.
   home.activation.createCodexProjectSymlinks = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    PATH="${lib.makeBinPath [ pkgs.git ]}:$PATH" ${pkgs.bash}/bin/bash \
-      ${./files/project-codex-skills.sh} \
-      "${nixosConfigPath}"
+    ${pkgs.bash}/bin/bash ${./files/project-codex-skills.sh} \
+      "${nixosConfigPath}" \
+      "${pkgs.git}/bin/git"
   '';
 }
