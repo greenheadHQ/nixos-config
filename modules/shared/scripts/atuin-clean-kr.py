@@ -13,6 +13,7 @@ import os
 import re
 import sqlite3
 import sys
+import time
 from datetime import datetime
 
 # 한글 유니코드 범위
@@ -23,10 +24,21 @@ KOREAN_PATTERN = re.compile(r"[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]")
 
 DEFAULT_DB_PATH = os.path.expanduser("~/.local/share/atuin/history.db")
 PREVIEW_LIMIT = 20
+BUSY_TIMEOUT_MS = 5000
+# 명령 한 줄을 기록하는 atuin 쓰기는 순간이므로, 이만큼 백업이 끝나지 않으면 다른 프로세스가
+# 잠금을 오래 쥐고 있다고 보고 삭제 전에 멈춘다. 테스트는 ATUIN_CLEAN_KR_BACKUP_TIMEOUT으로 줄인다.
+DEFAULT_BACKUP_TIMEOUT_SECONDS = 30
+# 한 step(기본 4KiB 페이지면 4MiB)마다 원본 잠금을 놓아 atuin 기록을 오래 막지 않고,
+# 진행 콜백이 상한과 Ctrl-C를 확인할 틈을 둔다.
+BACKUP_STEP_PAGES = 1024
 
 
 def get_db_path():
     return os.environ.get("ATUIN_DB_PATH", DEFAULT_DB_PATH)
+
+
+def get_backup_timeout():
+    return float(os.environ.get("ATUIN_CLEAN_KR_BACKUP_TIMEOUT", DEFAULT_BACKUP_TIMEOUT_SECONDS))
 
 
 def find_korean_entries(cursor):
@@ -51,14 +63,27 @@ def reserve_backup_path(db_path):
 def backup_db(conn, db_path):
     # 본체 파일 복사는 WAL에만 커밋된 행을 놓치므로, 열린 연결의 온라인 백업 API로
     # SQLite가 확정한 상태 전체를 동반 파일 없이 열 수 있는 단독 사본에 담는다.
+    timeout = get_backup_timeout()
+    deadline = time.monotonic() + timeout
+
+    def stop_after_deadline(status, remaining, total):
+        if status != sqlite3.SQLITE_DONE and time.monotonic() > deadline:
+            raise sqlite3.OperationalError(
+                f"{timeout:g}초 안에 끝나지 않았습니다 (다른 프로세스가 DB를 잠그고 있을 수 있습니다)"
+            )
+
     backup_path = None
     completed = False
     try:
         backup_path = reserve_backup_path(db_path)
         target = sqlite3.connect(backup_path)
+        # busy handler가 잠금을 기다리는 동안에는 진행 콜백이 불리지 않으므로 백업 중에는 끄고,
+        # 잠금 대기를 콜백을 거치는 CPython backup 루프의 짧은 재시도에 맡긴다.
+        conn.execute("PRAGMA busy_timeout = 0")
         try:
-            conn.backup(target)
+            conn.backup(target, pages=BACKUP_STEP_PAGES, progress=stop_after_deadline)
         finally:
+            conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
             target.close()
         completed = True
     except (OSError, sqlite3.Error) as e:
@@ -94,7 +119,7 @@ def main():
         sys.exit(1)
 
     conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
     cursor = conn.cursor()
 
     entries = find_korean_entries(cursor)

@@ -159,7 +159,7 @@ atuin-clean-kr
 4. `--dry-run`: 총 개수 + 처음 20개 미리보기
 5. 기본 모드: `[y/N]` 확인 → 타임스탬프 백업 → 삭제 → sync 제한 경고
    - 백업은 열린 연결의 SQLite 온라인 백업 API로 만든다. WAL에만 커밋된 행까지 담긴 단독 사본이라 `-wal` 없이 열 수 있다
-   - 백업이 실패하면 삭제 전에 종료하고, 실패 중 생긴 불완전 사본은 지운다
+   - 백업이 실패하거나 다른 프로세스가 DB를 잠가 30초 안에 끝나지 않으면 삭제 전에 종료하고, 실패 중 생긴 불완전 사본은 지운다
 
 ### `atuin history delete` 서브커맨드 부재 (v18.17.0 기준 여전히 없음)
 
@@ -193,10 +193,25 @@ $ atuin history --help
 `atuin-clean-kr`을 사용할 수 없는 환경에서의 수동 삭제 방법:
 
 ```bash
-# 1. 반드시 백업 먼저
-cp ~/.local/share/atuin/history.db ~/.local/share/atuin/history.db.bak
-
-# 2. Python 스크립트로 한글 포함 항목 삭제
+# 1. 반드시 백업 먼저: 본체 파일 cp는 WAL에만 커밋된 행을 놓치므로 SQLite 온라인 백업으로 만든다.
+#    이름은 atuin-clean-kr과 같은 history.db.bak.YYYYMMDD-HHMMSS이고, 같은 이름이 있으면 덮어쓰지 않고 멈춘다.
+# 2. Python 스크립트로 한글 포함 항목 삭제. 1단계와 &&로 이어져 있어 백업이 실패하면 실행되지 않는다.
+python3 - <<'PY' &&
+import os, sqlite3, time
+db = os.path.expanduser('~/.local/share/atuin/history.db')
+bak = f"{db}.bak.{time.strftime('%Y%m%d-%H%M%S')}"
+os.close(os.open(bak, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+src, dst = sqlite3.connect(db), sqlite3.connect(bak)
+try:
+    src.backup(dst)
+except BaseException:
+    dst.close()
+    os.unlink(bak)
+    raise
+dst.close()
+src.close()
+print(f'백업 완료: {bak}')
+PY
 python3 -c "
 import sqlite3, re, os
 conn = sqlite3.connect(os.path.expanduser('~/.local/share/atuin/history.db'))

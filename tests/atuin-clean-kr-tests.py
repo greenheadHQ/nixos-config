@@ -16,6 +16,12 @@ SCRIPT = Path(__file__).resolve().parents[1] / "modules/shared/scripts/atuin-cle
 BASE_ROW = ("base-1", "git status --short")
 KOREAN_ROW = ("kr-1", "git commit -m '합성 한글 메시지'")
 EXISTING_BACKUP_WINDOW_SECONDS = 30
+# 잠금 테스트는 백업 상한을 줄여 실행한다. 원본 연결의 busy handler(5초)가 진행 콜백을 막으면
+# 상한 확인이 그만큼 늦어지므로, 상한 뒤 5초보다 짧은 시간 안에 멈춰야 한다.
+LOCKED_SOURCE_BACKUP_TIMEOUT_SECONDS = 0.5
+LOCKED_SOURCE_MAX_STOP_SECONDS = 4
+# 이 시간 안에 끝나지 않으면 멈춘 것으로 본다.
+LOCKED_SOURCE_TEST_TIMEOUT_SECONDS = 15
 
 # 실제 스크립트를 그대로 실행하되 sqlite3.connect 경계에서만 백업 실패를 주입한다.
 #   target-write-failure: 원본이 아닌 경로(백업 대상)를 읽기 전용으로 열어 대상 쓰기를 막는다.
@@ -101,8 +107,11 @@ class BackupContractTests(unittest.TestCase):
         shutil.copyfile(self.db, probe_dir / "history.db")
         self.assertEqual(read_rows(probe_dir / "history.db"), [BASE_ROW])
 
+    def script_env(self):
+        return {**os.environ, "ATUIN_DB_PATH": str(self.db), "HOME": str(self.home)}
+
     def run_script(self, *args, answer="y\n", fault=None):
-        env = {**os.environ, "ATUIN_DB_PATH": str(self.db), "HOME": str(self.home)}
+        env = self.script_env()
         command = [sys.executable, str(SCRIPT), *args]
         if fault is not None:
             command = [sys.executable, "-c", FAULT_RUNNER, fault, str(SCRIPT), *args]
@@ -220,6 +229,48 @@ class BackupContractTests(unittest.TestCase):
 
         result = self.run_script(fault="backup-api-error")
 
+        self.assert_aborted_before_delete(result, before)
+
+    def test_locked_rollback_journal_source_aborts_before_delete(self):
+        self.make_db("delete")
+        before = os.listdir(self.data_dir)
+        locker = sqlite3.connect(self.db, isolation_level=None)
+        self.addCleanup(locker.close)
+        env = {
+            **self.script_env(),
+            "ATUIN_CLEAN_KR_BACKUP_TIMEOUT": str(LOCKED_SOURCE_BACKUP_TIMEOUT_SECONDS),
+        }
+        proc = subprocess.Popen(
+            [sys.executable, str(SCRIPT)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            bufsize=0,
+        )
+        self.addCleanup(proc.__exit__, None, None, None)
+        self.addCleanup(proc.kill)
+
+        # 삭제 대상을 조회하고 확인 프롬프트에서 기다리는 동안 다른 연결이 쓰기 잠금을 잡는다.
+        prompt = b""
+        while not prompt.endswith(b"[y/N] "):
+            chunk = proc.stdout.read(1)
+            if not chunk:
+                self.fail(f"확인 프롬프트 전에 종료했다: {prompt.decode(errors='replace')}")
+            prompt += chunk
+        locker.execute("BEGIN EXCLUSIVE")
+        started = time.monotonic()
+        try:
+            stdout, stderr = proc.communicate(b"y\n", timeout=LOCKED_SOURCE_TEST_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            self.fail("원본 잠금이 풀리지 않는 동안 백업이 상한 안에 끝나지 않았다")
+        finally:
+            locker.execute("ROLLBACK")
+        self.assertLess(time.monotonic() - started, LOCKED_SOURCE_MAX_STOP_SECONDS)
+
+        result = subprocess.CompletedProcess(
+            proc.args, proc.returncode, (prompt + stdout).decode(), stderr.decode()
+        )
         self.assert_aborted_before_delete(result, before)
 
     def test_cancel_leaves_db_and_existing_backup_unchanged(self):
