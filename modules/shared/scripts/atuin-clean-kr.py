@@ -8,11 +8,12 @@ TUI 렌더링이 깨지는 문제의 워크어라운드.
 """
 
 import argparse
+import itertools
 import os
 import re
-import shutil
 import sqlite3
 import sys
+import time
 from datetime import datetime
 
 # 한글 유니코드 범위
@@ -23,10 +24,23 @@ KOREAN_PATTERN = re.compile(r"[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]")
 
 DEFAULT_DB_PATH = os.path.expanduser("~/.local/share/atuin/history.db")
 PREVIEW_LIMIT = 20
+BUSY_TIMEOUT_MS = 5000
+# 명령 한 줄을 기록하는 atuin 쓰기는 순간이므로, 이만큼 백업이 끝나지 않으면 다른 프로세스가
+# 잠금을 오래 쥐고 있다고 보고 삭제 전에 멈춘다. 테스트는 ATUIN_CLEAN_KR_BACKUP_TIMEOUT으로 줄인다.
+DEFAULT_BACKUP_TIMEOUT_SECONDS = 30
+# 한 step은 기본 4KiB 페이지면 4MiB이고, 진행 콜백이 step마다 상한과 Ctrl-C를 확인한다.
+# 비WAL 원본은 step 사이에 읽기 잠금이 풀려 atuin 기록을 오래 막지 않는다. WAL이든 아니든
+# step 사이에 다른 연결이 원본에 쓰면 백업은 처음부터 다시 시작하며, 쓰기가 이어져 상한을
+# 넘기면 삭제 전에 멈춘다.
+BACKUP_STEP_PAGES = 1024
 
 
 def get_db_path():
     return os.environ.get("ATUIN_DB_PATH", DEFAULT_DB_PATH)
+
+
+def get_backup_timeout():
+    return float(os.environ.get("ATUIN_CLEAN_KR_BACKUP_TIMEOUT", DEFAULT_BACKUP_TIMEOUT_SECONDS))
 
 
 def find_korean_entries(cursor):
@@ -34,14 +48,57 @@ def find_korean_entries(cursor):
     return [(row[0], row[1]) for row in cursor.fetchall() if row[1] and KOREAN_PATTERN.search(row[1])]
 
 
-def backup_db(db_path):
+def reserve_backup_path(db_path):
+    # 같은 초에 다시 실행해도 기존 백업을 덮어쓰지 않도록 O_EXCL로 새 이름을 선점한다.
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    backup_path = f"{db_path}.bak.{timestamp}"
+    base = f"{db_path}.bak.{timestamp}"
+    for n in itertools.count():
+        candidate = base if n == 0 else f"{base}-{n}"
+        try:
+            fd = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            continue
+        os.close(fd)
+        return candidate
+
+
+def backup_db(conn, db_path):
+    # 본체 파일 복사는 WAL에만 커밋된 행을 놓치므로, 열린 연결의 온라인 백업 API로
+    # SQLite가 확정한 상태 전체를 동반 파일 없이 열 수 있는 단독 사본에 담는다.
+    timeout = get_backup_timeout()
+    deadline = time.monotonic() + timeout
+
+    def stop_after_deadline(status, remaining, total):
+        if status != sqlite3.SQLITE_DONE and time.monotonic() > deadline:
+            raise sqlite3.OperationalError(
+                f"{timeout:g}초 안에 끝나지 않았습니다 (다른 프로세스가 DB를 잠그고 있을 수 있습니다)"
+            )
+
+    backup_path = None
+    completed = False
     try:
-        shutil.copy2(db_path, backup_path)
-    except OSError as e:
+        backup_path = reserve_backup_path(db_path)
+        target = sqlite3.connect(backup_path)
+        # busy handler가 잠금을 기다리는 동안에는 진행 콜백이 불리지 않으므로 백업 중에는 끄고,
+        # 잠금 대기를 콜백을 거치는 CPython backup 루프의 짧은 재시도에 맡긴다.
+        conn.execute("PRAGMA busy_timeout = 0")
+        try:
+            conn.backup(target, pages=BACKUP_STEP_PAGES, progress=stop_after_deadline)
+        finally:
+            conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+            target.close()
+        completed = True
+    except (OSError, sqlite3.Error) as e:
         print(f"백업 실패: {e}", file=sys.stderr)
         sys.exit(1)
+    finally:
+        # 실패·중단 시 남은 불완전 사본이 정상 복원점처럼 보이지 않게 지운다.
+        if not completed and backup_path is not None:
+            for suffix in ("", "-journal", "-wal", "-shm"):
+                try:
+                    os.unlink(backup_path + suffix)
+                except FileNotFoundError:
+                    pass
     return backup_path
 
 
@@ -64,7 +121,7 @@ def main():
         sys.exit(1)
 
     conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
     cursor = conn.cursor()
 
     entries = find_korean_entries(cursor)
@@ -101,7 +158,7 @@ def main():
         return
 
     # 백업
-    backup_path = backup_db(db_path)
+    backup_path = backup_db(conn, db_path)
     print(f"백업 완료: {backup_path}")
 
     # 삭제

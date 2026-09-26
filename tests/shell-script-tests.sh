@@ -369,6 +369,7 @@ run_test "karakeep backup happy path dated dir" test_karakeep_backup_happy_path_
 run_test "karakeep backup missing db exits nonzero" test_karakeep_backup_missing_db_exits_nonzero
 run_test "karakeep backup retention scopes to backup dir" test_karakeep_backup_retention_scopes_to_backup_dir
 run_test "karakeep backup retention zero keeps today, deletes stale" test_karakeep_backup_retention_zero_keeps_today_deletes_stale
+run_test "atuin-clean-kr backs up committed rows before delete" test_atuin_clean_kr_backup_contract
 run_test "fragile-hardcoding-guard line count word order independent" test_fragile_hardcoding_guard_line_count_word_order_independent
 run_test "fragile-hardcoding-guard line count true positive preserved" test_fragile_hardcoding_guard_line_count_true_positive_preserved
 run_test "fragile-hardcoding-guard edit true positive preserved" test_fragile_hardcoding_guard_edit_true_positive_preserved
