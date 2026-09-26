@@ -246,6 +246,175 @@ test_rebuild_common_exports_public_api() {
   assert_contains "$output" "repair_codex_config_drift_no_changes"
 }
 
+# ─────────────────────────────────────────────────────────────────────────
+# #1380: release_rebuild_lock 이 fd 200 을 닫으면서 명령 없는 `exec ... 2>/dev/null`
+# 로 호출 셸의 표준 오류까지 영구적으로 /dev/null 로 돌려버리던 결함의 회귀 테스트.
+# lib/rebuild/common.sh + lib/rebuild/locks.sh 만 REPO_ROOT 에서 직접 source 한다
+# (FLAKE_PATH/MAIN_FLAKE_PATH 는 nrs 워크트리 잠금용이고, rebuild critical-section
+# 잠금인 acquire/release_rebuild_lock* 는 이 두 변수와 무관).
+# ─────────────────────────────────────────────────────────────────────────
+
+test_release_rebuild_lock_preserves_caller_stderr() {
+  local sandbox output
+  sandbox=$(new_sandbox)
+
+  # shellcheck disable=SC2016  # 내부 bash -c 스크립트의 변수라 여기서 확장되면 안 됨.
+  output=$(
+    bash -c '
+      set -euo pipefail
+      GREEN="" YELLOW="" RED="" NC=""
+      source "'"$REPO_ROOT"'/modules/shared/scripts/lib/rebuild/common.sh"
+      source "'"$REPO_ROOT"'/modules/shared/scripts/lib/rebuild/locks.sh"
+      NRS_REBUILD_LOCK="'"$sandbox"'/rebuild.lock"
+
+      echo before-release-marker >&2
+      acquire_rebuild_lock
+      release_rebuild_lock
+      echo after-release-marker >&2
+    ' 2>&1
+  )
+
+  assert_contains "$output" "before-release-marker"
+  assert_contains "$output" "after-release-marker"
+}
+
+test_release_rebuild_lock_on_failure_preserves_caller_stderr() {
+  local sandbox output
+  sandbox=$(new_sandbox)
+
+  # shellcheck disable=SC2016
+  output=$(
+    bash -c '
+      set -euo pipefail
+      GREEN="" YELLOW="" RED="" NC=""
+      source "'"$REPO_ROOT"'/modules/shared/scripts/lib/rebuild/common.sh"
+      source "'"$REPO_ROOT"'/modules/shared/scripts/lib/rebuild/locks.sh"
+      NRS_REBUILD_LOCK="'"$sandbox"'/rebuild.lock"
+
+      echo before-failure-cleanup-marker >&2
+      acquire_rebuild_lock
+      release_rebuild_lock_on_failure
+      echo "held=$NRS_REBUILD_LOCK_HELD"
+      echo after-failure-cleanup-marker >&2
+    ' 2>&1
+  )
+
+  assert_contains "$output" "before-failure-cleanup-marker"
+  assert_contains "$output" "held=false"
+  assert_contains "$output" "after-failure-cleanup-marker"
+}
+
+test_release_rebuild_lock_without_hold_is_noop() {
+  local sandbox output
+  sandbox=$(new_sandbox)
+
+  # shellcheck disable=SC2016
+  output=$(
+    bash -c '
+      set -euo pipefail
+      GREEN="" YELLOW="" RED="" NC=""
+      source "'"$REPO_ROOT"'/modules/shared/scripts/lib/rebuild/common.sh"
+      source "'"$REPO_ROOT"'/modules/shared/scripts/lib/rebuild/locks.sh"
+      NRS_REBUILD_LOCK="'"$sandbox"'/rebuild.lock"
+
+      echo before-marker >&2
+      release_rebuild_lock
+      echo "release_status=$?"
+      echo "held=$NRS_REBUILD_LOCK_HELD"
+      echo after-marker >&2
+    ' 2>&1
+  )
+
+  assert_contains "$output" "before-marker"
+  assert_contains "$output" "release_status=0"
+  assert_contains "$output" "held=false"
+  assert_contains "$output" "after-marker"
+}
+
+test_release_rebuild_lock_frees_lock_for_other_process() {
+  local sandbox holder_script attempt_script holder_log
+  sandbox=$(new_sandbox)
+  holder_script="$sandbox/holder.sh"
+  attempt_script="$sandbox/attempt.sh"
+  holder_log="$sandbox/holder.log"
+
+  # holder: 잠금을 잡고, 신호 파일이 나타날 때까지 기다렸다가 release_rebuild_lock 을
+  # 호출한 뒤에도 곧바로 종료하지 않고 살아있는다 — "fd 를 닫아서 풀렸다"와
+  # "프로세스가 죽어서 풀렸다"를 구분하기 위함.
+  cat > "$holder_script" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+GREEN="" YELLOW="" RED="" NC=""
+source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/common.sh"
+source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/locks.sh"
+NRS_REBUILD_LOCK="$sandbox/rebuild.lock"
+NRS_REBUILD_LOCK_TIMEOUT=5
+acquire_rebuild_lock
+echo "holder-acquired"
+until [[ -f "$sandbox/release-now" ]]; do sleep 0.05; done
+release_rebuild_lock
+echo "holder-released"
+touch "$sandbox/holder-alive-after-release"
+sleep 0.3
+EOF
+  chmod +x "$holder_script"
+
+  # attempt: 짧은 타임아웃으로 잠금 획득을 시도하는 별도 프로세스. \$1 은 런타임에
+  # attempt_script 자신에게 전달되는 타임아웃(초)이라 생성 시점에 확장하면 안 된다.
+  cat > "$attempt_script" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+GREEN="" YELLOW="" RED="" NC=""
+source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/common.sh"
+source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/locks.sh"
+NRS_REBUILD_LOCK="$sandbox/rebuild.lock"
+NRS_REBUILD_LOCK_TIMEOUT="\$1"
+if acquire_rebuild_lock; then
+  echo "attempt-acquired"
+  release_rebuild_lock
+else
+  echo "attempt-timeout"
+fi
+EOF
+  chmod +x "$attempt_script"
+
+  "$holder_script" > "$holder_log" 2>&1 &
+  local holder_pid=$!
+
+  local waited=0
+  until grep -q "holder-acquired" "$holder_log" 2>/dev/null; do
+    sleep 0.05
+    waited=$((waited + 1))
+    (( waited > 60 )) && break
+  done
+  assert_contains "$(cat "$holder_log")" "holder-acquired"
+
+  # holder 가 잠금을 쥔 동안에는 다른 프로세스가 짧은 타임아웃 안에 획득하지 못해야 함.
+  local blocked_output
+  blocked_output=$("$attempt_script" 1 2>&1)
+  assert_contains "$blocked_output" "attempt-timeout"
+
+  touch "$sandbox/release-now"
+  waited=0
+  until [[ -f "$sandbox/holder-alive-after-release" ]]; do
+    sleep 0.05
+    waited=$((waited + 1))
+    (( waited > 60 )) && break
+  done
+  [[ -f "$sandbox/holder-alive-after-release" ]] \
+    || fail "holder released 이후 상태를 확인하지 못함 (release_rebuild_lock 이 반환하지 않은 것으로 보임)"
+  kill -0 "$holder_pid" 2>/dev/null \
+    || fail "holder 프로세스가 release 증거 기록 전에 종료됨 — fd 닫힘과 프로세스 종료를 구분할 수 없음"
+
+  # holder 프로세스는 여전히 살아있다. 그런데도 다른 프로세스가 즉시 잠금을 얻을 수
+  # 있다면, release_rebuild_lock 이 실제로 fd 200 을 닫아 OS 잠금을 풀었다는 증거다.
+  local freed_output
+  freed_output=$("$attempt_script" 2 2>&1)
+  assert_contains "$freed_output" "attempt-acquired"
+
+  wait "$holder_pid" 2>/dev/null || true
+}
+
 test_parse_args_unknown_argument_shows_usage_and_fails() {
   local sandbox stdout_file stderr_file rc
   sandbox=$(new_sandbox)
