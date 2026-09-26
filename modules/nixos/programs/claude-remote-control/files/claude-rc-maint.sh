@@ -215,6 +215,7 @@ start-version-mismatch	stopped	true
 restart-version-mismatch	stopped	true
 restart-gate-failed	running	true
 start-failed	dynamic	true
+login-required	unknown	true
 invalid-spawn	dynamic	true
 invalid-capacity	unknown	true
 invalid-permission-mode	unknown	true
@@ -495,6 +496,10 @@ restart_server() {
         launch-failed)
             return 0
             ;;
+        login-required)
+            printf -v "$result_outcome_var" '%s' "login-required"
+            return 0
+            ;;
         identity-unresolvable)
             log_error "restart failed; server process/version unresolvable: $path"
             printf -v "$result_outcome_var" '%s' "restart-version-unresolvable"
@@ -563,6 +568,11 @@ record_restart_outcome() {
             record_instance_result \
                 "$path" "" "${started_version:-$running_version}" "$DESIRED_VERSION" "$outcome"
             ;;
+        login-required)
+            record_instance_result \
+                "$path" "" "$running_version" "$DESIRED_VERSION" "$outcome"
+            log_error "restart failed; Claude login required: $path"
+            ;;
         *)
             log_error "unknown restart outcome: $outcome"
             record_instance_result \
@@ -625,6 +635,12 @@ start_missing_instance() {
             # failure alone.
             record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action" unknown
             log_error "start failed: $path"
+            return 1
+            ;;
+        login-required)
+            action="login-required"
+            record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action"
+            log_error "start failed; Claude login required: $path"
             return 1
             ;;
         identity-unresolvable)
@@ -1041,6 +1057,11 @@ action_explain() {
             printf '%s\t%s' \
                 "bridge 시작 또는 guardian 핸드셰이크를 확인하지 못함" \
                 "server.log(~/.local/state/claude-rc/<slug>/)와 launcher(~/.local/bin/claude) 확인. 다음 ensure가 재시도"
+            ;;
+        login-required)
+            printf '%s\t%s' \
+                "재로그인 필요 — Claude 로그인이 풀려 bridge가 시작 직후 종료됨" \
+                "${CLAUDE_RC_ALERT_HOST}에서 'claude auth login'(또는 claude 실행 후 /login)으로 로그인. 재시도로는 풀리지 않으며, 로그인 후 다음 ensure가 복구"
             ;;
         unmanaged-server-present)
             printf '%s\t%s' \

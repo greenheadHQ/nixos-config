@@ -42,6 +42,7 @@ mode·node type·filesystem 상태를 확인하고 command exit와 log를 status
 | `deferred-unknown-activity` | 세션 프로세스는 있으나 transcript 명명 매치가 없어 보수 유예 |
 | `restart-gate-failed` | worktree 재시작 activity gate 자체를 평가하지 못함. live bridge는 유지하고 transcript/session process 조회 실패를 확인 |
 | `start-failed` | launcher 호출/guardian handshake를 확인하지 못함. `processState=unknown`; `<slug>/server.log`, exact launcher와 lock owner를 확인하고 macOS는 다음 1분 ensure에서 재시도 |
+| `login-required` | bridge가 upstream 로그인 안내(`You must be logged in to use Remote Control` 또는 `Remote Control is only available with claude.ai subscriptions`)를 이번 시작 시도의 `server.log`에 남기고 종료함. start와 drift restart 양쪽에서 기록되며 `processState=unknown`. 재시도로는 풀리지 않으므로 그 호스트에서 `claude auth login`(또는 `claude` 실행 뒤 `/login`)으로 사용자가 로그인하면 다음 ensure가 복구 |
 | `invalid-spawn` | 등록된 instance의 spawn 값이 `worktree`/`same-dir`가 아님. 선언과 registry를 확인 |
 | `invalid-capacity` | 등록된 capacity가 음이 아닌 정수가 아님. 선언과 registry를 확인 |
 | `invalid-permission-mode` | 등록된 permission mode가 지원 목록에 없음. 선언과 registry를 확인 |

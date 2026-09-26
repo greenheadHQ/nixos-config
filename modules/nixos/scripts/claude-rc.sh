@@ -291,6 +291,11 @@ do_start() {
             [ ! -f "$log_path" ] || tail -n 30 "$log_path" >&2 || true
             return 1
             ;;
+        login-required)
+            log_error "Claude 로그인이 필요함: 'claude auth login'(또는 claude 실행 후 /login)으로 로그인한 뒤 다시 시작하세요: $instance_path"
+            [ ! -f "$log_path" ] || tail -n 30 "$log_path" >&2 || true
+            return 1
+            ;;
         identity-unresolvable|identity-unresolvable-cleaned)
             log_error "server process/version identity를 확인하지 못함: $instance_path"
             return 1

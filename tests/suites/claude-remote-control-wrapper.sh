@@ -438,6 +438,33 @@ test_claude_remote_control_interactive_start_requires_verified_managed_identity(
   done
 }
 
+test_claude_remote_control_start_reports_login_required() {
+  local sandbox repo out rc lock_path
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  repo="$sandbox/repo"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+
+  rc=0
+  out="$(_claude_rc_run "$repo" env \
+    STARTED_IDENTITY_POLL_ATTEMPTS=2 \
+    STARTED_IDENTITY_POLL_INTERVAL_SECONDS=0.01 \
+    FAKE_CLAUDE_RC=1 \
+    FAKE_CLAUDE_ERR="$(_claude_rc_login_error_text)" \
+    bash "$(_claude_rc_wrapper_script)" start 2>&1)" || rc=$?
+  [ "$rc" -ne 0 ] || fail "interactive start must fail when Claude is logged out: $out"
+  assert_contains "$out" "Claude 로그인이 필요함: 'claude auth login'"
+  assert_not_contains "$out" "unknown launch outcome"
+  if [ -f "$CLAUDE_RC_STATE/instances.json" ]; then
+    jq -e --arg path "$repo" '(.instances | has($path)) | not' \
+      "$CLAUDE_RC_STATE/instances.json" >/dev/null \
+      || fail "logged-out start must not register the instance"
+  fi
+  lock_path="$CLAUDE_RC_STATE/$(_claude_rc_slug "$repo")/lock"
+  "$CLAUDE_RC_FAKE_BIN/flock" -n "$lock_path" true \
+    || fail "logged-out start must not leave the instance lock held: $out"
+}
+
 test_claude_remote_control_interactive_start_ignores_ambient_claude_bin() {
   local sandbox repo log
   sandbox="$(_claude_rc_new_sandbox)"
