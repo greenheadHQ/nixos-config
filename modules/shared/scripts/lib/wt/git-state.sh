@@ -237,14 +237,41 @@ _wt_is_dirty() {
   [[ -n "$status" ]]
 }
 
+# detached HEAD 커밋을 이 worktree를 지운 뒤에도 남는 일반 참조가 보존하는가.
+#
+# 계약: 보존 참조는 로컬 브랜치(refs/heads/)·태그(refs/tags/)·원격 추적 ref(refs/remotes/)
+# 뿐이고, 그중 하나가 HEAD 커밋을 포함(조상으로 가짐)할 때만 0을 반환한다. 다음은
+# 커밋을 붙잡고 있어도 보존으로 치지 않는다:
+#   - 이 worktree 자신의 HEAD·reflog — 정리하면 함께 사라진다.
+#   - 다른 worktree의 detached HEAD — 그 worktree도 같은 규칙으로 정리될 수 있어,
+#     서로를 근거로 삼으면 둘 다 지워진다.
+#   - refs/stash, worktree별 ref(refs/worktree/, refs/bisect/) 등 그 밖의 ref — 보존용
+#     참조가 아니다 (stash는 drop·clear로, worktree별 ref는 정리와 함께 사라진다).
+# HEAD OID나 참조 조회에 실패하면 보존을 확인하지 못한 것이므로 1을 반환한다
+# (fail-closed) — 호출자는 이를 "잃을 커밋 있음"으로 다룬다.
+_wt_detached_head_preserved() {
+  local wt="$1" head_oid holder
+  head_oid=$(git -C "$wt" rev-parse --verify --quiet 'HEAD^{commit}' 2>/dev/null) || return 1
+  [[ -n "$head_oid" ]] || return 1
+  # 패턴 끝의 `/`는 경로 단위 접두 일치라 refs/heads2/ 같은 유사 이름을 배제한다 (실측).
+  holder=$(git -C "$wt" for-each-ref --contains="$head_oid" --count=1 --format='%(refname)' \
+    refs/heads/ refs/tags/ refs/remotes/ 2>/dev/null) || return 1
+  [[ -n "$holder" ]]
+}
+
 # worktree에 unpushed 커밋이 있는지 체크 (raw git 상태)
 # upstream을 못 찾으면 보수적으로 true다 — 한 번도 push하지 않은 브랜치를 놓치지
 # 않기 위함이다. 이 보수성이 squash merge 후 false positive를 만드는 문제는
 # _wt_has_unpushed_risk가 PR 상태로 보정한다 (아래 주석 참조).
+# detached HEAD에는 upstream이 없으므로 보존 참조 유무로 판정한다 — 과거처럼 detached를
+# 곧바로 false로 보내면, 보존 참조 없는 커밋을 가진 clean worktree가 확인 없이 정리됐다 (#1373).
 _wt_has_unpushed() {
   local branch
   branch=$(_wt_branch "$1")
-  [[ "$branch" == "detached" ]] && return 1
+  if [[ "$branch" == "detached" ]]; then
+    _wt_detached_head_preserved "$1" && return 1
+    return 0
+  fi
 
   local upstream
   upstream=$(git -C "$1" rev-parse --abbrev-ref "@{upstream}" 2>/dev/null) || return 0
