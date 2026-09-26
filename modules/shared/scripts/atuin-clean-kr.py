@@ -28,8 +28,10 @@ BUSY_TIMEOUT_MS = 5000
 # 명령 한 줄을 기록하는 atuin 쓰기는 순간이므로, 이만큼 백업이 끝나지 않으면 다른 프로세스가
 # 잠금을 오래 쥐고 있다고 보고 삭제 전에 멈춘다. 테스트는 ATUIN_CLEAN_KR_BACKUP_TIMEOUT으로 줄인다.
 DEFAULT_BACKUP_TIMEOUT_SECONDS = 30
-# 한 step(기본 4KiB 페이지면 4MiB)마다 원본 잠금을 놓아 atuin 기록을 오래 막지 않고,
-# 진행 콜백이 상한과 Ctrl-C를 확인할 틈을 둔다.
+# 한 step은 기본 4KiB 페이지면 4MiB이고, 진행 콜백이 step마다 상한과 Ctrl-C를 확인한다.
+# 비WAL 원본은 step 사이에 읽기 잠금이 풀려 atuin 기록을 오래 막지 않는다. WAL이든 아니든
+# step 사이에 다른 연결이 원본에 쓰면 백업은 처음부터 다시 시작하며, 쓰기가 이어져 상한을
+# 넘기면 삭제 전에 멈춘다.
 BACKUP_STEP_PAGES = 1024
 
 

@@ -3,6 +3,7 @@
 from datetime import datetime
 import os
 from pathlib import Path
+import select
 import shutil
 import sqlite3
 import subprocess
@@ -20,7 +21,7 @@ EXISTING_BACKUP_WINDOW_SECONDS = 30
 # 상한 확인이 그만큼 늦어지므로, 상한 뒤 5초보다 짧은 시간 안에 멈춰야 한다.
 LOCKED_SOURCE_BACKUP_TIMEOUT_SECONDS = 0.5
 LOCKED_SOURCE_MAX_STOP_SECONDS = 4
-# 이 시간 안에 끝나지 않으면 멈춘 것으로 본다.
+# 확인 프롬프트가 나오거나 스크립트가 끝나기를 이 시간보다 오래 기다리면 멈춘 것으로 본다.
 LOCKED_SOURCE_TEST_TIMEOUT_SECONDS = 15
 
 # 실제 스크립트를 그대로 실행하되 sqlite3.connect 경계에서만 백업 실패를 주입한다.
@@ -253,8 +254,12 @@ class BackupContractTests(unittest.TestCase):
 
         # 삭제 대상을 조회하고 확인 프롬프트에서 기다리는 동안 다른 연결이 쓰기 잠금을 잡는다.
         prompt = b""
+        prompt_deadline = time.monotonic() + LOCKED_SOURCE_TEST_TIMEOUT_SECONDS
         while not prompt.endswith(b"[y/N] "):
-            chunk = proc.stdout.read(1)
+            wait = prompt_deadline - time.monotonic()
+            if wait <= 0 or not select.select([proc.stdout], [], [], wait)[0]:
+                self.fail(f"확인 프롬프트가 나오지 않았다: {prompt.decode(errors='replace')}")
+            chunk = os.read(proc.stdout.fileno(), 4096)
             if not chunk:
                 self.fail(f"확인 프롬프트 전에 종료했다: {prompt.decode(errors='replace')}")
             prompt += chunk

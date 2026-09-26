@@ -195,15 +195,21 @@ $ atuin history --help
 ```bash
 # 1. 반드시 백업 먼저: 본체 파일 cp는 WAL에만 커밋된 행을 놓치므로 SQLite 온라인 백업으로 만든다.
 #    이름은 atuin-clean-kr과 같은 history.db.bak.YYYYMMDD-HHMMSS이고, 같은 이름이 있으면 덮어쓰지 않고 멈춘다.
-# 2. Python 스크립트로 한글 포함 항목 삭제. 1단계와 &&로 이어져 있어 백업이 실패하면 실행되지 않는다.
+#    atuin-clean-kr처럼 잠금을 기다리는 중에도 Ctrl-C로 바로 멈출 수 있고, 다른 프로세스가 DB를 잠가 30초 안에 끝나지 않으면
+#    만들던 백업 파일을 지우고 실패로 끝난다.
+# 2. Python 스크립트로 한글 포함 항목 삭제. 1단계와 &&로 이어져 있어 백업이 실패하거나 중단되면 실행되지 않는다.
 python3 - <<'PY' &&
 import os, sqlite3, time
 db = os.path.expanduser('~/.local/share/atuin/history.db')
 bak = f"{db}.bak.{time.strftime('%Y%m%d-%H%M%S')}"
 os.close(os.open(bak, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
-src, dst = sqlite3.connect(db), sqlite3.connect(bak)
+src, dst = sqlite3.connect(db, timeout=0), sqlite3.connect(bak)
+deadline = time.monotonic() + 30
+def check(status, remaining, total):
+    if status != sqlite3.SQLITE_DONE and time.monotonic() > deadline:
+        raise sqlite3.OperationalError('30초 안에 끝나지 않음 (다른 프로세스가 DB를 잠그고 있을 수 있음)')
 try:
-    src.backup(dst)
+    src.backup(dst, pages=1024, progress=check)
 except BaseException:
     dst.close()
     os.unlink(bak)
