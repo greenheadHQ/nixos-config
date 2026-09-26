@@ -4,7 +4,7 @@
   margin: 0 auto;
   padding: 24px;
   font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
-  font-size: 20px;
+  font-size: calc(17px * var(--anki-text-scale, 1));
   line-height: 1.55;
   text-align: left;
   color: #202124;
@@ -14,9 +14,12 @@
 .question { font-size: 1.1em; font-weight: 700; }
 .answer { margin: 18px 0 0; font-size: 1.1em; font-weight: 700; }
 .explanation { margin-top: 18px; padding: 16px; border-radius: 10px; background: #f4f6f8; }
-.source { margin-top: 18px; color: #667085; font-size: 0.72em; }
+.source { margin-top: 18px; color: #667085; font-size: max(12px, 0.72em); }
 code { padding: 0.1em 0.35em; border-radius: 4px; background: #eef1f4; }
 img { max-width: 100%; height: auto; }
+@media (max-width: 600px) {
+  .card { font-size: calc(16px * var(--anki-text-scale, 1)); }
+}
 .nightMode { color: #e5e7eb; background: #1f2933; }
 .nightMode .context, .nightMode .source { color: #aab4c0; }
 .nightMode .explanation { background: #2b3642; }

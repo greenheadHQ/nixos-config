@@ -339,6 +339,298 @@ AnkiCidCopyV2.mount(document.getElementById("qa") || document.body);
 
 AnkiCidCopyV2.mount(document.getElementById("qa") || document.body);
 </script>
+{{/맥락}}{{/질문}}{{#질문}}<!-- anki-text-size-v1 -->
+<style>
+/* Per-card body text size, beside the card ID button. Code blocks keep their own control. */
+.anki-text-controls {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  color: #57606a;
+  font: 400 11px/1 -apple-system, BlinkMacSystemFont, sans-serif;
+  text-align: left;
+  -webkit-text-size-adjust: 100%;
+}
+.anki-text-controls__mark { padding: 0 3px 0 2px; font-size: 13px; font-weight: 700; }
+.anki-text-controls button {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.anki-text-controls button[data-action="smaller"],
+.anki-text-controls button[data-action="larger"] { font-size: 16px; }
+/* Keep the explicit accessible name while presenting a quiet reset icon. */
+.anki-text-controls button[data-action="reset"] { font-size: 0; }
+.anki-text-controls button[data-action="reset"]::before { content: "↺"; font-size: 16px; }
+.anki-text-controls button:not(:disabled):hover,
+.anki-text-controls button:not(:disabled):active { background: #e6ebf0; }
+.anki-text-controls button:hover,
+.anki-text-controls button:active { box-shadow: none; }
+/* Desktop Anki suppresses button outlines with !important. Restore focus here. */
+.anki-text-controls button:focus-visible { outline: 2px solid #0969da !important; outline-offset: 1px; }
+.anki-text-controls button:disabled,
+.anki-text-controls button:disabled:hover { background: transparent; color: inherit; opacity: .4; cursor: default; }
+.anki-text-controls output {
+  min-width: 34px;
+  text-align: center;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 600px) {
+  .anki-text-controls button { min-width: 32px; min-height: 32px; }
+}
+:is(.nightMode, .night_mode) .anki-text-controls { color: #8b949e; }
+:is(.nightMode, .night_mode) .anki-text-controls button:not(:disabled):hover,
+:is(.nightMode, .night_mode) .anki-text-controls button:not(:disabled):active { background: #30363d; }
+:is(.nightMode, .night_mode) .anki-text-controls button:focus-visible { outline-color: #79c0ff !important; }
+</style>
+<script>
+(() => {
+  const KEY = "AnkiTextSizeV1";
+  if (!window[KEY]) {
+    let cardId = null, answer = false, scale = 100;
+    let root = null, host = null, toolbar = null;
+    // The note type sizes .card, which desktop Anki puts on body: an ancestor
+    // of #qa whose class list it rewrites per card. Scale from <html> instead.
+    const page = document.documentElement;
+    const update = () => {
+      if (scale === 100) page.style.removeProperty("--anki-text-scale");
+      else page.style.setProperty("--anki-text-scale", String(scale / 100));
+      toolbar.querySelector("output").textContent = `${scale}%`;
+      toolbar.querySelector('[data-action="smaller"]').disabled = scale === 80;
+      toolbar.querySelector('[data-action="larger"]').disabled = scale === 140;
+      toolbar.querySelector('[data-action="reset"]').disabled = scale === 100;
+    };
+    const mount = () => {
+      const nextRoot = document.getElementById("qa") || document.body;
+      // The card ID script keeps only its last control; share its row.
+      const nextHost = nextRoot.querySelector("[data-anki-cid]");
+      const id = nextHost?.dataset.ankiCid;
+      const nextId = /^[1-9][0-9]*$/.test(id || "") ? id : null;
+      const nextAnswer = !!nextRoot.querySelector("#answer");
+      // Same lifetime as the code-size control: the current card only, never
+      // persisted. A preview without CardID keeps it only within one host node.
+      if (nextId ? nextId !== cardId || (answer && !nextAnswer)
+        : nextRoot !== root || nextHost !== host || cardId !== null) scale = 100;
+      cardId = nextId;
+      answer = nextAnswer;
+      root = nextRoot;
+      host = nextHost;
+      // FrontSide may carry previously rendered markup, but not its listeners.
+      for (const duplicate of root.querySelectorAll(".anki-text-controls")) {
+        if (duplicate !== toolbar) duplicate.remove();
+      }
+      if (!host) {
+        toolbar?.remove();
+        toolbar = null;
+        scale = 100;
+        page.style.removeProperty("--anki-text-scale");
+        return;
+      }
+      // The card ID script rewrites its row on every render, so this fragment
+      // runs after it and re-attaches in front of the copy button.
+      if (!toolbar || !toolbar.isConnected || toolbar.parentElement !== host) {
+        toolbar?.remove();
+        const bar = document.createElement("div");
+        bar.className = "anki-text-controls";
+        bar.setAttribute("role", "group");
+        bar.setAttribute("aria-label", "이 카드의 본문 글자 크기");
+        bar.innerHTML = '<span class="anki-text-controls__mark" aria-hidden="true">가</span><button type="button" data-action="smaller" aria-label="본문 글자 작게">−</button><output aria-live="polite" aria-atomic="true">100%</output><button type="button" data-action="larger" aria-label="본문 글자 크게">+</button><button type="button" data-action="reset" aria-label="본문 글자 크기 기본값">기본</button>';
+        // Stop reviewer tap/key actions, but retain native button activation
+        // and focus. No document-wide handlers.
+        for (const name of ["pointerdown", "pointerup", "mousedown", "mouseup",
+          "touchstart", "touchend", "keydown", "keypress", "keyup"]) {
+          bar.addEventListener(name, event => event.stopPropagation());
+        }
+        bar.addEventListener("click", event => {
+          event.stopPropagation();
+          if (toolbar !== bar || !bar.isConnected) return;
+          const button = event.target.closest("button[data-action]");
+          if (!button || button.disabled) return;
+          const action = button.dataset.action;
+          scale = action === "reset" ? 100 : Math.max(80, Math.min(140,
+            scale + (action === "larger" ? 10 : -10)));
+          update();
+        });
+        host.prepend(bar);
+        toolbar = bar;
+      }
+      update();
+    };
+    window[KEY] = { mount };
+  }
+  window[KEY].mount();
+})();
+</script>
+{{/질문}}{{^질문}}{{#맥락}}<!-- anki-text-size-v1 -->
+<style>
+/* Per-card body text size, beside the card ID button. Code blocks keep their own control. */
+.anki-text-controls {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  color: #57606a;
+  font: 400 11px/1 -apple-system, BlinkMacSystemFont, sans-serif;
+  text-align: left;
+  -webkit-text-size-adjust: 100%;
+}
+.anki-text-controls__mark { padding: 0 3px 0 2px; font-size: 13px; font-weight: 700; }
+.anki-text-controls button {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.anki-text-controls button[data-action="smaller"],
+.anki-text-controls button[data-action="larger"] { font-size: 16px; }
+/* Keep the explicit accessible name while presenting a quiet reset icon. */
+.anki-text-controls button[data-action="reset"] { font-size: 0; }
+.anki-text-controls button[data-action="reset"]::before { content: "↺"; font-size: 16px; }
+.anki-text-controls button:not(:disabled):hover,
+.anki-text-controls button:not(:disabled):active { background: #e6ebf0; }
+.anki-text-controls button:hover,
+.anki-text-controls button:active { box-shadow: none; }
+/* Desktop Anki suppresses button outlines with !important. Restore focus here. */
+.anki-text-controls button:focus-visible { outline: 2px solid #0969da !important; outline-offset: 1px; }
+.anki-text-controls button:disabled,
+.anki-text-controls button:disabled:hover { background: transparent; color: inherit; opacity: .4; cursor: default; }
+.anki-text-controls output {
+  min-width: 34px;
+  text-align: center;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 600px) {
+  .anki-text-controls button { min-width: 32px; min-height: 32px; }
+}
+:is(.nightMode, .night_mode) .anki-text-controls { color: #8b949e; }
+:is(.nightMode, .night_mode) .anki-text-controls button:not(:disabled):hover,
+:is(.nightMode, .night_mode) .anki-text-controls button:not(:disabled):active { background: #30363d; }
+:is(.nightMode, .night_mode) .anki-text-controls button:focus-visible { outline-color: #79c0ff !important; }
+</style>
+<script>
+(() => {
+  const KEY = "AnkiTextSizeV1";
+  if (!window[KEY]) {
+    let cardId = null, answer = false, scale = 100;
+    let root = null, host = null, toolbar = null;
+    // The note type sizes .card, which desktop Anki puts on body: an ancestor
+    // of #qa whose class list it rewrites per card. Scale from <html> instead.
+    const page = document.documentElement;
+    const update = () => {
+      if (scale === 100) page.style.removeProperty("--anki-text-scale");
+      else page.style.setProperty("--anki-text-scale", String(scale / 100));
+      toolbar.querySelector("output").textContent = `${scale}%`;
+      toolbar.querySelector('[data-action="smaller"]').disabled = scale === 80;
+      toolbar.querySelector('[data-action="larger"]').disabled = scale === 140;
+      toolbar.querySelector('[data-action="reset"]').disabled = scale === 100;
+    };
+    const mount = () => {
+      const nextRoot = document.getElementById("qa") || document.body;
+      // The card ID script keeps only its last control; share its row.
+      const nextHost = nextRoot.querySelector("[data-anki-cid]");
+      const id = nextHost?.dataset.ankiCid;
+      const nextId = /^[1-9][0-9]*$/.test(id || "") ? id : null;
+      const nextAnswer = !!nextRoot.querySelector("#answer");
+      // Same lifetime as the code-size control: the current card only, never
+      // persisted. A preview without CardID keeps it only within one host node.
+      if (nextId ? nextId !== cardId || (answer && !nextAnswer)
+        : nextRoot !== root || nextHost !== host || cardId !== null) scale = 100;
+      cardId = nextId;
+      answer = nextAnswer;
+      root = nextRoot;
+      host = nextHost;
+      // FrontSide may carry previously rendered markup, but not its listeners.
+      for (const duplicate of root.querySelectorAll(".anki-text-controls")) {
+        if (duplicate !== toolbar) duplicate.remove();
+      }
+      if (!host) {
+        toolbar?.remove();
+        toolbar = null;
+        scale = 100;
+        page.style.removeProperty("--anki-text-scale");
+        return;
+      }
+      // The card ID script rewrites its row on every render, so this fragment
+      // runs after it and re-attaches in front of the copy button.
+      if (!toolbar || !toolbar.isConnected || toolbar.parentElement !== host) {
+        toolbar?.remove();
+        const bar = document.createElement("div");
+        bar.className = "anki-text-controls";
+        bar.setAttribute("role", "group");
+        bar.setAttribute("aria-label", "이 카드의 본문 글자 크기");
+        bar.innerHTML = '<span class="anki-text-controls__mark" aria-hidden="true">가</span><button type="button" data-action="smaller" aria-label="본문 글자 작게">−</button><output aria-live="polite" aria-atomic="true">100%</output><button type="button" data-action="larger" aria-label="본문 글자 크게">+</button><button type="button" data-action="reset" aria-label="본문 글자 크기 기본값">기본</button>';
+        // Stop reviewer tap/key actions, but retain native button activation
+        // and focus. No document-wide handlers.
+        for (const name of ["pointerdown", "pointerup", "mousedown", "mouseup",
+          "touchstart", "touchend", "keydown", "keypress", "keyup"]) {
+          bar.addEventListener(name, event => event.stopPropagation());
+        }
+        bar.addEventListener("click", event => {
+          event.stopPropagation();
+          if (toolbar !== bar || !bar.isConnected) return;
+          const button = event.target.closest("button[data-action]");
+          if (!button || button.disabled) return;
+          const action = button.dataset.action;
+          scale = action === "reset" ? 100 : Math.max(80, Math.min(140,
+            scale + (action === "larger" ? 10 : -10)));
+          update();
+        });
+        host.prepend(bar);
+        toolbar = bar;
+      }
+      update();
+    };
+    window[KEY] = { mount };
+  }
+  window[KEY].mount();
+})();
+</script>
 {{/맥락}}{{/질문}}{{#질문}}<!-- anki-code-highlight-v1 -->
 <script>
 (() => {
