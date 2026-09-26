@@ -66,13 +66,21 @@ fetch_and_prune() {
 }
 
 get_stale_timestamp() {
-    if [[ -x /usr/bin/date ]]; then
-        # macOS: BSD date 직접 호출 (Nix의 GNU date 우회)
-        /usr/bin/date -v-${STALE_DAYS}d +%s
-    else
-        # Linux: GNU date 사용
-        date -d "${STALE_DAYS} days ago" +%s
+    # BSD/GNU date는 "N일 전" 옵션 문법(-v vs -d)이 서로 달라 절대경로나 옵션으로 구현을
+    # 구분하려 하면(예: /usr/bin/date 존재 여부) 실제 시스템 구성과 맞지 않을 수 있다
+    # (#1376). 대신 두 구현이 공통으로 지원하는 `date +%s`로 현재 epoch만 얻고, 30일은
+    # 고정 초 차이(30*86400초)로 셸 산술로 뺀다 — 달력 계산이 없으므로 시간대·일광절약시간
+    # 경계와 무관하다.
+    local now
+    now=$(date +%s) || {
+        echo "❌ 현재 시각(epoch)을 가져오지 못했습니다: 'date +%s' 실행 실패" >&2
+        exit 1
+    }
+    if [[ ! "$now" =~ ^[0-9]+$ ]]; then
+        echo "❌ 현재 시각(epoch) 계산 실패: 'date +%s' 출력이 숫자가 아닙니다 (출력: $now)" >&2
+        exit 1
     fi
+    echo $(( now - STALE_DAYS * 86400 ))
 }
 
 is_protected() {
