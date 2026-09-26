@@ -1,24 +1,50 @@
-# 마이그레이션과 복구
+# 재시작과 복구
 
 ## 같은 cwd의 unmanaged 서버 정리
 
 `claude-rc` 관리 밖에서 띄운 `claude remote-control` 서버가 같은 디렉토리에서 아직 떠 있으면
 `claude-rc-maint`는 `unmanaged-server-present`로 기동을 거부한다. 같은 디렉토리에 두 번째 서버를
-띄우면 삭제 불가능한 유령 환경이 생기므로, 이 거부가 정상 안전장치다.
+띄우면 삭제 불가능한 유령 환경이 생기므로, 이 거부가 정상 안전장치다. 아래 확인은 코드
+(`modules/nixos/scripts/claude-rc-lib.sh`의 `find_bridge_pids_for_path`)와 같은 기준을 따른다.
 
-먼저 `pgrep -fl 'remote-control'`로 후보 PID를 모은다. 후보마다 전체 argv(`ps -o args= -p <PID>`)와 실제 cwd(`lsof -a -p <PID> -d cwd -Fn`)로 같은 디렉토리의 `claude remote-control` 서버인지 확인하고, `claude-rc ls`가 관리하는 서버가 아닌지 대조한다. 프로세스 이름이나 표시용 command/path만으로 대상을 확정하지 않는다. 그 서버를 띄운 터미널이나 세션에 다른 작업이 있을 수 있으므로 서버 PID만 대상으로 삼고, 이름이 `claude-rc`라는 이유만으로 세션이나 부모 프로세스를 종료하지 않는다.
+1. 후보를 모은다. 패턴은 코드의 `BRIDGE_PROCESS_PATTERN`과 같아서 `remote-control`과 공식 별칭
+   `rc`를 모두 잡는다. 결과는 후보 목록일 뿐 종료 대상이 아니다.
 
-확인한 PID를 `CLAUDE_RC_UNMANAGED_PID`에 설정하고, 그 대상에 대한 작업 직전 승인을 받은 뒤 해당 Git 디렉토리에서 아래를 실행한다. 대상이나 실행 중 작업이 달라졌으면 먼저 다시 확인한다. 서버를 식별할 수 없으면 종료하지 않는다.
+   ```bash
+   pgrep -u "$(id -u)" -fl 'remote-control|[[:space:]]rc([[:space:]]|$)'
+   ```
 
-```bash
-: "${CLAUDE_RC_UNMANAGED_PID:?확인하고 승인받은 unmanaged 서버 PID를 설정하세요}"
-kill "$CLAUDE_RC_UNMANAGED_PID" || exit 1
-```
+2. 후보마다 아래를 모두 확인하고, 하나라도 맞지 않으면 대상에서 뺀다.
+   - argv: `ps -ww -o args= -p <PID>`에서 CLI 명령 자리에 `remote-control` 또는 `rc`가 있다.
+     `-p`·`--print`·`--` 뒤에 나오는 같은 글자는 명령이 아니라 데이터다.
+   - cwd: 심링크를 푼 인스턴스 디렉토리 경로(`pwd -P`)와 같다.
+     - NixOS: `readlink /proc/<PID>/cwd`
+     - macOS: `lsof -a -p <PID> -d cwd -Fn`의 `n` 행
+   - 실행 파일: 버전 디렉토리 `~/.local/share/claude/versions`(코드의 `VERSIONS_DIR` 기본값)에 있는
+     Claude 바이너리다. flock, `claude-rc-launch-group`, nohup, 셸 같은 래퍼는 argv에
+     `remote-control`이 있어도 서버가 아니며, flock 프로세스는 항상 뺀다.
+     - NixOS: `readlink /proc/<PID>/exe`. 삭제된 구버전이면 끝에 ` (deleted)`가 붙는다.
+     - macOS: `lsof -a -p <PID> -d txt -Fn`의 첫 `n` 행. 같은 파일의 하드링크 별칭 경로가 나올 수
+       있으므로, 버전 디렉토리 밖 경로면
+       `[ "<실행 파일 경로>" -ef ~/.local/share/claude/versions/<버전> ]`로 같은 파일인지 확인한다.
+   - `claude-rc ls`가 관리하는 서버가 아니다.
 
-`ps -p "$CLAUDE_RC_UNMANAGED_PID"`로 종료를 확인한 뒤 `claude-rc start`를 실행한다. 서버가
-아직 떠 있으면 `claude-rc start`는 같은 이유로 다시 거부한다. 선언 인스턴스는 수동
-`claude-rc start` 대신 다음 ensure 주기에 자동 기동시켜도 된다. 같은 디렉토리 경로이므로
-기존 claude.ai 환경을 회수한다.
+   프로세스 이름, 세션 이름, 표시용 command/path만으로 대상을 확정하지 않는다. 대상은 서버 PID
+   하나이며, 그 서버를 띄운 터미널·셸·부모 프로세스는 다른 작업이 있을 수 있으므로 종료하지 않는다.
+
+3. 확인한 PID를 `CLAUDE_RC_UNMANAGED_PID`에 설정하고, 그 대상에 대한 작업 직전 승인을 받은 뒤
+   아래를 실행한다. 대상이나 실행 중 작업이 달라졌으면 먼저 다시 확인한다. 서버를 식별할 수
+   없으면 종료하지 않는다.
+
+   ```bash
+   : "${CLAUDE_RC_UNMANAGED_PID:?확인하고 승인받은 unmanaged 서버 PID를 설정하세요}"
+   kill "$CLAUDE_RC_UNMANAGED_PID" || exit 1
+   ```
+
+4. `ps -p "$CLAUDE_RC_UNMANAGED_PID"`로 종료를 확인한 뒤 해당 Git 디렉토리에서 `claude-rc start`를
+   실행한다. 서버가 아직 떠 있으면 `claude-rc start`는 같은 이유로 다시 거부한다. 선언 인스턴스는
+   수동 `claude-rc start` 대신 다음 ensure 주기에 자동 기동시켜도 된다. 같은 디렉토리 경로이므로
+   기존 claude.ai 환경을 회수한다.
 
 ## 트러블슈팅
 
@@ -28,7 +54,7 @@ kill "$CLAUDE_RC_UNMANAGED_PID" || exit 1
 claude-rc ls
 cat ~/.local/state/claude-rc/status.json
 tail -50 ~/.local/state/claude-rc/<slug>/server.log
-pgrep -fl 'remote-control'
+pgrep -u "$(id -u)" -fl 'remote-control|[[:space:]]rc([[:space:]]|$)'
 ```
 
 `pgrep` 행은 launcher basename과 무관한 후보 수집용이다. 결과를 managed process로 단정하거나
