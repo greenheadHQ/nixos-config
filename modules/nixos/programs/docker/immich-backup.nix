@@ -26,6 +26,7 @@ let
       coreutils
       findutils
       curl # service-lib.sh의 send_notification에서 사용
+      util-linux # mountpoint — 목적지 HDD 마운트 가드(#1369)
     ];
     text = builtins.readFile ./immich-backup/files/immich-db-backup.sh;
   };
@@ -40,6 +41,10 @@ in
 
       unitConfig = {
         ConditionPathExists = pushoverCredPath;
+        # nofail HDD가 미마운트여도 부팅은 계속되므로, 이 유닛은 mediaData가 실제로
+        # 마운트된 뒤에만 시작해야 한다 — 그렇지 않으면 목적지가 루트 파일시스템의 일반
+        # 디렉터리가 되어 백업이 SSD에 오기록·성공으로 오인될 수 있다 (#1369).
+        RequiresMountsFor = [ mediaData ];
       };
 
       serviceConfig = {
@@ -58,6 +63,8 @@ in
         SERVICE_LIB = "${serviceLib}";
         BACKUP_DIR = backupDir;
         RETENTION_DAYS = toString cfg.retentionDays;
+        # 스크립트가 직접 실행돼도(수동 디버깅 등) 목적지 마운트를 검증하도록 마운트 루트를 넘긴다.
+        MOUNT_ROOT = mediaData;
       };
     };
 
