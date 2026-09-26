@@ -60,9 +60,13 @@ PATTERN_C="$PINNING_PATTERN_C_WORKFLOW|$PINNING_PATTERN_C_VOLATILE"
 # Pattern D: Claude Code session URLs (issue #1422) — the claude.ai `/code/session_<id>`
 # address that session attribution appends as a `Claude-Session:` commit trailer or a
 # PR-body link. Only that path shape is matched, so other claude.ai addresses and
-# documentation links pass. The id must start with an alphanumeric character, so text
-# that only describes the shape with a placeholder id stays clean.
-PATTERN_D='\bclaude\.ai/code/session_[A-Za-z0-9]+'
+# documentation links pass. The id must be at least 20 ASCII alphanumerics: real session
+# ids are 24 (observed in session links the harness hands out), and the margin keeps
+# them caught if the length shifts slightly. Shorter or non-alphanumeric ids pass, so
+# documentation placeholders such as `session_<id>`, `session_XXXXXXXX`,
+# `session_abc123`, and `session_id` stay clean. The host is matched in lowercase only,
+# as the harness emits it.
+PATTERN_D='\bclaude\.ai/code/session_[A-Za-z0-9]{20,}'
 
 # Canonicalize a path for whitelist comparison. Returns the canonical path on
 # stdout when canonicalization succeeds, otherwise prints nothing. Callers

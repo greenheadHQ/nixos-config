@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh pr merge 1422 --squash --match-head-commit \"$HEAD_OID\""
+  }
+}

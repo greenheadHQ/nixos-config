@@ -117,7 +117,7 @@ pre-commit 정책:
 
 **commit-msg**:
 - `lefthook-guard-self-check` — pre-commit self-check의 복제. `git commit --allow-empty`처럼 staged files가 0이라 pre-commit command가 skip되는 경로까지 차단한다
-- `pinning` — commit message LLM 박제 패턴 감지 ([`scripts/ai/commit-msg-pinning.sh`](./scripts/ai/commit-msg-pinning.sh)). 라운드 카운터·finding ID·DA 키워드는 warn-only, Claude 세션 URL(`Claude-Session:` 트레일러 포함)만 커밋을 차단한다 (#1422)
+- `pinning` — commit message LLM 박제 패턴 감지 ([`scripts/ai/commit-msg-pinning.sh`](./scripts/ai/commit-msg-pinning.sh)). 라운드 카운터·finding ID·DA 키워드는 warn-only이고, Claude 세션 URL 주소(`claude.ai`의 코드 세션 주소, id 영숫자 20자 이상)만 커밋을 차단한다 (#1422). 차단 대상은 주소 자체라서 `Claude-Session:` 트레일러 줄이라도 세션 주소가 없으면 막지 않는다. `git commit -v`의 scissors 줄 아래 diff는 검사하지 않고, 검사 자체의 내부 오류는 경고만 하고 통과시킨다
 
 **LLM durable-output pinning guard layers**:
 - Runtime hard-fail: Claude/Codex PreToolUse `pinning-guard.sh` blocks new volatile review/session metadata before supported edit/apply_patch tools and targeted git/gh durable commands write eligible markdown, shell, notebook, body-temp, commit, PR, or issue text.

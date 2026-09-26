@@ -8,7 +8,7 @@ runner: `tests/test-codex-hook-fixtures.sh`.
 | 경로 | 의도 | 소비처 |
 |------|------|--------|
 | `stdin/` | hook stdin fixture 공용 디렉터리. Codex 0.124+ payload(`record-prompt-submit.sh`/`record-last-stop.sh` 등), PostToolUse pinning-alert warn-only fixture, PreToolUse pinning-guard hard-fail fixture(`*.expected` sidecar 포함)가 함께 위치. 카테고리별 파일 표는 아래 카테고리 7/7b 절 참조. | `test_stdin_payloads_create_expected_hook_artifacts_codex_0_124`, `test_pinning_alert_behavioral`, `test_pretooluse_pinning_guard_behavioral` |
-| `commit-msg/` | commit-msg-pinning.sh 입력 메시지와 stderr expected sidecar. shared pinning helper가 commit message 경로에서도 hook 경로와 같은 결과를 내는지 검증한다. | `test_commit_msg_pinning_behavioral` |
+| `commit-msg/` | commit-msg-pinning.sh 입력 메시지와 stderr expected sidecar, 선택적 기대 종료 코드 `*.exit` sidecar(없으면 0). shared pinning helper가 commit message 경로에서도 hook 경로와 같은 결과를 내는지 검증한다. | `test_commit_msg_pinning_behavioral` |
 | `sync-preservation/` | `sync-codex-config.py`가 `~/.codex/config.toml`을 merge할 때 user-owned 영역을 어떻게 보존/덮어쓰는지 검증할 user 측 입력 TOML. | `test_sync_preservation_scenarios` |
 
 (이전에는 `transcripts/` 디렉터리와 카테고리 6 stop-notification reliability/security fixture가 있었으나, native push 도입으로 stop-notification hook과 함께 제거되었다.)
@@ -122,7 +122,8 @@ Issue #1422 Claude 세션 URL 범주(category D) fixture:
 
 세션 URL은 fixture에 리터럴로 두지 않고 스킴을 뺀 `__SESSION_URL__` 자리표시로 쓴다. runner가 조각을 조합한
 합성 값으로 치환하므로 저장소에는 세션 URL 모양의 문자열이 남지 않는다. 패턴 자체의 양성·음성 경계
-(다른 claude.ai 주소, 문서 링크, id 자리표시만 있는 설명)는 runner의 `test_pinning_session_url_category_behavioral`이 검증한다.
+(다른 claude.ai 주소, 문서 링크, id 자리표시만 있는 설명, 짧은 영숫자 자리표시, id 19자 통과·20자 매치)는
+runner의 `test_pinning_session_url_category_behavioral`이 검증한다.
 
 | 시나리오 | fixture |
 |----------|---------|
@@ -132,6 +133,7 @@ Issue #1422 Claude 세션 URL 범주(category D) fixture:
 | `gh pr edit --body`, `gh issue comment --body` 거부 | `pretooluse-pinning-guard-codex-bash-pr-edit-session-url-deny.*`, `pretooluse-pinning-guard-claude-bash-issue-comment-session-url-deny.*` |
 | `gh pr merge`의 squash 커밋 본문(`--body`, `--body-file`) 거부 | `pretooluse-pinning-guard-codex-bash-pr-merge-body-session-url-deny.*`, `pretooluse-pinning-guard-claude-bash-pr-merge-bodyfile-session-url-deny.*` |
 | 세션 URL이 아닌 claude.ai 주소와 문서 링크는 통과 | `pretooluse-pinning-guard-{claude,codex}-bash-claude-link-clean.*` |
+| finish-pr의 정상 머지 명령(`gh pr merge <n> --squash --match-head-commit "$HEAD_OID"`)은 검사 대상이어도 통과 | `pretooluse-pinning-guard-{claude,codex}-bash-pr-merge-match-head-clean.*` |
 
 PostToolUse `pinning-alert.sh` and commit-msg-pinning.sh keep emitting both sub-patterns under category code "C" (warn-only diagnostic preserved). The PreToolUse hard-fail records API (`pinning_guard_findings_records_for_path`, `pinning_guard_findings_records_for_scan_path`) suppresses only the workflow sub-pattern on the allowed paths above.
 
@@ -149,6 +151,10 @@ stdin fixture와 같이 `__SESSION_URL__` 자리표시로 두고 runner가 실�
 | `line-token-c-positive.msg` | PATTERN_C (DA 실행 키워드) | C 라벨 + line:token warn, exit 0 |
 | `session-url-block.msg` | PATTERN_D (`Claude-Session:` 트레일러의 세션 URL, #1422) | D 라벨 + line:token error, exit 1 |
 | `line-token-a-and-session-url-block.msg` | PATTERN_A와 PATTERN_D 혼합 | A는 warn, D는 error, exit 1 |
+| `verbose-scissors-diff-clean.msg` | `git commit -v` 편집 파일 실물. 세션 URL은 scissors 줄 아래 diff에만 있음 | 빈 파일, exit 0 |
+
+검사 자체의 내부 오류(깨진 lib, 쓸 수 없는 `TMPDIR`)는 세션 URL이 있어도 경고 후 exit 0이어야 한다.
+이 계약은 fixture 파일 없이 runner의 `test_commit_msg_pinning_internal_error_fail_open`이 검증한다.
 
 lefthook.yml의 commit-msg 배선이 이 종료 코드를 git까지 전달하는지는 `tests/suites/lefthook.sh`의
 `test_lefthook_commit_msg_pinning_blocks_only_session_url`이 격리 저장소의 실제 `git commit`으로 검증한다.

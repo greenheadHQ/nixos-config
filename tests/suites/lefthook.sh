@@ -914,7 +914,8 @@ extract_commit_msg_pinning_command_block() {
 test_lefthook_commit_msg_pinning_blocks_only_session_url() {
   # commit-msg pinning 배선이 스크립트 종료 코드를 git까지 전달하는지 실제 lefthook과 git commit으로
   # 확인한다 (#1422). 세션 URL은 커밋을 막고, A~C 범주(라운드 카운터 등)는 경고만 하며, 스크립트가
-  # 없는 checkout(lefthook.yml만 받은 경우)은 조용히 통과해야 한다.
+  # 없는 checkout(lefthook.yml만 받은 경우)은 조용히 통과해야 한다. lib가 깨져 검사가 내부 오류로
+  # 끝나면 세션 URL이 있어도 경고만 하고 커밋을 통과시킨다.
   # 박제 토큰과 세션 URL은 이 파일이 pinning-guard에 걸리지 않도록 조각을 조합한다.
   local sandbox repo_root stub_dir home_dir pinning_block session_url head_before head_after output rc
   if ! command -v lefthook >/dev/null 2>&1; then
@@ -925,7 +926,7 @@ test_lefthook_commit_msg_pinning_blocks_only_session_url() {
   stub_dir="$sandbox/stubs"
   home_dir="$sandbox/home"
   create_install_lefthook_fixture "$repo_root" "$stub_dir"  # stub_dir는 PATH에 넣지 않는다
-  session_url="https://claude.ai/code/""session_01FixtureSessionId"
+  session_url="https://claude.ai/code/""session_01FixtureSessionIdXyz123"
 
   pinning_block=$(extract_commit_msg_pinning_command_block)
   [[ -n "$pinning_block" ]] || fail "could not extract commit-msg pinning command from lefthook.yml"
@@ -978,4 +979,10 @@ test_lefthook_commit_msg_pinning_blocks_only_session_url() {
   pinning_fixture_commit "$sandbox/pattern-a.msg"
   [[ "$rc" == "0" ]] || fail "A~C categories must stay warn-only through the lefthook.yml wiring; rc=$rc output: $output"
   assert_contains "$output" "[WARN] pinning:"
+
+  # ── lib가 깨진 checkout: 내부 오류는 경고만 하고 커밋은 성공 ──
+  printf 'if then fi\n' > "$repo_root/modules/shared/programs/claude/files/lib/pinning-patterns.sh"
+  pinning_fixture_commit "$sandbox/session-url.msg"
+  [[ "$rc" == "0" ]] || fail "commit-msg internal errors must not block commits through the lefthook.yml wiring; rc=$rc output: $output"
+  assert_contains "$output" "[WARN] pinning: 내부 오류"
 }
