@@ -32,16 +32,34 @@
    프로세스 이름, 세션 이름, 표시용 command/path만으로 대상을 확정하지 않는다. 대상은 서버 PID
    하나이며, 그 서버를 띄운 터미널·셸·부모 프로세스는 다른 작업이 있을 수 있으므로 종료하지 않는다.
 
-3. 확인한 PID를 `CLAUDE_RC_UNMANAGED_PID`에 설정하고, 그 대상에 대한 작업 직전 승인을 받은 뒤
-   아래를 실행한다. 대상이나 실행 중 작업이 달라졌으면 먼저 다시 확인한다. 서버를 식별할 수
-   없으면 종료하지 않는다.
+   대상으로 확정한 PID의 시작 시각과 argv를 기록한다. 3단계는 이 기록과 같은 셸에서 실행한다.
 
    ```bash
-   : "${CLAUDE_RC_UNMANAGED_PID:?확인하고 승인받은 unmanaged 서버 PID를 설정하세요}"
-   kill "$CLAUDE_RC_UNMANAGED_PID"
+   CLAUDE_RC_UNMANAGED_PID=<확인한 PID>
+   CLAUDE_RC_UNMANAGED_LSTART="$(ps -o lstart= -p "$CLAUDE_RC_UNMANAGED_PID")"
+   CLAUDE_RC_UNMANAGED_ARGS="$(ps -ww -o args= -p "$CLAUDE_RC_UNMANAGED_PID")"
    ```
 
-   kill이 실패하면(권한 없음, 이미 종료됨 등) 4단계로 넘어가지 말고 다시 확인한다.
+3. 그 대상에 대한 작업 직전 승인을 받은 뒤 아래를 실행한다. 서버를 식별할 수 없으면 종료하지
+   않는다.
+
+   ```bash
+   : "${CLAUDE_RC_UNMANAGED_PID:?2단계에서 확인하고 승인받은 PID를 설정하세요}"
+   : "${CLAUDE_RC_UNMANAGED_LSTART:?2단계에서 기록한 시작 시각을 설정하세요}"
+   : "${CLAUDE_RC_UNMANAGED_ARGS:?2단계에서 기록한 argv를 설정하세요}"
+   # 승인을 기다리는 사이 서버가 끝나고 OS가 PID를 재사용했을 수 있다. 신호 직전에 시작 시각과
+   # argv를 다시 읽어 기록과 같을 때만 kill한다. 재사용된 PID가 같은 초에 시작하고 argv까지 같을
+   # 수는 사실상 없으므로, 2단계에서 확인한 cwd·실행 파일은 다시 보지 않는다.
+   if [ "$(ps -o lstart= -p "$CLAUDE_RC_UNMANAGED_PID" 2>/dev/null)" = "$CLAUDE_RC_UNMANAGED_LSTART" ] &&
+     [ "$(ps -ww -o args= -p "$CLAUDE_RC_UNMANAGED_PID" 2>/dev/null)" = "$CLAUDE_RC_UNMANAGED_ARGS" ]; then
+     kill "$CLAUDE_RC_UNMANAGED_PID"
+   else
+     echo "대상이 바뀌었으니 2단계부터 다시 확인한다" >&2
+   fi
+   ```
+
+   kill이 실패하거나(권한 없음, 이미 종료됨 등) 대상이 바뀌었다는 안내가 나오면 4단계로 넘어가지
+   말고 2단계부터 다시 확인한다.
 
 4. `ps -p "$CLAUDE_RC_UNMANAGED_PID"`로 종료를 확인한 뒤 해당 Git 디렉토리에서 `claude-rc start`를
    실행한다. 서버가 아직 떠 있으면 `claude-rc start`는 같은 이유로 다시 거부한다. 선언 인스턴스는
