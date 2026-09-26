@@ -65,7 +65,8 @@ codex 0.106+에서 default (code) collaboration mode에서도 `request_user_inpu
 
 ## 핵심 파일
 
-- `modules/shared/programs/codex/default.nix` — 설정, shared skill 노출 정책 SoT, project 스킬 투영
+- `modules/shared/programs/codex/default.nix` — 설정, shared skill 노출 정책 SoT, project 스킬 투영 activation 배선
+- `modules/shared/programs/codex/files/project-codex-skills.sh` — project 스킬 투영과 고아 링크 정리 본체
 - `modules/shared/programs/codex/files/config.toml` — 실행 정책/모델 설정 (NixOS)
 - `modules/shared/programs/codex/files/config.darwin.toml` — macOS 전용 설정 (user-scope MCP 포함)
 - `modules/shared/programs/codex/files/retired-config-keys.txt` — 배포본에서 회수할 퇴역 키 목록 SoT (activation·nrs 복구·verify가 공유)
@@ -201,6 +202,12 @@ EXIT_ERROR로 막는다(선언과 회수가 겹치면 sync가 매번 썼다 지�
 
 Codex CLI는 디렉토리 심링크를 `follow_links(true)`로 순회한다 (PR #8801).
 파일 심링크는 무시되므로 반드시 디렉토리 단위로 심링크해야 한다.
+
+고아 정리는 activation이 만든 관리 링크(`../../.claude/skills/<name>` 상대 심링크) 중
+원본이 사라진 것만 지운다. 원본 없는 실디렉토리와 다른 대상을 가리키는 링크는 지우지 않고
+`Warning: keeping .agents/skills/<name>` 경고만 남긴다 — `verify-ai-compat.sh`가 이를 계속
+고아 투영으로 보고하므로, 옮기거나 지우는 판단은 사람이 한다. 절대경로 target이면서
+`SKILL.md`에 접근 가능한 플러그인 스킬 링크는 검증기와 같은 기준으로 경고 없이 보존한다.
 
 ## 활성화
 

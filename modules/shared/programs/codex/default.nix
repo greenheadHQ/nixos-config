@@ -231,90 +231,13 @@ in
   '';
 
   # ─── 프로젝트 심볼릭 링크 (activation script) ───
-  # 이전 시도(5ef4e67)의 sync-codex-from-claude.sh 로직을 Nix activation으로 이식
-  # nrs 실행 시 자동으로 .agents/skills/ 동기화
-
+  # nrs 실행 시 자동으로 .agents/skills/ 동기화. 본체는 동작 fixture로 검증할 수 있도록
+  # ./files/project-codex-skills.sh에 둔다 — 투영·고아 정리 계약은 그 파일 주석이 SoT다.
+  # 거부 가드가 실패하면 non-zero로 끝나 activation(set -e)을 중단시킨다.
+  # DRY_RUN_CMD는 Home Manager가 export하므로 스크립트 안의 변경 명령에 그대로 적용된다.
   home.activation.createCodexProjectSymlinks = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    PROJECT_DIR="${nixosConfigPath}"
-    SOURCE_SKILLS="$PROJECT_DIR/.claude/skills"
-    TARGET_SKILLS="$PROJECT_DIR/.agents/skills"
-
-    if [ -L "$PROJECT_DIR/.agents" ]; then
-      echo "Refusing to project Codex skills through .agents symlink: $PROJECT_DIR/.agents" >&2
-      exit 1
-    fi
-    if [ -e "$PROJECT_DIR/.agents" ] && [ ! -d "$PROJECT_DIR/.agents" ]; then
-      echo "Refusing to project Codex skills because .agents is not a directory: $PROJECT_DIR/.agents" >&2
-      exit 1
-    fi
-    if [ -L "$TARGET_SKILLS" ]; then
-      echo "Refusing to project Codex skills through .agents/skills symlink: $TARGET_SKILLS" >&2
-      exit 1
-    fi
-    if [ -e "$TARGET_SKILLS" ] && [ ! -d "$TARGET_SKILLS" ]; then
-      echo "Refusing to project Codex skills because .agents/skills is not a directory: $TARGET_SKILLS" >&2
-      exit 1
-    fi
-
-    # ── AGENTS.md → CLAUDE.md 심링크 ──
-    if [ ! -L "$PROJECT_DIR/AGENTS.md" ] || [ "$(readlink "$PROJECT_DIR/AGENTS.md")" != "CLAUDE.md" ]; then
-      $DRY_RUN_CMD ln -sfn "CLAUDE.md" "$PROJECT_DIR/AGENTS.md"
-    fi
-
-    # ── .agents/skills/ 디렉토리 생성 ──
-    $DRY_RUN_CMD mkdir -p "$TARGET_SKILLS"
-
-    # ── 스킬 투영 (디렉토리 심링크) ──
-    # Codex CLI는 디렉토리 심링크를 따라감 (PR #8801)
-    # 파일 심링크는 무시하므로 반드시 디렉토리 단위로 심링크
-    # Claude Code 전용 스킬은 Codex 프로젝션에서 제외 (자기 참조 방지, #212)
-    # NOTE: 아래 변수는 repo-local `.claude/skills/` → `.agents/skills/` 투영 축 전용이다.
-    # shared global `~/.codex/skills/` exposure 정책(exposedCodexSkills / intentionallyNotExposed)과
-    # 별개의 축이며, SoT는 위 let 블록이다 (#486).
-    CODEX_EXCLUDE_SKILLS="using-codex-exec"
-    for source_skill_dir in "$SOURCE_SKILLS"/*/; do
-      [ -d "$source_skill_dir" ] || continue
-      [ -f "$source_skill_dir/SKILL.md" ] || continue
-
-      skill_name="$(basename "$source_skill_dir")"
-
-      # Claude Code 전용 스킬 제외
-      case " $CODEX_EXCLUDE_SKILLS " in
-        *" $skill_name "*) continue ;;
-      esac
-      target_link="$TARGET_SKILLS/$skill_name"
-      expected="../../.claude/skills/$skill_name"
-
-      # 이미 올바른 심링크면 스킵
-      if [ -L "$target_link" ] && [ "$(readlink "$target_link")" = "$expected" ]; then
-        continue
-      fi
-
-      # 미래 방어: git이 추적하는 실디렉토리를 심링크로 덮어쓰지 않음
-      # 향후 디렉토리→심링크 전환이 발생할 때, git pull 전에 nrs가 실행되어
-      # HEAD와 파일시스템이 불일치하는 것을 방지 (PR#38 사후 분석에서 도출)
-      if [ -d "$target_link" ] && [ ! -L "$target_link" ]; then
-        if ${pkgs.git}/bin/git -C "$PROJECT_DIR" ls-files --error-unmatch "$target_link/SKILL.md" >/dev/null 2>&1; then
-          echo "Skipping .agents/skills/$skill_name: git-tracked directory (run 'git pull' first)"
-          continue
-        fi
-      fi
-
-      # 미추적 디렉토리 또는 잘못된 심링크 제거 후 생성
-      $DRY_RUN_CMD rm -rf "$target_link"
-      $DRY_RUN_CMD ln -sfn "$expected" "$target_link"
-    done
-
-    # ── 고아 심링크 정리 ──
-    if [ -d "$TARGET_SKILLS" ]; then
-      for entry in "$TARGET_SKILLS"/*; do
-        [ -L "$entry" ] || [ -d "$entry" ] || continue
-        skill_name="$(basename "$entry")"
-        if [ ! -d "$SOURCE_SKILLS/$skill_name" ]; then
-          echo "Removing orphan projected skill: .agents/skills/$skill_name"
-          $DRY_RUN_CMD rm -rf "$entry"
-        fi
-      done
-    fi
+    PATH="${lib.makeBinPath [ pkgs.git ]}:$PATH" ${pkgs.bash}/bin/bash \
+      ${./files/project-codex-skills.sh} \
+      "${nixosConfigPath}"
   '';
 }
