@@ -256,7 +256,15 @@ run_test "wt cleanup refuses ambiguous name" test_wt_cleanup_refuses_ambiguous_n
 run_test "wt cleanup keeps unpreserved detached commit" test_wt_cleanup_keeps_unpreserved_detached_commit
 run_test "wt cleanup detached preservation scope" test_wt_cleanup_detached_preservation_scope
 run_test "wt cleanup detached lookup errors fail closed" test_wt_cleanup_detached_lookup_errors_fail_closed
-run_test "wt recreate warns unpreserved detached commit" test_wt_recreate_warns_unpreserved_detached_commit
+run_test "wt recreate refuses unpreserved detached commit" test_wt_recreate_refuses_unpreserved_detached_commit
+run_test "wt existing worktree refuses mapped branch collision" test_wt_existing_worktree_refuses_mapped_branch_collision
+run_test "wt existing worktree refuses switched checkout" test_wt_existing_worktree_refuses_switched_checkout
+run_test "wt recreate keeps requested branch preserving detached commit" test_wt_recreate_keeps_requested_branch_preserving_detached_commit
+run_test "wt recreate keeps unpushed requested branch under other checkout" test_wt_recreate_keeps_unpushed_requested_branch_under_other_checkout
+run_test "wt recreate matching checkout still confirms loss" test_wt_recreate_matching_checkout_still_confirms_loss
+run_test "wt existing worktree lookup errors fail closed" test_wt_existing_worktree_lookup_errors_fail_closed
+run_test "wt existing worktree interactive choice checks checkout unit" test_wt_existing_worktree_interactive_choice_checks_checkout_unit
+run_test "wt create existing path contracts unchanged" test_wt_create_existing_path_contracts_unchanged
 run_test "wt cleanup branch unpushed verdict unchanged" test_wt_cleanup_branch_unpushed_verdict_unchanged
 run_test "wt recreate refuses locked worktree" test_wt_recreate_refuses_locked_worktree
 run_test "wt cleanup name-filter merged without upstream needs no confirm" test_wt_cleanup_name_filter_merged_without_upstream_needs_no_confirm
@@ -476,6 +484,66 @@ run_test "interaction-limits-renewal missing PAT exits nonzero" test_ilr_missing
 # korean-particle-expansion suite (tests/suites/korean-particle-expansion.sh)
 run_test "korean particle expansions stay brace-bounded" test_korean_particle_expansion_is_brace_bounded
 run_test "SA health check lifecycle and secret handling" test_opnix_health_check_lifecycle
+
+# version-check suite (tests/suites/version-check.sh)
+run_test "version-check initial success records last-success without notification" test_version_check_initial_success_records_last_success_without_notification
+run_test "version-check subsequent failure below threshold keeps last-success" test_version_check_subsequent_failure_below_threshold_keeps_last_success
+run_test "version-check failure at threshold triggers watchdog warning" test_version_check_failure_at_threshold_triggers_watchdog_warning
+run_test "version-check failure just before threshold does not warn" test_version_check_failure_just_before_threshold_no_warning
+run_test "version-check recovery updates last-success without new-version notification" test_version_check_recovery_updates_last_success_without_new_version_notification
+run_test "version-check initial failure records nothing" test_version_check_initial_failure_records_nothing
+run_test "immich version-check initial success records last-success" test_immich_version_check_initial_success_records_last_success
+run_test "immich version-check new version notifies and records" test_immich_version_check_new_version_notifies_and_records
+
+# git-cleanup suite (tests/suites/git-cleanup.sh) — 날짜 계산 도구 선택 계약 (#1376)
+run_test "git-cleanup BSD-only date dry-run succeeds" test_git_cleanup_bsd_only_date_dry_run_succeeds
+run_test "git-cleanup GNU-only date dry-run succeeds" test_git_cleanup_gnu_only_date_dry_run_succeeds
+run_test "git-cleanup stale boundary consistent across date tools" test_git_cleanup_stale_boundary_consistent_across_date_tools
+run_test "git-cleanup stale boundary is timezone independent" test_git_cleanup_stale_boundary_is_timezone_independent
+run_test "git-cleanup date command failure stops before candidates" test_git_cleanup_date_command_failure_stops_before_candidates
+run_test "git-cleanup date non-numeric output stops before candidates" test_git_cleanup_date_non_numeric_output_stops_before_candidates
+run_test "git-cleanup dry-run does not delete stale branch" test_git_cleanup_dry_run_does_not_delete_stale_branch
+run_test "git-cleanup stale boundary uses fixed seconds not calendar days across DST" test_git_cleanup_stale_boundary_uses_fixed_seconds_not_calendar_days_across_dst
+run_test "git-cleanup date command absent stops before candidates" test_git_cleanup_date_command_absent_stops_before_candidates
+
+# update-script-arg-parse suite (tests/suites/update-script-arg-parse.sh) — #1383
+run_test "immich-update --help exits 0 without side effects" test_immich_update_help_flag_exits_zero_without_side_effects
+run_test "immich-update rejects unknown option" test_immich_update_rejects_unknown_option
+run_test "immich-update rejects excess argument" test_immich_update_rejects_excess_argument
+run_test "immich-update rejects bare positional argument" test_immich_update_rejects_bare_positional_argument
+run_test "immich-update --help avoids boundaries with env wired" test_immich_update_help_flag_avoids_boundaries_with_env
+run_test "immich-update rejects unknown option with env wired" test_immich_update_rejects_unknown_option_with_env
+run_test "immich-update rejects excess argument with env wired" test_immich_update_rejects_excess_argument_with_env
+run_test "immich-update no-args preserves existing update flow" test_immich_update_no_args_preserves_existing_update_flow
+run_test "immich-update --dry-run skips mutating boundaries" test_immich_update_dry_run_skips_mutating_boundaries
+run_test "copyparty-update --help exits 0 without side effects" test_copyparty_update_help_flag_exits_zero_without_side_effects
+run_test "copyparty-update rejects unknown option" test_copyparty_update_rejects_unknown_option
+run_test "copyparty-update rejects excess argument" test_copyparty_update_rejects_excess_argument
+run_test "copyparty-update rejects bare positional argument" test_copyparty_update_rejects_bare_positional_argument
+run_test "copyparty-update --help avoids boundaries with env wired" test_copyparty_update_help_flag_avoids_boundaries_with_env
+run_test "copyparty-update rejects unknown option with env wired" test_copyparty_update_rejects_unknown_option_with_env
+run_test "copyparty-update rejects excess argument with env wired" test_copyparty_update_rejects_excess_argument_with_env
+run_test "copyparty-update no-args preserves existing update flow" test_copyparty_update_no_args_preserves_existing_update_flow
+run_test "copyparty-update --dry-run skips mutating boundaries" test_copyparty_update_dry_run_skips_mutating_boundaries
+run_test "uptime-kuma-update --help exits 0 without side effects" test_uptime_kuma_update_help_flag_exits_zero_without_side_effects
+run_test "uptime-kuma-update rejects unknown option" test_uptime_kuma_update_rejects_unknown_option
+run_test "uptime-kuma-update rejects excess argument" test_uptime_kuma_update_rejects_excess_argument
+run_test "uptime-kuma-update rejects bare positional argument" test_uptime_kuma_update_rejects_bare_positional_argument
+run_test "uptime-kuma-update --help avoids boundaries with env wired" test_uptime_kuma_update_help_flag_avoids_boundaries_with_env
+run_test "uptime-kuma-update rejects unknown option with env wired" test_uptime_kuma_update_rejects_unknown_option_with_env
+run_test "uptime-kuma-update rejects excess argument with env wired" test_uptime_kuma_update_rejects_excess_argument_with_env
+run_test "uptime-kuma-update no-args preserves existing update flow" test_uptime_kuma_update_no_args_preserves_existing_update_flow
+run_test "uptime-kuma-update --dry-run skips mutating boundaries" test_uptime_kuma_update_dry_run_skips_mutating_boundaries
+run_test "karakeep-update --help exits 0 without side effects" test_karakeep_update_help_flag_exits_zero_without_side_effects
+run_test "karakeep-update rejects unknown option" test_karakeep_update_rejects_unknown_option
+run_test "karakeep-update rejects excess argument" test_karakeep_update_rejects_excess_argument
+run_test "karakeep-update rejects bare positional argument" test_karakeep_update_rejects_bare_positional_argument
+run_test "karakeep-update --help avoids boundaries with env wired" test_karakeep_update_help_flag_avoids_boundaries_with_env
+run_test "karakeep-update rejects unknown option with env wired" test_karakeep_update_rejects_unknown_option_with_env
+run_test "karakeep-update rejects excess argument with env wired" test_karakeep_update_rejects_excess_argument_with_env
+run_test "karakeep-update no-args still requires ack-bridge-risk" test_karakeep_update_no_args_still_requires_ack_bridge_risk
+run_test "karakeep-update ack-bridge-risk preserves existing update flow" test_karakeep_update_ack_bridge_risk_preserves_existing_update_flow
+run_test "karakeep-update --dry-run skips mutating boundaries" test_karakeep_update_dry_run_skips_mutating_boundaries
 
 # 퇴역 키 로더는 tomlkit 없이도 도는 순수 셸 계약이라 아래 게이트 밖에 둔다.
 run_test "codex-config retired keys loader" test_codex_config_retired_keys_loader

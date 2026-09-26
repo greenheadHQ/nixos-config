@@ -127,6 +127,8 @@ Git worktree 관리 도구 (fzf TUI; 비대화형/LLM 셸 호환)
 
 옵션 (create):
   --if-exists=MODE        충돌 시 동작: reuse|recreate|fail (비대화형 충돌 시 필수)
+                          기존 worktree의 reuse/recreate는 그 경로에 요청 브랜치가
+                          checkout돼 있을 때만 (다른 브랜치·detached·조회 실패면 실패)
   --yes, -y               확인 프롬프트 자동 승인
 
 옵션 (ls):

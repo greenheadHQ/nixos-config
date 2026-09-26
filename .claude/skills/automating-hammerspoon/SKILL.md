@@ -43,7 +43,7 @@ Ghostty 새 인스턴스 문제
 | `Ctrl+Option+Cmd+T` | Finder에서 현재 폴더로 Ghostty 열기 |
 | `Ctrl+;` | 영어 입력으로 전환 |
 | `Cmd+Shift+Space` | 영어 전환 후 Homerow 실행 |
-| `Ctrl+B` | 영어 전환 후 tmux prefix 전달 |
+| `Ctrl+B` | 영어 전환 후 Ctrl+B 전달 (tmux prefix, Claude Code 백그라운드 전환 등) |
 | 터미널 Ctrl/Opt 단축키 | 현행 목록은 `references/hotkeys.md`, 정본 배열은 `modules/darwin/programs/hammerspoon/files/init.lua` |
 
 현행 처리 키 확인:

@@ -61,7 +61,7 @@ Claude 모바일 앱/claude.ai에서 이 flake가 관리하는 머신의 Claude 
 | 작업 | 참조 |
 |------|------|
 | 설정·ensure·프로세스 식별·세션 수명주기 조사 | [lifecycle.md](references/lifecycle.md) |
-| 재시작·tmux 마이그레이션 | [recovery.md](references/recovery.md) |
+| 재시작·같은 cwd의 unmanaged 서버 정리 | [recovery.md](references/recovery.md) |
 | action 코드·tombstone 복구·상태 게시 실패·장애 증상 해석 | [troubleshooting.md](references/troubleshooting.md) |
 
 ## 운영 경계

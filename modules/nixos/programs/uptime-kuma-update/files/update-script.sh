@@ -3,6 +3,33 @@
 # 이미지 pull → digest 비교 → backup → 컨테이너 재시작 → 헬스체크 → 결과 알림
 set -euo pipefail
 
+usage() {
+  cat <<'EOF'
+Usage: uptime-kuma-update [--dry-run]
+
+  --dry-run    수행 예정 단계만 출력
+EOF
+}
+
+DRY_RUN=false
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN=true
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "ERROR: Unknown option: $1"
+      usage
+      exit 2
+      ;;
+  esac
+  shift
+done
+
 # 동시 실행 방지 (flock)
 exec 200>"$STATE_DIR/.lock"
 flock -n 200 || { echo "ERROR: Another uptime-kuma-update is already running"; exit 1; }
@@ -28,9 +55,7 @@ source "$SERVICE_LIB"
 # shellcheck disable=SC1090
 source "$PUSHOVER_CRED_FILE"
 
-DRY_RUN=false
-if [[ "${1:-}" == "--dry-run" ]]; then
-  DRY_RUN=true
+if $DRY_RUN; then
   echo "=== DRY RUN MODE ==="
 fi
 
