@@ -38,6 +38,7 @@ run_test "rebuild-common exports public API" test_rebuild_common_exports_public_
 run_test "release_rebuild_lock preserves caller stderr" test_release_rebuild_lock_preserves_caller_stderr
 run_test "release_rebuild_lock_on_failure preserves caller stderr" test_release_rebuild_lock_on_failure_preserves_caller_stderr
 run_test "release_rebuild_lock without hold is a no-op" test_release_rebuild_lock_without_hold_is_noop
+run_test "release_rebuild_lock closes fd200 in same shell" test_release_rebuild_lock_closes_fd200_in_same_shell
 run_test "release_rebuild_lock frees OS lock for other process" test_release_rebuild_lock_frees_lock_for_other_process
 run_test "parse_args unknown argument shows usage and fails" test_parse_args_unknown_argument_shows_usage_and_fails
 run_test "nixos nrs --help prints usage" test_nixos_nrs_help_flag_prints_usage

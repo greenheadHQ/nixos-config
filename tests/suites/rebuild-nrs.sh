@@ -252,6 +252,12 @@ test_rebuild_common_exports_public_api() {
 # lib/rebuild/common.sh + lib/rebuild/locks.sh 만 REPO_ROOT 에서 직접 source 한다
 # (FLAKE_PATH/MAIN_FLAKE_PATH 는 nrs 워크트리 잠금용이고, rebuild critical-section
 # 잠금인 acquire/release_rebuild_lock* 는 이 두 변수와 무관).
+#
+# 두 성질은 서로 다른 결함을 잡으므로 테스트도 분리한다:
+#   - stderr 보존: 원래 버그(exec + 무조건 2>/dev/null 병합)만 깨뜨린다. fd 를 안 닫거나
+#     서브셸에서만 닫는 변이는 stderr 를 건드리지 않으므로 이 테스트들은 green 을 유지한다.
+#   - fd 200 실제 닫힘: "안 닫음"·"서브셸에서만 닫음" 변이를 잡는다. 원래 버그는 fd 는
+#     제대로 닫으므로(문제는 stderr 쪽) 이 테스트들에서는 green 이어도 정상이다.
 # ─────────────────────────────────────────────────────────────────────────
 
 test_release_rebuild_lock_preserves_caller_stderr() {
@@ -270,11 +276,19 @@ test_release_rebuild_lock_preserves_caller_stderr() {
       echo before-release-marker >&2
       acquire_rebuild_lock
       release_rebuild_lock
+      echo "held_after_first_release=$NRS_REBUILD_LOCK_HELD"
+      # 이미 해제된 상태에서 재호출해도 stderr 대상이 다시 바뀌지 않아야 함(S01-4).
+      release_rebuild_lock
+      acquire_rebuild_lock
+      release_rebuild_lock
+      echo "held_after_second_release=$NRS_REBUILD_LOCK_HELD"
       echo after-release-marker >&2
     ' 2>&1
   )
 
   assert_contains "$output" "before-release-marker"
+  assert_contains "$output" "held_after_first_release=false"
+  assert_contains "$output" "held_after_second_release=false"
   assert_contains "$output" "after-release-marker"
 }
 
@@ -331,16 +345,64 @@ test_release_rebuild_lock_without_hold_is_noop() {
   assert_contains "$output" "after-marker"
 }
 
-test_release_rebuild_lock_frees_lock_for_other_process() {
-  local sandbox holder_script attempt_script holder_log
+test_release_rebuild_lock_closes_fd200_in_same_shell() {
+  local sandbox output
+  sandbox=$(new_sandbox)
+
+  # 교차 프로세스 경쟁 없이, acquire/release 를 부른 바로 그 프로세스에서 fd 200 이
+  # 실제로 닫혔는지 직접 검사한다. `{ true >&200; } 2>/dev/null` 는 fd 200 이 열려
+  # 있으면 성공, 닫혀 있으면 실패한다(open이면 그 자체가 유효한 명령이 되어 rc=0).
+  # 이 검사는 "fd 를 안 닫음"·"서브셸에서만 닫음" 변이를 잡는다 — 원래 버그(#1380)는
+  # fd 자체는 제대로 닫으므로 이 테스트에서는 green 이어도 정상이며, 원래 버그는
+  # stderr 보존 테스트가 잡는다.
+  # shellcheck disable=SC2016
+  output=$(
+    bash -c '
+      set -euo pipefail
+      GREEN="" YELLOW="" RED="" NC=""
+      source "'"$REPO_ROOT"'/modules/shared/scripts/lib/rebuild/common.sh"
+      source "'"$REPO_ROOT"'/modules/shared/scripts/lib/rebuild/locks.sh"
+      NRS_REBUILD_LOCK="'"$sandbox"'/rebuild.lock"
+
+      acquire_rebuild_lock
+      release_rebuild_lock
+      if { true >&200; } 2>/dev/null; then
+        echo "fd200=open"
+      else
+        echo "fd200=closed"
+      fi
+      echo "held=$NRS_REBUILD_LOCK_HELD"
+    ' 2>&1
+  )
+
+  assert_contains "$output" "fd200=closed"
+  assert_contains "$output" "held=false"
+}
+
+test_release_rebuild_lock_frees_lock_for_other_process() (
+  local sandbox holder_script attempt_script holder_log holder_pid=""
+
+  # 실패 경로(fail() 의 exit 1 포함)에서도 holder 백그라운드 프로세스를 반드시 정리한다.
+  # 정리하지 않으면 sandbox 가 지워진 뒤 holder 의 대기 루프가 PPID 1 로 영구히 돈다.
+  # 선례: tests/suites/claude-remote-control-guardian.sh 의
+  # test_claude_remote_control_launch_guard_reaps_early_exit_descendant.
+  # shellcheck disable=SC2329  # EXIT trap에서만 호출
+  _cleanup_frees_lock_fixture() {
+    [[ -z "$holder_pid" ]] || kill "$holder_pid" 2>/dev/null || true
+    [[ -z "$holder_pid" ]] || wait "$holder_pid" 2>/dev/null || true
+  }
+  trap _cleanup_frees_lock_fixture EXIT
+
   sandbox=$(new_sandbox)
   holder_script="$sandbox/holder.sh"
   attempt_script="$sandbox/attempt.sh"
   holder_log="$sandbox/holder.log"
 
   # holder: 잠금을 잡고, 신호 파일이 나타날 때까지 기다렸다가 release_rebuild_lock 을
-  # 호출한 뒤에도 곧바로 종료하지 않고 살아있는다 — "fd 를 닫아서 풀렸다"와
-  # "프로세스가 죽어서 풀렸다"를 구분하기 위함.
+  # 호출한다. 해제 뒤에도 곧바로 종료하지 않고 이 테스트가 다른 프로세스의 재획득
+  # 시도를 끝내고 attempt-done 을 남길 때까지 살아있는다 — "fd 를 닫아서 풀렸다"와
+  # "holder 프로세스가 죽어서 풀렸다"를 구분하기 위함(고정 sleep 이면 그 사이 holder가
+  # 먼저 죽어 시도가 지연 성공하는 것과 fd 닫힘을 구분할 수 없다).
   cat > "$holder_script" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
@@ -355,12 +417,18 @@ until [[ -f "$sandbox/release-now" ]]; do sleep 0.05; done
 release_rebuild_lock
 echo "holder-released"
 touch "$sandbox/holder-alive-after-release"
-sleep 0.3
+_holder_waited=0
+until [[ -f "$sandbox/attempt-done" ]]; do
+  sleep 0.05
+  _holder_waited=\$((_holder_waited + 1))
+  (( _holder_waited > 200 )) && break
+done
 EOF
   chmod +x "$holder_script"
 
   # attempt: 짧은 타임아웃으로 잠금 획득을 시도하는 별도 프로세스. \$1 은 런타임에
   # attempt_script 자신에게 전달되는 타임아웃(초)이라 생성 시점에 확장하면 안 된다.
+  # discoteq flock 0.4.0 은 --timeout 0 을 rc=64 로 거부하므로 최소값 1 을 쓴다.
   cat > "$attempt_script" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
@@ -379,7 +447,7 @@ EOF
   chmod +x "$attempt_script"
 
   "$holder_script" > "$holder_log" 2>&1 &
-  local holder_pid=$!
+  holder_pid=$!
 
   local waited=0
   until grep -q "holder-acquired" "$holder_log" 2>/dev/null; do
@@ -404,16 +472,25 @@ EOF
   [[ -f "$sandbox/holder-alive-after-release" ]] \
     || fail "holder released 이후 상태를 확인하지 못함 (release_rebuild_lock 이 반환하지 않은 것으로 보임)"
   kill -0 "$holder_pid" 2>/dev/null \
-    || fail "holder 프로세스가 release 증거 기록 전에 종료됨 — fd 닫힘과 프로세스 종료를 구분할 수 없음"
+    || fail "holder 프로세스가 release 증거 기록 직후 이미 종료됨 — fd 닫힘과 프로세스 종료를 구분할 수 없음"
 
-  # holder 프로세스는 여전히 살아있다. 그런데도 다른 프로세스가 즉시 잠금을 얻을 수
+  # holder 프로세스는 여전히 살아있고(attempt-done 을 기다리는 중), 이 시점에는 아직
+  # 그 신호를 주지 않았다. 그런데도 다른 프로세스가 짧은 타임아웃 안에 잠금을 얻을 수
   # 있다면, release_rebuild_lock 이 실제로 fd 200 을 닫아 OS 잠금을 풀었다는 증거다.
   local freed_output
-  freed_output=$("$attempt_script" 2 2>&1)
-  assert_contains "$freed_output" "attempt-acquired"
+  freed_output=$("$attempt_script" 1 2>&1)
 
+  # 재획득 시도가 끝난 뒤에도 holder 가 살아있었는지 다시 단정한다 — "그 사이 holder가
+  # 죽어서 풀렸다"는 대안 설명을 배제한다.
+  kill -0 "$holder_pid" 2>/dev/null \
+    || fail "holder 프로세스가 재획득 시도 도중 종료됨 — fd 닫힘과 프로세스 종료를 구분할 수 없음"
+
+  touch "$sandbox/attempt-done"
   wait "$holder_pid" 2>/dev/null || true
-}
+  holder_pid=""
+
+  assert_contains "$freed_output" "attempt-acquired"
+)
 
 test_parse_args_unknown_argument_shows_usage_and_fails() {
   local sandbox stdout_file stderr_file rc
