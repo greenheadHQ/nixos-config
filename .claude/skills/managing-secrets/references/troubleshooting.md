@@ -26,16 +26,35 @@ pushover-claude-stop.age wasn't created.
 
 해결: `age` CLI를 직접 호출하되, 임시 파일 경유로 암호화. stdin 파이프는 `nix-shell --run` 내부 셸에서 특수문자(`!`, `$`, `` ` `` 등)가 이스케이프되어 `\!`처럼 백슬래시가 추가될 수 있다.
 
-```bash
-# 임시 파일 경유 (특수문자 안전) — 제한 권한 디렉터리 + 정상/오류/중단 시 자동 정리
-TMPDIR_SECRET=$(umask 077 && mktemp -d)
-trap 'rm -rf "$TMPDIR_SECRET"' EXIT INT TERM
-printf 'KEY=value\n' > "$TMPDIR_SECRET/secret"
-chmod 0600 "$TMPDIR_SECRET/secret"
-nix-shell -p age --run \
-  "age -r 'ssh-ed25519 <key1>' -r 'ssh-ed25519 <key2>' -o secrets/<name>.age '$TMPDIR_SECRET/secret'"
+값은 명령 텍스트에 직접 적지 않는다 — xtrace, 셸 히스토리(Atuin 동기화 대상), 에이전트 대화 기록에 그대로 남기 때문이다. 아래처럼 서브셸로 감싸 임시 디렉터리를 격리하고, 값은 `cat >`으로 붙여넣은 뒤 Ctrl-D(EOF)로 받는다. 최상위(대화형 셸)에 `trap`을 걸면 그 셸이 끝날 때까지 발동하지 않아, 같은 셸에서 두 번 반복하면 첫 임시 디렉터리가 영구히 남는다 — 서브셸 `( … )`로 감싸야 서브셸 종료 시점에 즉시 정리된다.
 
-# 배포 후 검증 (원문은 출력하지 않음) — 존재/비어있지 않음, 필수 키 유무만 확인
+```bash
+(
+  d=$(umask 077 && mktemp -d) || exit 1
+  trap 'rm -rf "$d"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
+  # 값을 붙여넣고 Ctrl-D(EOF)로 종료 — 예: KEY=<실제 값>
+  cat > "$d/secret"
+  chmod 0600 "$d/secret"
+
+  nix-shell -p age --run \
+    "age -r 'ssh-ed25519 <key1>' -r 'ssh-ed25519 <key2>' -o secrets/<name>.age '$d/secret'"
+
+  # 왕복 검증: 방금 암호화한 내용을 즉시 복호화해 입력 평문과 비교 (원문은 출력하지 않음).
+  # nix-shell 경유 실행은 stdin pipe에서 특수문자를 이스케이프할 수 있으므로,
+  # 임시 파일을 지우기 전에 이 검증으로 손상 여부를 잡는다.
+  nix-shell -p age --run \
+    "age -d -i ~/.ssh/id_ed25519 secrets/<name>.age" > "$d/roundtrip" 2>/dev/null
+  cmp -s "$d/secret" "$d/roundtrip" \
+    && echo "왕복 검증: 일치" || echo "왕복 검증: 불일치(특수문자 손상 가능)"
+  grep -qF '\' "$d/roundtrip" && echo "백슬래시 포함: 있음" || echo "백슬래시 포함: 없음"
+)
+
+# 배포 후 검증 (원문은 출력하지 않음) — 존재/비어있지 않음, 필수 키 유무만 확인.
+# 아래 grep '^KEY='는 KEY=value 형식(env) 시크릿 예시에 한정된다. 배포 경로는 시크릿마다
+# age.secrets.<name>.path 기준이며, Home Manager로 배포되는 시크릿은 /run/agenix가 아니다.
 sudo test -s /run/agenix/<name> && echo "배포됨/비어있지 않음" || echo "미배포/비어있음"
 sudo grep -q '^KEY=' /run/agenix/<name> && echo "KEY 있음" || echo "KEY 없음"
 ```
