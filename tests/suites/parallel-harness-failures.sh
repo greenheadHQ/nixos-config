@@ -111,3 +111,40 @@ test_parallel_harness_fails_closed_when_job_dies_before_result() (
   assert_not_contains "$output" "==> survivor  [FAIL]"
   assert_contains "$output" "통과 1 · 실패 1"
 )
+
+# 출력 파일까지 없는 실패 job(가장 이른 사망: job이 출력 리다이렉트 전에 죽음)도 barrier를 죽이지
+# 않아야 한다. 그 시점은 본문에서 만들 수 없어, 본문이 TMPDIR 아래 자기 출력 파일을 지우고 실패하는
+# 것으로 같은 barrier 상태(실패 + 출력 파일 없음)를 만든다.
+test_parallel_harness_fails_closed_when_job_output_is_missing() (
+  local sandbox output rc=0
+  sandbox="$(new_sandbox)"
+  mkdir "$sandbox/tmp"
+  output="$(TMPDIR="$sandbox/tmp" TEST_JOBS=2 bash -c '
+    set -euo pipefail
+    source "$1/tests/lib/parallel-harness.sh"
+    marker_dir="$2"
+    loses_output() {
+      local token="phf-lost-output-$BASHPID" own_output
+      echo "$token"
+      own_output="$(grep -rlF "$token" "$TMPDIR")" || return 0
+      rm -f "$own_output"
+      : > "$marker_dir/removed-output"
+      false
+    }
+    survivor() {
+      echo "survivor ran"
+    }
+    run_test "loses output" loses_output
+    run_test "survivor" survivor
+    parallel_barrier
+  ' _ "$REPO_ROOT" "$sandbox" 2>&1)" || rc=$?
+
+  [ -e "$sandbox/removed-output" ] || fail "fixture가 자기 출력 파일을 찾지 못했다: $output"
+  [ "$rc" -ne 0 ] || fail "실패 job이 있는데 exit 0 으로 끝났다: $output"
+  assert_contains "$output" "==> loses output  [FAIL]"
+  assert_contains "$output" "==> survivor"
+  assert_not_contains "$output" "==> survivor  [FAIL]"
+  assert_contains "$output" "통과 1 · 실패 1"
+  [ -z "$(find "$sandbox/tmp" -mindepth 1 -print -quit)" ] ||
+    fail "barrier가 결과 디렉터리를 정리하지 않았다: $(find "$sandbox/tmp" -mindepth 1)"
+)

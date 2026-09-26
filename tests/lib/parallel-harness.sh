@@ -14,9 +14,11 @@
 #   그대로 전파한다. 플랫폼상 적용 불가능한 `N/A:`도 관찰 가능하게 전파하되 SKIP과 구분한다.
 # 격리: 각 job 은 독립 subshell 이라 실패가 다른 job 에 전파되지 않으며, 실패가 하나라도 있으면
 #   parallel_barrier 가 non-zero 로 종료한다(aggregator 의 set -e 가 이를 최종 실패로 전파).
-# 분류: 테스트 본문은 aggregator 의 set -euo pipefail 을 그대로 받아 순차 모드와 같은 지점에서
-#   실패한다 — 중간 명령·파이프라인·assertion 실패 뒤의 성공 명령으로 PASS 가 되지 않는다(#1363).
-#   결과를 기록하지 못하고 죽은 job 도 FAIL 로 집계하고, 나머지 결과와 요약은 그대로 출력한다.
+# 분류: run_test 를 aggregator 최상위(if·&&·|| 조건 문맥 밖)에서 호출하면 테스트 본문은 set -euo
+#   pipefail 을 그대로 받아 순차 모드와 같은 지점에서 실패한다 — 중간 명령·파이프라인·assertion
+#   실패 뒤의 성공 명령으로 PASS 가 되지 않는다(#1363). 조건 문맥에서 호출하면 순차·병렬 모두
+#   set -e 가 무시된다. 결과·출력 파일을 남기지 못하고 죽은 job 도 FAIL 로 집계하고, 나머지 결과와
+#   요약은 그대로 출력한다.
 
 # 동시성 결정 (TEST_JOBS override > nproc > sysctl > 4)
 _ph_detect_jobs() {
@@ -61,8 +63,9 @@ run_test() {
   {
     # 테스트 본문은 조건 문맥 밖의 비동기 자식으로 실행하고, 종료 상태는 wait 로 따로 모은다.
     # `if ( "$@" )`·`( "$@" ) || …`처럼 조건 문맥에 두면 bash 가 그 안(함수 본문 포함)의 set -e 를
-    # 무시해, 중간 명령이 실패해도 마지막 명령이 성공하면 PASS 가 된다(#1363). 비동기 자식은 조건
-    # 문맥이 아니라서 aggregator 의 set -euo pipefail 이 순차 모드의 직접 호출과 같게 적용된다.
+    # 무시해, 중간 명령이 실패해도 마지막 명령이 성공하면 PASS 가 된다(#1363). 비동기 자식은 호출자의
+    # set -e 무시 상태를 물려받으므로, 순차 모드와 같은 set -e 적용은 run_test 를 aggregator 최상위
+    # (조건 문맥 밖)에서 호출할 때 성립한다 — 조건 문맥에서 호출하면 순차·병렬 모두 set -e 가 무시된다.
     local rc=0
     "$@" > "$_PH_RESULT_DIR/$seq.out" 2>&1 &
     wait "$!" || rc=$?
@@ -92,7 +95,7 @@ parallel_barrier() {
       # status 파일 부재(=job 이 비정상 종료해 기록조차 못 함)도 FAIL 로 취급한다(fail-closed).
       fail=$((fail + 1))
       echo "==> $name  [FAIL]"
-      sed 's/^/    | /' "$_PH_RESULT_DIR/$seq.out" 2>/dev/null
+      sed 's/^/    | /' "$_PH_RESULT_DIR/$seq.out" 2>/dev/null || true
     fi
     seq=$((seq + 1))
   done
