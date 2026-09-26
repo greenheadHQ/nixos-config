@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "git commit -m \"feat(pinning): 세션 URL 범주 추가\" -m \"Claude-Session: https://__SESSION_URL__\""
+  }
+}

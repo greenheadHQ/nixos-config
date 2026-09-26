@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh issue comment 1422 --body \"결과물: https://claude.ai/code/artifact/0123abcd\""
+  }
+}

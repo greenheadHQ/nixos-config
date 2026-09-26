@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh pr edit 1422 --body \"https://__SESSION_URL__\""
+  }
+}

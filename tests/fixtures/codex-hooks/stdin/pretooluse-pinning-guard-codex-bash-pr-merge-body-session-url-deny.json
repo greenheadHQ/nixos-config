@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh pr merge 1422 --squash --subject \"feat(pinning): 세션 URL 범주 추가\" --body \"Claude-Session: https://__SESSION_URL__\""
+  }
+}

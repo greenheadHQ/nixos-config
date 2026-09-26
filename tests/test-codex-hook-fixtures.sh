@@ -128,6 +128,11 @@ _copy_active_codex_auth() {
 
 HOOK_REPO_DIR="$REPO_ROOT/modules/shared/programs/codex/files/hooks"
 PINNING_LIB_REPO_FILE="$REPO_ROOT/modules/shared/programs/claude/files/lib/pinning-patterns.sh"
+# 합성 Claude 세션 URL (#1422). 이 파일(.sh)과 fixture에 세션 URL을 리터럴로 두면 pinning-guard가
+# 편집을 막고 저장소에도 세션 URL 모양이 남으므로, 조각을 조합해 두고 fixture는 스킴을 뺀
+# `__SESSION_URL__` 자리표시로 참조한다 (_materialize_pinning_fixture가 이 토큰으로 치환).
+PINNING_SESSION_URL_TOKEN="claude.ai/code/""session_01FixtureSessionId"
+PINNING_SESSION_URL_FIXTURE="https://$PINNING_SESSION_URL_TOKEN"
 HOOK_RUNTIME_LIB_REPO_FILE="$REPO_ROOT/modules/shared/programs/claude/files/lib/hook-runtime.sh"
 # verify-ai-compat의 _TEMPLATE 분기와 동일하게 host platform에 맞는 template을 sync-preservation
 # 검증에 사용한다. Darwin은 platform별로 다른 managed leaves를 가질 수 있으므로
@@ -946,6 +951,29 @@ STUB
     "[7/lib] should_check fallback must fail closed for existing symlink targets"
 }
 
+# 세션 URL 범주(D, #1422): claude.ai의 `/code/session_<id>` 주소만 잡고, 다른 claude.ai 주소와
+# 문서 링크, id 없이 모양만 설명하는 텍스트는 통과시킨다.
+test_pinning_session_url_category_behavioral() {
+  local sandbox scan_file expected
+  sandbox=$(new_hook_sandbox)
+  scan_file="$sandbox/pinning-session-url-scan.txt"
+  {
+    printf '%s\n' "Claude-Session: $PINNING_SESSION_URL_FIXTURE"
+    printf '%s\n' "https://claude.ai/code"
+    printf '%s\n' "https://claude.ai/code/artifact/0123abcd"
+    printf '%s\n' "https://code.claude.com/docs/en/settings"
+    printf '%s\n' "주소 형태는 claude.ai/code/""session_<id>이다"
+    printf '%s\n' "PR 본문 끝 링크: $PINNING_SESSION_URL_FIXTURE"
+  } > "$scan_file"
+
+  # shellcheck source=../modules/shared/programs/claude/files/lib/pinning-patterns.sh
+  . "$PINNING_LIB_REPO_FILE"
+
+  expected="$(printf 'D\t1: %s\nD\t6: %s' "$PINNING_SESSION_URL_TOKEN" "$PINNING_SESSION_URL_TOKEN")"
+  assert_eq "$(pinning_findings_records "$scan_file" | cut -f1,3)" "$expected" \
+    "[7/lib] session URL category must match only claude.ai/code/session_<id> addresses"
+}
+
 _assert_pinning_expectation() {
   local fixture="$1" stderr_log="$2"
   local expected="${fixture%.json}.expected"
@@ -1057,6 +1085,7 @@ _materialize_pinning_fixture() {
     -e "s#/tmp/fixture-pinning-#${sandbox_sed}/fixture-pinning-#g"
     -e "s#/tmp/fixture-pinning/#${sandbox_sed}/fixture-pinning/#g"
     -e "s#/tmp/fixture-pretooluse-#${sandbox_sed}/fixture-pretooluse-#g"
+    -e "s#__SESSION_URL__#$(sed_replacement_escape "$PINNING_SESSION_URL_TOKEN")#g"
   )
   local i
 
@@ -1985,6 +2014,8 @@ run_test "inline shim delegates existing targets transparently" \
 
 run_test "pinning shared library behavioral" \
   test_pinning_shared_library_behavioral
+run_test "pinning session URL category (#1422)" \
+  test_pinning_session_url_category_behavioral
 run_test "pinning-alert behavioral (#606)" \
   test_pinning_alert_behavioral
 run_test "pretooluse pinning-guard behavioral (#587)" \

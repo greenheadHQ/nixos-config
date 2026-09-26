@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh pr comment 1422 --body \"참고: https://claude.ai/code , https://code.claude.com/docs/en/settings\""
+  }
+}

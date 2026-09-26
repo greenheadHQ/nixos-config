@@ -1,0 +1,7 @@
+{
+  "_fixture_existing_content": "## 요약\n\n세션 URL 범주를 추가한다.\n\nhttps://__SESSION_URL__",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh pr create --title t --body-file __SANDBOX_BODY_FILE__"
+  }
+}

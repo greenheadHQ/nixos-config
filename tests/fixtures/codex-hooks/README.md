@@ -118,6 +118,21 @@ DA 작업공간 경로 예외 fixture (`pinning_should_check_path`의 `/tmp/da-*
 | DA scratch 경로(`/tmp/da-*/`)의 산출물은 스캔 제외 | `pretooluse-pinning-guard-claude-write-da-workspace-clean.*` |
 | `..` 세그먼트로 whitelist를 통과해 repo 경로에 쓰려는 시도는 fail closed | `pretooluse-pinning-guard-claude-write-da-traversal-deny.*` |
 
+Issue #1422 Claude 세션 URL 범주(category D) fixture:
+
+세션 URL은 fixture에 리터럴로 두지 않고 스킴을 뺀 `__SESSION_URL__` 자리표시로 쓴다. runner가 조각을 조합한
+합성 값으로 치환하므로 저장소에는 세션 URL 모양의 문자열이 남지 않는다. 패턴 자체의 양성·음성 경계
+(다른 claude.ai 주소, 문서 링크, id 자리표시만 있는 설명)는 runner의 `test_pinning_session_url_category_behavioral`이 검증한다.
+
+| 시나리오 | fixture |
+|----------|---------|
+| `git commit -m`의 `Claude-Session:` 트레일러 거부 | `pretooluse-pinning-guard-claude-bash-commit-session-url-deny.*` |
+| `git commit -F -` heredoc 트레일러 거부 | `pretooluse-pinning-guard-codex-bash-commit-heredoc-session-url-deny.*` |
+| `gh pr create --body-file`, `gh issue create --body-file` 파일 내용의 세션 링크 거부 | `pretooluse-pinning-guard-claude-bash-bodyfile-session-url-deny.*`, `pretooluse-pinning-guard-codex-bash-issue-create-bodyfile-session-url-deny.*` |
+| `gh pr edit --body`, `gh issue comment --body` 거부 | `pretooluse-pinning-guard-codex-bash-pr-edit-session-url-deny.*`, `pretooluse-pinning-guard-claude-bash-issue-comment-session-url-deny.*` |
+| `gh pr merge`의 squash 커밋 본문(`--body`, `--body-file`) 거부 | `pretooluse-pinning-guard-codex-bash-pr-merge-body-session-url-deny.*`, `pretooluse-pinning-guard-claude-bash-pr-merge-bodyfile-session-url-deny.*` |
+| 세션 URL이 아닌 claude.ai 주소와 문서 링크는 통과 | `pretooluse-pinning-guard-{claude,codex}-bash-claude-link-clean.*` |
+
 PostToolUse `pinning-alert.sh` and commit-msg-pinning.sh keep emitting both sub-patterns under category code "C" (warn-only diagnostic preserved). The PreToolUse hard-fail records API (`pinning_guard_findings_records_for_path`, `pinning_guard_findings_records_for_scan_path`) suppresses only the workflow sub-pattern on the allowed paths above.
 
 ### commit-msg/ 카테고리 7c fixture (commit-msg-pinning behavioral)
