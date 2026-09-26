@@ -368,6 +368,7 @@ run_test "immich backup retention zero keeps today's dump, deletes stale" test_i
 run_test "immich backup unmounted target blocks write and exits nonzero" test_immich_backup_unmounted_target_blocks_write_and_exits_nonzero
 run_test "immich backup mount guard checks MOUNT_ROOT, not BACKUP_DIR" test_immich_backup_mount_guard_checks_mount_root_not_backup_dir
 run_test "immich backup destination outside mount blocks write and exits nonzero" test_immich_backup_destination_outside_mount_blocks_write_and_exits_nonzero
+run_test "immich backup rejects mount prefix without directory boundary" test_immich_backup_mount_prefix_without_directory_boundary_is_rejected
 run_test "immich backup unmounted target preserves existing backups and skips pg_dump" test_immich_backup_unmounted_target_preserves_existing_backups_and_skips_pg_dump
 run_test "karakeep backup happy path dated dir" test_karakeep_backup_happy_path_dated_dir
 run_test "karakeep backup missing db exits nonzero" test_karakeep_backup_missing_db_exits_nonzero
@@ -405,6 +406,7 @@ run_test "immich originals mirror blocks rsync when target HDD unmounted" test_i
 run_test "immich originals mirror runs rsync when target HDD mounted" test_immich_originals_mirror_mounted_target_runs_rsync
 run_test "immich originals mirror mount guard checks MOUNT_ROOT, not DEST_DIR" test_immich_originals_mirror_mount_guard_checks_mount_root_not_dest_dir
 run_test "immich originals mirror blocks rsync when destination outside mount" test_immich_originals_mirror_destination_outside_mount_blocks_rsync
+run_test "immich originals mirror rejects mount prefix without directory boundary" test_immich_originals_mirror_mount_prefix_without_directory_boundary_is_rejected
 run_test "immich originals mirror does not create dest dir before mount guard" test_immich_originals_mirror_unmounted_target_does_not_create_dest_dir
 run_test "immich cleanup paginates v3 nextPage string" test_immich_cleanup_v3_paginates_next_page_string
 run_test "immich cleanup preserves empty album notification" test_immich_cleanup_v3_empty_album_preserves_notification

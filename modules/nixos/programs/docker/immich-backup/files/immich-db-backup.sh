@@ -38,7 +38,9 @@ fi
 echo "Mount check OK: $MOUNT_ROOT is mounted"
 
 # 0b. 목적지 소속 가드 — MOUNT_ROOT가 마운트돼 있어도 BACKUP_DIR이 그 아래가 아니면(설정
-#     오류) 마운트 확인만으로는 잡지 못한다. BACKUP_DIR이 실제로 MOUNT_ROOT 아래에 있는지 확인한다.
+#     오류) 마운트 확인만으로는 잡지 못한다. 경로 문자열상 BACKUP_DIR이 MOUNT_ROOT 아래인지만
+#     본다(디렉터리 경계 기준 접두 비교) — `..`·심볼릭 링크·중첩 마운트까지 해석하는 실제
+#     파일시스템 소속 판정은 아니다.
 case "$BACKUP_DIR/" in
   "$MOUNT_ROOT"/*) ;;
   *)

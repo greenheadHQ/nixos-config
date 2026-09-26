@@ -48,7 +48,9 @@ fi
 echo "Mount check OK: $MOUNT_ROOT is mounted"
 
 # 3. 목적지 소속 가드 — MOUNT_ROOT가 마운트돼 있어도 DEST_DIR이 그 아래가 아니면(설정
-#    오류) 마운트 확인만으로는 잡지 못한다. mkdir 전에 검사해야 한다 — mkdir 자체도 쓰기다.
+#    오류) 마운트 확인만으로는 잡지 못한다. 경로 문자열상 DEST_DIR이 MOUNT_ROOT 아래인지만
+#    본다(디렉터리 경계 기준 접두 비교) — `..`·심볼릭 링크·중첩 마운트까지 해석하는 실제
+#    파일시스템 소속 판정은 아니다. mkdir 전에 검사해야 한다 — mkdir 자체도 쓰기다.
 case "$DEST_DIR/" in
   "$MOUNT_ROOT"/*) ;;
   *)

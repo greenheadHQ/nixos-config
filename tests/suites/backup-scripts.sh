@@ -261,6 +261,9 @@ test_immich_backup_unmounted_target_blocks_write_and_exits_nonzero() {
 
 # 리뷰: 가드가 mountpoint를 부를 때 실제로 MOUNT_ROOT를 넘기는지 확인한다 — exit code만 보는
 # 검사는 "BACKUP_DIR을 검사하도록 바꿔치는" 변이도 통과시킨다(모두 항상 마운트됨 스텁이므로).
+# mountpoint 호출은 디스크 공간 검사(아래 _backup_scripts_require_immich_disk_space 대상)보다
+# 항상 앞서 실행되므로, 이 테스트는 argv만 확인하고 스크립트 전체 종료 코드는 보지 않는다 —
+# 그렇지 않으면 여유 공간 5GB 미만인 호스트에서 이 테스트만 무관한 이유로 거짓 실패한다.
 test_immich_backup_mount_guard_checks_mount_root_not_backup_dir() {
   local sandbox stdout_path stderr_path argv_log
   local MOUNTPOINT_STUB_ARGV_LOG
@@ -273,21 +276,26 @@ test_immich_backup_mount_guard_checks_mount_root_not_backup_dir() {
   stdout_path="$sandbox/stdout"
   stderr_path="$sandbox/stderr"
 
-  _backup_scripts_run "$_immich_backup_script" "$sandbox" "$stdout_path" "$stderr_path" \
-    || fail "expected immich backup happy path to exit 0 while recording mountpoint argv"
+  _backup_scripts_run "$_immich_backup_script" "$sandbox" "$stdout_path" "$stderr_path" || true
 
   [ "$(cat "$argv_log")" = "-q $sandbox" ] \
     || fail "expected mountpoint to be called as '-q $sandbox' (MOUNT_ROOT), got: $(cat "$argv_log")"
 }
 
 # 이슈 최소 수정 범위: "목적지가 기대한 마운트 아래에 있는지 검증". MOUNT_ROOT는 마운트돼 있어도
-# BACKUP_DIR이 그 아래가 아니면(설정 오류) 마운트 확인만으로는 잡지 못한다.
+# BACKUP_DIR이 그 아래가 아니면(설정 오류) 마운트 확인만으로는 잡지 못한다. 이 소속 가드는 디스크
+# 공간 검사보다 먼저 실행되므로 podman은 절대 불리지 않아야 하고, 실패 사유가 다른 분기(디스크
+# 공간 등)로 새지 않았는지 stderr의 가드 고유 문구로도 확인한다.
 test_immich_backup_destination_outside_mount_blocks_write_and_exits_nonzero() {
   local sandbox stdout_path stderr_path status dump_count other_mount
+  local PODMAN_STUB_CALL_LOG
   sandbox=$(new_sandbox)
   _backup_scripts_prepare_sandbox "$sandbox"
   other_mount="$sandbox/other-mount"
   mkdir -p "$other_mount"
+  PODMAN_STUB_CALL_LOG="$sandbox/podman-calls.log"
+  : > "$PODMAN_STUB_CALL_LOG"
+  export PODMAN_STUB_CALL_LOG
   stdout_path="$sandbox/stdout"
   stderr_path="$sandbox/stderr"
 
@@ -298,6 +306,39 @@ test_immich_backup_destination_outside_mount_blocks_write_and_exits_nonzero() {
 
   dump_count=$(find "$sandbox/backup" -maxdepth 1 -type f -name 'immich-db-*.dump' | wc -l)
   [ "$dump_count" = "0" ] || fail "expected no immich dump written when BACKUP_DIR is outside MOUNT_ROOT"
+  [ ! -s "$PODMAN_STUB_CALL_LOG" ] \
+    || fail "expected podman to never be called when BACKUP_DIR is outside MOUNT_ROOT (got: $(cat "$PODMAN_STUB_CALL_LOG"))"
+  assert_contains "$(cat "$stderr_path")" "is not under MOUNT_ROOT"
+}
+
+# 리뷰: case 패턴에서 슬래시를 빼는 변이(`"$MOUNT_ROOT"/*` → `"$MOUNT_ROOT"*`)는 MOUNT_ROOT가
+# BACKUP_DIR의 문자열 접두사이기만 해도(디렉터리 경계가 아니어도) 통과시켜 버린다. MOUNT_ROOT를
+# BACKUP_DIR("$sandbox/backup")과 문자열은 겹치지만 디렉터리 경계가 아닌 "$sandbox/back"으로
+# 둬서, 그 변이를 이 테스트가 잡는지 고정한다.
+test_immich_backup_mount_prefix_without_directory_boundary_is_rejected() {
+  local sandbox stdout_path stderr_path status dump_count prefix_mount
+  local PODMAN_STUB_CALL_LOG
+  sandbox=$(new_sandbox)
+  _backup_scripts_prepare_sandbox "$sandbox"
+  prefix_mount="${sandbox}/back"
+  mkdir -p "$prefix_mount"
+  PODMAN_STUB_CALL_LOG="$sandbox/podman-calls.log"
+  : > "$PODMAN_STUB_CALL_LOG"
+  export PODMAN_STUB_CALL_LOG
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+
+  status=0
+  _backup_scripts_run "$_immich_backup_script" "$sandbox" "$stdout_path" "$stderr_path" 30 "$prefix_mount" \
+    || status=$?
+  [ "$status" -ne 0 ] \
+    || fail "expected immich backup to fail when BACKUP_DIR shares only a string prefix with MOUNT_ROOT (no directory boundary)"
+
+  dump_count=$(find "$sandbox/backup" -maxdepth 1 -type f -name 'immich-db-*.dump' | wc -l)
+  [ "$dump_count" = "0" ] || fail "expected no immich dump written for the string-prefix MOUNT_ROOT case"
+  [ ! -s "$PODMAN_STUB_CALL_LOG" ] \
+    || fail "expected podman to never be called for the string-prefix MOUNT_ROOT case (got: $(cat "$PODMAN_STUB_CALL_LOG"))"
+  assert_contains "$(cat "$stderr_path")" "is not under MOUNT_ROOT"
 }
 
 # 순서 회귀: 마운트 가드가 podman 호출·보관 정리보다 앞서야 한다 — 미마운트 시 기존(보관 기간을
