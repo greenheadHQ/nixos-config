@@ -400,6 +400,8 @@ run_test "hook_parse_json_path preserves filter defaults" test_hook_parse_json_p
 run_test "hook_parse_json_path malformed input returns empty success" test_hook_parse_json_path_malformed_input_returns_empty_success
 run_test "pinning-guard survives set-but-unusable TMPDIR (e2e)" test_pinning_guard_survives_unusable_tmpdir
 run_test "parallel harness propagates coverage markers" test_parallel_harness_propagates_coverage_markers
+run_test "parallel harness classifies failures like sequential" test_parallel_harness_classifies_failures_like_sequential
+run_test "parallel harness fails closed when job dies before result" test_parallel_harness_fails_closed_when_job_dies_before_result
 run_test "test runtime profile caches and invalidates by content" test_runtime_profile_build_cache_and_content_invalidation
 run_test "test runtime profile preserves last-good on failed rebuild" test_runtime_profile_failed_rebuild_preserves_last_good
 run_test "test runtime profile rejects unsafe lock and stamp nodes" test_runtime_profile_rejects_unsafe_lock_and_stamp_nodes
