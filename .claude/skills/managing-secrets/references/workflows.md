@@ -58,8 +58,9 @@ recipient 그룹마다 복호화에 필요한 identity가 다르다. 그룹 선�
 
    ```bash
    EDITOR=: nix run github:ryantm/agenix -- -e <name>.age -i <identity>
-   # 호스트 키 전용 항목 (root)
+   # 호스트 키 전용 항목 (root). 새 파일이 root 소유가 되므로 소유자를 되돌린다.
    sudo EDITOR=: nix run github:ryantm/agenix -- -e <name>.age -i /etc/ssh/ssh_host_ed25519_key
+   sudo chown "$USER" <name>.age
    ```
 
 7. 빈 값 확인: 재암호화한 항목을 복호화해 바이트 수만 본다. 0이면 `git restore <name>.age`로 되돌린다.
