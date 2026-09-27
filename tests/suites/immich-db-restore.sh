@@ -484,8 +484,9 @@ _immich_restore_assert_success_flow() {
     fi
     [ "$(_immich_restore_app_connections)" = 0 ] || fail "--no-start 전환 뒤 앱이 immich DB에 붙어 있다"
     assert_contains "$output" "이름 변경 완료 — 이전 DB: $old"
-    assert_contains "$output" "nrs"
+    assert_contains "$output" "nrs 뒤 앱이 떠 있지 않으면: sudo systemctl start podman-immich-ml.service podman-immich-server.service"
     assert_contains "$output" "immich_revert_restore --no-start $old"
+    assert_contains "$output" "태그를 아직 바꾸지 않았다면 --no-start 없이 immich_revert_restore $old"
     assert_not_contains "$output" "전환 완료"
   else
     assert_contains "$output" "전환 완료"
@@ -498,6 +499,33 @@ _immich_restore_assert_success_flow() {
 
   IMMICH_RESTORE_OLD_DB="$old"
   IMMICH_RESTORE_MUTATED_SNAPSHOT="$mutated_snapshot"
+}
+
+# 전환 직후(이전 DB가 실제로 있을 때) 부른다. 인자 형태가 틀리면 앱·DB를 건드리기 전에 종료 코드
+# 2로 끝나야 한다 — 뒤에 붙은 --no-start나 남는 인자를 무시하면 앱을 시작한 채 성공으로 끝난다.
+_immich_restore_assert_usage_errors() {
+  local shell="$1" backup="$2" old="$3" snapshot args output rc
+  snapshot="$(_immich_restore_snapshot immich)"
+  for args in \
+    'immich_switch_to_restore --now' \
+    'immich_switch_to_restore extra' \
+    'immich_switch_to_restore --no-start extra' \
+    'immich_revert_restore' \
+    'immich_revert_restore --no-start' \
+    "immich_revert_restore $old --no-start" \
+    "immich_revert_restore --no-start $old extra" \
+    "immich_revert_restore $old $old"; do
+    : > "$FAKE_TRACE"
+    set +e
+    output="$(_immich_restore_run "$shell" "$backup" "$args" 2>&1)"
+    rc=$?
+    set -e
+    [ "$rc" = 2 ] || fail "사용법 오류가 종료 코드 2로 끝나지 않았다($shell: $args): rc=$rc $output"
+    assert_contains "$output" "사용법:"
+    [ ! -s "$FAKE_TRACE" ] || fail "사용법 오류에서 명령을 실행했다($shell: $args): $(cat "$FAKE_TRACE")"
+  done
+  [ "$(_immich_restore_snapshot immich)" = "$snapshot" ] || fail "사용법 오류가 immich DB를 바꿨다($shell)"
+  [ "$(_immich_restore_before_dbs)" = "$old" ] || fail "사용법 오류가 DB 이름을 바꿨다($shell)"
 }
 
 # 계약 1·2·4: 일일 custom dump를 zsh에서 복원·전환한 뒤 복귀한다.
@@ -515,16 +543,10 @@ test_immich_restore_dump_switch_and_revert() {
     _immich_restore_lock_user_view
 
     _immich_restore_assert_success_flow zsh "$IMMICH_RESTORE_DUMP" "$before"
-
-    : > "$FAKE_TRACE"
-    set +e
-    output="$(_immich_restore_run zsh "$IMMICH_RESTORE_DUMP" 'immich_revert_restore' 2>&1)"
-    rc=$?
-    set -e
-    [ "$rc" = 2 ] || fail "인자 없는 immich_revert_restore가 사용법 오류(2)로 끝나지 않았다: rc=$rc $output"
-    [ ! -s "$FAKE_TRACE" ] || fail "사용법 오류에서 명령을 실행했다: $(cat "$FAKE_TRACE")"
+    _immich_restore_assert_usage_errors zsh "$IMMICH_RESTORE_DUMP" "$IMMICH_RESTORE_OLD_DB"
 
     # 없는 이전 DB 이름이면 앱을 멈추기 전에 거부한다.
+    : > "$FAKE_TRACE"
     set +e
     output="$(_immich_restore_run zsh "$IMMICH_RESTORE_DUMP" 'immich_revert_restore immich_before_restore_19990101_000000' 2>&1)"
     rc=$?
@@ -579,6 +601,7 @@ test_immich_restore_sql_gz_switch() {
 
     # 이미지 태그가 백업 시점과 다른 경우의 흐름: 앱을 멈춘 채 전환하고, 복귀도 앱을 시작하지 않는다.
     _immich_restore_assert_success_flow bash "$IMMICH_RESTORE_SQL_GZ" "$before" --no-start
+    _immich_restore_assert_usage_errors bash "$IMMICH_RESTORE_SQL_GZ" "$IMMICH_RESTORE_OLD_DB"
 
     : > "$FAKE_TRACE"
     set +e
@@ -586,7 +609,8 @@ test_immich_restore_sql_gz_switch() {
     rc=$?
     set -e
     [ "$rc" = 0 ] || fail "immich_revert_restore --no-start failed: $output"
-    assert_contains "$output" "nrs"
+    assert_contains "$output" "태그를 전환 전 버전으로 되돌리고 nrs한다"
+    assert_contains "$output" "nrs 뒤 앱이 떠 있지 않으면: sudo systemctl start podman-immich-ml.service podman-immich-server.service"
     assert_not_contains "$output" "복귀 완료"
     if grep -q '^systemctl start' "$FAKE_TRACE"; then
       fail "--no-start 복귀가 앱을 시작했다: $(cat "$FAKE_TRACE")"
@@ -595,12 +619,6 @@ test_immich_restore_sql_gz_switch() {
     [ "$(_immich_restore_snapshot immich)" = "$IMMICH_RESTORE_MUTATED_SNAPSHOT" ] \
       || fail "--no-start 복귀 뒤 immich DB가 전환 전 DB와 다르다"
     [ -z "$(_immich_restore_before_dbs)" ] || fail "--no-start 복귀 뒤 immich_before_restore_* DB가 남았다"
-
-    set +e
-    output="$(_immich_restore_run bash "$IMMICH_RESTORE_SQL_GZ" 'immich_switch_to_restore --now' 2>&1)"
-    rc=$?
-    set -e
-    [ "$rc" = 2 ] || fail "알 수 없는 전환 옵션이 사용법 오류(2)로 끝나지 않았다: rc=$rc $output"
   )
 }
 
@@ -1046,6 +1064,7 @@ test_immich_restore_interrupted_restore_is_not_switched() {
 
 # VectorChord 전환 뒤 Immich 1.133.0 미만으로의 다운그레이드(immich.nix 이미지 주석)는 전환하지
 # 않는다. 백업 시점 버전은 immich_restore의 version_history 최근 행으로 보고, 읽지 못하면 거부한다.
+# 비교는 버전 성분별 정수 비교다: 1.99.0은 거부하고(문자열로는 1.133.0보다 크다), 1.133.0은 받는다.
 test_immich_restore_switch_refuses_forbidden_downgrade() {
   _immich_restore_require_tools || return 0
   (
@@ -1057,13 +1076,19 @@ test_immich_restore_switch_refuses_forbidden_downgrade() {
     _immich_restore_setup "$sandbox"
 
     _immich_restore_make_db scratch
-    _immich_restore_psql -d scratch -c "DELETE FROM version_history WHERE version = '3.0.0'"
+    _immich_restore_psql -d scratch -c "UPDATE version_history SET version = '1.133.0' WHERE version = '3.0.0'"
+    pg_dump -Fc -U immich scratch | cat > "$sandbox/boundary.dump"
+    _immich_restore_psql -d scratch -c "UPDATE version_history SET version = '1.99.0' WHERE version = '1.133.0'"
+    pg_dump -Fc -U immich scratch | cat > "$sandbox/lexical.dump"
+    _immich_restore_psql -d scratch -c "DELETE FROM version_history WHERE version = '1.99.0'"
     pg_dump -Fc -U immich scratch | cat > "$sandbox/old.dump"
     _immich_restore_psql -d scratch -c "INSERT INTO version_history (\"createdAt\", version) VALUES ('2026-08-01T00:00:00Z', 'dev')"
     pg_dump -Fc -U immich scratch | cat > "$sandbox/garbled.dump"
     _immich_restore_psql -d scratch -c 'DROP TABLE version_history'
     pg_dump -Fc -U immich scratch | cat > "$sandbox/nohistory.dump"
     _immich_restore_psql -d postgres -c 'DROP DATABASE scratch'
+    _immich_restore_place_backup "$sandbox/boundary.dump" mnt/data/backups/immich/immich-db-2025-06-15_053000.dump >/dev/null
+    _immich_restore_place_backup "$sandbox/lexical.dump" mnt/data/backups/immich/immich-db-2025-05-01_053000.dump >/dev/null
     _immich_restore_place_backup "$sandbox/old.dump" mnt/data/backups/immich/immich-db-2025-06-01_053000.dump >/dev/null
     _immich_restore_place_backup "$sandbox/garbled.dump" mnt/data/backups/immich/immich-db-2026-08-01_053000.dump >/dev/null
     _immich_restore_place_backup "$sandbox/nohistory.dump" mnt/data/backups/immich/immich-db-2026-08-02_053000.dump >/dev/null
@@ -1071,9 +1096,10 @@ test_immich_restore_switch_refuses_forbidden_downgrade() {
     _immich_restore_mutate_original
     mutated="$(_immich_restore_snapshot immich)"
 
-    for label in old garbled nohistory; do
+    for label in old lexical garbled nohistory; do
       case "$label" in
         old) backup=immich-db-2025-06-01_053000.dump; expected="1.133.0 미만" ;;
+        lexical) backup=immich-db-2025-05-01_053000.dump; expected="백업 시점 버전 1.99.0: 1.133.0 미만" ;;
         garbled) backup=immich-db-2026-08-01_053000.dump; expected="백업 시점 버전을 읽지 못했다" ;;
         nohistory) backup=immich-db-2026-08-02_053000.dump; expected="version_history 테이블이 없다" ;;
       esac
@@ -1099,6 +1125,18 @@ test_immich_restore_switch_refuses_forbidden_downgrade() {
       _immich_restore_db_exists immich_restore || fail "$label: 버전 거부가 immich_restore를 지웠다"
       _immich_restore_psql -d postgres -c 'DROP DATABASE immich_restore'
     done
+
+    # 하한 1.133.0 자체는 받는다.
+    backup="$sandbox/fs/mnt/data/backups/immich/immich-db-2025-06-15_053000.dump"
+    _immich_restore_run bash "$backup" 'immich_restore_db' >/dev/null 2>&1 \
+      || fail "boundary: 버전과 무관한 복원·검증이 실패했다"
+    set +e
+    output="$(_immich_restore_run bash "$backup" 'immich_switch_to_restore' 2>&1)"
+    rc=$?
+    set -e
+    [ "$rc" = 0 ] || fail "boundary: 1.133.0 백업으로 전환하지 못했다: $output"
+    assert_contains "$output" "백업 시점 Immich 버전: 1.133.0"
+    assert_contains "$output" "전환 완료"
   )
 }
 
