@@ -1146,6 +1146,30 @@ _pinning_codex_mention_table() {
     "eval \"\$X\"; \"gh\" pr view 1; echo \"unterminated"
     "echo \"it's\"; gh pr comment 12 --body x"
     "gh pr comment 12 --body 'x"
+    # 명령 자리가 아닌 gh(다른 명령의 인자, 할당 값)는 셸 실행기로 흘러갈 수 있어 숨은 gh로 센다.
+    "bash -c \"\$(command -v gh) pr comment 12 --body x\""
+    "GH=/opt/homebrew/bin/gh; bash -c \"\$GH pr comment 12 --body x\""
+    "echo gh \"pr comment 12 --body x\" | bash"
+    "eval \"\$(echo gh pr 'comment 12 --body x')\""
+    "bash <(echo gh 'pr comment 12 --body x')"
+    # 셸 실행기의 입력이 동적인 here-string·< 입력이면 동적 인자처럼 본다.
+    "bash <<< \"\$(echo 'gh pr comment 12 --body x')\""
+    "bash < <(echo 'gh pr comment 12 --body x')"
+    "\$SHELL -c \"\$(echo 'gh pr comment 12 --body x')\""
+    # 변수 명령어 뒤가 pr·issue·api여도 인자에 gh 글자가 보이면 대상이다(호스트 이름이 api인 ssh).
+    "\$SSH api 'gh pr comment 12 --body x'"
+    # macOS 파일시스템은 대소문자를 가리지 않아 GH도 gh를 실행한다. 변수 기본값과 줄 이음 앞의 gh도 본다.
+    "bash -c 'GH pr comment 12 --body x'"
+    "echo 'GH pr comment 12 --body x' | bash"
+    "bash -c \"\${GH:-gh} pr comment 12 --body x\""
+    "X=\"\${GH:-gh}\"; bash -c \"\$X pr comment 12 --body x\""
+    $'bash -c \'gh\\\n pr comment 12 --body x\''
+    # 판정 불확실(구분자가 동적인 heredoc, 명령 치환 안의 EOF) 종결 줄)이면 gh 글자만 보여도 대상이다.
+    $'cat <<$\'EOF\'\nx\nEOF\n"gh" pr comment 12 --body x\n: <<EOF\n$EOF'
+    $'x=$(cat <<EOF\nhi\nEOF); "gh" pr comment 12 --body x\n: <<EOF\nEOF\n)'
+    $'x=$(cat <<EOF\nhi\nEOF)\ng\\h pr comment 12 --body x\n: <<EOF\nEOF\n)'
+    # $[ ] 는 산술 확장이라 << 뒤 줄은 heredoc 본문이 아니다.
+    $'x=$[a[1]<<2]\ngh pr comment 12 --body x\n2]'
   )
   local -a scope_out=(
     "gh pr merge 12 --squash --body x"
@@ -1183,6 +1207,24 @@ _pinning_codex_mention_table() {
     $'cat <<EOF\nfoo\\\nEOF\ngh pr comment 12 --body x\nEOF'
     "echo gh"
     "ls -la"
+    # 명령 자리(할당·예약어와 sudo·env·timeout 같은 래퍼 뒤)의 gh는 동적 실행기가 있어도 그 호출대로 판정한다.
+    "eval \"\$X\"; timeout 60 gh pr view 1"
+    "eval \"\$X\"; sudo -E gh pr view 1"
+    "eval \"\$X\"; if gh pr view 1; then :; fi"
+    "eval \"\$X\"; env GH_PAGER=cat gh pr view 1"
+    "eval \"\$X\"; ! gh pr view 1"
+    "eval \"\$X\"; command gh pr view 1"
+    "eval \"\$X\"; { gh pr view 1; }"
+    # 변수 명령어 뒤 하위 명령이 pr·issue·api면 셸 실행기로 보지 않는다.
+    "GH=/opt/homebrew/bin/gh; \$GH api \"repos/\$R/pulls/1/comments\" --jq '.[].body'"
+    # 출력 리다이렉트는 셸 실행기의 입력이 아니다.
+    "bash x.sh > \"\$LOG\"; echo 'gh pr comment 12 --body x'"
+    # \$[ ] 의 << 는 시프트다.
+    "echo \$[1<<2]; gh pr view 1"
+    # 명령 치환 안 heredoc의 본문 줄은 종결자로 시작해도 ) 나 백틱이 붙어야 종결 줄로 본다. 치환 밖에서는
+    # 붙어도 본문이다.
+    $'x=$(cat <<EOF\nEOFX\nEOF\n)\ngh pr view 1'
+    $'cat <<EOF\nEOF)\nEOF\ngh pr view 1'
   )
   for cmd in "${scope_in[@]}"; do
     assert_eq "$(if pinning_codex_mention_scope "$cmd"; then printf in; else printf out; fi)" "in" \

@@ -807,8 +807,8 @@ pinning_extract_body_file_paths() {
 # A–D 범주와 달리 저장소 파일·커밋 메시지는 검사하지 않는다 — 스킬 문서와 커밋은 그 형태를
 # 설명해야 한다.
 # hook은 셸 확장 전 문자열을 보므로 변수로 넘긴 본문 경로(`body=@"$BODY_FILE"`)와 stdin 본문
-# (`--input -`), 인코딩하거나 조립한 멘션은 읽지 못한다. A–D 검사와 같은 한계라 1차 방어선은 PR
-# 스킬 지침이다.
+# (`--input -`), 인코딩하거나 조립한 멘션은 읽지 못한다. 셸 실행기가 아닌 인터프리터(python -c 등)나
+# 배열로 조립해 실행하는 gh 호출도 보지 못한다. A–D 검사와 같은 한계라 1차 방어선은 PR 스킬 지침이다.
 PINNING_CODEX_MENTION_LABEL="Codex 봇 멘션: 백틱이나 인용 안에 있어도 봇이 작업 요청으로 읽는다"
 
 # 셸 명령 문자열 lexer (awk 프로그램, #1477). 아래 함수들이 mode만 바꿔 쓴다.
@@ -827,18 +827,21 @@ PINNING_CODEX_MENTION_LABEL="Codex 봇 멘션: 백틱이나 인용 안에 있어
 #   query 값(문자열·주석 밖)의 mutation, 파일에서 읽는 필드, --input, 값을 알 수 없는 query를 쓰기로
 #   본다. 메서드·query·플래그 이름이 변수면 쓰기로 본다.
 # - 셸 명령을 받아 실행하는 명령(bash -c, ssh, eval 등)의 인자·here-string·heredoc 본문에 gh 호출이
-#   보이면 다시 분석하지 않고 게시로 본다. 그런 명령이 파이프로 입력을 받거나 인자를 명령 치환·
-#   변수로 만들면(`cat <<EOF | ssh host bash`, `bash -c "$(cat <<EOF ...)"`) 무엇이 실행될지 따지지
-#   않고, 명령 문자열에서 lexer가 명령으로 해석하지 않은 자리(따옴표 속 글자, heredoc 본문 등)에
-#   gh 호출이 보이면 게시로 본다. 명령 자리의 gh는 그 호출대로 판정한다 — `eval "$(direnv export
-#   bash)"; gh pr view ...`의 gh는 조회다. 변수로 적은 명령어(`$GH pr comment`, `sudo "$GH" pr
-#   comment`)는 뒤따르는 하위 명령과 인자로 판정한다.
+#   보이면 다시 분석하지 않고 게시로 본다. 그런 명령이 파이프, 명령 치환·변수 인자, 동적 here-string·
+#   < 입력으로 스크립트를 받으면(`cat <<EOF | ssh host bash`, `bash -c "$(cat <<EOF ...)"`) 무엇이
+#   실행될지 따지지 않고, 명령 문자열에서 명령 자리가 아닌 gh(따옴표 속 글자, heredoc 본문, `echo gh`·
+#   `command -v gh`의 인자, `GH=/.../gh` 할당 값)가 보이면 게시로 본다. 명령 자리(할당·예약어와
+#   sudo·env·timeout 같은 래퍼 뒤)의 gh는 그 호출대로 판정한다 — `eval "$(direnv export bash)"; gh pr
+#   view ...`의 gh는 조회다. 변수로 적은 명령어(`$GH pr comment`, `sudo "$GH" pr comment`)는 뒤따르는
+#   하위 명령과 인자로 판정한다. gh 글자는 대소문자를 가리지 않고 찾는다 (macOS 파일시스템에서는 GH도
+#   gh를 실행한다).
 # - 허용 형태는 heredoc이 없는 명령에서, 명령 위치의 `gh pr comment`로만 인정한다. here-string(<<<),
-#   산술 시프트, 따옴표 안의 << 는 heredoc이 아니다.
+#   산술 시프트($(( )), $[ ]), 따옴표 안의 << 는 heredoc이 아니다.
 # 명령 문자열의 멘션은 게시 여부와 관계없이 전체를 본다. 파이프(`echo ... | gh pr comment -F -`)처럼
 # 다른 명령의 출력이 본문이 되는 경로가 있기 때문이다.
-# 셸마다 해석이 갈리는 문법(큰따옴표 안 ${ }의 작은따옴표, <<- heredoc에서 역슬래시로 이은 줄의 탭)이나
-# 짝이 맞지 않는 따옴표·괄호·heredoc을 만나면 판정 불확실로 보고 허용 형태를 인정하지 않는다.
+# 셸마다 해석이 갈리는 문법(큰따옴표 안 ${ }의 작은따옴표, <<- heredoc에서 역슬래시로 이은 줄의 탭,
+# 명령 치환 안 heredoc의 EOF) 종결 줄)이나 구분자가 동적인 heredoc, 짝이 맞지 않는 따옴표·괄호·heredoc을
+# 만나면 판정 불확실로 보고 허용 형태를 인정하지 않고, gh 글자만 보여도 게시로 본다.
 # PINNING_LEXER_MAX_BYTES보다 긴 명령은 lexer 없이 판정 불확실로 본다 (macOS awk는 MB 단위 입력에
 # 수십 초가 걸린다).
 # LC_ALL=C로 돌려 잘못된 UTF-8 바이트에서도 멈추지 않는다. 프로그램 안에는 작은따옴표를 쓰지 않는다.
@@ -853,7 +856,7 @@ _PINNING_SH_LEXER_AWK='
     }
     function push(t, dollar_,    below) {
       below = sp > 0 ? ft[sp] : "T"
-      sp++; ft[sp] = t; fdollar[sp] = dollar_; par[sp] = 0
+      sp++; ft[sp] = t; fdollar[sp] = dollar_; par[sp] = 0; abr[sp] = 0; bdep[sp] = 0
       if (t == "T" || t == "B" || t == "H") {
         own[sp] = sp; sn[sp] = 0; reset_word(sp); hdnext[sp] = 0; rtnext[sp] = 0; segid[sp] = ++segctr
         pipe_in[sp] = 0
@@ -882,11 +885,13 @@ _PINNING_SH_LEXER_AWK='
       if (ft[d] == "H") { reset_word(d); return }
       if (hdnext[d]) {
         hq_n++; hq_delim[hq_n] = cw[d]; hq_quoted[hq_n] = cwq[d]; hq_dash[hq_n] = hdnext[d] == 2
-        hq_seg[hq_n] = segid[d]; hdnext[d] = 0; saw_hd = 1
+        hq_seg[hq_n] = segid[d]; hq_sub[hq_n] = (d > 1); hdnext[d] = 0; saw_hd = 1
+        # 구분자에 변수·명령 치환·ANSI-C 따옴표가 있으면 종결자를 확정할 수 없다.
+        if (cwdyn[d] || cwlong[d]) confused = 1
       } else {
         j = ++sn[d]
         sv[d, j] = cw[d]; sdy[d, j] = cwdyn[d] || cwlong[d]; sat[d, j] = cwat[d]; sgp[d, j] = cwb[d]
-        sk[d, j] = rtnext[d] == 2 ? "h" : rtnext[d] ? "r" : "w"
+        sk[d, j] = rtnext[d] == 2 ? "h" : rtnext[d] == 3 ? "i" : rtnext[d] ? "r" : "w"
         rtnext[d] = 0
       }
       reset_word(d)
@@ -908,33 +913,45 @@ _PINNING_SH_LEXER_AWK='
       return lower_base(w) ~ /^(bash|sh|zsh|dash|ksh|mksh|fish|eval|ssh|su|runuser|script|watch|parallel|tmux|nix-shell)$/
     }
     # 셸 명령을 받아 실행하는 명령(셸 실행기)의 인자, here-string, heredoc 본문에 gh 호출이 보이면
-    # 게시로 본다. 셸 실행기가 파이프로 입력을 받거나 인자가 명령 치환·변수로 만들어지면 무엇이
-    # 실행될지 따지지 않고 END에서 명령 문자열의 gh 중 명령으로 해석하지 않은 것으로 판정한다
-    # (hidden_gh_text). 그 안의 명령은 다시 분석하지 않는다. 스크립트 안에서 따옴표로 감싼 gh도
-    # 잡도록 따옴표를 gh 앞뒤 경계로 본다.
-    function has_gh_text(s) { return s ~ GH_TEXT_RE }
-    function classify(d,    j, np, t, cmdpos, hstr, runner) {
-      np = 0; hstr = 0; runner = 0
+    # 게시로 본다. 셸 실행기가 파이프로 입력을 받거나 인자·here-string·< 입력이 명령 치환·변수로
+    # 만들어지면 무엇이 실행될지 따지지 않고 END에서 명령 문자열의 gh 중 명령 자리가 아닌 것으로
+    # 판정한다 (hidden_gh_text). 그 안의 명령은 다시 분석하지 않는다. 스크립트 안에서 따옴표로 감싼
+    # gh도 잡도록 따옴표를 gh 앞뒤 경계로 보고, 대소문자를 가리지 않는다.
+    function has_gh_text(s) { return tolower(s) ~ GH_TEXT_RE }
+    function classify(d,    j, np, t, u, cmdpos, xpos, hstr, sdyn, runner) {
+      np = 0; hstr = 0; sdyn = 0; runner = 0
       for (j = 1; j <= sn[d]; j++) {
-        if (sk[d, j] == "h") { if (has_gh_text(sv[d, j])) hstr = 1; continue }
+        # here-string과 < 입력은 셸 실행기라면 실행할 스크립트다.
+        if (sk[d, j] == "h" || sk[d, j] == "i") {
+          if (sdy[d, j]) sdyn = 1
+          if (sk[d, j] == "h" && has_gh_text(sv[d, j])) hstr = 1
+          continue
+        }
         if (sk[d, j] != "w") continue
         np++; pw[np] = sv[d, j]; pd[np] = sdy[d, j]; pa[np] = sat[d, j]; pg[np] = sgp[d, j]
       }
       if (np == 0) return
       check_allowed(np)
+      # 명령어 자리: 앞의 할당과 예약어(if, then, !, { 등)를 건너뛴다.
       cmdpos = 1
-      while (cmdpos <= np && pw[cmdpos] ~ /^[A-Za-z_][A-Za-z0-9_]*=/) cmdpos++
+      while (cmdpos <= np && (pw[cmdpos] ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || (!pd[cmdpos] && pw[cmdpos] ~ /^(if|then|elif|else|do|while|until|time|!|[{])$/))) cmdpos++
+      xpos = exec_pos(cmdpos, np)
       for (t = 1; t <= np; t++) {
         if (pd[t]) {
           # 변수로 적은 명령어는 뒤따르는 하위 명령과 인자로 판정한다($GH pr comment, sudo "$GH" pr
-          # comment). 셸 실행기로도 보는 것($SHELL -c ...)은 명령어 자리일 때뿐이다.
+          # comment). 명령어 자리의 변수는 하위 명령이 pr·issue·api가 아니면 셸 실행기로도 본다
+          # ($SHELL -c ...). 그래도 인자에 gh 글자가 보이면 게시로 본다($SSH api "gh pr comment ...").
           gh_invocation(t, np, 1)
-          if (t == cmdpos && runner_args(t, np)) posts = 1
+          if (t == cmdpos) {
+            if (!gh_subcmd_next(t, np)) { if (runner_args(t, np)) posts = 1 }
+            else for (u = t + 1; u <= np; u++) if (has_gh_text(pw[u])) posts = 1
+          }
           continue
         }
         if (is_gh(pw[t])) {
-          # 이 gh 글자는 lexer가 호출로 판정했으므로 END의 숨은 gh 검사에서 뺀다.
-          if (pg[t] != "") static_gh[pg[t]] = 1
+          # 실행되는 자리의 gh 글자는 lexer가 호출로 판정했으므로 END의 숨은 gh 검사에서 뺀다.
+          # 다른 명령의 인자(echo gh, command -v gh, GH=/.../gh)는 셸 실행기에 들어갈 수 있어 남긴다.
+          if (pg[t] != "" && t == xpos) static_gh[pg[t]] = 1
           gh_invocation(t, np, 0)
         }
         else if (is_runner(pw[t])) { runner = 1; if (runner_args(t, np)) posts = 1 }
@@ -942,7 +959,39 @@ _PINNING_SH_LEXER_AWK='
       if (!runner) return
       runner_seg[segid[d]] = 1
       if (hstr) posts = 1
+      if (sdyn) dyn_runner = 1
       if (pipe_in[d]) piped_runner = 1
+    }
+    # 변수 명령어 뒤의 첫 하위 명령이 pr·issue·api인지. 옵션은 gh_invocation처럼 건너뛴다.
+    function gh_subcmd_next(t, np,    u, w) {
+      for (u = t + 1; u <= np; u++) {
+        w = pw[u]
+        if (substr(w, 1, 1) == "-" && w != "-") {
+          if (substr(w, 1, 2) == "--") { if (index(w, "=") == 0) u++ }
+          else if (length(w) == 2) u++
+          continue
+        }
+        return !pd[u] && w ~ /^(pr|issue|api)$/
+      }
+      return 0
+    }
+    # 실제로 실행되는 명령어 자리. 뒤 명령을 그대로 실행하는 래퍼(sudo, env, nohup, time, exec,
+    # nice, caffeinate, timeout, command)와 그 옵션·할당을 건너뛴다. 옵션 값(sudo -u bot)이나 변수를
+    # 만나면 거기서 멈추므로, 그 뒤의 gh는 숨은 gh 검사에 남는다.
+    function exec_pos(u, np,    w) {
+      while (u <= np && !pd[u]) {
+        w = lower_base(pw[u])
+        if (w ~ /^(sudo|env|nohup|time|exec|nice|caffeinate)$/) {
+          u++
+          while (u <= np && !pd[u] && (pw[u] ~ /^-/ || pw[u] ~ /^[A-Za-z_][A-Za-z0-9_]*=/)) u++
+          continue
+        }
+        if (w == "timeout") { u++; while (u <= np && pw[u] ~ /^-/) u++; u++; continue }
+        # command -v gh 는 뒤 옵션에서 멈추므로 gh를 실행 자리로 보지 않는다.
+        if (w == "command") { u++; continue }
+        break
+      }
+      return u
     }
     # 동적 인자(명령 치환·변수·ANSI-C, 잘린 긴 단어)는 정적 텍스트만으로 알 수 없어 END로 넘긴다.
     function runner_args(t, np,    u) {
@@ -1084,6 +1133,8 @@ _PINNING_SH_LEXER_AWK='
         push("T", 1); return i + 1
       }
       if (c2 == "{") { mark_dyn(); push("P", 0); return i + 1 }
+      # $[ ] 는 bash·zsh의 옛 산술 확장이다.
+      if (c2 == "[") { mark_dyn(); push("A", 0); abr[sp] = 1; return i + 1 }
       if (ft[sp] == "T" || ft[sp] == "B") {
         if (c2 == sq) { mark_dyn(); ansi = 1; return i + 1 }
         if (c2 == dq) { mark_q(); push("D", 0); return i + 1 }
@@ -1106,7 +1157,7 @@ _PINNING_SH_LEXER_AWK='
         hdnext[o] = 1; return i + 1
       }
       if (c2 == "&" || c2 == ">") i++
-      rtnext[o] = 1; return i
+      rtnext[o] = 3; return i
     }
     function lex_T(k, i, n, c, c2) {
       if (c == " " || c == "\t") { end_word(sp); return i }
@@ -1186,8 +1237,10 @@ _PINNING_SH_LEXER_AWK='
       if (c == "`") { push("B", 0); return i }
       add(c, k, i); return i
     }
-    # 산술 확장 $(( )) 과 산술 명령 (( )). << 는 시프트 연산자다.
+    # 산술 확장 $(( )), $[ ] 과 산술 명령 (( )). << 는 시프트 연산자다.
     function lex_A(k, i, n, c, c2) {
+      if (abr[sp] && c == "[") { bdep[sp]++; return i }
+      if (abr[sp] && c == "]") { if (bdep[sp] > 0) bdep[sp]--; else pop(); return i }
       if (c == "(") { par[sp]++; return i }
       if (c == ")") {
         if (par[sp] > 0) { par[sp]--; return i }
@@ -1262,6 +1315,10 @@ _PINNING_SH_LEXER_AWK='
       if (dash) sub(/^\t+/, "", s)
       return s == delim
     }
+    function sub_delim_line(s, delim, dash) {
+      if (dash) sub(/^\t+/, "", s)
+      return substr(s, 1, length(delim)) == delim && substr(s, length(delim) + 1) ~ /^[ \t]*[)`]/
+    }
     function lex_heredoc(a, b, script,    j, base) {
       if (script) {
         for (j = a; j <= b; j++) if (has_gh_text(LX[j])) { posts = 1; break }
@@ -1308,6 +1365,9 @@ _PINNING_SH_LEXER_AWK='
               hit_z = substr(full, ntab + 1) == hq_delim[h]
               if (hit_b != hit_z) confused = 1
               if (hit_b || hit_z) break
+              # 명령 치환·프로세스 치환·백틱 안의 heredoc은 bash가 종결자 뒤에 ) 나 백틱이 붙은 줄
+              # (EOF))에서도 끝낸다. zsh는 문법 오류로 본다. bash처럼 끝내되 판정 불확실로 본다.
+              if (hq_sub[h] && sub_delim_line(full, hq_delim[h], hq_dash[h])) { confused = 1; break }
               e++
             }
             if (e > nlx) { confused = 1; last = nlx } else last = start - 1
@@ -1328,14 +1388,13 @@ _PINNING_SH_LEXER_AWK='
     function lex_heredoc_script(a, b,    j) {
       for (j = a; j <= b; j++) if (has_gh_text(LX[j])) { posts = 1; return }
     }
-    # 명령 문자열에 lexer가 gh 호출로 해석하지 않은 gh 글자가 있는지. 따옴표 속 글자, heredoc 본문,
-    # 동적 단어의 gh가 여기에 든다. 판정이 불확실하면 모든 gh를 센다.
+    # 명령 문자열에 명령 자리가 아닌 gh 글자가 있는지. 따옴표 속 글자, heredoc 본문, 동적 단어, 다른
+    # 명령의 인자와 할당 값(echo gh, GH=/.../gh)의 gh가 여기에 든다. 판정이 불확실하면 모든 gh를 센다.
     function hidden_gh_text(    k, s, off, p) {
       for (k = 1; k <= nl; k++) {
-        s = L[k]; off = 0
+        s = tolower(L[k]); off = 0
         while (match(s, GH_TEXT_RE)) {
-          p = RSTART
-          if (substr(s, p, 1) != "g") p++
+          p = RSTART + index(substr(s, RSTART, RLENGTH), "gh") - 1
           if (confused || !((k ":" (off + p)) in static_gh)) return 1
           off += p + 1; s = substr(s, p + 2)
         }
@@ -1368,12 +1427,12 @@ _PINNING_SH_LEXER_AWK='
     { L[++nl] = $0 }
     END {
       WCAP = 4096
-      GH_TEXT_RE = "(^|[^A-Za-z0-9_.-])gh(-auth)?([ \t\n;&|)<>`" sq dq "]|$)"
+      GH_TEXT_RE = "(^|[^A-Za-z0-9_.-]|:-)gh(-auth)?([ \t\n;&|)<>`}" sq dq "]|\\\\|$)"
       if (mode == "body") { scan_mentions(0); exit 0 }
       for (k = 1; k <= nl; k++) LX[k] = L[k]
       nlx = nl
       lex_all()
-      if ((piped_runner || dyn_runner) && !posts && hidden_gh_text()) posts = 1
+      if ((piped_runner || dyn_runner || confused) && !posts && hidden_gh_text()) posts = 1
       if (mode == "findings") { scan_mentions(1); exit 0 }
       printf "%d %d %d\n", posts, apiw, confused
     }

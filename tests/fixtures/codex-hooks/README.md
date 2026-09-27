@@ -93,16 +93,19 @@ Codex GitHub 앱은 PR·이슈 코멘트의 봇 멘션을 백틱 안에서도 �
 코멘트를 게시하는 gh 명령(close·reopen 코멘트, gh api 쓰기와 GraphQL mutation 포함)에서 멘션을 막는다.
 게시 여부는 셸 lexer가 따옴표를 푼 단어와 세그먼트(구분자 사이 단순 명령)로 판정하므로, 커밋 메시지나
 따옴표 있는 구분자의 heredoc 본문에 적힌 명령 이름은 게시로 보지 않는다. 셸 실행기(`bash -c`, `ssh`,
-`eval` 등)의 인자·here-string·heredoc 본문에 gh 호출이 있거나, 실행기가 파이프 입력이나 명령 치환·변수
-인자를 받으면서 명령 문자열의 명령으로 해석하지 않은 자리(따옴표 속 글자, heredoc 본문)에 gh 호출이 있으면
-게시로 본다. 명령 자리의 gh는 그 호출대로 판정하므로 `eval "$(direnv export bash)"; gh pr view ...`는 조회다.
-변수로 적은 명령어(`$GH pr comment`, `sudo "$GH" pr comment`)는 뒤따르는 하위 명령으로 판정한다. 따옴표 없는
-구분자의 heredoc 종결자는 bash·zsh처럼 역슬래시로 이은 논리 줄로 비교한다. 허용 형태는 heredoc이 없는 명령에서 명령 위치의
+`eval` 등)의 인자·here-string·heredoc 본문에 gh 호출이 있거나, 실행기가 파이프 입력, 명령 치환·변수 인자,
+동적 here-string·`<` 입력을 받으면서 명령 문자열에 명령 자리가 아닌 gh(따옴표 속 글자, heredoc 본문,
+`echo gh`·`command -v gh`의 인자, `GH=/.../gh` 할당 값)가 있으면 게시로 본다. 명령 자리(할당·예약어와
+`sudo`·`env`·`timeout` 같은 래퍼 뒤)의 gh는 그 호출대로 판정하므로 `eval "$(direnv export bash)"; gh pr view ...`는
+조회다. 변수로 적은 명령어(`$GH pr comment`, `sudo "$GH" pr comment`)는 뒤따르는 하위 명령으로 판정한다. gh 글자는
+대소문자를 가리지 않고 찾는다(macOS 파일시스템에서는 `GH`도 gh를 실행한다). 따옴표 없는 구분자의 heredoc
+종결자는 bash·zsh처럼 역슬래시로 이은 논리 줄로 비교한다. 허용 형태는 heredoc이 없는 명령에서 명령 위치의
 `gh pr comment <PR> [-R OWNER/REPO] --body '@codex review'` 하나다. `-b`·`--body=`, `-R`·`--repo`의 위치,
 환경 변수 접두(`GH_REPO=o/r gh ...`), 경로를 붙인 gh는 같은 형태로 보고, PR·저장소 값은 변수여도 된다.
-here-string(`<<<`)·산술 시프트·따옴표 안의 `<<`는 heredoc이 아니다. 셸마다 해석이 갈리는 문법(큰따옴표 안
-`${ }`의 작은따옴표, `<<-` heredoc에서 역슬래시로 이은 줄의 탭), 짝이 맞지 않는 따옴표·괄호·heredoc, 256KB를 넘는 명령은 판정 불확실로 보고 허용
-형태를 인정하지 않는다. 본문 파일에는 허용 형태가 없고, gh가 본문으로 읽을 수 있는 정규 파일만 읽는다
+here-string(`<<<`)·산술 시프트(`$(( ))`, `$[ ]`)·따옴표 안의 `<<`는 heredoc이 아니다. 셸마다 해석이 갈리는 문법(큰따옴표 안
+`${ }`의 작은따옴표, `<<-` heredoc에서 역슬래시로 이은 줄의 탭, 명령 치환 안 heredoc의 `EOF)` 종결 줄), 구분자가
+동적인 heredoc, 짝이 맞지 않는 따옴표·괄호·heredoc, 256KB를 넘는 명령은 판정 불확실로 보고 허용 형태를 인정하지
+않는다. lexer가 판정 불확실로 본 명령은 gh 글자만 보여도 게시로 본다. 본문 파일에는 허용 형태가 없고, gh가 본문으로 읽을 수 있는 정규 파일만 읽는다
 (`awk -F/`의 `/` 같은 디렉터리와 장치는 건너뛴다). 변수나 `~`로 적은 경로는 셸이 풀기 전의 문자열이라
 찾지 못한다. 박제 범주 검사가 먼저 돌므로 둘 다 걸리면 박제 deny가 나온다. 같은 변경으로 박제 범주의 검사 대상도 gh 게시 명령 전반(`gh -R o/r pr ...`, close·reopen·revert,
 gh api 쓰기)과 `--input` 파일로 넓어졌다. 판정 경계 표는 lib 단위 테스트
@@ -141,6 +144,7 @@ gh api 쓰기)과 `--input` 파일로 넓어졌다. 판정 경계 표는 lib 단
 | `pretooluse-pinning-guard-{claude,codex}-bash-codex-mention-runner-substitution-deny.*` | `bash -c "$(cat <<'EOF' ...)"`로 만든 스크립트 속 gh 게시의 멘션 | deny reason |
 | `pretooluse-pinning-guard-{claude,codex}-bash-dynamic-runner-query-mention-clean.*` | 동적 인자 실행기(`eval "$(direnv export bash)"`) 뒤 조회 필터의 멘션 | 빈 파일 |
 | `pretooluse-pinning-guard-{claude,codex}-bash-heredoc-joined-delimiter-mention-deny.*` | 역슬래시로 이은 heredoc 종결자(`EOF\` 뒤 빈 줄) 다음 gh 게시의 멘션 | deny reason |
+| `pretooluse-pinning-guard-{claude,codex}-bash-runner-command-v-gh-mention-deny.*` | `bash -c "$(command -v gh) pr comment ..."`처럼 명령 자리가 아닌 gh로 만든 실행기 게시의 멘션 | deny reason |
 
 Issue #686 path-aware PATTERN_A guard fixtures add the explicit matrix:
 
