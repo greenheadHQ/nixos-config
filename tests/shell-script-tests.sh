@@ -104,7 +104,7 @@ run_test "wt plugin manifest missing and invalid inputs are safe" test_wt_plugin
 run_test "codex activation .agents symlink guard static" test_codex_activation_agents_symlink_guard_static
 run_test "codex activation orphan cleanup removes only managed links" test_codex_activation_orphan_cleanup_removes_only_managed_links
 run_test "codex activation projection fails closed without git" test_codex_activation_projection_fails_closed_without_git
-run_test "codex activation projection skips tracked dir and replaces untracked dir" test_codex_activation_projection_tracked_dir_skipped_untracked_dir_replaced
+run_test "codex activation projection skips tracked dir and keeps untracked entries" test_codex_activation_projection_tracked_dir_skipped_untracked_entries_kept
 run_test "codex activation projection keeps real dir when tracking check fails" test_codex_activation_projection_keeps_real_dir_when_tracking_check_fails
 run_test "codex activation projection dry-run leaves tree unchanged" test_codex_activation_projection_dry_run_leaves_tree_unchanged
 run_test "create-issue documented body lifecycle is safe" test_create_issue_documented_body_lifecycle_is_safe
@@ -121,6 +121,10 @@ run_test "claude remote-control stop path removes stale registration" test_claud
 run_test "claude remote-control slug separates same basenames" test_claude_remote_control_slug_uses_hash_for_same_basename
 run_test "claude remote-control cleanup removes only orphan worktrees" test_claude_remote_control_cleanup_removes_only_orphan_worktrees
 run_test "claude remote-control cleanup preserves special-character worktrees" test_claude_remote_control_cleanup_preserves_special_character_worktrees
+run_test "claude remote-control cleanup preserves nested worktrees" test_claude_remote_control_cleanup_preserves_nested_worktrees
+run_test "claude remote-control cleanup resolves nested worktree paths" test_claude_remote_control_cleanup_resolves_nested_worktree_paths
+run_test "claude remote-control cleanup removes symlink entries only" test_claude_remote_control_cleanup_removes_symlink_entries_only
+run_test "claude remote-control cleanup keeps ancestors of unresolvable worktrees" test_claude_remote_control_cleanup_keeps_ancestors_of_unresolvable_worktrees
 run_test "claude remote-control cleanup skips sweep when worktree list fails" test_claude_remote_control_cleanup_skips_sweep_when_worktree_list_fails
 run_test "claude remote-control cleanup skips sweep on unparseable worktree list" test_claude_remote_control_cleanup_skips_sweep_on_unparseable_worktree_list
 run_test "claude remote-control maint reconciles declarations" test_claude_remote_control_maint_reconciles_declared_instances
@@ -271,7 +275,6 @@ run_test "wt cleanup name-filter merged without upstream needs no confirm" test_
 run_test "wt cleanup name-filter confirmed dirty merged removes" test_wt_cleanup_name_filter_confirmed_dirty_merged_removes
 run_test "wt cleanup name-filter current worktree reports root command" test_wt_cleanup_name_filter_current_worktree_reports_root_command
 run_test "wt cleanup auto reports current merged exclusion" test_wt_cleanup_auto_reports_current_merged_exclusion
-run_test "wt tmux session-state classification unit" test_wt_tmux_session_state_classification_unit
 run_test "wt head-unchanged guard unit" test_wt_head_unchanged_guard_unit
 run_test "wt pr-status returns verified oid unit" test_wt_pr_status_returns_verified_oid_unit
 run_test "wt guarded remove rechecks branch unit" test_wt_remove_worktree_guarded_rechecks_branch_unit
@@ -282,8 +285,23 @@ run_test "wt forced remove keeps path when remove fails unit" test_wt_remove_wor
 run_test "wt remove refuses unknown lock state unit" test_wt_remove_worktree_refuses_unknown_lock_state_unit
 run_test "wt remove failure notes registration state unit" test_wt_remove_worktree_failure_notes_registration_state_unit
 run_test "wt remove preserves active process worktree unit" test_wt_remove_worktree_preserves_active_process_unit
-run_test "wt remove closes tmux before worktree remove unit" test_wt_remove_worktree_closes_tmux_before_remove_unit
-run_test "wt remove guarded closes tmux after worktree remove unit" test_wt_remove_worktree_guarded_closes_tmux_after_remove_unit
+run_test "wt cwd holders process table unit" test_wt_cwd_holders_process_table_unit
+run_test "wt cwd holders fail closed unit" test_wt_cwd_holders_fails_closed_unit
+run_test "wt active process guard messages unit" test_wt_active_process_blocks_messages_unit
+run_test "wt cleanup preserves worktree held by process" test_wt_cleanup_preserves_worktree_held_by_process
+run_test "wt recreate preserves worktree held by process" test_wt_recreate_preserves_worktree_held_by_process
+run_test "wt cleanup active guard matches physical folder" test_wt_cleanup_active_guard_matches_physical_folder
+run_test "wt cleanup --yes bypasses active guard only when named" test_wt_cleanup_yes_bypasses_active_guard_only_when_named
+run_test "wt recreate --yes bypasses active guard" test_wt_recreate_yes_bypasses_active_guard
+run_test "wt remove active guard bypass scope unit" test_wt_remove_worktree_active_guard_bypass_scope_unit
+run_test "wt cleanup active guard hint names nested worktree" test_wt_cleanup_active_guard_hint_names_nested_worktree
+run_test "wt guarded remove failure hint names nested worktree unit" test_wt_remove_worktree_guarded_failure_hint_names_nested_worktree_unit
+run_test "wt lsof escape path unit" test_wt_lsof_escape_path_unit
+run_test "wt cwd holders fail closed on control char path unit" test_wt_cwd_holders_fails_closed_on_control_char_path_unit
+run_test "wt cleanup active guard matches escaped path" test_wt_cleanup_active_guard_matches_escaped_path
+run_test "wt cleanup confirmed dirty keeps active guard" test_wt_cleanup_confirmed_dirty_keeps_active_guard
+run_test "wt cwd holders ancestor caffeinate unit" test_wt_cwd_holders_ancestor_caffeinate_unit
+run_test "wt cleanup ancestor caffeinate does not block" test_wt_cleanup_ancestor_caffeinate_does_not_block
 run_test "missing managed helpers fail closed" test_missing_managed_helpers_fail_closed
 run_test "missing wt Python helpers fail state changes" test_missing_wt_python_helpers_fail_state_changes
 run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_python_helpers_fail_cleanup_state_changes
@@ -390,7 +408,24 @@ run_test "folder-actions quarantine_or_abort branches" test_folder_actions_quara
 run_test "upload-immich missing credential branch is quiet" test_upload_immich_missing_credential_branch_is_quiet_or_skipped
 run_test "folder-actions tool jobs keep input when required tool is missing" test_folder_actions_tool_jobs_keep_input_when_required_tool_missing
 run_test "folder-actions compress-rar runs with launchd minimal PATH" test_folder_actions_compress_rar_runs_with_launchd_minimal_path
+run_test "folder-actions compress-rar keeps earlier archive for same name" test_folder_actions_compress_rar_keeps_earlier_archive_for_same_name
+run_test "folder-actions compress-rar separates same-stem inputs" test_folder_actions_compress_rar_separates_same_stem_inputs
+run_test "folder-actions compress-rar skips existing output entries" test_folder_actions_compress_rar_skips_existing_output_entries
+run_test "folder-actions compress-rar reserves output name atomically" test_folder_actions_compress_rar_reserves_output_name_atomically
+run_test "folder-actions compress-rar creates missing Downloads" test_folder_actions_compress_rar_creates_missing_downloads
+run_test "folder-actions compress-rar stops run when Downloads is unusable" test_folder_actions_compress_rar_stops_run_when_downloads_unusable
+run_test "folder-actions compress-rar quarantines input when name cannot be reserved" test_folder_actions_compress_rar_quarantines_input_when_name_cannot_be_reserved
+run_test "folder-actions compress-rar keeps input when rar fails" test_folder_actions_compress_rar_keeps_input_when_rar_fails
+run_test "folder-actions compress-rar keeps reserved dir with other entries after rar failure" test_folder_actions_compress_rar_keeps_reserved_dir_with_other_entries_after_rar_failure
+run_test "folder-actions compress-rar signal removes only empty reserved dir" test_folder_actions_compress_rar_signal_removes_only_empty_reserved_dir
 run_test "folder-actions video jobs run with launchd minimal PATH" test_folder_actions_video_jobs_run_with_launchd_minimal_path
+run_test "upload-immich keeps originals the CLI did not upload" test_upload_immich_keeps_originals_the_cli_did_not_upload
+run_test "upload-immich notification counts remaining originals" test_upload_immich_notification_counts_remaining_originals
+run_test "upload-immich deletes only live server duplicates" test_upload_immich_deletes_only_live_server_duplicates
+run_test "upload-immich keeps originals when server check fails" test_upload_immich_keeps_originals_when_server_check_fails
+run_test "upload-immich CLI major matches server image" test_upload_immich_cli_major_matches_server_image
+run_test "upload-immich rejects malformed check ids" test_upload_immich_rejects_malformed_check_ids
+run_test "upload-immich rechecks before deleting duplicates" test_upload_immich_rechecks_before_deleting_duplicates
 run_test "karakeep fallback-sync success removes only matched queue URL" test_karakeep_fallback_sync_success_removes_only_matched_queue_url
 run_test "karakeep fallback-sync query-only difference is held" test_karakeep_fallback_sync_query_only_difference_is_held
 run_test "karakeep fallback-sync upload failure preserves queue" test_karakeep_fallback_sync_upload_failure_preserves_queue_and_records_notify_state
@@ -467,6 +502,15 @@ run_test "immich originals mirror mount guard checks MOUNT_ROOT, not DEST_DIR" t
 run_test "immich originals mirror blocks rsync when destination outside mount" test_immich_originals_mirror_destination_outside_mount_blocks_rsync
 run_test "immich originals mirror rejects mount prefix without directory boundary" test_immich_originals_mirror_mount_prefix_without_directory_boundary_is_rejected
 run_test "immich originals mirror does not create dest dir before mount guard" test_immich_originals_mirror_unmounted_target_does_not_create_dest_dir
+run_test "immich DB restore doc invocations match suite" test_immich_restore_doc_invocations_match_suite
+run_test "immich DB restore dump switches and reverts" test_immich_restore_dump_switch_and_revert
+run_test "immich DB restore sql.gz switches" test_immich_restore_sql_gz_switch
+run_test "immich DB restore legacy forms fail on root-only backup" test_immich_restore_legacy_forms_fail_on_root_only_backup
+run_test "immich DB restore failures keep existing DB" test_immich_restore_failures_keep_existing_db
+run_test "immich DB restore switch refuses open connections" test_immich_restore_switch_refuses_open_connections
+run_test "immich DB restore switch refuses unverified restore" test_immich_restore_switch_refuses_unverified_restore
+run_test "immich DB restore interrupted restore is not switched" test_immich_restore_interrupted_restore_is_not_switched
+run_test "immich DB restore switch refuses forbidden downgrade" test_immich_restore_switch_refuses_forbidden_downgrade
 run_test "immich cleanup paginates v3 nextPage string" test_immich_cleanup_v3_paginates_next_page_string
 run_test "immich cleanup preserves empty album notification" test_immich_cleanup_v3_empty_album_preserves_notification
 run_test "immich cleanup rejects invalid asset id" test_immich_cleanup_v3_rejects_invalid_asset_id
@@ -614,6 +658,22 @@ run_test "add-host NixOS preserves existing default.nix" test_add_host_nixos_pre
 run_test "add-host NixOS mv failure leaves no partial file and removes created dir" test_add_host_nixos_mv_failure_leaves_no_partial_file_and_removes_created_dir
 run_test "add-host NixOS write failure leaves no partial file and removes created dir" test_add_host_nixos_write_failure_leaves_no_partial_file_and_removes_created_dir
 run_test "add-host NixOS printf failure leaves no partial file and removes created dir" test_add_host_nixos_printf_failure_leaves_no_partial_file_and_removes_created_dir
+run_test "add-host secret guide workdir has rules file" test_add_host_secret_guide_workdir_has_rules_file
+run_test "add-host secret guide checks recipients per target" test_add_host_secret_guide_checks_recipients_per_target
+
+# ═══════════════════════════════════════════════════════════════════
+# managing-secrets 문서 — 인벤토리·호스트 추가 절차와 secrets/ 선언의 정합성 (#1396)
+# ═══════════════════════════════════════════════════════════════════
+run_test "managing-secrets inventory matches age files and rules" test_managing_secrets_inventory_matches_age_files_and_rules
+run_test "managing-secrets host add workflow checks recipients per target" test_managing_secrets_host_add_workflow_checks_recipients_per_target
+run_test "managing-secrets group parser accepts inline key lists" test_managing_secrets_group_parser_accepts_inline_key_lists
+
+# ═══════════════════════════════════════════════════════════════════
+# neovim-clipboard suite (tests/suites/neovim-clipboard.sh) — tmux 밖 SSH의 OSC 52 복사 (#1453)
+# ═══════════════════════════════════════════════════════════════════
+run_test "neovim clipboard uses OSC 52 only for Linux SSH outside tmux" test_neovim_clipboard_osc52_only_for_linux_ssh_outside_tmux
+run_test "neovim SSH clipboard paste returns last copy without query" test_neovim_ssh_clipboard_paste_returns_last_copy_without_query
+run_test "neovim SSH clipboard paste before copy uses register 0" test_neovim_ssh_clipboard_paste_before_copy_uses_register_zero
 
 # 퇴역 키 로더는 tomlkit 없이도 도는 순수 셸 계약이라 아래 게이트 밖에 둔다.
 run_test "codex-config retired keys loader" test_codex_config_retired_keys_loader

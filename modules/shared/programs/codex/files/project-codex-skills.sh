@@ -64,6 +64,8 @@ $DRY_RUN_CMD mkdir -p "$TARGET_SKILLS"
 # shared global `~/.codex/skills/` exposure 정책(exposedCodexSkills / intentionallyNotExposed)과
 # 별개의 축이며, SoT는 default.nix의 let 블록이다 (#486).
 CODEX_EXCLUDE_SKILLS="using-codex-exec"
+# 관리 링크 자리에 남은 실디렉토리·파일을 보존할 때 경고에 붙이는 조치 (#1455).
+KEEP_ACTION="review its contents, move or delete it, then rerun nrs"
 for source_skill_dir in "$SOURCE_SKILLS"/*/; do
   [ -d "$source_skill_dir" ] || continue
   [ -f "$source_skill_dir/SKILL.md" ] || continue
@@ -82,10 +84,10 @@ for source_skill_dir in "$SOURCE_SKILLS"/*/; do
     continue
   fi
 
-  # 미래 방어: git이 추적하는 실디렉토리를 심링크로 덮어쓰지 않음
-  # 향후 디렉토리→심링크 전환이 발생할 때, git pull 전에 nrs가 실행되어
-  # HEAD와 파일시스템이 불일치하는 것을 방지 (PR#38 사후 분석에서 도출)
+  # 관리 링크 자리의 실디렉토리는 추적 여부와 관계없이 지우지 않는다 (#1455). 그 안을 만들던
+  # 옛 파일 복사 투영(#38 이전)은 사라졌으므로, 남은 실디렉토리는 사용자 자료일 수 있다.
   if [ -d "$target_link" ] && [ ! -L "$target_link" ]; then
+    # git이 추적하는 실디렉토리는 git pull 전에 nrs가 먼저 돈 경우다 (PR#38 사후 분석에서 도출).
     tracked_rc=0
     "$GIT_BIN" -C "$PROJECT_DIR" ls-files --error-unmatch "$target_link/SKILL.md" >/dev/null 2>&1 \
       || tracked_rc=$?
@@ -96,13 +98,23 @@ for source_skill_dir in "$SOURCE_SKILLS"/*/; do
     # --error-unmatch는 미추적이면 1로 끝난다. 그 밖의 실패(저장소가 아님 등)는 추적 여부를
     # 모른다는 뜻이므로 미추적으로 간주하지 않고 보존한다.
     if [ "$tracked_rc" -ne 1 ]; then
-      echo "Warning: keeping .agents/skills/$skill_name: cannot tell whether it is git-tracked (git ls-files exit $tracked_rc)" >&2
+      echo "Warning: keeping .agents/skills/$skill_name: cannot tell whether it is git-tracked (git ls-files exit $tracked_rc); $KEEP_ACTION" >&2
       continue
     fi
+    # SKILL.md가 없거나 미추적이면 디렉토리 전체가 미추적이든 다른 파일은 추적이든 보존한다. 고아 정리의
+    # 보존 경고와 같이 rc는 바꾸지 않고, 정리는 사람이 판단한다 (verify-ai-compat.sh도 실패로 보고한다).
+    echo "Warning: keeping .agents/skills/$skill_name: real directory in place of the managed projection link $expected (SKILL.md is missing or not git-tracked); $KEEP_ACTION" >&2
+    continue
+  fi
+  if [ -e "$target_link" ] && [ ! -L "$target_link" ]; then
+    echo "Warning: keeping .agents/skills/$skill_name: file in place of the managed projection link $expected; $KEEP_ACTION" >&2
+    continue
   fi
 
-  # 미추적 디렉토리 또는 잘못된 심링크 제거 후 생성
-  $DRY_RUN_CMD rm -rf "$target_link"
+  # 누락이면 만들고, 다른 대상을 가리키는 심링크면 그 링크만 바꾼다 (링크 대상은 건드리지 않는다).
+  # 실디렉토리·파일은 위에서 모두 건너뛰므로 rm -rf를 쓰지 않는다 — rm -f는 디렉토리를 지우지
+  # 못하고 실패하므로, 위 분기가 깨져도 사용자 자료를 지우는 대신 activation이 멈춘다.
+  $DRY_RUN_CMD rm -f "$target_link"
   $DRY_RUN_CMD ln -sfn "$expected" "$target_link"
 done
 

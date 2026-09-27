@@ -20,7 +20,7 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from .ankiconnect import AnkiConnect
-from .authoring import AUTHORING_GUIDANCE
+from .authoring import compose_guidance
 from .helper import Helper
 from .managed import DEFAULT_MODEL, ManagedService
 from .operations import OperationService
@@ -71,7 +71,10 @@ class NewNote(BaseModel):
     deck_name: str = Field(description="Target deck (existing; use anki_create_deck first if needed)")
     model_name: str = Field(description="Note type name, e.g. 'Basic' or 'Cloze' (see anki_models)")
     fields: dict[str, str] = Field(description="Field values by field name; HTML allowed")
-    tags: list[str] = Field(default_factory=list, description="Tags to add; 'mcp::added' is always appended")
+    tags: list[str] = Field(
+        default_factory=list,
+        description="Only tags the user explicitly asks for; do not invent new tags. 'mcp::added' is always appended",
+    )
 
 
 class NoteFieldUpdate(BaseModel):
@@ -243,10 +246,13 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         """Full note details for the given note ids (fields untruncated by default).
         Before reviewing a note with a 검토 메모 field, read its complete memo here, including all paragraphs.
         The memo is shared by sibling cards. Do not clear or rewrite it merely because a review mark is removed.
-        After completing the requested review work and necessary readback, report results and ask once for
-        the completed notes: clear both star and memo, clear only the star, or keep both. Merely listing or
-        reading notes is not completion. Keep both unchanged while awaiting the choice; do not ask again
-        if the user already explicitly authorized that cleanup choice for those notes.
+        After completing the requested review work and necessary readback, report results and ask once, as one
+        multiple-choice question for all completed notes: clear both star and memo / clear only the star /
+        keep both / still working (ask again later). Use your client's multiple-choice question tool if it has
+        one; otherwise ask in chat. Recommend one choice with a brief reason, such as whether the memo is still
+        needed. Merely listing or reading notes is not completion. Keep both unchanged
+        while awaiting the choice or when still working; do not ask again if the user already explicitly
+        authorized that cleanup choice for those notes.
         Exclude notes with unfinished work or unresolved memo questions, including those about sibling cards.
         Before clearing, reread the current full memo; if it changed since the choice was offered, preserve it
         and reconfirm. For either field-update tool, clear a memo only with expected_fields containing its
@@ -297,22 +303,24 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
 
     @mcp.tool(name="anki_tags", annotations=READ_ONLY)
     async def anki_tags() -> dict[str, Any]:
-        """All tags in the collection."""
+        """All tags in the collection, including registered tags that no note uses anymore."""
         freshness = read_freshness(deps.sync_status_file)
         return {"tags": await anki.invoke("getTags"), "freshness": freshness}
 
-    @mcp.tool(name="anki_add_notes", annotations=ADDITIVE, description=(
-        "Add notes. Every note gets the 'mcp::added' tag so MCP-created cards stay identifiable. "
+    # 쓰기 도구 문구는 첫 문장 뒤에 필수 문장을 먼저 둔다. Claude 웹·앱은 도구 설명의 앞 2,048자만 넘긴다(#1440).
+    @mcp.tool(name="anki_add_notes", annotations=ADDITIVE, description=compose_guidance(
+        "Add notes. "
+        "Inspect the separate link_check for newly missing stored Note Linker references; never repeat a write to rerun it. "
+        "Reuse request_id for every retry. "
+        "In 검토 메모, use plain-language cloze examples such as 'c1: answer', never literal cloze markup: "
+        "it can generate cards even in a hidden memo field.\n"
+        "Every note gets the 'mcp::added' tag so MCP-created cards stay identifiable. "
         "Duplicates (same first field in the deck) are rejected unless allow_duplicate. Returns an operation receipt "
         "with per-note outcomes in result.results (null noteId = unconfirmed/failed, see errors). "
-        "Inspect the separate link_check for newly missing stored Note Linker references; never repeat a write to rerun it. "
         "Managed-type drift or unavailable checks block creation before any write; split mixed-type batches. "
         "Use anki_managed_model_check to inspect the applied baseline and available choices. "
-        "Normal sync runs before and after writes. Reuse request_id "
-        "for every retry. More than 20 affected notes/cards returns a preview requiring user confirmation. "
-        "In 검토 메모, use plain-language cloze examples such as 'c1: answer', never literal cloze markup: "
-        "it can generate cards even in a hidden memo field.\n\n"
-        + AUTHORING_GUIDANCE
+        "Normal sync runs before and after writes. "
+        "More than 20 affected notes/cards returns a preview requiring user confirmation."
     ))
     async def anki_add_notes(notes: list[NewNote], allow_duplicate: bool = False,
                              request_id: str | None = None, preview_token: str | None = None,
@@ -322,20 +330,20 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         return await operations.run("add_notes", {"notes": [n.model_dump() for n in notes], "allow_duplicate": allow_duplicate},
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
 
-    @mcp.tool(name="anki_update_note_fields", annotations=UPDATE, description=(
-        "Replace the given fields of a note (other fields unchanged). Card ids, scheduling and review "
-        "history are preserved for existing cards. Changed templates/cloze fields may generate new cards. "
-        "Returns an operation receipt; use anki_note_info for readback. Reuse request_id for retries. "
-        "Inspect link_check for newly missing stored Note Linker references; diagnostic failure does not undo the write. "
-        "Managed-type drift or unavailable checks block field writes; inspect anki_managed_model_check. "
-        "A verified media-free restore point is created before every field edit, including one note. "
+    @mcp.tool(name="anki_update_note_fields", annotations=UPDATE, description=compose_guidance(
+        "Replace the given fields of a note (other fields unchanged). Reuse request_id for retries. "
         "For read-modify-write changes, pass expected_fields with exact old values for the same keys. "
         "검토 메모 can contain multiple paragraphs. Describe cloze examples as 'c1: answer', never literal "
-        "cloze markup: it can generate cards even in a hidden memo field. Do not silently rewrite an existing memo.\n"
+        "cloze markup: it can generate cards even in a hidden memo field. Do not silently rewrite an existing memo. "
         "Clearing 검토 메모 requires the user's explicit cleanup choice and expected_fields with the exact "
         "last-read full memo. On expected-field-value-mismatch, preserve the memo and star, reread and "
-        "reconfirm; do not drop the guard or automatically replace its value. Follow anki_note_info.\n\n"
-        + AUTHORING_GUIDANCE
+        "reconfirm; do not drop the guard or automatically replace its value. Follow anki_note_info.\n"
+        "Card ids, scheduling and review history are preserved for existing cards. "
+        "Changed templates/cloze fields may generate new cards. "
+        "Returns an operation receipt; use anki_note_info for readback. "
+        "Inspect link_check for newly missing stored Note Linker references; diagnostic failure does not undo the write. "
+        "Managed-type drift or unavailable checks block field writes; inspect anki_managed_model_check. "
+        "A verified media-free restore point is created before every field edit, including one note."
     ))
     async def anki_update_note_fields(note_id: int, fields: dict[str, str], expected_fields: dict[str, str] | None = None,
                                      request_id: str | None = None,
@@ -346,25 +354,25 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         return await operations.run("update_fields", params,
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
 
-    @mcp.tool(name="anki_update_notes_fields", annotations=UPDATE, description=(
-        "Replace selected fields on multiple existing notes in one operation. Each note_id must occur\n"
-        "once; read all original fields first with anki_note_info. Other fields and existing cards'\n"
-        "scheduling/history remain unchanged; changed templates/cloze fields can generate new cards.\n"
-        "Creates one verified media-free restore point and uses one pre/post sync pair and notification.\n"
-        "More than 20 affected notes/cards, including anticipated new cards, requires preview/confirmation.\n"
-        "For migrations, include expected_fields with each note's exact old values for the replaced keys;\n"
-        "a mismatch after pre-sync rejects the whole operation before backup or writes.\n"
-        "If a managed type has drift or an unavailable check, the entire mixed-type batch is rejected before writes; "
-        "split the batch and inspect anki_managed_model_check.\n"
-        "Inspect the separate link_check for newly missing stored Note Linker references, including partial writes.\n"
-        "Results list each note as applied, unknown or not-attempted. An uncertain write stops the batch;\n"
-        "no automatic rollback. Inspect partial/unknown receipts instead of repeating with a new request_id.\n"
-        "Reuse the same request_id for retries. 검토 메모 supports multiple paragraphs: describe cloze\n"
-        "examples as 'c1: answer', never literal cloze markup, and do not silently rewrite an existing memo.\n"
+    @mcp.tool(name="anki_update_notes_fields", annotations=UPDATE, description=compose_guidance(
+        "Replace selected fields on multiple existing notes in one operation. "
+        "Inspect partial/unknown receipts instead of repeating with a new request_id. "
+        "Reuse the same request_id for retries. 검토 메모 supports multiple paragraphs: describe cloze "
+        "examples as 'c1: answer', never literal cloze markup, and do not silently rewrite an existing memo. "
         "Clearing 검토 메모 requires the user's explicit cleanup choice and expected_fields with each note's "
         "exact last-read full memo. On expected-field-value-mismatch, preserve all memos and stars, reread "
-        "and reconfirm; do not drop the guard or automatically replace its value. Follow anki_note_info.\n\n"
-        + AUTHORING_GUIDANCE
+        "and reconfirm; do not drop the guard or automatically replace its value. Follow anki_note_info.\n"
+        "Each note_id must occur once; read all original fields first with anki_note_info. Other fields and "
+        "existing cards' scheduling/history remain unchanged; changed templates/cloze fields can generate new cards. "
+        "Creates one verified media-free restore point and uses one pre/post sync pair and notification. "
+        "More than 20 affected notes/cards, including anticipated new cards, requires preview/confirmation. "
+        "For migrations, include expected_fields with each note's exact old values for the replaced keys; "
+        "a mismatch after pre-sync rejects the whole operation before backup or writes. "
+        "If a managed type has drift or an unavailable check, the entire mixed-type batch is rejected before writes; "
+        "split the batch and inspect anki_managed_model_check. "
+        "Inspect the separate link_check for newly missing stored Note Linker references, including partial writes. "
+        "Results list each note as applied, unknown or not-attempted. "
+        "An uncertain write stops the batch; no automatic rollback."
     ))
     async def anki_update_notes_fields(
         notes: Annotated[list[NoteFieldUpdate], Field(min_length=1)],
@@ -377,7 +385,10 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     @mcp.tool(name="anki_add_tags", annotations=UPDATE)
     async def anki_add_tags(note_ids: list[int], tags: list[str], request_id: str | None = None,
                             preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
-        """Add tags to notes (space-separated internally; each tag must not contain spaces)."""
+        """Add tags to notes (space-separated internally; each tag must not contain spaces).
+        Do not invent new tags. Deck and 맥락 already carry the topic and suspension carries status;
+        do not encode order or dates in tags. Add only tags the user explicitly asks for, such as 'marked'
+        for the review queue; new notes get 'mcp::added' from anki_add_notes automatically."""
         check_tags(tags)
         return await operations.run("add_tags", {"note_ids": note_ids, "tags": tags},
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
@@ -386,8 +397,8 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     async def anki_remove_tags(note_ids: list[int], tags: list[str], request_id: str | None = None,
                                preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
         """Remove tags from notes (each tag must not contain spaces).
-        For review cleanup, follow anki_note_info: ask once whether to clear both star and memo, only the star,
-        or neither, unless that choice was already explicitly authorized. Without a choice, change neither.
+        For review cleanup, follow anki_note_info's single cleanup question unless that choice was already
+        explicitly authorized. Without a choice, change neither the star nor the memo.
         Remove only 'marked' from the approved, fully completed notes; preserve all other tags."""
         check_tags(tags)
         return await operations.run("remove_tags", {"note_ids": note_ids, "tags": tags},

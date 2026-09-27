@@ -115,7 +115,7 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 
 Immich: API 버전 조회 가능 → "현재 v2.5.5 → 최신 v2.6.0" 형태 알림. 상세: [references/immich-update.md](references/immich-update.md)
 
-Immich DB 백업: `immich-db-backup` 서비스가 매일 05:30에 `podman exec immich-postgres pg_dump -Fc`로 커스텀 포맷 백업 생성. 대상 HDD(`mediaData`) 마운트 가드(`RequiresMountsFor` + 스크립트 `mountpoint` 검사), 디스크 공간 검사, pg_restore --list 무결성 검증, 원자적 파일 이동, 30일 보관. 실패 시 Pushover 알림 (`pushover-immich` 재사용). `sudo systemctl start immich-db-backup`으로 수동 실행.
+Immich DB 백업: `immich-db-backup` 서비스가 매일 05:30에 `podman exec immich-postgres pg_dump -Fc`로 커스텀 포맷 백업 생성. 대상 HDD(`mediaData`) 마운트 가드(`RequiresMountsFor` + 스크립트 `mountpoint` 검사), 디스크 공간 검사, pg_restore --list 무결성 검증, 원자적 파일 이동, 30일 보관. 실패 시 Pushover 알림 (`pushover-immich` 재사용). `sudo systemctl start immich-db-backup`으로 수동 실행. 복구는 별도 DB에 복원·검증한 뒤 이름을 맞바꾼다 — 절차: [references/immich-update.md](references/immich-update.md)의 "DB 백업/복원" 절.
 
 Immich 원본 미러·Anki(headless) 백업도 대상 HDD(`mediaData`) 마운트를 `RequiresMountsFor`로 요구한다 (`immich-originals-mirror`는 스크립트 자체에도 `mountpoint` 검사가 있다) — HDD는 `nofail`이라 미마운트여도 부팅은 계속되므로, 마운트 없이 쓰기·삭제·성공 기록이 진행되지 않도록 막는 가드다. `RequiresMountsFor`가 막으면 스크립트가 아예 실행되지 않아 실패 Pushover 알림도 나가지 않는다 — 그 무실행은 스모크 테스트의 백업 신선도 검사(아래 "런타임 스모크 테스트" 절)로 드러난다. 다만 원본 미러(`immich-originals-mirror`)는 신선도 검사 대상이 아니므로, 미마운트가 오래 지속되면 그 사이엔 드러나지 않는다.
 
@@ -151,7 +151,7 @@ macOS에서 `~/FolderActions/upload-immich/`에 파일을 넣으면 Immich에 �
 1. OCI 백엔드 미설정: `runtime.nix`의 `backend = "podman"` 확인
 2. ML OOM: CPU 버전 이미지로 변경
 3. IP 바인딩 실패: `tailscale-wait.nix`가 올바르게 import 되었는지 확인
-4. DB 비밀번호 오류: `secrets/immich-db-password.age` 존재 확인, `cd secrets && nix run github:ryantm/agenix -- -r` 재암호화
+4. DB 비밀번호 오류: `secrets/immich-db-password.age` 존재 확인, recipient가 바뀌었으면 그 항목만 재암호화 ([managing-secrets workflows.md](../managing-secrets/references/workflows.md) "호스트 추가")
 5. Uptime Kuma에서 localhost 서비스 모니터링 불가: `--network=host` 필수 (기본 브릿지에서는 `127.0.0.1` 접근 불가)
 6. Caddy HTTPS 인증서 발급 실패: Cloudflare API 토큰 키 존재 확인 (원문 미출력, `sudo grep -q '^CLOUDFLARE_API_TOKEN=.' /run/caddy/env && echo 설정됨 || echo 없음` — `envScript`에 `set -e`가 없어 토큰 읽기가 실패해도 빈 값으로 키를 쓸 수 있으므로 `=` 뒤 문자 존재까지 확인), `systemctl status caddy-env`
 
@@ -160,7 +160,7 @@ macOS에서 `~/FolderActions/upload-immich/`에 파일을 넣으면 Immich에 �
 - 트러블슈팅: [references/troubleshooting.md](references/troubleshooting.md)
 - Immich 설정: [references/immich-setup.md](references/immich-setup.md)
 - Scriptable 업로드: [references/scriptable-immich-upload.md](references/scriptable-immich-upload.md)
-- Immich 업데이트: [references/immich-update.md](references/immich-update.md)
+- Immich 업데이트·DB 복구: [references/immich-update.md](references/immich-update.md)
 - 통합 서비스 업데이트: [references/service-update-system.md](references/service-update-system.md)
 - FolderAction 자동 업로드: [references/folder-action.md](references/folder-action.md)
 - 모바일 SSH 이미지 전달: [references/mobile-ssh-image.md](references/mobile-ssh-image.md)

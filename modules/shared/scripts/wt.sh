@@ -41,7 +41,7 @@
 #    수정: 래퍼 self-gate(WT_NONINTERACTIVE/stdin 비TTY/stdout 비TTY → 바이너리 passthrough),
 #          tmux UI 부수효과(윈도우 생성/전환)는 _wt_tmux_ui_allowed 단일 정책으로 대화형 한정,
 #          --stay도 비대화형에서는 stdout 경로 출력.
-# v9 (이번 변경): tmux·Claude presentation 제거 — wt는 worktree 관리만 한다
+# v9 (#1299): tmux·Claude presentation 제거 — wt는 worktree 관리만 한다
 #    배경: v6~v8이 쌓은 UI 정책(대화형이면 윈도우/세션, 아니면 경로)은 같은 명령이 문맥에
 #          따라 다른 일을 하게 만들었고, 그 분기가 CLI 플래그·핸들러 시그니처·셸 래퍼·
 #          문서·테스트를 모두 관통했다. 조사 결과 세 플래그(--stay/--claude/--tmux)와
@@ -58,6 +58,28 @@
 #    소멸: v8의 _wt_tmux_ui_allowed 단일 정책, 그리고 직전 변경(#1285)이 `wt cd --tmux`에서
 #          고친 세션명 충돌(basename → 표시 이름)이 그 호출부와 함께 사라졌다. 남은
 #          _wt_session_name은 이미 떠 있는 legacy 세션을 찾아 닫는 용도뿐이라 규칙 고정이다.
+# v10 (#1452): 활성 작업 보호를 tmux 창 검사에서 프로세스 cwd 탐지로 교체, tmux 코드 제거
+#    배경: worktree는 주로 tmux 밖 터미널 탭에서 쓴다. pane만 보던 판정은 편집기·에이전트가
+#          떠 있는 worktree도 "쓰지 않음"으로 통과시켜, v9가 보존한 가드의 목적(쓰는 중인
+#          worktree를 cleanup·재생성에서 지킨다)을 달성하지 못했다.
+#    교체: v9 보존 항목 중 활성 프로세스 판정은 목적을 유지하고 수단을 바꿨다 — worktree
+#          폴더(하위 포함)를 cwd로 둔 프로세스를 lsof로 찾는다(lib/wt/process.sh). 유휴 셸도
+#          막고, 탐지에 실패하면 멈춘다. wt 자신·조상·자손과 다른 사용자 프로세스는 뺀다.
+#          조상이 띄운 caffeinate도 뺀다(사용자 결정 보정) — Claude Code 세션이 작업 중 계속
+#          띄우는 잠자기 방지 프로세스라, 빼지 않으면 worktree에서 시작한 세션의 정리가 매번
+#          막힌다. 파일을 쓰지 않으므로 명령 이름 예외 없음의 유일한 예외로 둔다.
+#    제거: pane lookup, 창·세션 닫기, 무확인 삭제의 `wt-` 세션 존재 스킵, _wt_session_name.
+#          창·세션 닫기는 사라진 cwd를 붙잡은 pane을 남기지 않으려는 수단이었다. 유휴 셸까지
+#          막는 지금은 그런 pane이 생기기 전에 제거가 멈춘다. 세션 이름 규칙을 고정하던
+#          이유(이미 떠 있는 legacy 세션 찾기)는 `wt-` 세션이 남지 않았음을 사용자가 확인해
+#          사라졌다.
+#    --yes: 이름을 지정하거나 대화형으로 고른 정리와 재생성(대화형 선택 포함)만 활성 가드를
+#          우회한다(막힐 때 PID·명령을 보여 준 뒤의 판단). `wt cleanup --auto --yes`는 쓰는
+#          중인 worktree를 건너뛴다. 잠금과 wt를 실행한 셸의 cwd 가드는 --yes로도 우회하지
+#          않는다.
+#    남는 제약: cwd가 worktree 밖인 프로세스(폴더를 연 GUI 편집기 등), 다른 사용자·root
+#          프로세스, 탐지 뒤 제거 전에 새로 들어온 프로세스는 막지 못한다. 샌드박스가 다른
+#          프로세스 정보만 가리면 lsof가 정상 종료하면서 일부만 내어 탐지가 통과한다.
 
 set -euo pipefail
 
@@ -73,7 +95,7 @@ WT_DEPLOYED_LIB_DIR="$(cd "$WT_SCRIPT_DIR/.." && pwd)/lib/wt"
 WT_REPO_LIB_DIR=""
 WT_HELPERS=(
   ui
-  tmux
+  process
   git-state
   bootstrap
   create
@@ -129,7 +151,7 @@ Git worktree 관리 도구 (fzf TUI; 비대화형/LLM 셸 호환)
   --if-exists=MODE        충돌 시 동작: reuse|recreate|fail (비대화형 충돌 시 필수)
                           기존 worktree의 reuse/recreate는 그 경로에 요청 브랜치가
                           checkout돼 있을 때만 (다른 브랜치·detached·조회 실패면 실패)
-  --yes, -y               확인 프롬프트 자동 승인
+  --yes, -y               확인 프롬프트 자동 승인. 재생성에서는 활성 작업 가드도 우회
 
 옵션 (ls):
   --json                  JSON 배열로 출력 (name/branch/path/pr/dirty/unpushed/...)
@@ -140,8 +162,23 @@ Git worktree 관리 도구 (fzf TUI; 비대화형/LLM 셸 호환)
                           자동 승인하고, MERGED 무확인 삭제에 붙는 보호(비강제 제거·
                           제거 직전 재확인·ref CAS)를 해제한다. 단 --auto의 후보 선정과
                           그 경로가 삭제 직전에 다시 보는 dirty·근거(조회 이후 HEAD 변경,
-                          근거 기록 부재 포함)는 우회하지 않는다
+                          근거 기록 부재 포함)는 우회하지 않는다. 이름을 지정하거나
+                          대화형으로 고른 정리에서만 활성 작업 가드도 우회한다. 잠금과
+                          현재 위치한 worktree 제외는 우회하지 않는다
   [name...]               정리할 worktree 이름 직접 지정
+
+활성 작업 가드 (cleanup·재생성):
+  대상 worktree(하위 포함)를 작업 위치(cwd)로 둔 프로세스가 있으면 유휴 셸이라도
+  지우지 않고 PID와 명령을 보여 준다. 탐지(lsof)에 실패하면 원인을 알리고 멈춘다.
+  wt를 부른 셸·세션(조상), 조상이 띄운 caffeinate, wt의 자손은 판정에서 뺀다.
+  우회(--yes): 이름을 지정하거나 대화형으로 고른 정리(wt cleanup <name> --yes)와
+  재생성(wt --yes --if-exists=recreate <branch>, 대화형 선택 포함).
+  wt cleanup --auto --yes는 우회하지 않고 그 worktree를 건너뛴다.
+  막지 못하는 것:
+    다른 사용자·root 프로세스 (현재 사용자 프로세스만 본다)
+    cwd가 worktree 밖인 프로세스 (폴더를 연 GUI 편집기 등)
+    샌드박스가 다른 프로세스 정보만 가린 환경 (lsof가 정상 종료하면서 일부만 내어
+    탐지가 통과한다)
 
 경로 출력:
   생성/이동은 언제나 경로 한 줄을 stdout으로 낸다 — 실제 이동은 셸 래퍼나

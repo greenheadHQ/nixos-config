@@ -61,8 +61,8 @@ run_driver() {
 run_driver "eval-tests" bash tests/run-eval-tests.sh
 
 # 2) shell-script-tests — required CI/수동 전체 회귀. prePushRuntime이 tomlkit + GNU
-#    coreutils/findutils(#1009) + lsof(#1052) + flock + 실제 lefthook을 함께 제공한다. runner 내부
-#    bootstrap은 READY guard로 중첩 wrap을 피한다.
+#    coreutils/findutils(#1009) + lsof(#1052) + flock + 실제 lefthook + PostgreSQL 16(#1397)을 함께
+#    제공한다. runner 내부 bootstrap은 READY guard로 중첩 wrap을 피한다.
 run_driver "shell-script-tests" \
   bash scripts/ai/test-runtime-profile.sh run "$REPO_ROOT" -- bash tests/run-shell-script-tests.sh
 

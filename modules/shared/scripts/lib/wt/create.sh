@@ -4,11 +4,14 @@
 cmd_create() {
   local branch_name=""
   local if_exists=""
+  # --yes는 _confirm 자동 승인(WT_ASSUME_YES)과 함께 재생성의 활성 작업 가드 우회를 뜻한다.
+  # 우회는 이 명령의 정책이라 로컬 상태로 재생성 분기까지 넘긴다 (cleanup.sh와 같은 이유).
+  local active_guard="check"
 
   # 옵션 파싱
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --yes|-y) export WT_ASSUME_YES=1 ;;  # ui.sh _confirm이 소비 (cross-file)
+      --yes|-y) export WT_ASSUME_YES=1; active_guard="bypass" ;;  # WT_ASSUME_YES는 ui.sh _confirm이 소비 (cross-file)
       --if-exists=*) if_exists="${1#--if-exists=}" ;;
       -h|--help) show_help; return 0 ;;
       -*)       _die "알 수 없는 옵션: $1" ;;
@@ -51,7 +54,7 @@ cmd_create() {
   # 기존 디렉토리 처리
   if [[ -d "$worktree_dir" ]]; then
     if [[ -f "$worktree_dir/.git" ]]; then
-      _handle_existing_worktree "$worktree_dir" "$branch_name" "$git_root" "$parent_branch" "$if_exists"
+      _handle_existing_worktree "$worktree_dir" "$branch_name" "$git_root" "$parent_branch" "$if_exists" "$active_guard"
       return $?
     fi
     _die "유효하지 않은 기존 디렉토리가 있습니다: $worktree_dir"
@@ -116,9 +119,11 @@ _wt_verify_requested_checkout() {
   return 1
 }
 
-# 기존 worktree 처리
+# 기존 worktree 처리. active_guard(check|bypass)는 재생성 분기의 활성 작업 가드에 쓴다 —
+# bypass가 아닌 값은 check로 본다.
 _handle_existing_worktree() {
   local worktree_dir="$1" branch_name="$2" git_root="$3" parent_branch="$4" if_exists="${5:-}"
+  local active_guard="${6:-check}"
   local dir_name
   dir_name=$(basename "$worktree_dir")
 
@@ -170,14 +175,16 @@ _handle_existing_worktree() {
         return 1
       fi
 
-      # 활성 프로세스 가드: tmux 윈도우에 실행 중인 프로세스가 있으면 재생성 불가
-      if _wt_has_active_process "$worktree_dir"; then
-        _info "다른 프로세스를 종료한 뒤 다시 시도하세요"
+      # 활성 작업 가드 (bootstrap.sh의 제거 경로와 같은 판정): 다른 프로세스가 이
+      # worktree(하위 포함)를 작업 위치로 두고 있으면 재생성 불가.
+      if [[ "$active_guard" != "bypass" ]] \
+        && _wt_active_process_blocks "재생성 불가: $dir_name" "$worktree_dir" \
+          "wt --yes --if-exists=recreate $(printf '%q' "$branch_name")"; then
         return 1
       fi
 
       # 잠금 가드 (bootstrap.sh의 제거 경로와 같은 계약). git lock은 "다른 주체가 이
-      # worktree를 붙잡고 있다"는 신호를 tmux pane과 독립적으로 낸다. 재생성은 제거를
+      # worktree를 붙잡고 있다"는 신호를 활성 작업 가드와 독립적으로 낸다. 재생성은 제거를
       # 포함하므로 여기서도 잠금을 먼저 본다 — 뚫고 지우면 잠근 주체가 쓰던 디렉토리를
       # 파괴하고, 등록만 남은 유령이 되어 이후 prune은 잠긴 등록을 건너뛰고 add는
       # "missing but locked worktree"로 실패한다(실측). 확인하지 못한 상태(unknown)도
@@ -197,15 +204,6 @@ _handle_existing_worktree() {
           ;;
       esac
 
-      _wt_tmux_close "$worktree_dir" || true
-      # tmux 세션 정리 (연결된 클라이언트 있으면 재생성 중단)
-      local _recreate_session
-      _recreate_session=$(_wt_session_name "$dir_name")
-      _wt_tmux_session_close "$_recreate_session" || {
-        _info "재생성 불가: tmux 세션을 정리하지 못했습니다 (연결된 클라이언트 또는 상태 확인 실패)"
-        _info "세션을 종료한 뒤 다시 시도하세요"
-        return 1
-      }
       local canonical_worktree_dir
       canonical_worktree_dir="$(cd "$worktree_dir" && pwd -P)" || canonical_worktree_dir="$worktree_dir"
       _wt_remove_claude_local_plugins_for_worktree "$worktree_dir" "$canonical_worktree_dir" \

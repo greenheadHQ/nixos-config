@@ -23,6 +23,11 @@ _TEST_RUNTIME_PROFILE_REQUIRED_COMMANDS=(
   bats
   pytest
   timeout
+  initdb
+  pg_ctl
+  psql
+  pg_dump
+  pg_restore
 )
 
 _TEST_RUNTIME_PROFILE_FINGERPRINT_INPUTS=(
