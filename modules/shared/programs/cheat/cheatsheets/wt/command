@@ -63,6 +63,7 @@ wt — Git worktree 관리 (fzf TUI)
       유휴 셸도 막음 (wt는 창을 닫지 않으므로 사라진 cwd를 붙잡은 셸이 남지 않게)
       탐지(lsof, wt 래퍼가 WT_LSOF로 Nix store 경로 주입)에 실패하면 원인을 알리고 스킵
       제외: wt를 부른 셸·세션(조상)과 wt의 자손. 같은 세션이 따로 띄운 셸은 잡힘
+        조상이 띄운 caffeinate도 제외 (세션이 계속 띄우는 잠자기 방지, 파일을 쓰지 않음)
       우회(--yes): 이름 지정·대화형 선택 정리(wt cleanup <name> --yes)와
         재생성(wt --yes --if-exists=recreate <branch>, 대화형 선택 포함)
         --auto --yes는 우회하지 않고 건너뜀. 우회하면 남은 프로세스는 사라진 cwd를 붙잡음
