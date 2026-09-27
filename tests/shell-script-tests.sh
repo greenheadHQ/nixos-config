@@ -577,6 +577,16 @@ run_test "karakeep-update no-args still requires ack-bridge-risk" test_karakeep_
 run_test "karakeep-update ack-bridge-risk preserves existing update flow" test_karakeep_update_ack_bridge_risk_preserves_existing_update_flow
 run_test "karakeep-update --dry-run skips mutating boundaries" test_karakeep_update_dry_run_skips_mutating_boundaries
 
+# ═══════════════════════════════════════════════════════════════════
+# add-host.sh — NixOS 분기 default.nix 생성 (#1382)
+# ═══════════════════════════════════════════════════════════════════
+run_test "add-host NixOS generates default.nix without calling sed" test_add_host_nixos_generates_default_nix_without_calling_sed
+run_test "add-host NixOS matches expected template with system tools" test_add_host_nixos_matches_expected_template_with_system_tools
+run_test "add-host NixOS preserves existing default.nix" test_add_host_nixos_preserves_existing_default_nix
+run_test "add-host NixOS mv failure leaves no partial file and removes created dir" test_add_host_nixos_mv_failure_leaves_no_partial_file_and_removes_created_dir
+run_test "add-host NixOS write failure leaves no partial file and removes created dir" test_add_host_nixos_write_failure_leaves_no_partial_file_and_removes_created_dir
+run_test "add-host NixOS printf failure leaves no partial file and removes created dir" test_add_host_nixos_printf_failure_leaves_no_partial_file_and_removes_created_dir
+
 # 퇴역 키 로더는 tomlkit 없이도 도는 순수 셸 계약이라 아래 게이트 밖에 둔다.
 run_test "codex-config retired keys loader" test_codex_config_retired_keys_loader
 
