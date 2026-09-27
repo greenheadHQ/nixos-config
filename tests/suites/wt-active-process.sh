@@ -2,7 +2,8 @@
 # shellcheck shell=bash
 # SC2154: 공통 변수는 aggregator/test-common이 정의. SC2164: set -euo pipefail 런타임 상속.
 # SC2153: REPO_ROOT도 같은 aggregator 정의 변수다.
-# shellcheck disable=SC2154,SC2164,SC2153
+# SC2329: 단위 테스트는 helper 함수를 같은 이름의 대역으로 덮어써 production 코드가 간접 호출한다.
+# shellcheck disable=SC2154,SC2164,SC2153,SC2329
 #
 # wt의 활성 작업 가드(lib/wt/process.sh): worktree(하위 포함)를 cwd로 둔 프로세스가 있으면
 # 제거·재생성을 멈춘다. 두 층으로 고정한다.
