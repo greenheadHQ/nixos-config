@@ -179,6 +179,7 @@ echo "    e. 확인된 항목만 재암호화한다. EDITOR=:가 agenix까지 �
 echo "       EDITOR=: nix run github:ryantm/agenix -- -e <name>.age -i <identity>"
 echo "       호스트 키(root)는 sudo가 앞에 둔 EDITOR를 넘기지 않으므로 sudo 뒤에 둔다:"
 echo "       sudo EDITOR=: nix run github:ryantm/agenix -- -e <name>.age -i /etc/ssh/ssh_host_ed25519_key"
+echo "       sudo chown \"\$USER\" <name>.age  # root 소유가 된 새 파일을 되돌린다"
 echo "    f. 재암호화한 항목의 바이트 수가 재암호화 전과 같은지 본다 (다르면 git restore <name>.age로 되돌린다):"
 echo "       nix run github:ryantm/agenix -- -d <name>.age -i <identity> | wc -c"
 echo "       sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c  # 호스트 키"
