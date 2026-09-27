@@ -2,6 +2,7 @@
 # Folder Action: RAR 압축 + 체크섬 가이드 생성
 # 감시 폴더: ~/FolderActions/compress-rar/
 # 결과물: ~/Downloads/<파일명>/<파일명>.rar + 데이터_무결성_검증방법.txt
+#         (그 이름이 이미 있으면 <파일명>_2, <파일명>_3 … 폴더에 같은 구조로 만든다)
 
 set -euo pipefail
 
@@ -539,19 +540,46 @@ find_candidates() {
     find "$WATCH_DIR" -maxdepth 1 -type f ! -name ".*"
 }
 
+# 결과 폴더 이름을 예약하고 stdout으로 낸다 (#1403).
+# DEST_ROOT에 <stem>이 없으면 그 이름을, 있으면 <stem>_2, <stem>_3 … 중 아직 없는 첫 이름을 쓴다.
+# 이미 있는 항목은 종류(폴더·파일·심볼릭 링크)와 관계없이 건너뛰어 앞선 결과에 쓰지 않는다.
+# 확보는 mkdir(-p 없이) 한 번으로 한다. 이미 있는 경로면 mkdir이 실패하므로, 없음을 확인한 뒤
+# 다른 실행이 같은 이름을 차지하는 틈이 없다.
+reserve_output_name() {
+    local stem="$1"
+    local name="$stem"
+    local n=1
+
+    /bin/mkdir -p "$DEST_ROOT" || return 1
+    until /bin/mkdir "${DEST_ROOT}/${name}" 2>/dev/null; do
+        # 경로가 없는데 실패했다면 충돌이 아니라 권한·이름 길이 같은 문제다.
+        if [ ! -e "${DEST_ROOT}/${name}" ] && [ ! -L "${DEST_ROOT}/${name}" ]; then
+            log_error "결과 폴더를 만들 수 없음: ${DEST_ROOT}/${name}"
+            return 1
+        fi
+        n=$((n + 1))
+        name="${stem}_${n}"
+    done
+    printf '%s\n' "$name"
+}
+
 process_one() {
     local f="$1"
-    local filename name_no_ext target_dir rar_output_path checksum_val guide_file
+    local filename name_no_ext output_name target_dir rar_output_path checksum_val guide_file
 
     filename=$(basename "$f")
     name_no_ext="${filename%.*}"
 
-    # 결과 폴더 생성
-    target_dir="${DEST_ROOT}/${name_no_ext}"
-    /bin/mkdir -p "$target_dir"
+    # 결과 폴더 예약. 확보하지 못하면 압축하지 않고 입력을 격리한다.
+    if ! output_name=$(reserve_output_name "$name_no_ext"); then
+        log_error "결과 폴더 예약 실패: $filename"
+        quarantine_or_abort "$f"
+        return 0
+    fi
+    target_dir="${DEST_ROOT}/${output_name}"
 
     # RAR 압축
-    rar_output_path="${target_dir}/${name_no_ext}.rar"
+    rar_output_path="${target_dir}/${output_name}.rar"
     if rar a -rr10% -ma5 -ep1 -idq "$rar_output_path" "$f"; then
         # 체크섬 계산
         checksum_val=$(/usr/bin/shasum -a 256 "$rar_output_path" | /usr/bin/awk '{print $1}')
@@ -561,7 +589,7 @@ process_one() {
         cat <<EOF_GUIDE > "$guide_file"
 [데이터 품질 보증서]
 
-파일명: ${name_no_ext}.rar
+파일명: ${output_name}.rar
 생성일: $(/bin/date "+%Y-%m-%d %H:%M:%S")
 SHA-256 Checksum:
 ${checksum_val}
@@ -574,11 +602,11 @@ ${checksum_val}
 
 ### 1. macOS / Linux (터미널)
 터미널을 열고 압축 파일이 있는 폴더로 이동한 뒤 입력:
-$ shasum -a 256 "${name_no_ext}.rar"
+$ shasum -a 256 "${output_name}.rar"
 
 ### 2. Windows (PowerShell)
 파워셸을 열고 압축 파일이 있는 폴더로 이동한 뒤 입력:
-> Get-FileHash "${name_no_ext}.rar" -Algorithm SHA256
+> Get-FileHash "${output_name}.rar" -Algorithm SHA256
 
 ----------------------------------------------------------------
 ※ 만약 출력된 코드가 위 Checksum과 단 한 글자라도 다르다면,
@@ -591,6 +619,9 @@ EOF_GUIDE
         log_info "압축 완료: $filename -> ${target_dir}/"
     else
         log_error "압축 실패: $filename"
+        # 예약한 폴더는 이 입력만 쓰므로 부분 결과와 함께 치운다. 다른 항목이 남아 있으면 rmdir이 실패해 그대로 둔다.
+        /bin/rm -f "$rar_output_path" || true
+        /bin/rmdir "$target_dir" 2>/dev/null || log_warn "예약한 결과 폴더를 비우지 못함: $target_dir"
         quarantine_or_abort "$f"
     fi
 }

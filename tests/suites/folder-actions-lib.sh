@@ -28,7 +28,7 @@
 #   still covered by overriding those callback boundaries after sourcing.
 # - upload-immich.sh missing-credential e2e is skipped when those macOS absolute
 #   commands are absent before the credential branch.
-# - The rar/ffmpeg job e2e fixtures (#1402) are Darwin-only for the same reason.
+# - The rar/ffmpeg job e2e fixtures (#1402, #1403) are Darwin-only for the same reason.
 #
 # This suite is definition-only; tests/shell-script-tests.sh owns run_test registration.
 
@@ -288,7 +288,7 @@ _folder_actions_tool_scripts_runnable() {
 
   for path in /usr/bin/env /usr/bin/id /usr/bin/stat /usr/bin/sed /usr/bin/grep /usr/bin/tr \
     /usr/bin/hexdump /usr/bin/dirname /usr/bin/shasum /usr/bin/awk /usr/bin/wc \
-    /bin/date /bin/ps /bin/kill /bin/ls /bin/mkdir /bin/chmod /bin/mv /bin/rm /bin/cat; do
+    /bin/date /bin/ps /bin/kill /bin/ls /bin/mkdir /bin/rmdir /bin/chmod /bin/mv /bin/rm /bin/cat; do
     if [ ! -x "$path" ]; then
       echo "SKIP: folder-actions rar/ffmpeg fixture requires $path" >&2
       return 1
@@ -492,4 +492,253 @@ test_folder_actions_video_jobs_run_with_launchd_minimal_path() (
     [[ "$(_folder_actions_count_calls_on "$sandbox" mv "$input")" == 0 ]] \
       || fail "$name must not quarantine a successful input"
   done
+)
+
+# ── compress-rar 결과 이름 예약 (#1403) ──────────────────────────────────────
+# 같은 stem의 입력이 다시 들어오면 앞선 결과를 갱신하지 않고 <stem>_2, <stem>_3 … 폴더를 새로 쓴다.
+# 대역 rar는 입력을 출력 경로로 통째로 복사하므로, 같은 경로에 다시 쓰면 앞선 보관본이 바뀐다.
+
+# <dir> 아래 항목의 종류·경로·내용 해시 목록. 실행 전후를 비교해 기존 결과가 그대로인지 본다.
+_folder_actions_tree_digest() {
+  local root="$1" path
+  (cd "$root" && find . | LC_ALL=C sort) | while IFS= read -r path; do
+    if [ -L "$root/$path" ]; then
+      printf 'L %s -> %s\n' "$path" "$(readlink "$root/$path")"
+    elif [ -f "$root/$path" ]; then
+      printf 'F %s %s\n' "$path" "$(/usr/bin/shasum -a 256 < "$root/$path" | /usr/bin/awk '{print $1}')"
+    else
+      printf 'D %s\n' "$path"
+    fi
+  done
+}
+
+# Downloads/<name>/<name>.rar가 <content>를 담고, 안내 파일이 그 이름과 체크섬을 가리키는지 본다.
+_folder_actions_assert_rar_output() {
+  local sandbox="$1" name="$2" content="$3"
+  local dir="$sandbox/home/Downloads/$name" guide sum
+  guide="$dir/데이터_무결성_검증방법.txt"
+  [[ -f "$dir/$name.rar" ]] || fail "expected archive at $dir/$name.rar"
+  [[ "$(cat "$dir/$name.rar")" == "$content" ]] || fail "$dir/$name.rar must hold: $content"
+  sum=$(/usr/bin/shasum -a 256 "$dir/$name.rar" | /usr/bin/awk '{print $1}')
+  assert_file_contains "$guide" "$sum"
+  assert_file_contains "$guide" "파일명: $name.rar"
+  assert_file_contains "$guide" "\$ shasum -a 256 \"$name.rar\""
+}
+
+# compress-rar가 실패 격리한 <name>이 하나이고 <content>를 담는지 본다.
+_folder_actions_assert_quarantined() {
+  local sandbox="$1" name="$2" content="$3"
+  local -a found
+  found=("$sandbox"/home/FolderActions/.failed/compress-rar/*_"$name")
+  [[ "${#found[@]}" -eq 1 && -f "${found[0]}" ]] || fail "expected one quarantined $name: ${found[*]}"
+  [[ "$(cat "${found[0]}")" == "$content" ]] || fail "quarantined $name must keep the input bytes"
+}
+
+test_folder_actions_compress_rar_keeps_earlier_archive_for_same_name() (
+  local sandbox watch downloads first_result
+  _folder_actions_tool_scripts_runnable || return 0
+
+  sandbox=$(new_sandbox)
+  _folder_actions_install_tool_script "$sandbox" compress-rar
+  _folder_actions_install_tool_double "$sandbox" rar
+  watch="$sandbox/home/FolderActions/compress-rar"
+  downloads="$sandbox/home/Downloads"
+
+  printf '%s\n' "first version" > "$watch/sample.txt"
+  _folder_actions_run_tool_script "$sandbox" compress-rar >/dev/null 2>&1 \
+    || fail "first compress-rar run must succeed"
+  _folder_actions_assert_rar_output "$sandbox" sample "first version"
+  first_result=$(_folder_actions_tree_digest "$downloads/sample")
+
+  printf '%s\n' "second version" > "$watch/sample.txt"
+  _folder_actions_run_tool_script "$sandbox" compress-rar >/dev/null 2>&1 \
+    || fail "second compress-rar run must succeed"
+
+  # 같은 보관본에 다시 rar a를 하면 앞선 버전을 복원할 수 없다.
+  assert_line_count "$sandbox/rar.log" "ARG=$downloads/sample/sample.rar" 1
+  [[ "$(_folder_actions_tree_digest "$downloads/sample")" == "$first_result" ]] \
+    || fail "second run must leave the first result untouched"
+  _folder_actions_assert_rar_output "$sandbox" sample_2 "second version"
+  [[ ! -e "$watch/sample.txt" ]] || fail "second input must be removed once its own archive exists"
+  [[ "$(_folder_actions_count_calls_on "$sandbox" rm "$watch/sample.txt")" == 2 ]] \
+    || fail "each run must delete its own input exactly once: $(cat "$sandbox/calls.log")"
+)
+
+test_folder_actions_compress_rar_separates_same_stem_inputs() (
+  local sandbox watch downloads first second
+  _folder_actions_tool_scripts_runnable || return 0
+
+  sandbox=$(new_sandbox)
+  _folder_actions_install_tool_script "$sandbox" compress-rar
+  _folder_actions_install_tool_double "$sandbox" rar
+  watch="$sandbox/home/FolderActions/compress-rar"
+  downloads="$sandbox/home/Downloads"
+  printf '%s\n' "text input" > "$watch/sample.txt"
+  printf '%s\n' "csv input" > "$watch/sample.csv"
+
+  _folder_actions_run_tool_script "$sandbox" compress-rar >/dev/null 2>&1 \
+    || fail "compress-rar must succeed for inputs sharing a stem"
+
+  # 처리 순서는 find 순서를 따르므로 고정하지 않는다. 두 보관본이 입력을 하나씩 담으면 된다.
+  [[ -f "$downloads/sample/sample.rar" && -f "$downloads/sample_2/sample_2.rar" ]] \
+    || fail "each same-stem input needs its own archive: $(cat "$sandbox/rar.log")"
+  first=$(cat "$downloads/sample/sample.rar")
+  second=$(cat "$downloads/sample_2/sample_2.rar")
+  [[ "$(printf '%s\n' "$first" "$second" | LC_ALL=C sort)" == "$(printf '%s\n' "csv input" "text input")" ]] \
+    || fail "archives must hold one input each (got: $first / $second)"
+  _folder_actions_assert_rar_output "$sandbox" sample "$first"
+  _folder_actions_assert_rar_output "$sandbox" sample_2 "$second"
+  assert_line_count "$sandbox/rar.log" "ARG=$downloads/sample/sample.rar" 1
+  assert_line_count "$sandbox/rar.log" "ARG=$downloads/sample_2/sample_2.rar" 1
+  [[ ! -e "$watch/sample.txt" && ! -e "$watch/sample.csv" ]] || fail "both inputs must be removed after success"
+)
+
+test_folder_actions_compress_rar_skips_existing_output_entries() (
+  local sandbox watch downloads earlier
+  _folder_actions_tool_scripts_runnable || return 0
+
+  sandbox=$(new_sandbox)
+  _folder_actions_install_tool_script "$sandbox" compress-rar
+  _folder_actions_install_tool_double "$sandbox" rar
+  watch="$sandbox/home/FolderActions/compress-rar"
+  downloads="$sandbox/home/Downloads"
+
+  # 앞선 결과 폴더, 같은 이름의 일반 파일, 끊어진 심볼릭 링크가 이미 이름을 차지하고 있다.
+  mkdir "$downloads/sample"
+  printf '%s\n' "earlier archive" > "$downloads/sample/sample.rar"
+  printf '%s\n' "earlier guide" > "$downloads/sample/데이터_무결성_검증방법.txt"
+  printf '%s\n' "user note" > "$downloads/sample/note.txt"
+  printf '%s\n' "user file" > "$downloads/sample_2"
+  ln -s "$sandbox/missing" "$downloads/sample_3"
+  earlier=$(_folder_actions_tree_digest "$downloads")
+  printf '%s\n' "new input" > "$watch/sample.txt"
+
+  _folder_actions_run_tool_script "$sandbox" compress-rar >/dev/null 2>&1 \
+    || fail "compress-rar must succeed when earlier names are taken"
+
+  _folder_actions_assert_rar_output "$sandbox" sample_4 "new input"
+  [[ "$(_folder_actions_tree_digest "$downloads" | grep -v '^[DF] \./sample_4')" == "$earlier" ]] \
+    || fail "existing Downloads entries must stay untouched: $(cat "$sandbox/rar.log")"
+  [[ ! -e "$sandbox/missing" ]] || fail "must not create anything through a dangling symlink"
+  [[ ! -e "$watch/sample.txt" ]] || fail "input must be removed after success"
+)
+
+test_folder_actions_compress_rar_reserves_output_name_atomically() (
+  local sandbox bin stubs watch downloads contested
+  _folder_actions_tool_scripts_runnable || return 0
+
+  sandbox=$(new_sandbox)
+  _folder_actions_install_tool_script "$sandbox" compress-rar
+  _folder_actions_install_tool_double "$sandbox" rar
+  bin="$sandbox/home/.local/bin"
+  stubs="$sandbox/stubs"
+  watch="$sandbox/home/FolderActions/compress-rar"
+  downloads="$sandbox/home/Downloads"
+  contested="$downloads/sample"
+
+  # 경쟁 실행 흉내: 이 작업이 처음으로 <contested>를 만들려는 mkdir 직전에 다른 실행이 같은 이름을
+  # 먼저 차지한다. 비어 있는지 확인하는 단계와 확보하는 단계가 나뉘어 있으면 남의 결과 폴더에 쓰게 된다.
+  cat > "$stubs/mkdir" <<EOF_STUB
+#!/bin/sh
+for arg in "\$@"; do
+  if [ "\$arg" = '$contested' ] && [ ! -e '$sandbox/contested.flag' ]; then
+    : > '$sandbox/contested.flag'
+    /bin/mkdir '$contested' && printf '%s\n' 'other run' > '$contested/owner.txt'
+  fi
+done
+exec /bin/mkdir "\$@"
+EOF_STUB
+  chmod 755 "$stubs/mkdir"
+  sed -e "s#/bin/mkdir #$stubs/mkdir #g" "$bin/compress-rar.sh" > "$bin/compress-rar.sh.new"
+  mv "$bin/compress-rar.sh.new" "$bin/compress-rar.sh"
+  chmod 700 "$bin/compress-rar.sh"
+  printf '%s\n' "new input" > "$watch/sample.txt"
+
+  _folder_actions_run_tool_script "$sandbox" compress-rar >/dev/null 2>&1 \
+    || fail "compress-rar must move on when another run takes the name first"
+
+  [[ -e "$sandbox/contested.flag" ]] || fail "the competing reservation must have fired"
+  [[ "$(ls -A "$contested")" == "owner.txt" && "$(cat "$contested/owner.txt")" == "other run" ]] \
+    || fail "must not write into a name another run reserved: $(ls -A "$contested")"
+  _folder_actions_assert_rar_output "$sandbox" sample_2 "new input"
+)
+
+test_folder_actions_compress_rar_keeps_input_when_output_reservation_fails() (
+  local sandbox watch downloads earlier out rc
+  _folder_actions_tool_scripts_runnable || return 0
+  if [ "$(id -u)" = 0 ]; then
+    echo "SKIP: root ignores the read-only Downloads used to fail the reservation" >&2
+    return 0
+  fi
+
+  sandbox=$(new_sandbox)
+  _folder_actions_install_tool_script "$sandbox" compress-rar
+  _folder_actions_install_tool_double "$sandbox" rar
+  watch="$sandbox/home/FolderActions/compress-rar"
+  downloads="$sandbox/home/Downloads"
+  mkdir "$downloads/sample"
+  printf '%s\n' "earlier archive" > "$downloads/sample/sample.rar"
+  printf '%s\n' "earlier guide" > "$downloads/sample/데이터_무결성_검증방법.txt"
+  earlier=$(_folder_actions_tree_digest "$downloads")
+  printf '%s\n' "new input" > "$watch/sample.txt"
+
+  # Downloads에 새 항목을 만들 수 없으면 다음 번호도 확보할 수 없다. 앞선 결과 폴더 자체는 쓸 수 있다.
+  chmod 555 "$downloads"
+  trap 'chmod 755 "$downloads"' EXIT
+  set +e
+  out=$(_folder_actions_run_tool_script "$sandbox" compress-rar 2>&1)
+  rc=$?
+  set -e
+  chmod 755 "$downloads"
+
+  # 앞선 결과와 새 입력이 모두 남아야 한다.
+  [[ "$(_folder_actions_tree_digest "$downloads")" == "$earlier" ]] \
+    || fail "existing results must stay untouched: $(_folder_actions_tree_digest "$downloads")"
+  [[ "$(_folder_actions_count_calls_on "$sandbox" rm "$watch/sample.txt")" == 0 ]] \
+    || fail "must not delete the input: $(cat "$sandbox/calls.log")"
+  _folder_actions_assert_quarantined "$sandbox" sample.txt "new input"
+  [[ ! -e "$sandbox/rar.log" ]] || fail "rar must not run without a reserved output: $(cat "$sandbox/rar.log")"
+  [[ "$rc" -eq 0 ]] || fail "a quarantined reservation failure must not abort the run (rc=$rc): $out"
+  assert_contains "$out" "결과 폴더 예약 실패: sample.txt"
+)
+
+test_folder_actions_compress_rar_keeps_input_when_rar_fails() (
+  local sandbox watch downloads earlier out rc
+  _folder_actions_tool_scripts_runnable || return 0
+
+  sandbox=$(new_sandbox)
+  _folder_actions_install_tool_script "$sandbox" compress-rar
+  watch="$sandbox/home/FolderActions/compress-rar"
+  downloads="$sandbox/home/Downloads"
+  # 출력 경로에 부분 결과를 남기고 실패하는 rar
+  cat > "$sandbox/tools/rar" <<EOF_RAR
+#!/bin/sh
+for arg in "\$@"; do printf 'ARG=%s\n' "\$arg"; done >> '$sandbox/rar.log'
+archive=""
+input=""
+for arg in "\$@"; do archive=\$input; input=\$arg; done
+printf '%s\n' partial > "\$archive"
+exit 1
+EOF_RAR
+  chmod 755 "$sandbox/tools/rar"
+  mkdir "$downloads/sample"
+  printf '%s\n' "earlier archive" > "$downloads/sample/sample.rar"
+  printf '%s\n' "earlier guide" > "$downloads/sample/데이터_무결성_검증방법.txt"
+  earlier=$(_folder_actions_tree_digest "$downloads")
+  printf '%s\n' "new input" > "$watch/sample.txt"
+
+  set +e
+  out=$(_folder_actions_run_tool_script "$sandbox" compress-rar 2>&1)
+  rc=$?
+  set -e
+
+  # 새로 예약한 경로에만 썼고, 그 폴더는 부분 결과와 함께 치워 앞선 결과만 남는다.
+  [[ "$(_folder_actions_tree_digest "$downloads")" == "$earlier" ]] \
+    || fail "failed run must leave only the earlier results: $(_folder_actions_tree_digest "$downloads")"
+  [[ "$(_folder_actions_count_calls_on "$sandbox" rm "$watch/sample.txt")" == 0 ]] \
+    || fail "must not delete the input: $(cat "$sandbox/calls.log")"
+  _folder_actions_assert_quarantined "$sandbox" sample.txt "new input"
+  assert_line_count "$sandbox/rar.log" "ARG=$downloads/sample_2/sample_2.rar" 1
+  [[ "$rc" -eq 0 ]] || fail "a quarantined rar failure must not abort the run (rc=$rc): $out"
+  assert_contains "$out" "압축 실패: sample.txt"
 )

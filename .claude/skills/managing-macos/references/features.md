@@ -464,11 +464,14 @@ macOS launchd의 WatchPaths를 사용하여 특정 폴더를 감시하고, 파�
 1. 감시 폴더에 파일을 드래그 앤 드롭
 2. 자동으로 스크립트가 실행됨
 3. 결과물은 `~/Downloads/`에 저장됨
+   - compress-rar는 `~/Downloads/<이름>/<이름>.rar`를 만든다. 그 이름이 이미 있으면 앞선 결과를
+     건드리지 않고 `<이름>_2`, `<이름>_3`처럼 번호를 붙인 새 폴더를 쓴다 (#1403).
 
 ### 처리 실패 시 격리 (compress-rar / compress-video / rename-asset / convert-video-to-gif)
 
 처리 중 ffmpeg/rar/mv가 실패한 파일은 watch dir에 남기지 않고
 `~/FolderActions/.failed/<액션명>/` 으로 격리된다 (#374).
+compress-rar는 결과 폴더를 만들지 못한 입력도 압축하지 않고 격리한다 (#1403).
 
 - `wait_file_stable`이 30초 내 안정화를 확인한 뒤에만 처리에 들어가므로,
   복사 중 파일이 실패로 격리되는 일은 거의 없다.

@@ -390,6 +390,12 @@ run_test "folder-actions quarantine_or_abort branches" test_folder_actions_quara
 run_test "upload-immich missing credential branch is quiet" test_upload_immich_missing_credential_branch_is_quiet_or_skipped
 run_test "folder-actions tool jobs keep input when required tool is missing" test_folder_actions_tool_jobs_keep_input_when_required_tool_missing
 run_test "folder-actions compress-rar runs with launchd minimal PATH" test_folder_actions_compress_rar_runs_with_launchd_minimal_path
+run_test "folder-actions compress-rar keeps earlier archive for same name" test_folder_actions_compress_rar_keeps_earlier_archive_for_same_name
+run_test "folder-actions compress-rar separates same-stem inputs" test_folder_actions_compress_rar_separates_same_stem_inputs
+run_test "folder-actions compress-rar skips existing output entries" test_folder_actions_compress_rar_skips_existing_output_entries
+run_test "folder-actions compress-rar reserves output name atomically" test_folder_actions_compress_rar_reserves_output_name_atomically
+run_test "folder-actions compress-rar keeps input when output reservation fails" test_folder_actions_compress_rar_keeps_input_when_output_reservation_fails
+run_test "folder-actions compress-rar keeps input when rar fails" test_folder_actions_compress_rar_keeps_input_when_rar_fails
 run_test "folder-actions video jobs run with launchd minimal PATH" test_folder_actions_video_jobs_run_with_launchd_minimal_path
 run_test "karakeep fallback-sync success removes only matched queue URL" test_karakeep_fallback_sync_success_removes_only_matched_queue_url
 run_test "karakeep fallback-sync upload failure preserves queue" test_karakeep_fallback_sync_upload_failure_preserves_queue_and_records_notify_state
