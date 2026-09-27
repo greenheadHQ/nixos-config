@@ -89,6 +89,7 @@ agenix `.age` 22개(디스크 실측 — 재검증: `ls secrets/*.age | wc -l`) 
 | `anki-mcp-cloudflared.age` | agenix | — | `/run/agenix/anki-mcp-cloudflared` (root, 0400, MiniPC) → native cloudflared 유닛의 `LoadCredential` | 개인 `anki-mcp.greenhead.dev` 터널의 실행 credential JSON. 계정 관리 cert 미배포 | minipcOnly |
 | `opnix-service-account-token.age` | agenix → 1Password SA | Automation (SA 접근 vault) | `/run/agenix/opnix-service-account-token` (`root:onepassword-secrets`, 0640, MiniPC) | opnix tokenFile → 부팅 oneshot이 `op://Automation/github-pat/token`을 `/run/opnix/<user>/github-pat` tmpfs로 materialize → nixos.nix gh wrapper가 GH_TOKEN 소비 | minipcHostOnly (host key 복호화) |
 | `opnix-service-account-token-mac.age` | agenix → 1Password SA | Automation (SA 접근 vault) | `~/.config/op/sa-token-mac` (agenix home-manager, 0400, `isDarwin && hostType==personal`) | darwin.nix gh-pat-mac이 `OP_SERVICE_ACCOUNT_TOKEN`으로 `op read op://Automation/github-pat/token` → temp 캐시 → gh-auth/c/codex 런처가 GH_TOKEN 주입. MiniPC host-key SA와 별개 격리 SA | macbook (Mac user 로그인 키 단독, work role 미배포) |
+| `minipc-headless.age` | agenix | — | `~/.ssh/minipc-headless` (agenix home-manager, 0400, `isDarwin && hostType==personal`) | Mac `ssh minipc-headless` alias의 IdentityFile — 원격/LLM 세션이 1Password를 거치지 않고 MiniPC에 접속하는 무인 자동화 전용 신원(#1094). `mac-ssh`·`emergency-ssh`와 별개 신원 | macbook (Mac user 로그인 키 단독, work role 미배포) |
 | `github-pat` (1Password 항목) | 1Password | Automation | `op://Automation/github-pat/token` | Mac: gh-pat-mac이 SA token으로 `op read` → temp 캐시. MiniPC: opnix가 tmpfs로 materialize. SA token이 읽는 실제 PAT 항목 | — |
 | `mac-ssh` (1Password 항목) | 1Password | SSH | SSH vault item (comment `mac-ssh`, `constants.sshDeviceKeys.macSsh`) | Mac SSH agent(agent.toml이 SSH vault 노출) + MiniPC authorized_keys 등록. Automation→SSH vault 격리 | — |
 | `mobile-ssh` (디바이스 키) | Termius keychain | — | Termius keychain 보관 (iPhone·iPad 동기화 공유); 공개키만 `constants.sshDeviceKeys.mobile` | iPhone/iPad Termius 공유 단일 키(디바이스별 격리 불성립). MiniPC + personal Mac authorized_keys 등록용(work Mac 미배포). 1Password 미보관 | — |
@@ -113,7 +114,7 @@ agenix `.age` 22개(디스크 실측 — 재검증: `ls secrets/*.age | wc -l`) 
 1. 기존 값 확인 (복호화 방법은 [references/workflows.md](references/workflows.md) 참조)
 2. 새 내용으로 재암호화하여 `.age` 파일 덮어쓰기
 
-호스트 추가: 새 호스트의 secret 접근이 필요한 경우 [references/workflows.md](references/workflows.md) 참조.
+호스트 추가: 새 호스트가 복호화해야 하는 항목의 recipient만 갱신한다. 그룹별 identity와 재암호화 조건은 [references/workflows.md](references/workflows.md) "호스트 추가" 참조.
 
 ### Shottr 라이센스 pre-fill (agenix)
 
@@ -152,7 +153,7 @@ KC_VAULT=<base64 encoded vault>
 
 1. `agenix -e`의 `/dev/stdin` 에러: non-interactive 환경에서 발생 → [references/troubleshooting.md](references/troubleshooting.md)의 안전한 우회 절차(사람이 대화형 터미널에서 입력)
 2. 복호화 실패: SSH 키 불일치 또는 identity path 오류
-3. 재암호화 누락: `secrets/secrets.nix`의 publicKeys 변경 후 `cd secrets && nix run github:ryantm/agenix -- -r` 미실행
+3. 재암호화 누락: `secrets/secrets.nix`의 publicKeys를 바꾼 항목을 재암호화하지 않음 → [references/workflows.md](references/workflows.md) "호스트 추가"의 대상별 재암호화 (전체 `-r`은 모든 항목을 복호화할 identity가 있을 때만)
 4. 배포 후 파일 미생성: Home Manager agenix 서비스 상태 확인, `nrs` 재실행
 5. macOS agenix crash loop (.tmp 잔류): `nrs`가 복호화 중인 agent를 kill → stale `.tmp` 파일이 다음 generation을 block. 예방 코드(`cleanupAgenixStaleGenerations`)가 `setupLaunchAgents` 전에 자동 정리 (삭제 전 `launchctl bootout`으로 활성 writer와 직렬화, rm 실패는 non-fatal)
 6. macOS activation에서 시크릿 미발견: agenix는 `launchd.agents`로 복호화 → `setupLaunchAgents` 이후 + polling 필요

@@ -114,7 +114,7 @@ Error: no identity matched any of the recipients
 # 현재 머신의 공개키 확인
 cat ~/.ssh/id_ed25519.pub
 
-# secrets/secrets.nix의 allHosts에 포함되어 있는지 확인
+# secrets/secrets.nix에서 그 항목의 publicKeys에 이 공개키가 있는지 확인
 ```
 
 해결: identity path를 명시적으로 지정해 복호화가 성공하는지 확인 (원문은 출력하지 않음).
@@ -124,7 +124,7 @@ nix-shell -p age --run 'age -d -i ~/.ssh/id_ed25519 secrets/<name>.age' >/dev/nu
   && echo "복호화 성공" || echo "복호화 실패"
 ```
 
-키가 포함되어 있지 않다면 `secrets/secrets.nix`에 공개키 추가 후 `cd secrets && nix run github:ryantm/agenix -- -r`로 재암호화 필요.
+키가 포함되어 있지 않다면 그 항목의 `publicKeys`에 공개키를 추가한 뒤 그 항목을 재암호화한다. 절차와 전체 재암호화(`-r`) 조건은 [workflows.md](workflows.md) "호스트 추가" 참조.
 
 ---
 
@@ -132,14 +132,9 @@ nix-shell -p age --run 'age -d -i ~/.ssh/id_ed25519 secrets/<name>.age' >/dev/nu
 
 증상: `secrets/secrets.nix`에서 publicKeys를 변경했는데, 새 호스트에서 복호화 실패.
 
-원인: publicKeys 변경 후 `cd secrets && nix run github:ryantm/agenix -- -r` (재암호화) 미실행. `.age` 파일은 변경 시점의 recipient 목록으로 암호화되어 있으므로, publicKeys를 변경한 후 반드시 재암호화해야 한다.
+원인: publicKeys를 바꾼 항목을 재암호화하지 않았다. `.age` 파일은 변경 시점의 recipient 목록으로 암호화되어 있으므로, publicKeys를 변경한 후 반드시 재암호화해야 한다.
 
-해결:
-
-```bash
-# 모든 .age 파일을 secrets.nix의 최신 publicKeys로 재암호화
-cd secrets && nix run github:ryantm/agenix -- -r
-```
+해결: 바꾼 항목을 [workflows.md](workflows.md) "호스트 추가"의 identity 확인 → 대상별 재암호화 순서로 재암호화한다. 전체 재암호화(`-r`)는 넘긴 identity로 `secrets.nix`의 모든 항목을 복호화할 수 있을 때만 쓴다.
 
 호스트 키 변경 시: 해당 호스트의 SSH 키가 재생성된 경우, `secrets/secrets.nix`에서 공개키를 업데이트한 후 재암호화.
 

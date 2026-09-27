@@ -140,6 +140,7 @@ echo "    sshKeys = {"
 echo "      # ... 기존 키 ..."
 echo "      newHost = \"$ssh_pubkey\";"
 echo "    };"
+echo "    호스트 키 전용 시크릿이 필요하면 그 호스트의 /etc/ssh/ssh_host_ed25519_key.pub를 hostKeys에 따로 등록한다."
 echo
 
 echo "2️⃣  flake.nix - ${platform}Hosts에 새 호스트 추가:"
@@ -156,9 +157,23 @@ else
 fi
 echo
 
-echo "3️⃣  기존 시크릿 재암호화 (새 호스트가 복호화할 수 있도록):"
-echo "    cd $ROOT_DIR"
-echo "    nix run github:ryantm/agenix -- -r"
+echo "3️⃣  시크릿 recipient 갱신 (새 호스트가 복호화해야 하는 항목만):"
+echo "    작업 위치: 규칙 파일 secrets.nix가 있는 secrets/ (agenix는 현재 디렉토리의 secrets.nix를 읽는다)"
+printf '    cd %q\n' "$ROOT_DIR/secrets"
+echo "    a. 새 호스트가 복호화해야 하는 시크릿을 고른다. 모든 항목에 추가하지 않는다."
+echo "    b. secrets.nix에서 고른 항목마다 publicKeys를 확인한다. recipient 종류마다 복호화 identity가 다르다:"
+echo "       공통 그룹(여러 호스트의 사용자 키) → 그룹에 든 호스트 중 한 곳의 사용자 ~/.ssh/id_ed25519"
+echo "       사용자 키 전용 → 그 사용자의 ~/.ssh/id_ed25519"
+echo "       호스트 키 전용 → 그 호스트의 /etc/ssh/ssh_host_ed25519_key (root만 읽을 수 있다)"
+echo "    c. 고른 항목의 publicKeys에만 필요한 키를 추가한다. 공통 그룹을 고치면 그 그룹을 쓰는 모든 항목이 함께 바뀐다."
+echo "    d. 재암호화할 호스트에서, 넘길 identity로 각 항목을 복호화할 수 있는지 먼저 확인한다 (원문은 버린다):"
+echo "       nix run github:ryantm/agenix -- -d <name>.age -i <identity> >/dev/null && echo \"복호화 가능\""
+echo "    e. 확인된 항목만 재암호화한다:"
+echo "       EDITOR=: nix run github:ryantm/agenix -- -e <name>.age -i <identity>"
+echo "       전체 재암호화(-r)는 넘긴 identity로 secrets.nix의 모든 항목을 복호화할 수 있을 때만 쓴다."
+echo "       복호화하지 못하는 항목에서 멈추고, 그 앞 항목만 재암호화된 채 남는다."
+echo "       identity가 없는 항목은 그 identity가 있는 호스트에서 재암호화한다."
+echo "    상세: .claude/skills/managing-secrets/references/workflows.md \"호스트 추가\""
 echo
 
 echo "4️⃣  빌드 검증:"

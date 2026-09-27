@@ -589,6 +589,14 @@ run_test "add-host NixOS preserves existing default.nix" test_add_host_nixos_pre
 run_test "add-host NixOS mv failure leaves no partial file and removes created dir" test_add_host_nixos_mv_failure_leaves_no_partial_file_and_removes_created_dir
 run_test "add-host NixOS write failure leaves no partial file and removes created dir" test_add_host_nixos_write_failure_leaves_no_partial_file_and_removes_created_dir
 run_test "add-host NixOS printf failure leaves no partial file and removes created dir" test_add_host_nixos_printf_failure_leaves_no_partial_file_and_removes_created_dir
+run_test "add-host secret guide workdir has rules file" test_add_host_secret_guide_workdir_has_rules_file
+run_test "add-host secret guide checks recipients per target" test_add_host_secret_guide_checks_recipients_per_target
+
+# ═══════════════════════════════════════════════════════════════════
+# managing-secrets 문서 — 인벤토리·호스트 추가 절차와 secrets/ 선언의 정합성 (#1396)
+# ═══════════════════════════════════════════════════════════════════
+run_test "managing-secrets inventory matches age files and rules" test_managing_secrets_inventory_matches_age_files_and_rules
+run_test "managing-secrets host add workflow checks recipients per target" test_managing_secrets_host_add_workflow_checks_recipients_per_target
 
 # 퇴역 키 로더는 tomlkit 없이도 도는 순수 셸 계약이라 아래 게이트 밖에 둔다.
 run_test "codex-config retired keys loader" test_codex_config_retired_keys_loader

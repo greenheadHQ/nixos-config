@@ -22,7 +22,7 @@ nix shell nixpkgs#age -c sh -c 'printf "KEY=value\n" | age \
   -o secrets/<name>.age'
 ```
 
-`secrets/secrets.nix`의 `allHosts` 목록에 있는 모든 공개키를 `-r` 플래그로 지정해야 양쪽 호스트에서 복호화 가능.
+`secrets/secrets.nix`에서 그 항목의 `publicKeys`에 있는 공개키를 모두 `-r` 플래그로 지정한다. 항목마다 recipient 그룹이 다르므로 다른 항목의 목록을 옮겨 쓰지 않는다.
 
 ## 기존 secret 내용 확인 (복호화)
 
@@ -32,8 +32,32 @@ nix shell nixpkgs#age -c age -d -i ~/.ssh/id_ed25519 secrets/<name>.age
 
 ## 호스트 추가
 
-새 호스트의 secret 접근이 필요한 경우:
+새 호스트가 일부 secret을 복호화해야 할 때의 절차다. 재암호화 명령은 규칙 파일 `secrets.nix`가 있는 `secrets/`에서 실행한다. agenix는 현재 디렉토리의 `secrets.nix`를 읽으므로 저장소 루트에서는 규칙 파일을 찾지 못한다.
 
-1. 해당 머신에서 `cat ~/.ssh/id_ed25519.pub`으로 공개키 확인
-2. `secrets/secrets.nix`에 공개키 등록 및 `allHosts`에 추가
-3. 재암호화: `cd secrets && nix run github:ryantm/agenix -- -r`
+recipient 그룹마다 복호화에 필요한 identity가 다르다. 그룹 선언은 `secrets/secrets.nix`에, 항목별 그룹은 [SKILL.md](../SKILL.md) 통합 Secret Inventory의 recipient 열에 있다.
+
+| 그룹 | 담긴 공개키 | 복호화 identity |
+|------|-------------|-----------------|
+| `allHosts` | Mac·MiniPC 사용자 키 (`sshKeys`) | Mac 또는 MiniPC 사용자의 `~/.ssh/id_ed25519` |
+| `minipcOnly` | MiniPC 사용자 키 (`sshKeys.minipc`) | MiniPC 사용자의 `~/.ssh/id_ed25519` |
+| `minipcHostOnly` | MiniPC 호스트 키 (`hostKeys.minipc`) | MiniPC의 `/etc/ssh/ssh_host_ed25519_key` (root만 읽을 수 있다) |
+| `[ constants.sshKeys.macbook ]` (인라인) | Mac 사용자 키 | Mac 사용자의 `~/.ssh/id_ed25519` |
+
+1. 호스트 등록: `scripts/add-host.sh`의 안내대로 새 호스트의 사용자 공개키를 `libraries/constants.nix`의 `sshKeys`에 등록한다. 호스트 키 전용 항목이 필요하면 그 호스트의 `/etc/ssh/ssh_host_ed25519_key.pub`를 `hostKeys`에 따로 등록한다.
+2. 필요한 시크릿 식별: 새 호스트가 실제로 소비하는 항목만 고른다. 배포 선언은 Home Manager 시크릿이 `modules/shared/programs/secrets/default.nix`에, NixOS 서비스 시크릿이 각 서비스 모듈에 있다.
+3. `publicKeys` 확인: `secrets/secrets.nix`에서 고른 항목마다 어느 그룹이나 인라인 목록을 쓰는지 본다. 그룹을 고치면 그 그룹을 쓰는 모든 항목의 recipient가 함께 바뀐다.
+4. 필요한 recipient만 추가: 고른 항목에 필요한 키만 넣는다. 같은 그룹의 다른 항목까지 열 필요가 없으면 인라인 목록이나 새 그룹을 쓴다. 모든 항목을 공통 그룹으로 모으지 않는다.
+5. identity 확인: 재암호화할 호스트에서, 넘길 identity로 대상 항목을 복호화할 수 있는지 먼저 확인한다. 원문은 버린다.
+
+   ```bash
+   cd secrets
+   nix run github:ryantm/agenix -- -d <name>.age -i <identity> >/dev/null && echo "복호화 가능"
+   ```
+
+6. 재암호화: 확인된 항목만 재암호화한다. `EDITOR=:`이면 agenix가 에디터를 열지 않고, 복호화한 내용을 현재 `publicKeys`로 다시 암호화한다. `-r`이 항목마다 쓰는 경로와 같다.
+
+   ```bash
+   EDITOR=: nix run github:ryantm/agenix -- -e <name>.age -i <identity>
+   ```
+
+전체 재암호화(`nix run github:ryantm/agenix -- -r`)는 넘긴 identity로 `secrets.nix`의 모든 항목을 복호화할 수 있을 때만 쓴다. `-r`은 항목을 차례로 처리하다 복호화하지 못하는 항목에서 멈추고, 그 앞 항목만 새 recipient로 바뀐 채 남는다. 현재 선언에는 Mac 사용자 키 전용 항목과 MiniPC 호스트 키 전용 항목이 함께 있어, 한 호스트의 identity만으로는 이 조건을 채우지 못한다. identity가 없는 항목은 그 identity가 있는 호스트에서 대상별로 재암호화한다. 원본 값에서 새로 암호화해야 하면 [troubleshooting.md](troubleshooting.md)의 "agenix -e의 /dev/stdin 에러" 절차를 쓴다.
