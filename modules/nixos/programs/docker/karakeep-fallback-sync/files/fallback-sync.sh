@@ -270,11 +270,16 @@ tag_identifier_source() {
 
 # 평탄화한 snippet에서 canonical link와 og:url·twitter:url meta의 URL을 "출처<TAB>URL"로 낸다.
 # 문서 head만 읽는다: 첫 `<body`나 `</head>`(대소문자 무시, 뒤가 공백·`>`·`/`)에서 멈추고, 둘 다
-# 없으면 끝까지 읽는다. head 안에서도 주석, script·style·noscript·noframes 본문, template 내용은
-# 건너뛴다. noscript·noframes는 SingleFile이 캡처하는 스크립트 켜진 브라우저가 원시 텍스트로
-# 읽고, template은 문서에 적용되지 않는 inert 조각이며 중첩될 수 있어 깊이를 센다. 그 안의
-# 태그 모양 텍스트나 body의 iframe srcdoc 같은 임베드 문서의 canonical은 원문 식별자가 아니다.
-# 닫히지 않은 주석·요소는 문서 끝까지 건너뛴다 (#1495).
+# 없으면 끝까지 읽는다. body의 iframe srcdoc 같은 임베드 문서의 canonical은 원문 식별자가 아니다.
+# head 안에서는 HTML "in head" 삽입 모드에서 텍스트 문맥을 여는 요소를 모두 건너뛴다. 그 안의
+# 태그 모양 텍스트는 태그가 아니다. 닫히지 않은 주석·요소는 문서 끝까지 건너뛴다 (#1495).
+#   - 주석
+#   - title(RCDATA)
+#   - script·style·noscript·noframes(원시 텍스트. noscript는 SingleFile이 캡처하는 스크립트
+#     켜진 브라우저 기준)
+#   - template(문서에 적용되지 않는 inert 조각. 중첩될 수 있어 깊이를 센다)
+# head를 닫는 다른 시작 태그(textarea 등)는 따로 보지 않는다. SingleFile 출력에서 그런 요소는
+# `<body` 뒤에 오기 때문이다.
 # 태그는 `<link`·`<meta` 뒤가 공백이나 `/`인 곳부터 첫 `>`까지다. 속성은 HTML 문법대로 읽는다:
 # 이름과 키워드의 대소문자 무시, `=` 앞뒤 공백, 큰·작은따옴표와 따옴표 없는 값, 순서 무관,
 # 중복 속성은 첫 값, 값 앞뒤 공백 제거. rel은 공백으로 나눈 토큰 집합이라 canonical 토큰이
@@ -283,7 +288,7 @@ tag_identifier_source() {
 # 연결된다).
 extract_identifier_tags() {
   LC_ALL=C awk -v q="'" '
-    BEGIN { raw_count = split("script style noscript noframes", raw_names, " ") }
+    BEGIN { raw_count = split("title script style noscript noframes", raw_names, " ") }
     function parse_attrs(s,   name, value, quote, close_pos) {
       split("", attrs)
       while (1) {
@@ -318,7 +323,8 @@ extract_identifier_tags() {
       len = length(name)
       return tolower(substr(seg, 1, len)) == name && substr(seg, len + 1, 1) ~ /^[[:space:]>\/]$/
     }
-    # 끝 태그까지 원시 텍스트로 읽히는 요소면 그 이름을, 아니면 빈 문자열을 돌려준다.
+    # 끝 태그까지 텍스트로만 읽히는 요소(title의 RCDATA, 나머지의 원시 텍스트)면 그 이름을,
+    # 아니면 빈 문자열을 돌려준다.
     function raw_text_element(seg,   k) {
       for (k = 1; k <= raw_count; k++) {
         if (starts_tag(seg, raw_names[k])) return raw_names[k]

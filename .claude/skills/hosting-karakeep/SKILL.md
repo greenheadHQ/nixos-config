@@ -123,7 +123,7 @@ Caddy가 `/api/v1/bookmarks/singlefile`만 `karakeep-singlefile-bridge`로 우�
 큐와 대조하고, 고른 큐 URL로 Karakeep SingleFile API에 덮어쓴다(`ifexists=overwrite`).
 
 - 원문 식별자: `url:` 줄이 있는 첫 SingleFile 저장 주석(`Page saved with SingleFile` 블록)의 `url:` 줄, canonical, `og:url`, `twitter:url`. 본문 링크와 문서 중간의 다른 저장 주석은 판정에 쓰지 않는다. 태그 속성은 HTML 문법대로 읽는다(이름 대소문자, `=` 앞뒤 공백, 큰·작은따옴표와 따옴표 없는 값, 순서, 여러 줄, rel 토큰 목록). 따옴표 안의 `>`는 지원하지 않으며, 그 식별자는 판정에서 빠진다(다른 식별자가 큐와 일치하면 그 URL로 연결된다).
-- 태그 문맥: canonical·`og:url`·`twitter:url` 태그는 문서 head에서만 읽는다. 첫 `<body`나 `</head>`에서 멈추고(둘 다 없으면 끝까지), 주석, script·style·noscript·noframes 본문, template 내용(중첩 포함)은 건너뛴다. SingleFile 저장 주석은 따로 읽으므로 영향이 없다.
+- 태그 문맥: canonical·`og:url`·`twitter:url` 태그는 문서 head에서만 읽는다. 첫 `<body`나 `</head>`에서 멈추고(둘 다 없으면 끝까지), 주석, title(RCDATA)·script·style·noscript·noframes 본문, template 내용(중첩 포함)은 건너뛴다. SingleFile 저장 주석은 따로 읽으므로 영향이 없다.
 - 판정: 식별자와 `normalize_url`(scheme, `#` 뒤, 경로 끝 `/` 차이만 무시. 쿼리는 끝 `/`까지 정확 일치)로 같은 큐 URL이 정확히 하나일 때만 그 URL을 쓴다. 쿼리만 다른 URL은 다른 글로 본다. 식별자 출처 사이에 우선순위는 없다.
 - 보류: 식별자 없음·일치 없음·후보 여럿이면 업로드·큐 제거·처리 기록 없이 파일과 큐를 그대로 두고, 원인을 담은 "자동 재연결 보류" 알림을 파일당 한 번 보낸다.
 - 판정 실패: 파일 해시 계산, 식별자 추출, 큐 읽기 중 하나가 실패하면 "원인: 판정 실패"로 알린다. 보류 알림 기록은 남기지 않아 회복 뒤의 판정 결과를 다시 알린다. 판정 실패가 계속되면 파일마다 30분(`NOTIFY_DEDUP_WINDOW_SEC`)에 한 번 알리고, 연속 실패 횟수에 넣는다.

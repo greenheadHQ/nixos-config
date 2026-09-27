@@ -1010,6 +1010,17 @@ test_karakeep_fallback_sync_identifier_tags_read_only_in_head() {
   printf '<head><templatex><link rel="canonical" href="%s"></head>\n' "$h/after-templatex" > "$sandbox/fallback/after-templatex.html"
   _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$h/after-noscriptx"
   printf '<head><noscriptx><link rel="canonical" href="%s"></head>\n' "$h/after-noscriptx" > "$sandbox/fallback/after-noscriptx.html"
+  # title 내용은 RCDATA 텍스트라 `</title>` 전까지 태그를 인식하지 않는다. 닫히지 않으면 끝까지 건너뛴다.
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/in-title"
+  printf '<head><title><link rel="canonical" href="%s"></title></head>\n' "$h/in-title" > "$sandbox/fallback/in-title.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/unclosed-title"
+  printf '<head><title><link rel="canonical" href="%s">\n' "$h/unclosed-title" > "$sandbox/fallback/unclosed-title.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$h/after-title"
+  printf '<head><title>t</title><link rel="canonical" href="%s"></head>\n' "$h/after-title" > "$sandbox/fallback/after-title.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$h/after-titlex"
+  printf '<head><titlex><link rel="canonical" href="%s"></head>\n' "$h/after-titlex" > "$sandbox/fallback/after-titlex.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$h/after-upper-title"
+  printf '<head><TITLE>t</TITLE><link rel="canonical" href="%s"></head>\n' "$h/after-upper-title" > "$sandbox/fallback/after-upper-title.html"
   # SingleFile 저장 주석은 태그 파서와 따로 원본에서 읽으므로 head 한정의 영향을 받지 않는다.
   _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$h/singlefile-saved"
   _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/singlefile-srcdoc"
