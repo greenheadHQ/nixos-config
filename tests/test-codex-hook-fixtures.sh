@@ -1020,6 +1020,7 @@ _pinning_codex_mention_table() {
     "gh api -H 'Accept: application/vnd.github+json; charset=utf-8' repos/o/r/issues/12/comments -f body=x"
     "gh api -X DELETE repos/o/r/issues/comments/1; gh api repos/o/r/issues/1/comments -f body=x"
     "gh api -X GET search/issues -f q=x && gh api repos/o/r/issues/1/comments -f body=x"
+    "gh pr comment 12 --body x; gh api repos/o/r/issues/12/comments -f body=x"
     "gh api graphql -f query='mutation { addComment(input: {subjectId: \"X\", body: \"hi\"}) { clientMutationId } }'"
     $'gh api graphql -f query=\'\n  mutation($id: ID!) {\n    resolveReviewThread(input: {threadId: $id}) { thread { id } }\n  }\' -f id=X'
     "gh api graphql -f query='fragment F on X { y } mutation { a }'"
@@ -1091,6 +1092,14 @@ _pinning_codex_mention_table() {
     "env gh pr comment 12 --body x"
     "command gh pr comment 12 --body x"
     "(gh pr comment 12 --body x)"
+    # zsh는 명령어 앞에 붙여 쓴 { 도 그룹으로 읽고, = 로 시작하는 단어는 그 명령의 경로로 바꾼다. =( ) 는
+    # 프로세스 치환이다.
+    "{gh pr comment 12 --body x}"
+    "true && {gh pr comment 12 --body x}"
+    "{bash -c 'gh pr comment 12 --body x'}"
+    "{gh -R o/r pr comment 12 --body x}"
+    "=gh pr comment 12 --body x"
+    "cat =(gh pr comment 12 --body x)"
     "gh-auth pr comment 12 --body x"
     "GH pr comment 12 --body x"
     "gh \"\$SUB\" 12 --body x"
@@ -1139,6 +1148,14 @@ _pinning_codex_mention_table() {
     "g\${x}h pr comment 12 --body x"
     "g\`echo h\` pr comment 12 --body x"
     "X=g; \${X}h pr comment 12 --body x"
+    "X=g; \`echo \$X\`h pr comment 12 --body x"
+    # 변수나 한 글자 특수 매개변수 뒤에 따옴표·역슬래시를 두고 붙인 h도 넘긴다.
+    "X=g; \"\$X\"h pr comment 12 --body x"
+    "X=g; \$X''h pr comment 12 --body x"
+    "X=g; \$X\\h pr comment 12 --body x"
+    "X=g; \$X\$'h' pr comment 12 --body x"
+    "set -- g; \$1h pr comment 12 --body x"
+    "set -- g; \"\$@\"h pr comment 12 --body x"
     # bash·zsh는 역슬래시로 이은 논리 줄을 heredoc 종결자와 비교하므로 뒤 줄은 명령이다.
     $'cat <<EOF\nx\nEOF\\\n\ngh pr comment 12 --body x\nEOF'
     $'cat <<EOF\nx\nE\\\nOF\ngh pr comment 12 --body x\nEOF'
@@ -1170,6 +1187,31 @@ _pinning_codex_mention_table() {
     "CMD='gh pr comment 12 --body x'; \$GH_SH -c \"\$CMD\""
     "\$GH_RUN api 'gh pr comment 12 --body x'"
     "\$GH_RUN api \"gh pr comment \$N --body x\""
+    # 명령어 자리의 변수 명령어는 무엇이 실행될지 모르므로 명령 자리가 아닌 gh가 보이면 대상이다. 기본값·변수
+    # 값·따옴표로 감싼 치환 출력은 단어로 나뉘어 gh 호출이 되고, 변수 셸 실행기는 stdin도 스크립트로 읽는다.
+    "\${y:-gh pr comment 12 --body x}"
+    $'${y:-\ngh pr comment 12 --body x\n}'
+    "\${y:-\`\`gh pr comment 12 --body x\`\`}"
+    "\${y-\"\"gh pr comment 12 --body x}"
+    "X='gh pr comment 12 --body x'; \$X"
+    "X='gh pr'; \$X comment 12 --body x"
+    "\$(echo \"gh pr comment 12 --body x\")"
+    "echo 'gh pr comment 12 --body x' | \$SHELL"
+    $'$SSH host <<\'EOF\'\ngh pr comment 12 --body x\nEOF'
+    $'S=bash; $S <<EOF\ngh pr comment 12 --body x\nEOF'
+    # 래퍼 뒤 실행 자리의 변수도 명령어로 본다. 래퍼 옵션 바로 뒤의 변수는 옵션 값일 수도 있지만 명령어로
+    # 본다. 기본값·대체값이 여러 단어면 단어로 나뉘어, 뒤의 하위 명령이 조회여도 기본값 속 단어가 명령어와
+    # 하위 명령이 된다.
+    "sudo \"\$SHELL\" -c 'gh pr comment 12 --body x'"
+    "X='gh pr comment 12 --body x'; nohup \$X"
+    "nohup \$(echo \"gh pr\") comment 12 --body x"
+    "caffeinate -i \"\$CMD\" 'gh pr comment 12 --body x'"
+    "\${y:-gh pr comment 12 --body x} pr view 12"
+    "caffeinate -i \${y:-gh pr comment 12 --body x} pr view 12"
+    "\${y:-\$Z gh pr comment 12 --body x} pr view 12"
+    $'${y:-gh\npr\ncomment\n12} pr view 12'
+    "\${a[1]:-gh pr comment 12 --body x} pr view 12"
+    "\${Y:+gh pr comment 12 --body x} pr view 12"
     # macOS 파일시스템은 대소문자를 가리지 않아 GH도 gh를 실행한다. 변수 기본값과 줄 이음 앞의 gh도 본다.
     "bash -c 'GH pr comment 12 --body x'"
     "echo 'GH pr comment 12 --body x' | bash"
@@ -1178,8 +1220,9 @@ _pinning_codex_mention_table() {
     "bash -c \"\${GH-gh} pr comment 12 --body x\""
     "bash -c '\${GH-gh} pr comment 12 --body x'"
     "bash -c \"\${a[0]-gh} pr comment 12 --body x\""
-    # 배열 첨자가 식이거나 기본값이 gh 래퍼(gh-auth)여도 같다.
+    # 배열 첨자가 식이거나(\${ } 포함) 기본값이 gh 래퍼(gh-auth)여도 같다.
     "bash -c \"\${a[i+1]-gh} pr comment 12 --body x\""
+    "bash -c \"\${a[\${i}]-gh} pr comment 12 --body x\""
     "bash -c \"\${X-gh-auth} pr comment 12 --body x\""
     "X=\"\${1-gh}\"; bash -c \"\$X pr comment 12 --body x\""
     $'bash -c \'gh\\\n pr comment 12 --body x\''
@@ -1212,8 +1255,9 @@ _pinning_codex_mention_table() {
     $'x=$(cat <<-EOF\n\thi\n\tEOF) gh pr comment 12 --body x\n\tEOF\n)'
     # 백틱 치환은 heredoc 본문의 백틱에서 끝난다.
     $'x=`cat <<\'EOF\'\na`; gh pr comment 12 --body x; `\nEOF\n`'
-    # 치환 안 heredoc을 일찍 끝낸 줄은 bash처럼 끝내는 해석과 zsh처럼 본문으로 이어 읽는 해석을 모두
-    # 본다. 판정 불확실이면 변수·치환이 든 명령어 뒤의 pr·issue·api와 대문자로 끊은 이름(G''H)도 센다.
+    # 치환 안 heredoc을 일찍 끝낸 줄은 끝내는 해석과 본문으로 이어 읽는 해석을 모두 본다( ) 가 든 줄에서는
+    # 각각 bash와 zsh의 해석이다). 판정 불확실이면 변수·치환이 든 명령어 뒤의 pr·issue·api와 대문자로 끊은
+    # 이름(G''H)도 센다.
     $'x=$(cat <<EOF\nEOFX)\nit\'s\nEOF\n)\n$GH_BIN pr comment 12 --body x'
     $'x=$(cat <<\'EOF\'\nhi\nEOF foo)\n$GH_BIN pr comment 12 --body x\nEOF\n)'
     $'x=`cat <<\'EOF\'\nuse `ls`\nit\'s\nEOF\n`\n$GH_BIN pr comment 12 --body x'
@@ -1229,6 +1273,39 @@ _pinning_codex_mention_table() {
     $'x=$(cat <<\'EOF\'\nhi\nEOF foo)\n$GH_BIN -R "o r" pr comment 12 --body x\nEOF\n)'
     # 일찍 끝낸 줄의 나머지가 줄 이음으로 이어지면 이음 앞의 명령어와 옵션까지 이어 본다.
     $'x=`cat <<\'EOF\'\na`; $GH_BIN -R owner/repo \\\npr comment 12 --body x; `\nEOF\n`'
+    # 변수 명령어 뒤 옵션과 값이 여럿 이어져도 건너뛴다.
+    $'x=`cat <<\'EOF\'\na`; $GH_BIN -R o/r --hostname github.com pr comment 12 --body x; `\nEOF\n`'
+    # 변수 명령어와 하위 명령 사이의 리다이렉트는 건너뛰고, 프로세스 치환 안의 명령도 본다.
+    $'x=`cat <<\'EOF\'\na`; $GH_BIN 2>/dev/null pr comment 12 --body x; `\nEOF\n`'
+    $'x=`cat <<\'EOF\'\na`; $GH_BIN >/dev/null pr comment 12 --body x; `\nEOF\n`'
+    $'x=`cat <<\'EOF\'\na`; $GH_BIN >|/dev/null pr comment 12 --body x; `\nEOF\n`'
+    $'x=`cat <<\'EOF\'\na`; $GH_BIN 2>&1 pr comment 12 --body x; `\nEOF\n`'
+    $'x=`cat <<\'EOF\'\na`; cat <($GH_BIN pr comment 12 --body x); `\nEOF\n`'
+    # bash는 바깥 어느 층이든 백틱 치환이면 heredoc 본문의 백틱에서 그 치환을 끝낸다($( ), <( ), 큰따옴표
+    # 안이어도. zsh는 이런 입력을 파싱 오류로 본다).
+    $'x=`echo $(cat <<\'EOF\'\nEOF `; gh pr comment 12 --body x; `\nEOF\n)`'
+    $'x=`echo "$(cat <<\'EOF\'\nEOF `; gh pr comment 12 --body x; `\nEOF\n)"`'
+    $'x=`cat <(cat <<\'EOF\'\na`; gh pr comment 12 --body x; `\nEOF\n)`'
+    $'x=`echo $(cat <<\'EOF\'\nEOF `\n$GH_BIN pr comment 12 --body x\n`\nEOF\n)`'
+    # 작은따옴표·ANSI-C 따옴표·주석 속 백틱도 bash에서는 같다(zsh는 따옴표와 주석으로 읽어 gh를 실행하지
+    # 않는다).
+    $'x=`echo $(: # `; gh pr comment 12 --body x; : `\n)`'
+    $'x=`echo "$(: # `; gh pr comment 12 --body x; : `\n)"`'
+    $'x=`cat <(: # `; gh pr comment 12 --body x; : `\n)`'
+    $'x=`echo $(echo \'`; gh pr comment 12 --body x; : `\')`'
+    $'x=`echo $\'`; gh pr comment 12 --body x; : `\'`'
+    $'x=`echo $(echo $\'`; gh pr comment 12 --body x; : `\')`'
+    # 큰따옴표·\${ }·산술·\$( ) 안의 백틱도 bash에서는 바깥 백틱 치환을 끝낸다(zsh는 gh를 실행하지 않는다).
+    'x=`echo "``gh pr comment 12 --body x``"`'
+    'x=`echo ${x:-``gh pr comment 12 --body x``}`'
+    'x=`echo $((``gh pr comment 12 --body x``))`'
+    'x=`echo $(echo "``gh pr comment 12 --body x``")`'
+    'echo "`echo "``gh pr comment 12 --body x``"`"'
+    # 백틱 치환 안의 이스케이프된 백틱은 안쪽 명령 치환이다(bash·zsh 모두).
+    $'x=`echo \\`gh pr comment 12 --body x\\``'
+    $'x=`echo "\\`gh pr comment 12 --body x\\`"`'
+    $'x=`echo ${y:-\\`gh pr comment 12 --body x\\`}`'
+    $'x=`echo $(echo \\`gh pr comment 12 --body x\\`)`'
     # 따옴표 없는 구분자의 본문에서 구분자 뒤 백틱 쌍은 종결이 아니라 명령 치환이다.
     $'x=$(cat <<EOF\nhi\nEOF ` $GH_BIN pr comment 12 --body x `\nEOF\n)'
     # bash 5.3의 함수 치환 \${ cmd; } 는 명령을 실행한다. 여는 괄호 뒤 줄 이음도 같다.
@@ -1238,6 +1315,30 @@ _pinning_codex_mention_table() {
     $'x=${\\\n gh pr comment 12 --body x; }'
     # $[ ] 는 산술 확장이라 << 뒤 줄은 heredoc 본문이 아니다.
     $'x=$[a[1]<<2]\ngh pr comment 12 --body x\n2]'
+    # heredoc을 연 뒤 새로 연 명령 치환 안에서 줄이 끝나면 셸은 치환이 닫힌 뒤에 본문을 읽으므로 다음 줄은
+    # 치환 안의 명령이다. heredoc을 연 치환을 닫고 새로 연 치환도 같다(bash 3.2·zsh).
+    $'cat <<EOF >/dev/null; x=$(\ngh pr comment 12 --body x\nEOF\n)\nEOF'
+    $'cat <<EOF >/dev/null; x=`\ngh pr comment 12 --body x\nEOF\n`\nEOF'
+    $'cat <<\'EOF\' >/dev/null; x=$(\ngh issue comment 5 --body x\nEOF\n)\nEOF'
+    $'for i in 1; do cat <<EOF >/dev/null; x=$(\ngh pr comment 12 --body x\nEOF\n); done\nEOF'
+    $'(cat <<EOF; x=$(\ngh pr comment 12 --body x\n)\nEOF\n)'
+    $'x=`cat <<EOF`; y=`\ngh pr comment 12 --body x\nEOF\n`'
+    $'x=$(cat <<EOF); y=$(\ngh pr comment 12 --body x\nEOF\n)'
+    $'x=$(cat <<EOF); y=$(echo a\ngh pr comment 12 --body x\nEOF\n)'
+    $'x=$(cat <<B); cat <<C >/dev/null; y=$(\ngh pr comment 12 --body x\nB\nC\n)\nB\nC'
+    # 먼저 연 heredoc 뒤 치환 안에서 둘째 heredoc을 열어도, 먼저 연 heredoc의 본문은 치환이 닫힌 뒤에 읽는다.
+    $'cat <<A >/dev/null; x=$(cat <<B >/dev/null\nB\ngh pr comment 12 --body x\nA\nB\n)'
+    $'cat <<A >/dev/null; x=`cat <<B >/dev/null\nB\ngh pr comment 12 --body x\nA\nB\n`'
+    # 변수·치환 뒤에 ANSI-C 따옴표·로캘 따옴표로 붙인 h와 zsh 첨자 뒤의 h도 gh 이름이 된다.
+    "X=g; \${X}\$'h' pr comment 12 --body x"
+    "X=g; \"\${X}\"\$'h' pr comment 12 --body x"
+    "X=g; \${X}\$''h pr comment 12 --body x"
+    "\$(printf g)\$'h' pr comment 12 --body x"
+    "X=g; \$X\$\"h\" pr comment 12 --body x"
+    "X=g; \$X\$\"\"h pr comment 12 --body x"
+    "X=g; \${X}\$\"h\" pr comment 12 --body x"
+    "set -- g; \$1\$\"h\" pr comment 12 --body x"
+    "X=g; \$X[1]h pr comment 12 --body x"
   )
   local -a scope_out=(
     "gh pr merge 12 --squash --body x"
@@ -1283,6 +1384,8 @@ _pinning_codex_mention_table() {
     "eval \"\$X\"; ! gh pr view 1"
     "eval \"\$X\"; command gh pr view 1"
     "eval \"\$X\"; { gh pr view 1; }"
+    "eval \"\$X\"; {gh pr view 1}"
+    "eval \"\$X\"; =gh pr view 1"
     "eval \"\$X\"; if :; then gh pr view 1; fi"
     "eval \"\$X\"; if false; then :; elif gh pr view 1; then :; fi"
     "eval \"\$X\"; if false; then :; else gh pr view 1; fi"
@@ -1322,6 +1425,41 @@ _pinning_codex_mention_table() {
     $'cat <<$\'EOF\'\nx\nEOF\necho aaaaaagh; zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\\\nyy'
     # 판정 불확실이어도 변수 명령어 뒤 단어가 pr·issue·api가 아니면 대상이 아니다.
     $'x=`cat <<\'EOF\'\na`; $GH_BIN prx view 1; `\nEOF\n`'
+    # gh 뒤 -- 에서는 하위 명령 찾기를 멈춘다(cobra는 -- 뒤 단어를 하위 명령으로 읽지 않는다). 앞 세그먼트의
+    # 단어는 하위 명령이 아니다. 경로 안의 { 는 zsh 그룹이 아니다.
+    "gh -- x pr comment 12 --body x"
+    "echo pr comment 12; gh"
+    "a/{gh pr comment 12 --body x"
+    # 명령어 자리의 변수 명령어여도 명령 자리가 아닌 gh가 없으면 대상이 아니다. 이름에 gh가 든 변수의 조회와
+    # 래퍼 뒤의 동적 할당은 셸 실행기로 보지 않는다. 하위 명령이 pr·issue·api인 변수 명령어는 그 호출로
+    # 판정하고(명령 치환으로 찾은 gh 포함), 기본값이 한 단어(gh)면 하위 명령은 뒤따르는 단어다. 기본값의
+    # 앞뒤 공백은 단어를 나누지 않고, 여러 단어인 기본값도 명령어 자리가 아니거나 명령 자리가 아닌 gh가
+    # 없으면 대상이 아니다.
+    "\$PY script.py; gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "GH=\$(command -v gh); \"\$GH\" pr view 12 --json comments --jq '.comments[].body'"
+    "env HOME=\"\$H\" GH_TOKEN=\"\$(gh auth token)\" gh pr view 12 --json body"
+    "\$(command -v gh) pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "\$(which gh) api repos/o/r/pulls/12/comments --jq '.[].body | select(test(\"@codex\"))'"
+    "nohup \"\$GH\" pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "\${GH:-gh} pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "\${GH_BIN:-/usr/bin/gh} pr view 12 --json body"
+    "\${y:- gh} pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "\${y:-gh } pr view 12 --json body"
+    "echo \${y:-gh pr comment 12 --body x}"
+    "\${EDITOR:-vim -n} notes.md; gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    # 닫힌 백틱 치환 뒤 따옴표 속 백틱과 백틱 치환 바로 안 주석의 백틱은 판정 불확실이 아니다.
+    "x=\`date\`; git commit -m 'docs: gh pr comment \`12\`'"
+    "x=\`date # \`; git commit -m 'docs: gh pr comment 12'"
+    # 백틱 치환 밖 주석의 백틱은 주석이고, 이스케이프된 백틱은 글자다. 바깥에 백틱 치환이 없으면 큰따옴표
+    # 안 백틱은 안쪽 치환이다.
+    "gh pr view 1  # then \`gh pr comment 12\`"
+    $'git commit -m "docs: use \\`gh pr comment 12\\`"'
+    'echo "$(echo "`date`")"; gh pr view 1'
+    # heredoc을 연 치환 안에서 끝난 줄 다음은 본문이다. 산술·큰따옴표 안에서 끝난 줄은 닫힌 뒤의 줄 끝에서
+    # 본문을 읽는다.
+    $'x=$(\ncat <<EOF\ngh pr comment 12 --body x\nEOF\n)'
+    $'cat <<EOF >/dev/null; echo $(( 1 +\n2 ))\ngh pr comment 12 --body x\nEOF'
+    $'cat <<EOF >/dev/null; x="\ngh pr comment 12 --body x\n"\nEOF'
   )
   for cmd in "${scope_in[@]}"; do
     assert_eq "$(if pinning_codex_mention_scope "$cmd"; then printf in; else printf out; fi)" "in" \
@@ -1465,6 +1603,30 @@ _pinning_codex_mention_table() {
   cmd="bash -c 'echo hi;$(head -c 5000 /dev/zero | tr '\0' ' ') gh pr comment 12 --body x'"
   assert_eq "$(if pinning_codex_mention_scope "$cmd"; then printf in; else printf out; fi)" "in" \
     "[7/lib $flavor] runner argument longer than the word cap must stay in scope"
+
+  # 변수 명령어와 하위 명령 사이에 옵션이 많아도 하위 명령을 찾는다.
+  cmd="\$GH_BIN$(printf ' -R o/r%.0s' $(seq 40)) pr comment 12 --body x"
+  assert_eq "$(if pinning_codex_mention_scope "$cmd"; then printf in; else printf out; fi)" "in" \
+    "[7/lib $flavor] variable gh with many options before the subcommand must stay in scope"
+
+  # 한 세그먼트의 gh api 호출이 16번을 넘으면 api 쓰기 검사를 멈추고 판정 불확실로 둔다.
+  cmd="echo$(printf ' gh api repos/o/r/pulls/1%.0s' $(seq 16))"
+  assert_eq "$(if pinning_codex_mention_scope "$cmd"; then printf in; else printf out; fi)" "out" \
+    "[7/lib $flavor] up to 16 read-only gh api calls in one segment must stay out of scope"
+  cmd="echo$(printf ' gh api repos/o/r/pulls/1%.0s' $(seq 17))"
+  assert_eq "$(if pinning_codex_mention_scope "$cmd"; then printf in; else printf out; fi)" "in" \
+    "[7/lib $flavor] more than 16 gh api calls in one segment must be treated as uncertain"
+  cmd="$(printf 'gh api repos/o/r/pulls/1\n%.0s' $(seq 17))"
+  assert_eq "$(if pinning_codex_mention_scope "$cmd"; then printf in; else printf out; fi)" "out" \
+    "[7/lib $flavor] the gh api call limit must count per segment"
+
+  # 사전 필터는 잘못된 UTF-8 바이트 뒤의 gh도 찾는다(UTF-8 로캘의 bash 정규식은 그런 바이트 뒤에서 일치를
+  # 놓친다).
+  local utf8_locale
+  utf8_locale="$(locale -a 2>/dev/null | grep -i -m1 -E '^(c|en_us)\.utf-?8$' || true)"
+  cmd=$'echo \'\xff\xfe\'; gh pr comment 12 --body x'
+  assert_eq "$(if [ -n "$utf8_locale" ]; then LC_ALL=$utf8_locale; fi; if pinning_codex_mention_scope "$cmd"; then printf in; else printf out; fi)" "in" \
+    "[7/lib $flavor] gh after invalid UTF-8 bytes must stay in scope"
 
   # PINNING_LEXER_MAX_BYTES보다 긴 명령은 lexer 없이 판정 불확실로 보고 허용 형태를 인정하지 않는다.
   cmd="$(head -c "$((PINNING_LEXER_MAX_BYTES + 1))" /dev/zero | tr '\0' ':'); gh pr comment 12 --body '@codex review'"
