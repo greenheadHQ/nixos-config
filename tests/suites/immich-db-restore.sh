@@ -8,6 +8,7 @@
 # 아래 PATH 대역만 끼운다.
 #   - podman: `podman exec [-i] immich-postgres <cmd>`를 로컬 <cmd>로 실행한다. `-i`가 없으면 표준
 #     입력을 붙이지 않는다(실제 podman과 같다). root가 아니면 거부한다(rootful 컨테이너).
+#     FAKE_RACE_DB를 주면 이름 변경 직전에 그 DB로 연결을 연다(확인과 변경 사이의 경합).
 #   - systemctl: podman-immich-server/ml 유닛만 받는다. server 시작은 immich DB에 연결을 여는
 #     앱 대역을 띄우고, 중지는 그 연결이 끊길 때까지 기다린다. root가 아니면 거부한다.
 #   - sudo: root 권한을 흉내 낸다. 실제 root 전용(0700) 디렉터리는 만들 수 없으므로, 일반 사용자가
@@ -103,6 +104,18 @@ done
 [ "${1:-}" = immich-postgres ] || { echo "fake podman: no such container: ${1:-}" >&2; exit 125; }
 shift
 printf 'podman exec %s\n' "$*" >> "$FAKE_TRACE"
+# FAKE_RACE_DB: 이름 변경 호출(-v old=...) 직전에 그 DB로 연결을 한 번 열어, 연결 확인과 이름 변경
+# 사이에 생긴 연결을 흉내 낸다.
+if [ -n "${FAKE_RACE_DB:-}" ] && [[ " $* " == *" old="* ]] && [ ! -e "$FAKE_TRACE.race" ]; then
+  : > "$FAKE_TRACE.race"
+  PGAPPNAME=race-client nohup psql -X -q -U immich -d "$FAKE_RACE_DB" -c 'SELECT pg_sleep(86400)' \
+    </dev/null >/dev/null 2>&1 &
+  printf '%s\n' "$!" >> "$FAKE_APP_PIDS"
+  for _ in $(seq 1 100); do
+    [ "$(psql -X -At -U immich -d postgres -c "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'race-client'")" = 1 ] && break
+    sleep 0.1
+  done
+fi
 if [ "$interactive" = 1 ]; then
   exec "$@"
 fi
@@ -649,11 +662,37 @@ test_immich_restore_failures_keep_existing_db() {
   )
 }
 
+_immich_restore_client_count() {
+  psql -X -At -U immich -d postgres -c "SELECT count(*) FROM pg_stat_activity WHERE application_name = '$1'"
+}
+
+# $1 application_name, $2 DB — 앱 대역 밖의 연결을 연다.
+_immich_restore_open_client() {
+  PGAPPNAME="$1" nohup psql -X -q -U immich -d "$2" -c 'SELECT pg_sleep(86400)' </dev/null >/dev/null 2>&1 &
+  printf '%s\n' "$!" >> "$FAKE_APP_PIDS"
+  for _ in $(seq 1 100); do
+    [ "$(_immich_restore_client_count "$1")" = 1 ] && return 0
+    sleep 0.1
+  done
+  fail "$1 연결을 열지 못했다"
+}
+
+_immich_restore_close_client() {
+  _immich_restore_psql -d postgres -o /dev/null \
+    -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = '$1'"
+  for _ in $(seq 1 100); do
+    [ "$(_immich_restore_client_count "$1")" = 0 ] && return 0
+    sleep 0.1
+  done
+  fail "$1 연결이 닫히지 않았다"
+}
+
 # 전환 전제: 이미 있는 immich_restore는 지우지 않고, 남은 연결이 있으면 이름을 바꾸지 않는다.
+# 연결 확인 뒤 생긴 연결로 두 번째 이름 변경이 실패해도 첫 번째 변경까지 되돌린다(한 트랜잭션).
 test_immich_restore_switch_refuses_open_connections() {
   _immich_restore_require_tools || return 0
   (
-    local sandbox before restored output rc pid
+    local sandbox before mutated restored output rc
     sandbox="$(new_sandbox)"
     IMMICH_RESTORE_SANDBOX="$sandbox"
     FAKE_APP_PIDS="$sandbox/app.pids"
@@ -663,6 +702,7 @@ test_immich_restore_switch_refuses_open_connections() {
     _immich_restore_make_backups
     _immich_restore_lock_user_view
     _immich_restore_mutate_original
+    mutated="$(_immich_restore_snapshot immich)"
 
     _immich_restore_run bash "$IMMICH_RESTORE_SQL_GZ" 'immich_restore_db' >/dev/null 2>&1 \
       || fail "immich_restore_db failed"
@@ -676,14 +716,7 @@ test_immich_restore_switch_refuses_open_connections() {
     assert_contains "$output" 'database "immich_restore" already exists'
     [ "$(_immich_restore_snapshot immich_restore)" = "$restored" ] || fail "이미 있던 immich_restore를 바꾸거나 지웠다"
 
-    PGAPPNAME=lingering-client nohup psql -X -q -U immich -d immich -c 'SELECT pg_sleep(86400)' \
-      </dev/null >/dev/null 2>&1 &
-    pid=$!
-    printf '%s\n' "$pid" >> "$FAKE_APP_PIDS"
-    for _ in $(seq 1 100); do
-      [ "$(psql -X -At -U immich -d postgres -c "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'lingering-client'")" = 1 ] && break
-      sleep 0.1
-    done
+    _immich_restore_open_client lingering-client immich
 
     : > "$FAKE_TRACE"
     set +e
@@ -699,12 +732,27 @@ test_immich_restore_switch_refuses_open_connections() {
       fail "전환 실패 뒤 앱을 시작했다: $(cat "$FAKE_TRACE")"
     fi
 
-    _immich_restore_psql -d postgres -o /dev/null \
-      -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = 'lingering-client'"
-    for _ in $(seq 1 100); do
-      [ "$(psql -X -At -U immich -d postgres -c "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'lingering-client'")" = 0 ] && break
-      sleep 0.1
-    done
+    _immich_restore_close_client lingering-client
+
+    : > "$FAKE_TRACE"
+    set +e
+    output="$(
+      export FAKE_RACE_DB=immich_restore
+      _immich_restore_run bash "$IMMICH_RESTORE_SQL_GZ" 'immich_switch_to_restore' 2>&1
+    )"
+    rc=$?
+    set -e
+    [ "$rc" != 0 ] || fail "이름 변경 중 연결이 생겼는데 전환이 성공했다: $output"
+    [ -e "$FAKE_TRACE.race" ] || fail "경합 연결을 주입하지 못했다: $(cat "$FAKE_TRACE")"
+    assert_contains "$output" 'database "immich_restore" is being accessed by other users'
+    _immich_restore_db_exists immich || fail "두 번째 이름 변경 실패 뒤 immich DB가 사라졌다(이름 변경이 한 트랜잭션이 아니다)"
+    [ "$(_immich_restore_snapshot immich)" = "$mutated" ] || fail "두 번째 이름 변경 실패 뒤 immich DB가 바뀌었다"
+    [ -z "$(_immich_restore_before_dbs)" ] || fail "두 번째 이름 변경 실패 뒤 이전 DB 이름이 남았다"
+    if grep -q '^systemctl start' "$FAKE_TRACE"; then
+      fail "전환 실패 뒤 앱을 시작했다: $(cat "$FAKE_TRACE")"
+    fi
+    _immich_restore_close_client race-client
+
     set +e
     output="$(_immich_restore_run bash "$IMMICH_RESTORE_SQL_GZ" 'immich_switch_to_restore' 2>&1)"
     rc=$?
