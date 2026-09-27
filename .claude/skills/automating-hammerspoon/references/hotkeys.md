@@ -92,7 +92,8 @@ grep -n "terminalOptKeys" modules/darwin/programs/hammerspoon/files/init.lua
 구현 특징:
 
 - AppleScript로 Finder 현재 경로 가져오기
-- 경로에 특수문자(`[`, `]` 등)나 공백이 있어도 정상 동작 (따옴표 처리)
+- 경로에 특수문자(`[`, `]`, `$`, `'` 등)나 공백이 있어도 정상 동작 (작은따옴표 인용 + `cd --`)
+- 경로에 개행이 있으면 새 창은 열되 cd 입력은 하지 않고 알림을 띄움
 - Ghostty 실행 중일 때는 클립보드를 활용한 경로 전달 (한글 경로 문제 방지)
 - IPC 모듈 로드로 CLI에서 `hs` 명령 사용 가능
 - 설정 리로드 완료 시 macOS 알림 표시
