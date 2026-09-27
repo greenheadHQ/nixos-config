@@ -296,6 +296,8 @@ run_test "wt lsof escape path unit" test_wt_lsof_escape_path_unit
 run_test "wt cwd holders fail closed on control char path unit" test_wt_cwd_holders_fails_closed_on_control_char_path_unit
 run_test "wt cleanup active guard matches escaped path" test_wt_cleanup_active_guard_matches_escaped_path
 run_test "wt cleanup confirmed dirty keeps active guard" test_wt_cleanup_confirmed_dirty_keeps_active_guard
+run_test "wt cwd holders ancestor caffeinate unit" test_wt_cwd_holders_ancestor_caffeinate_unit
+run_test "wt cleanup ancestor caffeinate does not block" test_wt_cleanup_ancestor_caffeinate_does_not_block
 run_test "missing managed helpers fail closed" test_missing_managed_helpers_fail_closed
 run_test "missing wt Python helpers fail state changes" test_missing_wt_python_helpers_fail_state_changes
 run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_python_helpers_fail_cleanup_state_changes

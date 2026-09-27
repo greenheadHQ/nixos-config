@@ -12,6 +12,11 @@
 #     에이전트 세션이 저장소 루트로 옮겨 정리할 때 자기 자신 때문에 매번 멈추지 않게 한다.
 #     자손은 탐지 명령 자신을 포함한다. 같은 세션이 따로 띄운 백그라운드 셸은 형제라서
 #     그대로 잡힌다(막는 쪽이라 안전하다).
+#   - 조상 체인이 띄운 caffeinate(부모가 조상이고 argv[0]의 basename이 정확히 caffeinate).
+#     Claude Code 세션은 작업 중 caffeinate를 자식으로 계속 새로 띄우고 그 cwd는 세션을
+#     시작한 폴더다 — 빼지 않으면 worktree에서 시작한 세션의 정리가 매번 막힌다. caffeinate는
+#     잠자기만 막고 파일을 쓰지 않아 지워도 잃을 작업이 없다. 위 "명령 이름으로 예외를 두지
+#     않는다"의 유일한 예외이며, 표기가 바뀌면 탐지(막는 쪽)로 돌아간다.
 #   - 현재 사용자 소유가 아닌 프로세스. 다른 사용자·root 프로세스의 cwd는 권한 없이 읽을 수
 #     없고, 읽지 못한 것을 "사용 중"으로 두면 늘 있는 root 프로세스 때문에 매번 막힌다.
 #     그래서 "쓰지 않음"으로 본다 — 남는 제약이다.
@@ -104,6 +109,11 @@ _wt_cwd_holders() {
     return 1
   }
   WT_HOLDER_CANDIDATES="$candidates" awk -v self="$$" '
+    function argv0_base(cmd,    w) {
+      split(cmd, w, " ")
+      sub(/.*\//, "", w[1])
+      return w[1]
+    }
     {
       cmd = $0
       sub(/^[ \t]*[0-9]+[ \t]+[0-9]+[ \t]*/, "", cmd)
@@ -124,6 +134,8 @@ _wt_cwd_holders() {
         if (pid == "" || (pid in seen)) continue
         seen[pid] = 1
         if (!(pid in parent) || (pid in skip)) continue
+        # 조상 체인이 띄운 caffeinate: argv[0]의 basename이 정확히 caffeinate일 때만 뺀다
+        if ((parent[pid] in skip) && argv0_base(cmdline[pid]) == "caffeinate") continue
         # 자손: 부모 사슬을 거슬러 올라가 wt를 만나면 뺀다
         q = pid; hops = 0; descendant = 0
         while ((q in parent) && hops++ < 4096) {

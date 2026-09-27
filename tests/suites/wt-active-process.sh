@@ -675,3 +675,128 @@ test_wt_cleanup_confirmed_dirty_keeps_active_guard() {
     [[ -f "$target_path/sub/notes.txt" ]] || fail "확인 승인만으로 쓰는 중인 worktree가 지워짐: $output"
   )
 }
+
+test_wt_cwd_holders_ancestor_caffeinate_unit() {
+  # 조상 체인이 띄운 caffeinate는 판정에서 뺀다. Claude Code 세션은 작업 중 caffeinate를
+  # 자식으로 계속 새로 띄우고 그 cwd는 세션을 시작한 폴더라, 빼지 않으면 worktree에서 시작한
+  # 세션의 정리가 매번 막힌다(caffeinate는 파일을 쓰지 않는다). 예외는 좁게 둔다: 부모가
+  # 조상 체인에 있고 argv[0]의 basename이 정확히 caffeinate인 경우만이다.
+  local sandbox base target bin table out expected
+  sandbox=$(new_sandbox)
+  base="$(cd "$sandbox" && pwd -P)"
+  target="$base/wts/feat_a"
+  mkdir -p "$target"
+  bin="$sandbox/bin"
+  table="$sandbox/proc.tsv"
+  install_wt_fake_process_tools "$bin" "$table"
+
+  out=$(
+    PATH="$bin:$PATH" WT_LSOF="$bin/lsof" bash -c '
+      set -euo pipefail
+      table="$1" target="$2" repo="$3"
+      self=$$
+      row() { printf "%s\t%s\t%s\t%s\n" "$@" >> "$table"; }
+      : > "$table"
+      row 901 1 /elsewhere "zsh -l"                               # 조상의 조상
+      row 900 901 "$target" "claude --resume"                     # 조상 (세션)
+      row "$self" 900 /elsewhere "bash wt cleanup"                # wt 자신
+      row 800 900 /elsewhere "bash -c wait-loop"                  # 형제 셸 (조상 아님)
+      row 960 900 "$target" "caffeinate -i -t 300"                # 조상의 자식 caffeinate → 뺀다
+      row 961 901 "$target" "/usr/bin/caffeinate -i"              # 경로가 붙은 caffeinate → 뺀다
+      row 970 800 "$target" "caffeinate -i -t 300"                # 조상이 아닌 부모의 caffeinate
+      row 971 900 "$target" "sleep 300"                           # 조상의 자식이지만 caffeinate 아님
+      row 972 900 "$target" "caffeinate-x -i"                     # 이름만 비슷함
+      row 973 900 "$target" "/tmp/caffeinate2 -i"                 # 이름만 비슷함
+      source "$repo/modules/shared/scripts/lib/wt/ui.sh"
+      source "$repo/modules/shared/scripts/lib/wt/process.sh"
+      _wt_cwd_holders "$target"
+    ' _ "$table" "$target" "$REPO_ROOT"
+  ) || fail "_wt_cwd_holders가 정상 표에서 실패함: $out"
+
+  expected=$'970\tcaffeinate -i -t 300\n971\tsleep 300\n972\tcaffeinate-x -i\n973\t/tmp/caffeinate2 -i'
+  [[ "$out" == "$expected" ]] || fail "caffeinate 예외 판정이 다름: [$out] (기대: [$expected])"
+}
+
+# 대상 폴더를 cwd로 둔 caffeinate를 띄운다. parent=ancestor면 이 셸(wt의 조상)의 자식으로,
+# parent=other면 cwd가 대상 밖인 별도 bash(조상 아님)의 자식으로 띄운다. PID는
+# wt_caffeinate_pid에, 별도 bash는 wt_caffeinate_parent_pid에 남긴다. 호출한 셸에
+# stop_wt_caffeinate EXIT trap을 먼저 건다.
+start_wt_caffeinate() {
+  local dir="$1" parent="$2" pid_file="$3" _
+  if [[ "$parent" == "ancestor" ]]; then
+    (cd "$dir" && exec caffeinate -t 120) &
+    wt_caffeinate_pid=$!
+  else
+    : > "$pid_file"
+    bash -c '(cd "$1" && exec caffeinate -t 120) & printf "%s\n" "$!" > "$2"; wait' _ "$dir" "$pid_file" &
+    wt_caffeinate_parent_pid=$!
+    for _ in {1..100}; do
+      [[ -s "$pid_file" ]] && break
+      sleep 0.05
+    done
+    wt_caffeinate_pid=$(cat "$pid_file")
+  fi
+  for _ in {1..100}; do
+    [[ "$(ps -o command= -p "$wt_caffeinate_pid" 2>/dev/null)" == caffeinate* ]] && return 0
+    sleep 0.05
+  done
+  fail "caffeinate가 뜨지 않음: $dir"
+}
+
+stop_wt_caffeinate() {
+  [[ -z "${wt_caffeinate_pid:-}" ]] || kill "$wt_caffeinate_pid" 2>/dev/null || true
+  if [[ -n "${wt_caffeinate_parent_pid:-}" ]]; then
+    kill "$wt_caffeinate_parent_pid" 2>/dev/null || true
+    wait "$wt_caffeinate_parent_pid" 2>/dev/null || true
+  elif [[ -n "${wt_caffeinate_pid:-}" ]]; then
+    wait "$wt_caffeinate_pid" 2>/dev/null || true
+  fi
+  wt_caffeinate_pid=""
+  wt_caffeinate_parent_pid=""
+}
+
+test_wt_cleanup_ancestor_caffeinate_does_not_block() {
+  # 실제 caffeinate로 예외 범위를 본다(Darwin 전용 — Linux에는 caffeinate가 없어 단위
+  # 테스트가 규칙을 고정한다). 조상이 아닌 프로세스가 띄운 caffeinate는 막고, wt의 조상
+  # (여기서는 테스트 셸)이 띄운 caffeinate는 정리를 막지 않는다.
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "N/A: caffeinate는 macOS 전용이라 실제 프로세스 검증은 이 실행 환경에 적용되지 않는다 (runner=$(uname -s))" >&2
+    return 0
+  fi
+  command -v caffeinate >/dev/null 2>&1 || fail "macOS인데 caffeinate가 없음"
+
+  local sandbox home_dir repo_root gh_dir target_path head_oid
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  gh_dir="$sandbox/gh-bin"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  git -C "$repo_root" remote add origin https://example.invalid/nixos-config.git
+  target_path="$repo_root/.claude/worktrees/feature_one"
+  mkdir -p "$target_path/sub"
+  head_oid="$(git -C "$target_path" rev-parse HEAD)"
+  install_merged_pr_mock "$gh_dir" "$head_oid"
+
+  (
+    wt_caffeinate_pid="" wt_caffeinate_parent_pid=""
+    trap stop_wt_caffeinate EXIT
+    local output
+
+    start_wt_caffeinate "$target_path/sub" other "$sandbox/caffeinate.pid"
+    output=$(run_fixture_wt "$home_dir" "$repo_root" "$gh_dir:" cleanup feature_one 2>&1) \
+      || fail "cleanup 비정상 종료: $output"
+    assert_contains "$output" "PID $wt_caffeinate_pid: caffeinate -t 120"
+    [[ -d "$target_path" ]] || fail "조상이 아닌 프로세스가 띄운 caffeinate인데 지워짐: $output"
+    stop_wt_caffeinate
+
+    start_wt_caffeinate "$target_path/sub" ancestor ""
+    output=$(run_fixture_wt "$home_dir" "$repo_root" "$gh_dir:" cleanup feature_one 2>&1) \
+      || fail "cleanup 비정상 종료: $output"
+    assert_not_contains "$output" "PID $wt_caffeinate_pid"
+    assert_contains "$output" "정리 완료: 1개 삭제"
+    [[ ! -d "$target_path" ]] || fail "조상이 띄운 caffeinate가 정리를 막음: $output"
+  )
+}
