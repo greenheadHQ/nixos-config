@@ -40,6 +40,13 @@ _codex_projection_state() {
   )
 }
 
+# 출력에 정확히 그 한 줄이 있는지 본다. 부분 문자열이 아니라 줄 전체를 비교하므로 경고 한 줄의 원인·조치
+# 문구가 항목별로 고정된다.
+_codex_projection_assert_line() {
+  local text="$1" line="$2"
+  printf '%s\n' "$text" | grep -Fxq -- "$line" || fail "expected line: $line"$'\n'"in output: $text"
+}
+
 _codex_projection_assert_state_unchanged() {
   local label="$1" before="$2" after="$3"
   [ "$before" = "$after" ] \
@@ -151,8 +158,9 @@ test_codex_activation_projection_fails_closed_without_git() {
 }
 
 # 원본과 이름이 같은 자리의 실디렉토리·파일은 관리 링크로 바꾸지 않는다 (#1455). SKILL.md가 git
-# 추적(ls-files rc 0)이면 Skipping(git pull 안내)을 stdout으로 내고, 그 밖의 실디렉토리(전부 미추적,
-# SKILL.md만 미추적)와 파일은 추적 여부와 관계없이 보존하며 이름·원인·조치를 stderr로 경고한다.
+# 추적(ls-files rc 0)이면 안의 미추적 파일과 함께 두고 Skipping(git pull 안내)을 stdout으로 내며,
+# 그 밖의 실디렉토리(전부 미추적, SKILL.md만 미추적, SKILL.md 없음)와 파일은 추적 여부와 관계없이
+# 보존하고 항목마다 이름·원인·조치를 담은 경고 한 줄을 stderr로 낸다.
 # rc는 고아 정리의 보존 경고와 같이 0이고, 보존한 항목 뒤의 원본도 계속 투영한다. 다른 대상을
 # 가리키는 심링크는 링크만 관리 링크로 바꾸고 링크 대상은 건드리지 않는다.
 test_codex_activation_projection_tracked_dir_skipped_untracked_entries_kept() {
@@ -160,20 +168,22 @@ test_codex_activation_projection_tracked_dir_skipped_untracked_entries_kept() {
   local script="$REPO_ROOT/modules/shared/programs/codex/files/project-codex-skills.sh"
   sandbox="$(new_sandbox)"
   project="$sandbox/project"
-  for name in alive draft fresh mixed plainfile stale tracked-legacy; do
+  for name in alive draft fresh mixed nomd plainfile stale tracked-legacy; do
     mkdir -p "$project/.claude/skills/$name"
     printf '%s source\n' "$name" > "$project/.claude/skills/$name/SKILL.md"
   done
-  mkdir -p "$project/.agents/skills/draft" "$project/.agents/skills/mixed" \
+  mkdir -p "$project/.agents/skills/draft" "$project/.agents/skills/mixed" "$project/.agents/skills/nomd" \
     "$project/.agents/skills/tracked-legacy" "$project/elsewhere/stale"
   ln -s ../../.claude/skills/alive "$project/.agents/skills/alive"
-  # 전부 미추적 / SKILL.md만 미추적 / 미추적 일반 파일 / SKILL.md 추적
+  # 전부 미추적 / SKILL.md만 미추적 / SKILL.md 없음 / 미추적 일반 파일 / SKILL.md 추적 + 미추적 초안
   printf 'draft skill\n' > "$project/.agents/skills/draft/SKILL.md"
   printf 'draft notes\n' > "$project/.agents/skills/draft/notes.md"
   printf 'untracked skill\n' > "$project/.agents/skills/mixed/SKILL.md"
   printf 'tracked other\n' > "$project/.agents/skills/mixed/other.md"
+  printf 'nomd notes\n' > "$project/.agents/skills/nomd/notes.md"
   printf 'plain file\n' > "$project/.agents/skills/plainfile"
   printf 'tracked copy\n' > "$project/.agents/skills/tracked-legacy/SKILL.md"
+  printf 'tracked-legacy draft\n' > "$project/.agents/skills/tracked-legacy/draft.md"
   # 다른 대상을 가리키는 심링크
   printf 'elsewhere skill\n' > "$project/elsewhere/stale/SKILL.md"
   ln -s ../../elsewhere/stale "$project/.agents/skills/stale"
@@ -188,7 +198,7 @@ test_codex_activation_projection_tracked_dir_skipped_untracked_entries_kept() {
     bash "$script" "$project" > "$sandbox/dry.out" 2> "$sandbox/dry.err" || rc=$?
   [ "$rc" -eq 0 ] || fail "dry-run projection exited $rc: $(cat "$sandbox/dry.out" "$sandbox/dry.err")"
   _codex_projection_assert_state_unchanged "dry-run projection" "$before" "$(_codex_projection_state "$project")"
-  for name in draft mixed plainfile tracked-legacy; do
+  for name in draft mixed nomd plainfile tracked-legacy; do
     assert_not_contains "$(cat "$sandbox/dry.out")" "$project/.agents/skills/$name"
     assert_contains "$(cat "$sandbox/dry.out" "$sandbox/dry.err")" ".agents/skills/$name"
   done
@@ -202,8 +212,9 @@ test_codex_activation_projection_tracked_dir_skipped_untracked_entries_kept() {
 
   [ ! -L "$project/.agents/skills/tracked-legacy" ] \
     && [ "$(cat "$project/.agents/skills/tracked-legacy/SKILL.md")" = "tracked copy" ] \
+    && [ "$(cat "$project/.agents/skills/tracked-legacy/draft.md")" = "tracked-legacy draft" ] \
     || fail "git-tracked real directory was changed"
-  assert_contains "$(cat "$sandbox/run1.out")" \
+  _codex_projection_assert_line "$(cat "$sandbox/run1.out")" \
     "Skipping .agents/skills/tracked-legacy: git-tracked directory (run 'git pull' first)"
   assert_not_contains "$first_err" 'Warning: keeping .agents/skills/tracked-legacy'
 
@@ -215,16 +226,20 @@ test_codex_activation_projection_tracked_dir_skipped_untracked_entries_kept() {
     && [ "$(cat "$project/.agents/skills/mixed/SKILL.md")" = "untracked skill" ] \
     && [ "$(cat "$project/.agents/skills/mixed/other.md")" = "tracked other" ] \
     || fail "real directory with untracked SKILL.md was not preserved"
+  [ ! -L "$project/.agents/skills/nomd" ] \
+    && [ "$(cat "$project/.agents/skills/nomd/notes.md")" = "nomd notes" ] \
+    || fail "real directory without SKILL.md was not preserved"
   [ ! -L "$project/.agents/skills/plainfile" ] \
     && [ "$(cat "$project/.agents/skills/plainfile")" = "plain file" ] \
     || fail "regular file was not preserved"
-  for name in draft mixed plainfile; do
-    assert_contains "$first_err" "Warning: keeping .agents/skills/$name: "
+  # 경고는 항목마다 원인과 조치를 담은 한 줄이다. 한쪽 분기의 문구만 바뀌어도 잡히도록 줄 전체를 본다.
+  for name in draft mixed nomd; do
+    _codex_projection_assert_line "$first_err" "Warning: keeping .agents/skills/$name: real directory in place of the managed projection link ../../.claude/skills/$name (SKILL.md is missing or not git-tracked); review its contents, move or delete it, then rerun nrs"
     assert_not_contains "$(cat "$sandbox/run1.out")" "Skipping .agents/skills/$name"
   done
-  assert_contains "$first_err" 'real directory in place of the managed projection link ../../.claude/skills/draft'
-  assert_contains "$first_err" 'file in place of the managed projection link ../../.claude/skills/plainfile'
-  assert_contains "$first_err" 'review its contents, move or delete it, then rerun nrs'
+  _codex_projection_assert_line "$first_err" "Warning: keeping .agents/skills/plainfile: file in place of the managed projection link ../../.claude/skills/plainfile; review its contents, move or delete it, then rerun nrs"
+  assert_not_contains "$(cat "$sandbox/run1.out")" "Skipping .agents/skills/plainfile"
+  [ "$(wc -l < "$sandbox/run1.err")" -eq 4 ] || fail "unexpected projection warnings: $first_err"
 
   [ "$(readlink "$project/.agents/skills/alive")" = "../../.claude/skills/alive" ] \
     || fail "correct managed link changed"
@@ -272,7 +287,8 @@ test_codex_activation_projection_keeps_real_dir_when_tracking_check_fails() {
     || fail "real directory content changed although git tracking check failed"
   [ "$(cat "$project/.agents/skills/legacy/draft.md")" = "untracked draft" ] \
     || fail "untracked draft removed although git tracking check failed"
-  assert_contains "$output" 'Warning: keeping .agents/skills/legacy'
+  # git은 저장소 밖에서 fatal(exit 128)로 끝난다.
+  _codex_projection_assert_line "$output" "Warning: keeping .agents/skills/legacy: cannot tell whether it is git-tracked (git ls-files exit 128); review its contents, move or delete it, then rerun nrs"
   [ "$(readlink "$project/.agents/skills/modern")" = "../../.claude/skills/modern" ] \
     || fail "projection stopped after keeping a directory with unknown git tracking"
   [ ! -e "$project/.agents/skills/gone" ] && [ ! -L "$project/.agents/skills/gone" ] \

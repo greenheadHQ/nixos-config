@@ -188,7 +188,9 @@ EXIT_ERROR로 막는다(선언과 회수가 겹치면 sync가 매번 썼다 지�
 
 - 스킬이 안 보임: `.agents/skills/*`가 파일 심링크인지 확인하고 디렉토리 심링크로 교정한다.
   `nrs` 출력에 `Warning: keeping .agents/skills/<name>`이 있으면 그 자리의 실디렉토리·파일이 투영을
-  막고 있다 — 처리 규칙은 아래 "투영 아키텍처"를 따른다.
+  막고 있다 — 처리 규칙은 아래 "투영 아키텍처"를 따른다. MiniPC(NixOS)에서는 activation이
+  `home-manager-<primaryUser>` 서비스로 돌아 이 경고가 `nrs` 출력이 아니라 journal로 가므로,
+  `journalctl -u home-manager-<primaryUser>`에서 확인하거나 메인 체크아웃의 `verify-ai-compat.sh`로 확인한다.
 - 권한 프롬프트 반복: `~/.codex/config.toml`의 `approval_policy`, `sandbox_mode`를 확인한다.
 - AGENTS 불일치: 프로젝트 루트 `AGENTS.md -> CLAUDE.md` 심링크를 복구한다.
 - 활성화 누락: `nrs` 실행 후 `./scripts/ai/verify-ai-compat.sh`로 재검증한다.
@@ -211,10 +213,12 @@ Codex CLI는 디렉토리 심링크를 `follow_links(true)`로 순회한다 (PR 
 
 - `SKILL.md`가 git 추적인 실디렉토리: `Skipping ... (run 'git pull' first)`를 출력한다. 심링크 전환
   커밋을 받기 전에 `nrs`가 먼저 돈 경우이므로 `git pull` 뒤 `nrs`를 다시 실행한다.
-- 그 밖의 실디렉토리(전부 미추적, `SKILL.md`만 미추적)와 파일: `Warning: keeping .agents/skills/<name>`
+- 그 밖의 실디렉토리(전부 미추적, `SKILL.md`만 미추적, `SKILL.md` 없음)와 파일: 원인과 조치
+  (`review its contents, move or delete it, then rerun nrs`)를 담은 `Warning: keeping .agents/skills/<name>`
   경고를 stderr로 남기고 rc는 0이다. 사용자 자료일 수 있으므로 내용을 확인해 옮기거나 지운 뒤 `nrs`를
   다시 실행한다. 정리 전까지 그 스킬은 Codex에 투영되지 않고 `verify-ai-compat.sh`가 실패로 보고한다.
-- 추적 판정 명령 자체가 실패한 실디렉토리: 미추적으로 보지 않고 같은 `Warning: keeping` 경고로 보존한다.
+- 추적 판정 명령 자체가 실패한 실디렉토리: 미추적으로 보지 않고 보존한다. 경고의 원인은
+  `cannot tell whether it is git-tracked (git ls-files exit <rc>)`이고 조치는 위와 같다.
 
 고아 정리는 activation이 만든 관리 링크(`../../.claude/skills/<name>` 상대 심링크) 중
 원본이 사라진 것만 지운다. 원본 없는 실디렉토리와 다른 대상을 가리키는 링크는 지우지 않고

@@ -64,6 +64,8 @@ $DRY_RUN_CMD mkdir -p "$TARGET_SKILLS"
 # shared global `~/.codex/skills/` exposure 정책(exposedCodexSkills / intentionallyNotExposed)과
 # 별개의 축이며, SoT는 default.nix의 let 블록이다 (#486).
 CODEX_EXCLUDE_SKILLS="using-codex-exec"
+# 관리 링크 자리에 남은 실디렉토리·파일을 보존할 때 경고에 붙이는 조치 (#1455).
+KEEP_ACTION="review its contents, move or delete it, then rerun nrs"
 for source_skill_dir in "$SOURCE_SKILLS"/*/; do
   [ -d "$source_skill_dir" ] || continue
   [ -f "$source_skill_dir/SKILL.md" ] || continue
@@ -96,16 +98,16 @@ for source_skill_dir in "$SOURCE_SKILLS"/*/; do
     # --error-unmatch는 미추적이면 1로 끝난다. 그 밖의 실패(저장소가 아님 등)는 추적 여부를
     # 모른다는 뜻이므로 미추적으로 간주하지 않고 보존한다.
     if [ "$tracked_rc" -ne 1 ]; then
-      echo "Warning: keeping .agents/skills/$skill_name: cannot tell whether it is git-tracked (git ls-files exit $tracked_rc)" >&2
+      echo "Warning: keeping .agents/skills/$skill_name: cannot tell whether it is git-tracked (git ls-files exit $tracked_rc); $KEEP_ACTION" >&2
       continue
     fi
-    # SKILL.md가 미추적이면 디렉토리 전체가 미추적이든 다른 파일은 추적이든 보존한다. 고아 정리의
+    # SKILL.md가 없거나 미추적이면 디렉토리 전체가 미추적이든 다른 파일은 추적이든 보존한다. 고아 정리의
     # 보존 경고와 같이 rc는 바꾸지 않고, 정리는 사람이 판단한다 (verify-ai-compat.sh도 실패로 보고한다).
-    echo "Warning: keeping .agents/skills/$skill_name: real directory in place of the managed projection link $expected (SKILL.md is not git-tracked); review its contents, move or delete it, then rerun nrs" >&2
+    echo "Warning: keeping .agents/skills/$skill_name: real directory in place of the managed projection link $expected (SKILL.md is missing or not git-tracked); $KEEP_ACTION" >&2
     continue
   fi
   if [ -e "$target_link" ] && [ ! -L "$target_link" ]; then
-    echo "Warning: keeping .agents/skills/$skill_name: file in place of the managed projection link $expected; review its contents, move or delete it, then rerun nrs" >&2
+    echo "Warning: keeping .agents/skills/$skill_name: file in place of the managed projection link $expected; $KEEP_ACTION" >&2
     continue
   fi
 
