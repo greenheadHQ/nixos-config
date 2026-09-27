@@ -52,7 +52,7 @@ pushover-claude-stop.age wasn't created.
   printf '값을 붙여넣고 Ctrl-D: ' >&2
   stty -echo
   cat > "$d/secret" || { echo "입력 저장 실패 — 중단한다." >&2; exit 1; }
-  stty echo
+  stty echo; echo >&2
   chmod 0600 "$d/secret"
   [ -s "$d/secret" ] || { echo "입력이 비어 있다 — 아무것도 쓰지 않고 중단한다." >&2; exit 1; }
 
