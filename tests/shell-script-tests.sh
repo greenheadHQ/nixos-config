@@ -394,8 +394,11 @@ run_test "folder-actions compress-rar keeps earlier archive for same name" test_
 run_test "folder-actions compress-rar separates same-stem inputs" test_folder_actions_compress_rar_separates_same_stem_inputs
 run_test "folder-actions compress-rar skips existing output entries" test_folder_actions_compress_rar_skips_existing_output_entries
 run_test "folder-actions compress-rar reserves output name atomically" test_folder_actions_compress_rar_reserves_output_name_atomically
-run_test "folder-actions compress-rar keeps input when output reservation fails" test_folder_actions_compress_rar_keeps_input_when_output_reservation_fails
+run_test "folder-actions compress-rar stops run when Downloads is unusable" test_folder_actions_compress_rar_stops_run_when_downloads_unusable
+run_test "folder-actions compress-rar quarantines input when name cannot be reserved" test_folder_actions_compress_rar_quarantines_input_when_name_cannot_be_reserved
 run_test "folder-actions compress-rar keeps input when rar fails" test_folder_actions_compress_rar_keeps_input_when_rar_fails
+run_test "folder-actions compress-rar keeps reserved dir with other entries after rar failure" test_folder_actions_compress_rar_keeps_reserved_dir_with_other_entries_after_rar_failure
+run_test "folder-actions compress-rar signal removes only empty reserved dir" test_folder_actions_compress_rar_signal_removes_only_empty_reserved_dir
 run_test "folder-actions video jobs run with launchd minimal PATH" test_folder_actions_video_jobs_run_with_launchd_minimal_path
 run_test "karakeep fallback-sync success removes only matched queue URL" test_karakeep_fallback_sync_success_removes_only_matched_queue_url
 run_test "karakeep fallback-sync upload failure preserves queue" test_karakeep_fallback_sync_upload_failure_preserves_queue_and_records_notify_state

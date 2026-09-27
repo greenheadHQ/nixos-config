@@ -523,6 +523,7 @@ _folder_actions_assert_rar_output() {
   assert_file_contains "$guide" "$sum"
   assert_file_contains "$guide" "파일명: $name.rar"
   assert_file_contains "$guide" "\$ shasum -a 256 \"$name.rar\""
+  assert_file_contains "$guide" "> Get-FileHash \"$name.rar\" -Algorithm SHA256"
 }
 
 # compress-rar가 실패 격리한 <name>이 하나이고 <content>를 담는지 본다.
@@ -532,6 +533,68 @@ _folder_actions_assert_quarantined() {
   found=("$sandbox"/home/FolderActions/.failed/compress-rar/*_"$name")
   [[ "${#found[@]}" -eq 1 && -f "${found[0]}" ]] || fail "expected one quarantined $name: ${found[*]}"
   [[ "$(cat "${found[0]}")" == "$content" ]] || fail "quarantined $name must keep the input bytes"
+}
+
+# 작업 스크립트 사본의 /bin/mkdir 호출을 <sandbox>/stubs/mkdir로 돌린다. 대역 내용은 테스트가 쓴다.
+_folder_actions_route_mkdir_through_stub() {
+  local sandbox="$1"
+  local bin="$sandbox/home/.local/bin"
+  sed -e "s#/bin/mkdir #$sandbox/stubs/mkdir #g" "$bin/compress-rar.sh" > "$bin/compress-rar.sh.new"
+  mv "$bin/compress-rar.sh.new" "$bin/compress-rar.sh"
+  chmod 700 "$bin/compress-rar.sh"
+  grep -q "$sandbox/stubs/mkdir " "$bin/compress-rar.sh" || fail "fixture copy must route mkdir through the stub"
+}
+
+# Pushover 경계 대역: credential을 두고, 보낸 알림의 제목과 본문을 notify.log에 한 줄씩 남긴다.
+_folder_actions_install_notify_double() {
+  local sandbox="$1"
+  mkdir -p "$sandbox/home/.config/pushover" "$sandbox/home/.local/lib"
+  printf '%s\n' "test credential" > "$sandbox/home/.config/pushover/folder-actions"
+  cat > "$sandbox/home/.local/lib/pushover.sh" <<EOF_NOTIFY
+pushover_send() {
+  printf '%s\\t%s\\n' "\$2" "\$(printf '%s' "\$3" | tr '\\n' ' ')" >> '$sandbox/notify.log'
+}
+EOF_NOTIFY
+}
+
+# 출력 경로에 부분 결과를 남기고 실패하는 rar. <extra>를 주면 같은 폴더에 그 이름의 파일도 남긴다.
+_folder_actions_install_failing_rar() {
+  local sandbox="$1" extra="${2:-}"
+  cat > "$sandbox/tools/rar" <<EOF_RAR
+#!/bin/sh
+for arg in "\$@"; do printf 'ARG=%s\n' "\$arg"; done >> '$sandbox/rar.log'
+archive=""
+input=""
+for arg in "\$@"; do archive=\$input; input=\$arg; done
+printf '%s\n' partial > "\$archive"
+if [ -n '$extra' ]; then printf '%s\n' leftover > "\$(dirname "\$archive")/$extra"; fi
+exit 1
+EOF_RAR
+  chmod 755 "$sandbox/tools/rar"
+}
+
+# 작업 스크립트를 <limit>초 안에서만 돌리고 rc를 낸다. 시간을 넘기면 죽이고 124를 낸다.
+# 예약 루프가 끝나지 않는 결함이 테스트를 멈추지 않고 실패로 드러나게 한다.
+_folder_actions_run_tool_script_bounded() {
+  local sandbox="$1" name="$2" limit="$3" out="$4"
+  local pid ticks=0 rc=0
+  env -i HOME="$sandbox/home" PATH="$sandbox/tools:/usr/bin:/bin" \
+    "$sandbox/home/.local/bin/$name.sh" > "$out" 2>&1 &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$ticks" -ge $((limit * 10)) ]; then
+      kill -TERM "$pid" 2>/dev/null || true
+      sleep 1
+      kill -KILL "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      echo 124
+      return 0
+    fi
+    sleep 0.1
+    ticks=$((ticks + 1))
+  done
+  wait "$pid" || rc=$?
+  echo "$rc"
 }
 
 test_folder_actions_compress_rar_keeps_earlier_archive_for_same_name() (
@@ -624,21 +687,19 @@ test_folder_actions_compress_rar_skips_existing_output_entries() (
 )
 
 test_folder_actions_compress_rar_reserves_output_name_atomically() (
-  local sandbox bin stubs watch downloads contested
+  local sandbox watch downloads contested
   _folder_actions_tool_scripts_runnable || return 0
 
   sandbox=$(new_sandbox)
   _folder_actions_install_tool_script "$sandbox" compress-rar
   _folder_actions_install_tool_double "$sandbox" rar
-  bin="$sandbox/home/.local/bin"
-  stubs="$sandbox/stubs"
   watch="$sandbox/home/FolderActions/compress-rar"
   downloads="$sandbox/home/Downloads"
   contested="$downloads/sample"
 
   # 경쟁 실행 흉내: 이 작업이 처음으로 <contested>를 만들려는 mkdir 직전에 다른 실행이 같은 이름을
   # 먼저 차지한다. 비어 있는지 확인하는 단계와 확보하는 단계가 나뉘어 있으면 남의 결과 폴더에 쓰게 된다.
-  cat > "$stubs/mkdir" <<EOF_STUB
+  cat > "$sandbox/stubs/mkdir" <<EOF_STUB
 #!/bin/sh
 for arg in "\$@"; do
   if [ "\$arg" = '$contested' ] && [ ! -e '$sandbox/contested.flag' ]; then
@@ -648,10 +709,8 @@ for arg in "\$@"; do
 done
 exec /bin/mkdir "\$@"
 EOF_STUB
-  chmod 755 "$stubs/mkdir"
-  sed -e "s#/bin/mkdir #$stubs/mkdir #g" "$bin/compress-rar.sh" > "$bin/compress-rar.sh.new"
-  mv "$bin/compress-rar.sh.new" "$bin/compress-rar.sh"
-  chmod 700 "$bin/compress-rar.sh"
+  chmod 755 "$sandbox/stubs/mkdir"
+  _folder_actions_route_mkdir_through_stub "$sandbox"
   printf '%s\n' "new input" > "$watch/sample.txt"
 
   _folder_actions_run_tool_script "$sandbox" compress-rar >/dev/null 2>&1 \
@@ -663,17 +722,79 @@ EOF_STUB
   _folder_actions_assert_rar_output "$sandbox" sample_2 "new input"
 )
 
-test_folder_actions_compress_rar_keeps_input_when_output_reservation_fails() (
+# ~/Downloads 자체를 쓸 수 없는 것은 입력 결함이 아니라 환경 오류다. 입력을 격리하지 않고 watch dir에
+# 둔 채 알림 한 번과 함께 run을 멈춘다 (#1402의 도구 부재와 같은 처리).
+test_folder_actions_compress_rar_stops_run_when_downloads_unusable() (
+  local kind sandbox watch downloads earlier out rc input
+  _folder_actions_tool_scripts_runnable || return 0
+
+  for kind in unwritable file dangling; do
+    if [ "$kind" = unwritable ] && [ "$(id -u)" = 0 ]; then
+      echo "SKIP: root ignores the read-only Downloads case" >&2
+      continue
+    fi
+    sandbox=$(new_sandbox)
+    _folder_actions_install_tool_script "$sandbox" compress-rar
+    _folder_actions_install_tool_double "$sandbox" rar
+    _folder_actions_install_notify_double "$sandbox"
+    watch="$sandbox/home/FolderActions/compress-rar"
+    downloads="$sandbox/home/Downloads"
+    case "$kind" in
+      unwritable)
+        mkdir "$downloads/sample"
+        printf '%s\n' "earlier archive" > "$downloads/sample/sample.rar"
+        printf '%s\n' "earlier guide" > "$downloads/sample/데이터_무결성_검증방법.txt"
+        ;;
+      file)
+        rmdir "$downloads"
+        printf '%s\n' "not a directory" > "$downloads"
+        ;;
+      dangling)
+        rmdir "$downloads"
+        ln -s "$sandbox/missing-downloads" "$downloads"
+        ;;
+    esac
+    earlier=$(_folder_actions_tree_digest "$sandbox/home" | grep -E '^[DFL] \./Downloads([ /]|$)')
+    printf '%s\n' "new input" > "$watch/sample.txt"
+    printf '%s\n' "other input" > "$watch/other.txt"
+
+    [ "$kind" = unwritable ] && chmod 555 "$downloads"
+    trap '[ -d "$downloads" ] && [ ! -L "$downloads" ] && chmod 755 "$downloads"' EXIT
+    rc=$(_folder_actions_run_tool_script_bounded "$sandbox" compress-rar 60 "$sandbox/out.log")
+    [ "$kind" = unwritable ] && chmod 755 "$downloads"
+    out=$(cat "$sandbox/out.log")
+
+    [[ "$rc" -eq 1 ]] || fail "$kind: unusable Downloads must stop the run (rc=$rc): $out"
+    for input in sample.txt other.txt; do
+      [[ -f "$watch/$input" ]] || fail "$kind: $input must stay in the watch dir"
+      [[ "$(_folder_actions_count_calls_on "$sandbox" rm "$watch/$input")" == 0 ]] \
+        || fail "$kind: must not delete $input: $(cat "$sandbox/calls.log")"
+      [[ "$(_folder_actions_count_calls_on "$sandbox" mv "$watch/$input")" == 0 ]] \
+        || fail "$kind: must not quarantine $input: $(cat "$sandbox/calls.log")"
+    done
+    [[ "$(cat "$watch/sample.txt")" == "new input" ]] || fail "$kind: input bytes must stay"
+    [[ ! -e "$sandbox/home/FolderActions/.failed" ]] || fail "$kind: must not create the quarantine root"
+    [[ ! -e "$sandbox/rar.log" ]] || fail "$kind: rar must not run: $(cat "$sandbox/rar.log")"
+    [[ "$(_folder_actions_tree_digest "$sandbox/home" | grep -E '^[DFL] \./Downloads([ /]|$)')" == "$earlier" ]] \
+      || fail "$kind: Downloads must stay as it was"
+    [[ ! -e "$sandbox/missing-downloads" ]] || fail "$kind: must not create a dangling Downloads target"
+    assert_contains "$out" "환경 오류: 결과 폴더 위치에 쓸 수 없음: $downloads"
+    [[ "$(wc -l < "$sandbox/notify.log" | tr -d ' ')" == 1 ]] \
+      || fail "$kind: expected exactly one notification: $(cat "$sandbox/notify.log")"
+    assert_contains "$(cat "$sandbox/notify.log")" "FolderActions 환경 오류"
+    [[ ! -e "$sandbox/lock/compress-rar.lock.d" ]] || fail "$kind: lock must be released"
+  done
+)
+
+# 쓸 수 있는 Downloads에서 이 이름만 만들 수 없으면(이름 길이 초과 등) 그 입력만 격리한다.
+test_folder_actions_compress_rar_quarantines_input_when_name_cannot_be_reserved() (
   local sandbox watch downloads earlier out rc
   _folder_actions_tool_scripts_runnable || return 0
-  if [ "$(id -u)" = 0 ]; then
-    echo "SKIP: root ignores the read-only Downloads used to fail the reservation" >&2
-    return 0
-  fi
 
   sandbox=$(new_sandbox)
   _folder_actions_install_tool_script "$sandbox" compress-rar
   _folder_actions_install_tool_double "$sandbox" rar
+  _folder_actions_install_notify_double "$sandbox"
   watch="$sandbox/home/FolderActions/compress-rar"
   downloads="$sandbox/home/Downloads"
   mkdir "$downloads/sample"
@@ -682,24 +803,35 @@ test_folder_actions_compress_rar_keeps_input_when_output_reservation_fails() (
   earlier=$(_folder_actions_tree_digest "$downloads")
   printf '%s\n' "new input" > "$watch/sample.txt"
 
-  # Downloads에 새 항목을 만들 수 없으면 다음 번호도 확보할 수 없다. 앞선 결과 폴더 자체는 쓸 수 있다.
-  chmod 555 "$downloads"
-  trap 'chmod 755 "$downloads"' EXIT
-  set +e
-  out=$(_folder_actions_run_tool_script "$sandbox" compress-rar 2>&1)
-  rc=$?
-  set -e
-  chmod 755 "$downloads"
+  # 번호 붙은 이름은 모두 ENAMETOOLONG처럼 만들어지지 않는다. 실패를 곧바로 다음 번호로 넘기는
+  # 루프는 끝나지 않으므로 시간 제한으로 실패시킨다.
+  cat > "$sandbox/stubs/mkdir" <<EOF_STUB
+#!/bin/sh
+for arg in "\$@"; do
+  case "\$arg" in
+    '$downloads'/sample_*) echo "mkdir: \$arg: File name too long" >&2; exit 1 ;;
+  esac
+done
+exec /bin/mkdir "\$@"
+EOF_STUB
+  chmod 755 "$sandbox/stubs/mkdir"
+  _folder_actions_route_mkdir_through_stub "$sandbox"
 
-  # 앞선 결과와 새 입력이 모두 남아야 한다.
+  rc=$(_folder_actions_run_tool_script_bounded "$sandbox" compress-rar 60 "$sandbox/out.log")
+  out=$(cat "$sandbox/out.log")
+
+  [[ "$rc" -ne 124 ]] || fail "reservation must stop at a name it cannot create (timed out)"
   [[ "$(_folder_actions_tree_digest "$downloads")" == "$earlier" ]] \
     || fail "existing results must stay untouched: $(_folder_actions_tree_digest "$downloads")"
   [[ "$(_folder_actions_count_calls_on "$sandbox" rm "$watch/sample.txt")" == 0 ]] \
     || fail "must not delete the input: $(cat "$sandbox/calls.log")"
   _folder_actions_assert_quarantined "$sandbox" sample.txt "new input"
   [[ ! -e "$sandbox/rar.log" ]] || fail "rar must not run without a reserved output: $(cat "$sandbox/rar.log")"
-  [[ "$rc" -eq 0 ]] || fail "a quarantined reservation failure must not abort the run (rc=$rc): $out"
+  [[ "$rc" -eq 0 ]] || fail "a quarantined name failure must not abort the run (rc=$rc): $out"
+  assert_contains "$out" "결과 폴더를 만들 수 없음: $downloads/sample_2"
   assert_contains "$out" "결과 폴더 예약 실패: sample.txt"
+  assert_contains "$(cat "$sandbox/notify.log")" "FolderActions 실패"
+  assert_not_contains "$(cat "$sandbox/notify.log")" "환경 오류"
 )
 
 test_folder_actions_compress_rar_keeps_input_when_rar_fails() (
@@ -708,19 +840,9 @@ test_folder_actions_compress_rar_keeps_input_when_rar_fails() (
 
   sandbox=$(new_sandbox)
   _folder_actions_install_tool_script "$sandbox" compress-rar
+  _folder_actions_install_failing_rar "$sandbox"
   watch="$sandbox/home/FolderActions/compress-rar"
   downloads="$sandbox/home/Downloads"
-  # 출력 경로에 부분 결과를 남기고 실패하는 rar
-  cat > "$sandbox/tools/rar" <<EOF_RAR
-#!/bin/sh
-for arg in "\$@"; do printf 'ARG=%s\n' "\$arg"; done >> '$sandbox/rar.log'
-archive=""
-input=""
-for arg in "\$@"; do archive=\$input; input=\$arg; done
-printf '%s\n' partial > "\$archive"
-exit 1
-EOF_RAR
-  chmod 755 "$sandbox/tools/rar"
   mkdir "$downloads/sample"
   printf '%s\n' "earlier archive" > "$downloads/sample/sample.rar"
   printf '%s\n' "earlier guide" > "$downloads/sample/데이터_무결성_검증방법.txt"
@@ -741,4 +863,91 @@ EOF_RAR
   assert_line_count "$sandbox/rar.log" "ARG=$downloads/sample_2/sample_2.rar" 1
   [[ "$rc" -eq 0 ]] || fail "a quarantined rar failure must not abort the run (rc=$rc): $out"
   assert_contains "$out" "압축 실패: sample.txt"
+)
+
+test_folder_actions_compress_rar_keeps_reserved_dir_with_other_entries_after_rar_failure() (
+  local sandbox watch downloads out
+  _folder_actions_tool_scripts_runnable || return 0
+
+  sandbox=$(new_sandbox)
+  _folder_actions_install_tool_script "$sandbox" compress-rar
+  # rar가 부분 보관본 말고도 다른 파일을 남기면 예약 폴더는 비지 않으므로 지우지 않는다.
+  _folder_actions_install_failing_rar "$sandbox" leftover.tmp
+  watch="$sandbox/home/FolderActions/compress-rar"
+  downloads="$sandbox/home/Downloads"
+  printf '%s\n' "new input" > "$watch/sample.txt"
+
+  out=$(_folder_actions_run_tool_script "$sandbox" compress-rar 2>&1) \
+    || fail "a quarantined rar failure must not abort the run: $out"
+
+  [[ "$(ls -A "$downloads/sample")" == "leftover.tmp" ]] \
+    || fail "reserved dir must keep other entries and lose only the partial archive: $(ls -A "$downloads/sample" 2>&1)"
+  [[ "$(cat "$downloads/sample/leftover.tmp")" == "leftover" ]] || fail "other entries must keep their bytes"
+  assert_contains "$out" "예약한 결과 폴더를 비우지 못함: $downloads/sample"
+  _folder_actions_assert_quarantined "$sandbox" sample.txt "new input"
+)
+
+# 압축 도중 신호로 멈추면 예약 폴더는 비어 있을 때만 치우고, 부분 결과가 있으면 남긴다.
+# 입력은 지우지도 격리하지도 않고 watch dir에 둔다.
+test_folder_actions_compress_rar_signal_removes_only_empty_reserved_dir() (
+  local mode sandbox watch downloads earlier pid ticks rc out
+  _folder_actions_tool_scripts_runnable || return 0
+
+  for mode in empty partial; do
+    sandbox=$(new_sandbox)
+    _folder_actions_install_tool_script "$sandbox" compress-rar
+    watch="$sandbox/home/FolderActions/compress-rar"
+    downloads="$sandbox/home/Downloads"
+    # 압축을 시작한 뒤 release 파일이 생길 때까지 머무는 rar. partial이면 부분 결과를 먼저 남긴다.
+    cat > "$sandbox/tools/rar" <<EOF_RAR
+#!/bin/sh
+archive=""
+input=""
+for arg in "\$@"; do archive=\$input; input=\$arg; done
+if [ '$mode' = partial ]; then printf '%s\n' partial > "\$archive"; fi
+: > '$sandbox/rar.started'
+i=0
+while [ ! -e '$sandbox/rar.release' ] && [ "\$i" -lt 300 ]; do sleep 0.1; i=\$((i + 1)); done
+exit 1
+EOF_RAR
+    chmod 755 "$sandbox/tools/rar"
+    mkdir "$downloads/sample"
+    printf '%s\n' "earlier archive" > "$downloads/sample/sample.rar"
+    earlier=$(_folder_actions_tree_digest "$downloads/sample")
+    printf '%s\n' "new input" > "$watch/sample.txt"
+
+    env -i HOME="$sandbox/home" PATH="$sandbox/tools:/usr/bin:/bin" \
+      "$sandbox/home/.local/bin/compress-rar.sh" > "$sandbox/out.log" 2>&1 &
+    pid=$!
+    ticks=0
+    while [ ! -e "$sandbox/rar.started" ] && [ "$ticks" -lt 300 ]; do
+      sleep 0.1
+      ticks=$((ticks + 1))
+    done
+    if [ ! -e "$sandbox/rar.started" ]; then
+      kill -KILL "$pid" 2>/dev/null || true
+      fail "$mode: rar double never started: $(cat "$sandbox/out.log")"
+    fi
+    kill -TERM "$pid"
+    : > "$sandbox/rar.release"
+    rc=0
+    wait "$pid" || rc=$?
+    out=$(cat "$sandbox/out.log")
+
+    [[ "$rc" -ne 0 ]] || fail "$mode: a signalled run must exit non-zero: $out"
+    assert_contains "$out" "received signal TERM"
+    [[ "$(cat "$watch/sample.txt")" == "new input" ]] || fail "$mode: input must stay in the watch dir"
+    [[ "$(_folder_actions_count_calls_on "$sandbox" rm "$watch/sample.txt")" == 0 ]] \
+      || fail "$mode: must not delete the input: $(cat "$sandbox/calls.log")"
+    [[ "$(_folder_actions_count_calls_on "$sandbox" mv "$watch/sample.txt")" == 0 ]] \
+      || fail "$mode: must not quarantine the input: $(cat "$sandbox/calls.log")"
+    [[ "$(_folder_actions_tree_digest "$downloads/sample")" == "$earlier" ]] || fail "$mode: earlier result must stay"
+    if [ "$mode" = empty ]; then
+      [[ ! -e "$downloads/sample_2" ]] || fail "empty reserved dir must be removed on signal: $(ls -A "$downloads/sample_2")"
+    else
+      [[ "$(ls -A "$downloads/sample_2")" == "sample_2.rar" && "$(cat "$downloads/sample_2/sample_2.rar")" == "partial" ]] \
+        || fail "reserved dir holding a partial result must stay: $(ls -A "$downloads/sample_2" 2>&1)"
+    fi
+    [[ ! -e "$sandbox/lock/compress-rar.lock.d" ]] || fail "$mode: lock must be released"
+  done
 )

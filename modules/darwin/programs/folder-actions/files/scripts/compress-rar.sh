@@ -22,6 +22,8 @@ CURRENT_NONCE=""
 CURRENT_STARTED_AT=""
 LOCK_ACQUIRED=0
 SELF_REAP_DIR=""
+RESERVED_OUTPUT_NAME=""
+ACTIVE_OUTPUT_DIR=""
 
 log_info() {
     echo "[$(/bin/date '+%Y-%m-%d %H:%M:%S')] $1"
@@ -519,6 +521,11 @@ cleanup_lock() {
 on_signal() {
     local sig="$1"
     log_warn "received signal ${sig}; shutting down"
+    # 압축 도중 멈추면 예약한 결과 폴더가 비어 있을 때만 치운다. 부분 결과가 있으면 rmdir이
+    # 실패해 그대로 남는다 (#1403).
+    if [ -n "$ACTIVE_OUTPUT_DIR" ]; then
+        /bin/rmdir "$ACTIVE_OUTPUT_DIR" 2>/dev/null || true
+    fi
     cleanup_lock
     exit 1
 }
@@ -540,19 +547,28 @@ find_candidates() {
     find "$WATCH_DIR" -maxdepth 1 -type f ! -name ".*"
 }
 
-# 결과 폴더 이름을 예약하고 stdout으로 낸다 (#1403).
+# DEST_ROOT가 새 폴더를 만들 수 있는 디렉터리인지 본다. 없으면 만든다.
+dest_root_writable() {
+    [ -d "$DEST_ROOT" ] || /bin/mkdir -p "$DEST_ROOT" 2>/dev/null || return 1
+    [ -d "$DEST_ROOT" ] && [ -w "$DEST_ROOT" ]
+}
+
+# 결과 폴더 이름을 예약해 RESERVED_OUTPUT_NAME에 둔다 (#1403).
+# 명령 치환으로 돌려받지 않는다. 끝 개행이 잘리면 예약한 폴더와 실제로 쓰는 폴더가 어긋난다.
 # DEST_ROOT에 <stem>이 없으면 그 이름을, 있으면 <stem>_2, <stem>_3 … 중 아직 없는 첫 이름을 쓴다.
 # 이미 있는 항목은 종류(폴더·파일·심볼릭 링크)와 관계없이 건너뛰어 앞선 결과에 쓰지 않는다.
 # 확보는 mkdir(-p 없이) 한 번으로 한다. 이미 있는 경로면 mkdir이 실패하므로, 없음을 확인한 뒤
 # 다른 실행이 같은 이름을 차지하는 틈이 없다.
+# 반환: 0 예약함, 1 이 이름만 만들 수 없음(이름 길이 초과 등), 2 DEST_ROOT에 쓸 수 없음
 reserve_output_name() {
     local stem="$1"
     local name="$stem"
     local n=1
 
-    /bin/mkdir -p "$DEST_ROOT" || return 1
+    RESERVED_OUTPUT_NAME=""
+    dest_root_writable || return 2
     until /bin/mkdir "${DEST_ROOT}/${name}" 2>/dev/null; do
-        # 경로가 없는데 실패했다면 충돌이 아니라 권한·이름 길이 같은 문제다.
+        # 경로가 없는데 실패했다면 충돌이 아니라 이 이름을 만들 수 없는 것이다.
         if [ ! -e "${DEST_ROOT}/${name}" ] && [ ! -L "${DEST_ROOT}/${name}" ]; then
             log_error "결과 폴더를 만들 수 없음: ${DEST_ROOT}/${name}"
             return 1
@@ -560,23 +576,37 @@ reserve_output_name() {
         n=$((n + 1))
         name="${stem}_${n}"
     done
-    printf '%s\n' "$name"
+    RESERVED_OUTPUT_NAME="$name"
 }
 
 process_one() {
     local f="$1"
     local filename name_no_ext output_name target_dir rar_output_path checksum_val guide_file
+    local reserve_rc=0
 
     filename=$(basename "$f")
     name_no_ext="${filename%.*}"
 
-    # 결과 폴더 예약. 확보하지 못하면 압축하지 않고 입력을 격리한다.
-    if ! output_name=$(reserve_output_name "$name_no_ext"); then
-        log_error "결과 폴더 예약 실패: $filename"
-        quarantine_or_abort "$f"
-        return 0
-    fi
+    # 결과 폴더 예약. DEST_ROOT에 쓸 수 없는 것은 입력 결함이 아니라 환경 오류이므로
+    # require_commands_or_abort(#1402)처럼 입력을 watch dir에 두고 run을 중단한다.
+    # 이 이름만 만들 수 없으면 압축하지 않고 입력을 격리한다.
+    reserve_output_name "$name_no_ext" || reserve_rc=$?
+    case "$reserve_rc" in
+        0) ;;
+        2)
+            log_error "환경 오류: 결과 폴더 위치에 쓸 수 없음: ${DEST_ROOT}; 입력 파일은 그대로 두고 run 중단"
+            notify_failure "FolderActions 환경 오류" "$(basename "$WATCH_DIR"): 결과 폴더 위치에 쓸 수 없음: ${DEST_ROOT}" 1
+            exit 1
+            ;;
+        *)
+            log_error "결과 폴더 예약 실패: $filename"
+            quarantine_or_abort "$f"
+            return 0
+            ;;
+    esac
+    output_name="$RESERVED_OUTPUT_NAME"
     target_dir="${DEST_ROOT}/${output_name}"
+    ACTIVE_OUTPUT_DIR="$target_dir"
 
     # RAR 압축
     rar_output_path="${target_dir}/${output_name}.rar"
@@ -616,12 +646,14 @@ EOF_GUIDE
 
         # 원본 삭제
         /bin/rm -f "$f"
+        ACTIVE_OUTPUT_DIR=""
         log_info "압축 완료: $filename -> ${target_dir}/"
     else
         log_error "압축 실패: $filename"
         # 예약한 폴더는 이 입력만 쓰므로 부분 결과와 함께 치운다. 다른 항목이 남아 있으면 rmdir이 실패해 그대로 둔다.
         /bin/rm -f "$rar_output_path" || true
         /bin/rmdir "$target_dir" 2>/dev/null || log_warn "예약한 결과 폴더를 비우지 못함: $target_dir"
+        ACTIVE_OUTPUT_DIR=""
         quarantine_or_abort "$f"
     fi
 }
