@@ -350,8 +350,8 @@ SQL
 합성 환경에서 확인하지 못한 조건:
 
 - 운영 이미지(`ghcr.io/immich-app/postgres:16-vectorchord0.4.3-pgvectors0.2.0`)의 VectorChord·pgvector 확장. 테스트는 `IMMICH_REQUIRED_EXTENSIONS`에서 `vector`·`vchord`를 빼고 실행하므로, 실제 복원에서는 검증 단계가 두 확장의 존재를 확인한다.
-- 확장 목록과 핵심 테이블 이름은 Immich v3.0.0 소스(`server/src/schema`) 기준이다. Immich를 올리면 다시 확인한다. pgvecto.rs를 쓰던 v3.0 이전 백업은 `vchord`가 없어 검증에서 멈춘다.
-- Immich 공식 복원 문서는 평문 SQL을 넣기 전에 `search_path` 설정 줄을 `sed`로 바꾼다. 합성 스키마(스키마를 명시한 SQL 함수와 식 인덱스)는 바꾸지 않고도 복원됐지만 실제 덤프로는 확인하지 않았다. `search_path` 관련 오류(`function … does not exist` 등)로 복원이 실패해도 절차는 기존 DB를 그대로 두고 멈춘다.
+- 확장 목록과 핵심 테이블 이름은 Immich v3.0.0 소스(`server/src/schema`) 기준이다. Immich를 올리면 다시 확인한다. pgvecto.rs를 쓰던 시기(이 저장소의 v3.0 전환 이전)의 백업은 `vchord`가 없어 검증에서 멈춘다.
+- [Immich 공식 복원 문서](https://docs.immich.app/administration/backup-and-restore)는 평문 SQL을 넣기 전에 `search_path` 설정 줄을 `sed`로 바꾼다. 합성 스키마(스키마를 명시한 SQL 함수와 식 인덱스)는 바꾸지 않고도 복원됐지만 실제 덤프로는 확인하지 않았다. `search_path` 관련 오류(`function … does not exist` 등)로 복원이 실패해도 절차는 기존 DB를 그대로 두고 멈춘다.
 - DB 수준 설정(`ALTER DATABASE … SET`)은 `pg_dump`가 담지 않고, 이름 맞바꾸기로도 옮겨지지 않는다. Immich v3.0.0은 VectorChord 확장을 처음 만들 때만 `vchordrq.probes`를 DB 수준으로 설정하고, 검색 쿼리마다 `SET LOCAL`로 다시 지정한다(소스 기준). 전환 뒤 두 DB의 설정 차이는 아래로 본다.
 
 ```bash
