@@ -23,8 +23,8 @@ API_KEY="$IMMICH_API_KEY"
 # shellcheck disable=SC1090
 source "$PUSHOVER_CRED_FILE"
 
-# 에러 발생 시 알림 전송
-trap 'send_notification "Immich Cleanup" "오류 발생: 스크립트 실패" 0' ERR
+# 에러 발생 시 알림 전송 — 알림 실패는 흡수해 원래 실패 코드로 끝나게 한다
+trap 'send_notification "Immich Cleanup" "오류 발생: 스크립트 실패" 0 || true' ERR
 
 PAGE_SIZE=1000
 UUID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
@@ -119,7 +119,7 @@ fetch_album_asset_ids "$ALBUM_ID"
 
 if [ "${#ASSET_IDS[@]}" -eq 0 ]; then
   echo "No assets in album. Nothing to cleanup."
-  send_notification "Immich Cleanup" "삭제할 이미지가 없습니다"
+  send_notification "Immich Cleanup" "삭제할 이미지가 없습니다" || true
   exit 0
 fi
 
@@ -151,9 +151,13 @@ done
 
 echo "Cleanup completed. Success: $SUCCESS_COUNT, Failed: $FAIL_COUNT"
 
-# 결과 알림
+# 결과 알림 — 삭제 실패가 하나라도 있으면 0이 아닌 코드로 끝내 systemd에 실패로 남긴다.
+# 다음 날 smoke-test의 실패 유닛 검사가 같은 실패를 한 번 더 알릴 수 있으나, 실패를 숨기는
+# 것보다 낫다고 보고 허용한다(날짜를 넘는 중복을 막는 상태 저장은 두지 않는다).
+# 알림 실패는 흡수한다: 종료 코드는 정리 결과가 정하고, ERR trap이 같은 결과를 다시 알리지 않는다.
 if [ "$FAIL_COUNT" -eq 0 ]; then
-  send_notification "Immich Cleanup" "${SUCCESS_COUNT}개 이미지 삭제됨"
+  send_notification "Immich Cleanup" "${SUCCESS_COUNT}개 이미지 삭제됨" || true
 else
-  send_notification "Immich Cleanup" "${SUCCESS_COUNT}개 삭제, ${FAIL_COUNT}개 실패" 0
+  send_notification "Immich Cleanup" "${SUCCESS_COUNT}개 삭제, ${FAIL_COUNT}개 실패" 0 || true
+  exit 1
 fi
