@@ -77,7 +77,8 @@ run_driver "codex-hook-fixtures" bash tests/test-codex-hook-fixtures.sh --no-liv
 run_driver "codex-exec-supervised" \
   bash scripts/ai/test-runtime-profile.sh run "$REPO_ROOT" -- bash tests/test-codex-exec-supervised.sh
 
-# 7b) karakeep-bridge-tests — singlefile-bridge.py 의 multipart/파일명 파싱 순수 함수 계약.
+# 7b) karakeep-bridge-tests — singlefile-bridge.py 의 multipart/파일명 파싱 순수 함수 계약과,
+#     종료 신호 처리·in-flight 요청 drain(서브프로세스 + 로컬 stub 업스트림 기반) 계약.
 #     PR #989 에서 shell suite 만 등록되고 pytest 쪽 배선이 빠져 실행 경로가 0이었다.
 run_driver "karakeep-bridge-tests" bash tests/run-karakeep-bridge-tests.sh
 

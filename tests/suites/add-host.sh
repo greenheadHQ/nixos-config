@@ -10,10 +10,11 @@
 # (add-host.sh가 SCRIPT_DIR의 부모를 ROOT_DIR로 잡으므로 scripts/ 옆에 두면 그대로 성립).
 #
 # 재사용 범위: 이 파일의 _add_host_* 헬퍼는 NixOS 분기(stdin 순서 "2\n호스트명\n사용자명\n
-# 유형\n공개키\nconfirm")를 다루는 다른 스위트가 그대로 부를 수 있다(예: #1396의 안내 문구
-# 검증 — _add_host_run 뒤 $_add_host_stdout을 보면 됨). darwin 분기용 stdin 조립 헬퍼나
-# libraries/constants.nix·시크릿 재암호화 안내를 검증하는 fixture는 이 파일에 없다 — 필요한
-# 스위트가 별도로 추가해야 한다.
+# 유형\n공개키\nconfirm")를 다루는 다른 스위트가 그대로 부를 수 있다(_add_host_run 뒤
+# $_add_host_stdout을 보면 됨). 시크릿 recipient 안내(#1396)는 합성 규칙 파일을 두는
+# _add_host_run_with_synthetic_rules로 검증한다. darwin 분기용 stdin 조립 헬퍼나
+# libraries/constants.nix 안내를 검증하는 fixture는 이 파일에 없다 — 필요한 스위트가 별도로
+# 추가해야 한다.
 #   - _add_host_prepare_sandbox SANDBOX           : repo/scripts/add-host.sh 배치
 #   - _add_host_nixos_stdin HOST USER TYPE KEY CONFIRM : NixOS 분기 stdin 조립
 #   - _add_host_run SANDBOX STDIN [EXTRA_PATH]    : 실행, stdout/stderr/rc를 전역에 채움
@@ -25,6 +26,10 @@
 #   - _add_host_install_failing_printf_bash_env OUT : printf를 항상 실패시키는 BASH_ENV
 #     파일을 OUT에 써서, _add_host_run 호출 앞에 `BASH_ENV="$out" _add_host_run …`으로
 #     주입할 수 있게 한다
+#   - _add_host_write_synthetic_rules KIND OUT     : 가짜 공개키만 쓰는 합성 secrets.nix를 OUT에 씀
+#     (KIND: common 공통 그룹 / user 사용자 키 전용 / host 호스트 키 전용)
+#   - _add_host_run_with_synthetic_rules KIND      : 합성 규칙 파일과 nix·agenix·age 대역을 둔
+#     sandbox에서 실행하고 대역 호출 0회·rc 0을 단정한다(결과: _add_host_run 전역 + _add_host_rules)
 
 _add_host_prepare_sandbox() {
   local sandbox="$1"
@@ -149,8 +154,8 @@ test_add_host_nixos_generates_default_nix_without_calling_sed() {
   assert_contains "$(cat "$default_nix")" '${username}'
   assert_contains "$(cat "$default_nix")" "SSH_KEY_NAME"
   assert_contains "$(cat "$_add_host_stdout")" "완료!"
-  # 완료 뒤 수동 수정 안내(번호 헤더)가 끝까지 출력됐는지도 확인 — 문구 전체는 #1396이
-  # 바꿀 예정이라 고정하지 않고, 안내가 중간에 끊기지 않았다는 정도만 본다.
+  # 완료 뒤 수동 수정 안내(번호 헤더)가 끝까지 출력됐는지도 확인 — 시크릿 안내 문구는 아래
+  # test_add_host_secret_guide_* 테스트가 따로 고정하므로, 여기서는 끊기지 않았다는 정도만 본다.
   assert_contains "$(cat "$_add_host_stdout")" "4️⃣"
 
   # mktemp가 만든 임시 파일은 0600이다 — mv로 그대로 옮기면 나머지 호스트 파일과 달리
@@ -319,4 +324,132 @@ test_add_host_nixos_printf_failure_leaves_no_partial_file_and_removes_created_di
     "$(_add_host_nixos_stdin "$hostname" "user6" 2 "ssh-ed25519 AAAAtest6" y)" ""
   [[ "$_add_host_rc" -eq 0 ]] || fail "정리 후 재실행이 실패함 (rc=$_add_host_rc): $(cat "$_add_host_stderr")"
   [[ -f "$default_nix" ]] || fail "정리 후 재실행에서도 default.nix가 생성되지 않음"
+}
+
+# 합성 규칙 파일. 실제 libraries/constants.nix를 import하지 않고 가짜 공개키 문자열만 쓴다.
+# KIND: common(여러 호스트의 사용자 키를 묶은 공통 그룹) | user(사용자 키 전용) | host(호스트 키 전용)
+_add_host_write_synthetic_rules() {
+  local kind="$1" out="$2" public_keys
+  case "$kind" in
+    common) public_keys='sharedUsers' ;;
+    user) public_keys='[ userA ]' ;;
+    host) public_keys='[ hostA ]' ;;
+    *) fail "알 수 없는 합성 규칙 종류: $kind" ;;
+  esac
+  mkdir -p "$(dirname "$out")"
+  cat > "$out" <<EOF
+let
+  userA = "ssh-ed25519 AAAAsyntheticUserA";
+  userB = "ssh-ed25519 AAAAsyntheticUserB";
+  hostA = "ssh-ed25519 AAAAsyntheticHostA";
+  sharedUsers = [ userA userB ];
+in
+{
+  "synthetic-$kind.age".publicKeys = $public_keys;
+}
+EOF
+}
+
+# KIND 합성 규칙을 sandbox의 repo/secrets/secrets.nix에 두고 NixOS 분기로 마법사를 실행한다.
+# 마법사는 안내만 출력해야 하므로 nix·agenix·age를 호출하면 실패하는 대역을 PATH 맨 앞에 두고,
+# 대역이 실제로 먼저 잡히는지(검사가 공허하지 않은지)와 호출 0회를 함께 단정한다.
+_add_host_run_with_synthetic_rules() {
+  local kind="$1" sandbox stub_dir name
+  sandbox="$(new_sandbox)"
+  stub_dir="$sandbox/stub-bin"
+  _add_host_prepare_sandbox "$sandbox"
+  _add_host_rules="$sandbox/repo/secrets/secrets.nix"
+  _add_host_write_synthetic_rules "$kind" "$_add_host_rules"
+  for name in nix agenix age; do
+    _add_host_install_failing_stub "$stub_dir" "$name"
+    [[ "$(PATH="$stub_dir:$PATH" command -v "$name")" == "$stub_dir/$name" ]] \
+      || fail "[$kind] $name 대역이 PATH에서 먼저 잡히지 않음"
+  done
+
+  _add_host_run "$sandbox" \
+    "$(_add_host_nixos_stdin "recipient-$kind" "user" 1 "ssh-ed25519 AAAAsynthetic$kind" y)" \
+    "$stub_dir"
+
+  [[ "$_add_host_rc" -eq 0 ]] || fail "[$kind] add-host.sh 실패 (rc=$_add_host_rc): $(cat "$_add_host_stderr")"
+  for name in nix agenix age; do
+    [[ ! -e "$stub_dir/$name.invoked" ]] || fail "[$kind] $name 대역이 호출됨 — 마법사는 재암호화를 실행하지 않고 안내만 출력해야 한다"
+  done
+}
+
+# ── 시크릿 작업 위치 (#1396): agenix는 현재 디렉토리의 secrets.nix를 규칙 파일로 읽는다.
+# 마법사가 안내하는 `cd` 위치는 하나여야 하고, 그 위치에 sandbox의 규칙 파일이 있어야 한다.
+# 합성 규칙 세 종류 모두에서 같은 위치를 확인한다.
+test_add_host_secret_guide_workdir_has_rules_file() {
+  local kind cd_lines workdir
+  for kind in common user host; do
+    _add_host_run_with_synthetic_rules "$kind"
+
+    cd_lines="$(sed -n 's/^[[:space:]]*cd //p' "$_add_host_stdout")"
+    [[ -n "$cd_lines" && "$cd_lines" != *$'\n'* ]] \
+      || fail "[$kind] 작업 위치를 안내하는 cd 줄이 정확히 하나가 아님: $cd_lines"
+    workdir="$cd_lines"
+    [[ -f "$workdir/secrets.nix" ]] \
+      || fail "[$kind] 안내된 작업 위치($workdir)에 secrets.nix가 없음 — agenix가 규칙 파일을 찾지 못한다"
+    cmp -s "$_add_host_rules" "$workdir/secrets.nix" \
+      || fail "[$kind] 안내된 작업 위치의 secrets.nix가 합성 규칙 파일과 다름"
+  done
+}
+
+# ── 대상별 recipient·identity 확인 (#1396): 합성 규칙 종류마다 안내가 그 종류의 복호화
+# identity를 짚어야 한다. 순서는 작업 위치 → 각 항목의 publicKeys 확인 → identity로 복호화
+# 확인(test -f 선행) → 대상별 재암호화 → 빈 값 확인이다. 재암호화는 EDITOR=:가 agenix까지
+# 전달돼야 하므로 root 형태는 `sudo EDITOR=: …`여야 한다(`EDITOR=: sudo …`는 sudo가 변수를
+# 지워 비대화형 실행에서 시크릿이 비워진다). 전체 재암호화(-r)는 사용 조건과 함께 설명만 한다 —
+# 조건 없는 `agenix -- -r` 명령(identity를 붙인 변형 포함)은 identity가 없는 항목에서 중간에
+# 멈추는 작업을 무조건 권한다. 재암호화 전후 바이트 수 비교, d·f의 호스트 키 sudo 변형, 새 호스트
+# identity로 복호화하는 g 단계, 바이트 수 명령마다 앞선 복호화 성공 확인도 본다. 이 검사들은
+# managing-secrets-docs.sh의 _secrets_docs_assert_rekey_all_conditional·_secrets_docs_assert_value_check_steps·
+# _secrets_docs_assert_new_host_check_step·_secrets_docs_assert_byte_counts_need_decrypt_success를 함께 쓴다.
+test_add_host_secret_guide_checks_recipients_per_target() {
+  local kind label identity out cd_line pub_line dec_line enc_line check_line
+  for kind in common user host; do
+    # shellcheck disable=SC2088  # 안내 문구에 그대로 나오는 리터럴 경로다(확장하지 않음).
+    case "$kind" in
+      common) label="공통 그룹"; identity="~/.ssh/id_ed25519" ;;
+      user) label="사용자 키 전용"; identity="~/.ssh/id_ed25519" ;;
+      host) label="호스트 키 전용"; identity="/etc/ssh/ssh_host_ed25519_key" ;;
+    esac
+    _add_host_run_with_synthetic_rules "$kind"
+    out="$_add_host_stdout"
+
+    _secrets_docs_assert_rekey_all_conditional "[$kind] add-host.sh 안내" < "$out"
+    grep -F -- '(-r)' "$out" | grep -qF '때만' \
+      || fail "[$kind] 전체 재암호화(-r)를 쓸 수 있는 조건이 안내에 없음"
+
+    # 줄 번호 조회는 못 찾아도 빈 값으로 두고 아래 단정이 이유를 출력하게 한다(pipefail로 조용히 끝나지 않게).
+    cd_line="$(grep -n -m1 '^[[:space:]]*cd ' "$out" | cut -d: -f1 || true)"
+    pub_line="$(grep -nF -m1 'publicKeys를 확인' "$out" | cut -d: -f1 || true)"
+    dec_line="$(grep -nF -m1 -- '-d <name>.age -i <identity>' "$out" | cut -d: -f1 || true)"
+    enc_line="$(grep -nF -m1 -- '-e <name>.age -i <identity>' "$out" | cut -d: -f1 || true)"
+    check_line="$(grep -nF -- '-d <name>.age -i <identity> | wc -c' "$out" | cut -d: -f1 | tail -1 || true)"
+    [[ -n "$cd_line" ]] || fail "[$kind] 작업 위치를 안내하는 cd 줄이 없음"
+
+    # identity 안내는 작업 위치 뒤(시크릿 단계)에서 찾는다 — 앞선 키 등록 안내의 `.pub` 경로와 섞이지 않게.
+    sed -n "$cd_line,\$p" "$out" | grep -F -- "$label" | grep -qF -- "$identity" \
+      || fail "[$kind] 시크릿 단계의 '$label' 안내 줄에 복호화 identity($identity)가 없음"
+
+    [[ -n "$pub_line" ]] || fail "[$kind] 각 항목의 publicKeys 확인 단계가 없음"
+    [[ -n "$dec_line" ]] || fail "[$kind] identity로 복호화할 수 있는지 확인하는 단계가 없음"
+    [[ -n "$enc_line" ]] || fail "[$kind] 대상별 재암호화 명령이 없음"
+    [[ -n "$check_line" ]] || fail "[$kind] 재암호화 뒤 빈 값 확인(바이트 수) 단계가 없음"
+    [[ "$cd_line" -lt "$pub_line" && "$pub_line" -lt "$dec_line" && "$dec_line" -lt "$enc_line" && "$enc_line" -lt "$check_line" ]] \
+      || fail "[$kind] 안내 순서가 작업 위치 → publicKeys 확인 → 복호화 확인 → 재암호화 → 빈 값 확인이 아님 (cd=$cd_line pub=$pub_line dec=$dec_line enc=$enc_line check=$check_line)"
+    sed -n "${dec_line}p" "$out" | grep -qF 'test -f <name>.age &&' \
+      || fail "[$kind] 복호화 확인 명령 앞에 test -f <name>.age가 없음 — 파일 없는 항목이 복호화 가능으로 보인다"
+
+    grep -qF 'sudo EDITOR=: nix run github:ryantm/agenix -- -e <name>.age -i /etc/ssh/ssh_host_ed25519_key' "$out" \
+      || fail "[$kind] 호스트 키 재암호화의 root 형태(sudo 뒤에 EDITOR=:)가 없음"
+    ! grep -qF 'EDITOR=: sudo' "$out" \
+      || fail "[$kind] EDITOR=:를 sudo 앞에 둔 형태를 안내함 — sudo가 변수를 지워 시크릿이 비워진다"
+    grep -F 'EDITOR=:' "$out" | grep -qF '비워진다' \
+      || fail "[$kind] EDITOR=:가 전달되지 않으면 시크릿이 비워진다는 경고가 없음"
+    _secrets_docs_assert_value_check_steps "[$kind] add-host.sh 안내" < "$out"
+    _secrets_docs_assert_new_host_check_step "[$kind] add-host.sh 안내" < "$out"
+    _secrets_docs_assert_byte_counts_need_decrypt_success "[$kind] add-host.sh 안내" < "$out"
+  done
 }

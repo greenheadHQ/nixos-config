@@ -217,7 +217,7 @@ localhost 바인딩 (Caddy 연동)
 ## 자주 발생하는 문제
 
 1. 컨테이너 시작 실패: `journalctl -u podman-copyparty`에서 "multiple filesystem-paths" 또는 initcfg 충돌 확인. 상세: troubleshooting 항목 6, 7
-2. 로그인 실패: agenix secret 복호화 확인 (`sudo cat /run/agenix/copyparty-password`)
+2. 로그인 실패: 원문을 출력하지 않는 진단 절차는 [references/troubleshooting.md](references/troubleshooting.md) "2. 로그인 실패" 절 참조
 3. CORS 403 (리버스 프록시): `rproxy: 1` + `xff-src: 10.88.0.0/16` (constants.network.podmanSubnet) 설정 확인 후 재적용 (절차는 "설정 파일 구조" 절)
 4. 비밀번호 변경: `(cd secrets && agenix -e copyparty-password.age)` 후 `nrs` 재적용
 

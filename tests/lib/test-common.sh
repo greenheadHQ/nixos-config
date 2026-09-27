@@ -116,6 +116,8 @@ assert_wt_wrapper_nix() {
     || fail "expected $nix_file to define home.file.\".local/bin/wt\""
   grep -Fq '        export WT_PYTHON="${pythonWithTomlkit}/bin/python3"' "$nix_file" \
     || fail "expected wt wrapper to export WT_PYTHON from pythonWithTomlkit"
+  grep -Fq '        export WT_LSOF="${pkgs.lsof}/bin/lsof"' "$nix_file" \
+    || fail "expected wt wrapper to export WT_LSOF from pkgs.lsof"
   grep -Fq '        exec "${config.home.homeDirectory}/.local/bin/.wt-real" "$@"' "$nix_file" \
     || fail "expected wt wrapper to exec .wt-real"
 }
@@ -163,6 +165,7 @@ install_deployed_layout() {
 #!/usr/bin/env bash
 set -euo pipefail
 export WT_PYTHON="$(command -v python3)"
+export WT_LSOF="$(command -v lsof)"
 exec "$home_dir/.local/bin/.wt-real" "\$@"
 EOF
   chmod +x "$home_dir/.local/bin/wt"

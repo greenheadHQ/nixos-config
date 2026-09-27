@@ -18,7 +18,7 @@
 ## Helper Boundaries
 
 - `lib/wt/ui.sh`: prompt, formatting, repo/path helpers
-- `lib/wt/tmux.sh`: worktree 제거용 pane lookup, 활성 프로세스 판정, 창/세션 close
+- `lib/wt/process.sh`: worktree 제거·재생성 전 활성 작업 판정 (worktree를 cwd로 둔 프로세스 탐지; lsof는 wt 래퍼가 `WT_LSOF`로 주입)
 - `lib/wt/git-state.sh`: git/worktree state collection, PR status lookup
 - `lib/wt/bootstrap.sh`: worktree bootstrap, path emit, remove orchestration
 - `lib/wt/create.sh`: create/recreate flows and existing-branch handling

@@ -1059,10 +1059,30 @@ let
   ];
 
   # ── #1369: 백업 대상 HDD(mediaData)가 nofail이라 미마운트여도 부팅은 계속되므로,
-  # 세 백업/미러 유닛이 RequiresMountsFor로 실제 마운트를 실행 전제로 요구하는지 확인한다
+  # 백업/미러 유닛이 RequiresMountsFor로 실제 마운트를 실행 전제로 요구하는지 확인한다
   # (미마운트 시 목적지가 루트 파일시스템의 일반 디렉터리가 되어 백업이 SSD에 오기록·성공 오인될 위험).
   immichDbBackup = nixosCfg.systemd.services."immich-db-backup";
   immichOriginalsMirror = nixosCfg.systemd.services."immich-originals-mirror";
+  karakeepBackup = nixosCfg.systemd.services."karakeep-backup";
+
+  # ── #1391: 브리지가 SIGTERM을 받으면 실행 중 요청을 최대
+  # SHUTDOWN_DRAIN_TIMEOUT_SEC(소스 기본값)까지 drain한 뒤 스스로 종료한다.
+  # 유닛의 TimeoutStopSec이 그 상한보다 짧으면 systemd가 정상 drain이 끝나기 전에
+  # SIGKILL을 보내버리므로, 두 값의 대소 관계를 고정한다.
+  karakeepSinglefileBridgeSvc = nixosCfg.systemd.services."karakeep-singlefile-bridge";
+  karakeepSinglefileBridgeSrc = builtins.readFile ../modules/nixos/programs/docker/karakeep-singlefile-bridge/files/singlefile-bridge.py;
+  # 파일 전체에 `.*` 정규식을 걸지 않고 줄 단위로 찾는다. 정의 줄은 정확히 하나여야 한다.
+  karakeepSinglefileBridgeDrainDefaultMatches = builtins.filter (m: m != null) (
+    map (
+      line:
+      builtins.match "SHUTDOWN_DRAIN_TIMEOUT_SEC = int\\(os\\.environ\\.get\\(\"SINGLEFILE_BRIDGE_SHUTDOWN_DRAIN_SEC\", \"([0-9]+)\"\\)\\)" line
+    ) (nixpkgsLib.splitString "\n" karakeepSinglefileBridgeSrc)
+  );
+  karakeepSinglefileBridgeDrainDefaultSec =
+    if builtins.length karakeepSinglefileBridgeDrainDefaultMatches == 1 then
+      builtins.fromJSON (builtins.head (builtins.head karakeepSinglefileBridgeDrainDefaultMatches))
+    else
+      null;
 
   # ── headless Anki (#1306): loopback 전용·인스턴스 격리·sync/backup 타이머 계약 고정
   ankiHostCfg = nixosCfg.homeserver.ankiHost;
@@ -1304,7 +1324,6 @@ let
     }
     {
       # openssh는 LAN 노출 시 brute-force 표면이 되므로, 다른 openFirewall 서비스보다 중요
-      # (mosh의 openFirewall은 Test 6b/6e가 이미 잡으므로 별도 테스트 불필요)
       name = "Test 5a: openssh.openFirewall이 false이어야 함 (true이면 LAN에서 SSH 접근 가능)";
       cond = nixosCfg.services.openssh.openFirewall == false;
     }
@@ -1403,6 +1422,12 @@ let
         && nixpkgsLib.hasInfix "no-port-forwarding" (builtins.head hl)
         && nixpkgsLib.hasInfix "no-agent-forwarding" (builtins.head hl)
         && nixpkgsLib.hasInfix "no-X11-forwarding" (builtins.head hl);
+    }
+    {
+      # setgid utmp wrapper는 이를 켜던 원격 셸 모듈을 퇴역하며 없앴다 (#1454).
+      # 다시 생기면 어느 모듈이 켰는지 확인하고, 의도한 것이면 이 테스트와 함께 재결정한다.
+      name = "Test 5f: security.wrappers에 utempter(setgid utmp)가 없어야 함";
+      cond = !(nixosCfg.security.wrappers ? utempter);
     }
     {
       name = "Test 6a: networking.firewall.enable이 true이어야 함";
@@ -1947,6 +1972,10 @@ let
       cond = builtins.elem constants.paths.mediaData (ankiHostBackup.unitConfig.RequiresMountsFor or [ ]);
     }
     {
+      name = "Test MG3b: karakeep-backup은 대상 HDD(mediaData) 마운트를 RequiresMountsFor로 요구해야 함";
+      cond = builtins.elem constants.paths.mediaData (karakeepBackup.unitConfig.RequiresMountsFor or [ ]);
+    }
+    {
       # 리뷰: MOUNT_ROOT가 실제 mediaData와 다른 값으로 새거나(오타 등) mediaData 자체가
       # fileSystems에 등록되지 않은 상태로 갈라지지 않도록, 스크립트를 직접 실행하는 두 유닛의
       # MOUNT_ROOT가 fileSystems 키 집합에 실제로 있는지 확인한다.
@@ -1981,6 +2010,19 @@ let
         smokeBackupWiringOk smokeKarakeepAnkiOff
         && (smokeEnvOf smokeKarakeepAnkiOff).KARAKEEP_BACKUP_DIR == ""
         && (smokeEnvOf smokeKarakeepAnkiOff).ANKI_BACKUP_INSTANCES == "";
+    }
+    {
+      name = "Test KB1: karakeep-singlefile-bridge의 TimeoutStopSec(${toString karakeepSinglefileBridgeSvc.serviceConfig.TimeoutStopSec}s)이 브리지 소스의 drain 상한 기본값(${toString karakeepSinglefileBridgeDrainDefaultSec}s)보다 커야 함 — 짧으면 systemd가 정상 drain을 못 기다리고 SIGKILL로 끊는다";
+      cond =
+        karakeepSinglefileBridgeDrainDefaultSec != null
+        &&
+          karakeepSinglefileBridgeSvc.serviceConfig.TimeoutStopSec > karakeepSinglefileBridgeDrainDefaultSec;
+    }
+    {
+      # 기본값 control-group에서는 stop 시 SIGTERM이 cgroup 전체로 가서, drain 중인
+      # curl 자식(run_curl/send_pushover)까지 죽는다 — drain이 없는 것과 같아진다.
+      name = "Test KB2: karakeep-singlefile-bridge의 KillMode가 mixed여야 함(SIGTERM이 메인에만 가야 drain 중 curl 자식이 살아남는다)";
+      cond = karakeepSinglefileBridgeSvc.serviceConfig.KillMode == "mixed";
     }
   ]
   ++ tmuxVanillaTests "greenhead-minipc" true nixosHm
