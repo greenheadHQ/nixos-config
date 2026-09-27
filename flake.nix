@@ -113,6 +113,11 @@
             # neovim-clipboard fixture는 배포와 같은 nvim runtime의 clipboard provider
             # 선택 순서로 options.lua를 headless 실행한다(#1453).
             pkgs.neovim-unwrapped
+            # Immich DB 복구 문서 절차를 운영 이미지와 같은 major(16)의 임시 클러스터로
+            # 실행한다 (#1397, tests/suites/immich-db-restore.sh). nixpkgs PostgreSQL은 실행
+            # 경로(symlink 포함) 기준으로 share·lib을 찾으므로, /bin만 링크한 이 profile의
+            # initdb·postgres는 그대로 쓰지 말고 실제 store 경로로 풀어 쓴다.
+            pkgs.postgresql_16
           ];
         };
 
