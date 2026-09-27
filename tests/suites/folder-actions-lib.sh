@@ -26,6 +26,7 @@
 #   still covered by overriding those callback boundaries after sourcing.
 # - upload-immich.sh missing-credential e2e is skipped when those macOS absolute
 #   commands are absent before the credential branch.
+# - The rar/ffmpeg job e2e fixtures (#1402) are Darwin-only for the same reason.
 #
 # This suite is definition-only; tests/shell-script-tests.sh owns run_test registration.
 
@@ -268,4 +269,225 @@ test_upload_immich_missing_credential_branch_is_quiet_or_skipped() (
   [[ "$rc" -eq 0 ]] || fail "upload-immich missing credential branch must exit 0 (got $rc): $out"
   assert_contains "$out" "자격증명 없음: $home/.config/immich/api-key"
   [[ -e "$watch/photo.jpg" ]] || fail "missing credentials must not delete media"
+)
+
+# ── rar/ffmpeg 작업의 launchd 최소 환경 fixture (#1402) ──────────────────────
+# launchd는 로그인 셸 PATH를 물려받지 않으므로 default.nix가 각 작업에 Nix 도구 bin과
+# /usr/bin:/bin만 준다. 아래 fixture는 같은 모양의 PATH(도구 대역 디렉터리가 Nix bin 역할)로
+# env -i 실행해 Homebrew 경로와 셸 초기화 없이 스크립트가 동작하는지 본다.
+
+_folder_actions_tool_scripts_runnable() {
+  local path
+
+  if [ "$(uname -s)" != "Darwin" ]; then
+    echo "N/A: folder-actions rar/ffmpeg jobs use a macOS absolute command contract (runner=$(uname -s))" >&2
+    return 1
+  fi
+
+  for path in /usr/bin/env /usr/bin/id /usr/bin/stat /usr/bin/sed /usr/bin/grep /usr/bin/tr \
+    /usr/bin/hexdump /usr/bin/dirname /usr/bin/shasum /usr/bin/awk /usr/bin/wc \
+    /bin/date /bin/ps /bin/kill /bin/ls /bin/mkdir /bin/chmod /bin/mv /bin/rm /bin/cat; do
+    if [ ! -x "$path" ]; then
+      echo "SKIP: folder-actions rar/ffmpeg fixture requires $path" >&2
+      return 1
+    fi
+  done
+
+  # 시스템 경로에 도구가 있으면 PATH에서 Nix bin을 빼도 부재를 재현할 수 없다.
+  for path in /usr/bin/rar /bin/rar /usr/bin/ffmpeg /bin/ffmpeg; do
+    if [ -e "$path" ]; then
+      echo "SKIP: $path makes the missing-tool fixture unreachable" >&2
+      return 1
+    fi
+  done
+}
+
+# 배포 레이아웃(~/.local/bin)에 작업 스크립트와 lib 사본을 둔다. 사본은 실제 /tmp 락 경로를
+# sandbox로 옮기고, 입력 파일을 지우거나 격리하는 /bin/rm·/bin/mv를 호출을 기록한 뒤 원래
+# 명령에 위임하는 대역으로 바꾼다. 나머지 절대경로 명령은 그대로 실행된다.
+_folder_actions_install_tool_script() {
+  local sandbox="$1" name="$2"
+  local src bin stubs file cmd
+  src="$REPO_ROOT/modules/darwin/programs/folder-actions/files/scripts"
+  bin="$sandbox/home/.local/bin"
+  stubs="$sandbox/stubs"
+  mkdir -p "$bin" "$stubs" "$sandbox/tools" "$sandbox/lock" "$sandbox/home/Downloads" \
+    "$sandbox/home/FolderActions/$name"
+
+  for cmd in mv rm; do
+    cat > "$stubs/$cmd" <<EOF_STUB
+#!/bin/sh
+{ printf '%s' '$cmd'; for arg in "\$@"; do printf '\t%s' "\$arg"; done; printf '\n'; } >> '$sandbox/calls.log'
+exec /bin/$cmd "\$@"
+EOF_STUB
+    chmod 755 "$stubs/$cmd"
+  done
+
+  for file in "$name.sh" _folder-actions-lib.sh; do
+    sed -e "s#/tmp/$name\\.lock#$sandbox/lock/$name.lock#g" \
+      -e "s#/bin/mv #$stubs/mv #g" \
+      -e "s#/bin/rm #$stubs/rm #g" \
+      "$src/$file" > "$bin/$file"
+    if grep -nE "/tmp/$name\\.lock|/bin/(mv|rm) " "$bin/$file" >&2; then
+      fail "fixture copy of $file still reaches the real lock path or an unrecorded mv/rm"
+    fi
+  done
+  chmod 700 "$bin/$name.sh"
+}
+
+# 도구 대역: 받은 PATH와 인자를 기록하고 입력을 출력 경로로 복사한다.
+# rar a <옵션...> <archive> <input> / ffmpeg ... -i <input> ... <output>
+_folder_actions_install_tool_double() {
+  local sandbox="$1" tool="$2"
+  local target="$sandbox/tools/$tool"
+
+  cat > "$target" <<EOF_HEAD
+#!/bin/sh
+{ printf 'PATH=%s\n' "\$PATH"; for arg in "\$@"; do printf 'ARG=%s\n' "\$arg"; done; } >> '$sandbox/$tool.log'
+EOF_HEAD
+  case "$tool" in
+    rar)
+      cat >> "$target" <<'EOF_RAR'
+archive=""
+input=""
+for arg in "$@"; do archive=$input; input=$arg; done
+/bin/cat "$input" > "$archive"
+EOF_RAR
+      ;;
+    ffmpeg)
+      cat >> "$target" <<'EOF_FFMPEG'
+input=""
+output=""
+next_is_input=0
+for arg in "$@"; do
+  if [ "$next_is_input" = 1 ]; then input=$arg; fi
+  next_is_input=0
+  if [ "$arg" = "-i" ]; then next_is_input=1; fi
+  output=$arg
+done
+/bin/cat "$input" > "$output"
+EOF_FFMPEG
+      ;;
+    *) fail "unknown folder-actions tool double: $tool" ;;
+  esac
+  chmod 755 "$target"
+}
+
+_folder_actions_run_tool_script() {
+  local sandbox="$1" name="$2"
+  env -i HOME="$sandbox/home" PATH="$sandbox/tools:/usr/bin:/bin" \
+    "$sandbox/home/.local/bin/$name.sh"
+}
+
+# calls.log에서 <cmd> 호출 중 인자 하나가 정확히 <path>인 횟수
+_folder_actions_count_calls_on() {
+  local sandbox="$1" cmd="$2" path="$3"
+  [ -f "$sandbox/calls.log" ] || { echo 0; return 0; }
+  awk -F '\t' -v cmd="$cmd" -v path="$path" '
+    $1 == cmd { for (i = 2; i <= NF; i++) if ($i == path) { n++; break } }
+    END { print n + 0 }
+  ' "$sandbox/calls.log"
+}
+
+test_folder_actions_tool_jobs_keep_input_when_required_tool_missing() (
+  local entry name tool sandbox input out rc
+  _folder_actions_tool_scripts_runnable || return 0
+
+  for entry in compress-rar:rar compress-video:ffmpeg convert-video-to-gif:ffmpeg; do
+    name="${entry%%:*}"
+    tool="${entry##*:}"
+    sandbox=$(new_sandbox)
+    _folder_actions_install_tool_script "$sandbox" "$name"
+    input="$sandbox/home/FolderActions/$name/sample.mov"
+    printf '%s\n' "synthetic input" > "$input"
+
+    # 도구 bin이 비어 있다 = launchd PATH에서 Nix 도구 경로가 빠진 상태
+    set +e
+    out=$(_folder_actions_run_tool_script "$sandbox" "$name" 2>&1)
+    rc=$?
+    set -e
+
+    [[ "$rc" -eq 1 ]] || fail "$name must fail as an environment error without $tool (rc=$rc): $out"
+    assert_contains "$out" "필수 실행파일 없음: $tool"
+    assert_not_contains "$out" "압축 실패"
+    assert_not_contains "$out" "변환 실패"
+    assert_not_contains "$out" "격리"
+    [[ "$(cat "$input")" == "synthetic input" ]] || fail "$name must leave the input untouched"
+    [[ "$(_folder_actions_count_calls_on "$sandbox" mv "$input")" == 0 ]] \
+      || fail "$name must not move the input: $(cat "$sandbox/calls.log")"
+    [[ "$(_folder_actions_count_calls_on "$sandbox" rm "$input")" == 0 ]] \
+      || fail "$name must not delete the input: $(cat "$sandbox/calls.log")"
+    [[ ! -e "$sandbox/home/FolderActions/.failed" ]] || fail "$name must not create the quarantine root"
+    [[ -z "$(ls -A "$sandbox/home/Downloads")" ]] || fail "$name must not create outputs"
+    [[ ! -e "$sandbox/lock/$name.lock.d" ]] || fail "$name must release its lock"
+  done
+)
+
+test_folder_actions_compress_rar_runs_with_launchd_minimal_path() (
+  local sandbox input archive guide expected actual sum
+  _folder_actions_tool_scripts_runnable || return 0
+
+  sandbox=$(new_sandbox)
+  _folder_actions_install_tool_script "$sandbox" compress-rar
+  _folder_actions_install_tool_double "$sandbox" rar
+  input="$sandbox/home/FolderActions/compress-rar/sample.txt"
+  archive="$sandbox/home/Downloads/sample/sample.rar"
+  guide="$sandbox/home/Downloads/sample/데이터_무결성_검증방법.txt"
+  printf '%s\n' "synthetic archive input" > "$input"
+
+  _folder_actions_run_tool_script "$sandbox" compress-rar >/dev/null 2>&1 \
+    || fail "compress-rar must succeed with rar on the launchd PATH"
+
+  # 스크립트가 PATH 앞에 다른 경로를 끼우면 선언한 도구가 가려진다.
+  assert_file_contains "$sandbox/rar.log" "PATH=$sandbox/tools:/usr/bin:/bin"
+  expected=$(printf 'ARG=%s\n' a -rr10% -ma5 -ep1 -idq "$archive" "$input")
+  actual=$(grep '^ARG=' "$sandbox/rar.log")
+  [[ "$actual" == "$expected" ]] || fail "rar arguments changed: $actual"
+  [[ "$(cat "$archive")" == "synthetic archive input" ]] || fail "expected archive at $archive"
+  sum=$(/usr/bin/shasum -a 256 "$archive" | /usr/bin/awk '{print $1}')
+  assert_file_contains "$guide" "$sum"
+  [[ ! -e "$input" ]] || fail "compress-rar must remove the original after success"
+  [[ "$(_folder_actions_count_calls_on "$sandbox" rm "$input")" == 1 ]] \
+    || fail "compress-rar must delete the original exactly once: $(cat "$sandbox/calls.log")"
+  [[ "$(_folder_actions_count_calls_on "$sandbox" mv "$input")" == 0 ]] \
+    || fail "compress-rar must not quarantine a successful input"
+)
+
+test_folder_actions_video_jobs_run_with_launchd_minimal_path() (
+  local name sandbox input output outputs expected actual
+  _folder_actions_tool_scripts_runnable || return 0
+
+  for name in compress-video convert-video-to-gif; do
+    sandbox=$(new_sandbox)
+    _folder_actions_install_tool_script "$sandbox" "$name"
+    _folder_actions_install_tool_double "$sandbox" ffmpeg
+    input="$sandbox/home/FolderActions/$name/sample.mov"
+    printf '%s\n' "synthetic video input" > "$input"
+
+    _folder_actions_run_tool_script "$sandbox" "$name" >/dev/null 2>&1 \
+      || fail "$name must succeed with ffmpeg on the launchd PATH"
+
+    outputs=("$sandbox"/home/Downloads/*)
+    [[ "${#outputs[@]}" -eq 1 && -f "${outputs[0]}" ]] \
+      || fail "$name must create exactly one output: ${outputs[*]}"
+    output="${outputs[0]}"
+    assert_file_contains "$sandbox/ffmpeg.log" "PATH=$sandbox/tools:/usr/bin:/bin"
+    if [ "$name" = compress-video ]; then
+      [[ "$output" == *.mp4 ]] || fail "compress-video output must be mp4: $output"
+      expected=$(printf 'ARG=%s\n' -nostdin -hide_banner -loglevel error -i "$input" \
+        -c:v hevc_videotoolbox -q:v 1 -tag:v hvc1 -c:a eac3 -b:a 224k -y "$output")
+    else
+      [[ "$output" == *.gif ]] || fail "convert-video-to-gif output must be gif: $output"
+      expected=$(printf 'ARG=%s\n' -nostdin -hide_banner -loglevel error -y -i "$input" \
+        -vf "fps=15,scale=480:-1:flags=lanczos" -c:v gif -f gif "$output")
+    fi
+    actual=$(grep '^ARG=' "$sandbox/ffmpeg.log")
+    [[ "$actual" == "$expected" ]] || fail "$name ffmpeg arguments changed: $actual"
+    [[ "$(cat "$output")" == "synthetic video input" ]] || fail "$name output must come from ffmpeg"
+    [[ ! -e "$input" ]] || fail "$name must remove the original after success"
+    [[ "$(_folder_actions_count_calls_on "$sandbox" rm "$input")" == 1 ]] \
+      || fail "$name must delete the original exactly once: $(cat "$sandbox/calls.log")"
+    [[ "$(_folder_actions_count_calls_on "$sandbox" mv "$input")" == 0 ]] \
+      || fail "$name must not quarantine a successful input"
+  done
 )

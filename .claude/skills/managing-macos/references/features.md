@@ -481,6 +481,12 @@ macOS launchd의 WatchPaths를 사용하여 특정 폴더를 감시하고, 파�
   트리거되므로, deferred 파일이 더 이상 size/mtime 변화를 일으키지 않으면
   외부 이벤트가 도착할 때까지 잔류할 수 있다 (운영상 일시 지연이지 데이터 유실은 아님).
 
+실행 도구(`rar`·`ffmpeg`)는 launchd `PATH`에 `libraries/packages.nix`로 선언한 Nix 패키지
+bin만 연결되고 Homebrew 경로는 쓰지 않는다 (#1402). 도구를 찾지 못하면 입력 결함이 아니라
+환경 오류로 보고, 파일을 격리·삭제하지 않은 채 watch dir에 남기고 run을 중단한다
+(`*.error.log`에 `환경 오류: 필수 실행파일 없음`). `nrs`로 설정을 다시 적용한 뒤 파일을
+watch dir 밖으로 뺐다가 다시 넣으면 처리된다 (`WatchPaths`는 폴더가 바뀌어야 작업을 깨운다).
+
 복구 절차:
 1. `ls -la ~/FolderActions/.failed/<액션명>/` 으로 격리 파일 확인
 2. 원인을 파악한 뒤 (ffmpeg 로그는 `~/Library/Logs/folder-actions/*.error.log` 참조),
