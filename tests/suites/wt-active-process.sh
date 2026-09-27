@@ -572,8 +572,19 @@ test_wt_lsof_escape_path_unit() {
   ' _ "$REPO_ROOT" $'/w/\xed\x95\x9c \\b%\'"~') || fail "출력 가능한 경로의 이스케이프가 실패함"
   [[ "$out" == '/w/\xed\x95\x9c \\b%'"'"'"~' ]] || fail "lsof 표기와 다름: [$out]"
 
+  # 같은 바이트가 48개 이상 이어지는 경로. od가 반복되는 16바이트 줄을 `*`로 접으면(-v 없음)
+  # 바이트가 사라지고 `*`가 glob으로 풀려, 변환 결과가 lsof 표기와 어긋난다(fail-open).
+  local long
+  long="/w/$(printf 'a%.0s' {1..64})"
+  out=$(bash -c '
+    source "$1/modules/shared/scripts/lib/wt/process.sh"
+    _wt_lsof_escape_path "$2"
+  ' _ "$REPO_ROOT" "$long") || fail "반복 바이트 경로의 이스케이프가 실패함"
+  [[ "$out" == "$long" ]] || fail "반복 바이트 경로의 표기가 달라짐: [$out]"
+
   local bad
-  for bad in $'/w/a\tb' $'/w/a\nb' $'/w/a\x7fb' $'/w/a\x01b'; do
+  # 0x01-0x1f 전체와 0x7f가 거부 대상이다. lsof는 이 범위를 \t·\n 또는 ^[·^_ 같은 표기로 낸다.
+  for bad in $'/w/a\tb' $'/w/a\nb' $'/w/a\x7fb' $'/w/a\x01b' $'/w/a\x1bb' $'/w/a\x1fb'; do
     rc=0
     bash -c '
       source "$1/modules/shared/scripts/lib/wt/process.sh"
