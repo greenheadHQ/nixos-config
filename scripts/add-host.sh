@@ -78,8 +78,19 @@ if [[ "$platform" == "nixos" ]]; then
     mkdir -p "$host_dir"
     echo "✓ 호스트 디렉토리 생성됨: hosts/$hostname/"
 
-    cat > "$host_dir/default.nix" << 'NIXEOF'
-# HOST_NAME 호스트 설정
+    # macOS 기본 BSD sed의 in-place 인자 규칙은 GNU sed와 달라 `sed -i`로 HOST_NAME을
+    # 치환하면 실행 환경에 따라 실패한다(#1382). 호스트명 주석은 printf로 직접 쓰고 Nix
+    # 본문은 quoted heredoc으로 유지해 ${username} 같은 Nix 표현식이 셸에서 조기
+    # 치환되지 않게 한다. 완성한 내용은 임시 파일에 쓴 뒤 최종 경로로 원자적 이동(mv)해,
+    # 중간 실패로 HOST_NAME이 남은 default.nix가 완성본으로 오인되는 것을 막는다.
+    if ! (
+      set -euo pipefail
+      default_nix_tmp=""
+      trap 'rm -f "$default_nix_tmp"' EXIT
+      default_nix_tmp="$(mktemp "$host_dir/.default.nix.XXXXXX")"
+      {
+        printf '# %s 호스트 설정\n' "$hostname"
+        cat << 'NIXEOF'
 {
   config,
   lib,
@@ -101,7 +112,15 @@ if [[ "$platform" == "nixos" ]]; then
   ];
 }
 NIXEOF
-    sed -i "s/HOST_NAME/$hostname/g" "$host_dir/default.nix"
+      } > "$default_nix_tmp"
+      mv "$default_nix_tmp" "$host_dir/default.nix"
+    ); then
+      # 이번 실행이 만든 디렉토리만 정리한다 — 위 -d 체크를 통과해 이 블록에 들어온
+      # 이상 host_dir는 항상 이번 실행이 만든 것이므로, 재시도할 수 있게 지운다.
+      rmdir "$host_dir" 2>/dev/null || true
+      echo "✗ hosts/$hostname/default.nix 생성 실패" >&2
+      exit 1
+    fi
     echo "✓ hosts/$hostname/default.nix 생성됨 (SSH_KEY_NAME 수정 필요)"
     echo
     echo "  ⚠️  hardware-configuration.nix는 NixOS 설치 후 생성됩니다."
