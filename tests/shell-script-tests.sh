@@ -275,7 +275,6 @@ run_test "wt cleanup name-filter merged without upstream needs no confirm" test_
 run_test "wt cleanup name-filter confirmed dirty merged removes" test_wt_cleanup_name_filter_confirmed_dirty_merged_removes
 run_test "wt cleanup name-filter current worktree reports root command" test_wt_cleanup_name_filter_current_worktree_reports_root_command
 run_test "wt cleanup auto reports current merged exclusion" test_wt_cleanup_auto_reports_current_merged_exclusion
-run_test "wt tmux session-state classification unit" test_wt_tmux_session_state_classification_unit
 run_test "wt head-unchanged guard unit" test_wt_head_unchanged_guard_unit
 run_test "wt pr-status returns verified oid unit" test_wt_pr_status_returns_verified_oid_unit
 run_test "wt guarded remove rechecks branch unit" test_wt_remove_worktree_guarded_rechecks_branch_unit
@@ -286,8 +285,23 @@ run_test "wt forced remove keeps path when remove fails unit" test_wt_remove_wor
 run_test "wt remove refuses unknown lock state unit" test_wt_remove_worktree_refuses_unknown_lock_state_unit
 run_test "wt remove failure notes registration state unit" test_wt_remove_worktree_failure_notes_registration_state_unit
 run_test "wt remove preserves active process worktree unit" test_wt_remove_worktree_preserves_active_process_unit
-run_test "wt remove closes tmux before worktree remove unit" test_wt_remove_worktree_closes_tmux_before_remove_unit
-run_test "wt remove guarded closes tmux after worktree remove unit" test_wt_remove_worktree_guarded_closes_tmux_after_remove_unit
+run_test "wt cwd holders process table unit" test_wt_cwd_holders_process_table_unit
+run_test "wt cwd holders fail closed unit" test_wt_cwd_holders_fails_closed_unit
+run_test "wt active process guard messages unit" test_wt_active_process_blocks_messages_unit
+run_test "wt cleanup preserves worktree held by process" test_wt_cleanup_preserves_worktree_held_by_process
+run_test "wt recreate preserves worktree held by process" test_wt_recreate_preserves_worktree_held_by_process
+run_test "wt cleanup active guard matches physical folder" test_wt_cleanup_active_guard_matches_physical_folder
+run_test "wt cleanup --yes bypasses active guard only when named" test_wt_cleanup_yes_bypasses_active_guard_only_when_named
+run_test "wt recreate --yes bypasses active guard" test_wt_recreate_yes_bypasses_active_guard
+run_test "wt remove active guard bypass scope unit" test_wt_remove_worktree_active_guard_bypass_scope_unit
+run_test "wt cleanup active guard hint names nested worktree" test_wt_cleanup_active_guard_hint_names_nested_worktree
+run_test "wt guarded remove failure hint names nested worktree unit" test_wt_remove_worktree_guarded_failure_hint_names_nested_worktree_unit
+run_test "wt lsof escape path unit" test_wt_lsof_escape_path_unit
+run_test "wt cwd holders fail closed on control char path unit" test_wt_cwd_holders_fails_closed_on_control_char_path_unit
+run_test "wt cleanup active guard matches escaped path" test_wt_cleanup_active_guard_matches_escaped_path
+run_test "wt cleanup confirmed dirty keeps active guard" test_wt_cleanup_confirmed_dirty_keeps_active_guard
+run_test "wt cwd holders ancestor caffeinate unit" test_wt_cwd_holders_ancestor_caffeinate_unit
+run_test "wt cleanup ancestor caffeinate does not block" test_wt_cleanup_ancestor_caffeinate_does_not_block
 run_test "missing managed helpers fail closed" test_missing_managed_helpers_fail_closed
 run_test "missing wt Python helpers fail state changes" test_missing_wt_python_helpers_fail_state_changes
 run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_python_helpers_fail_cleanup_state_changes

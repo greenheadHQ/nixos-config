@@ -34,6 +34,7 @@ in
     let
       wrapper = pkgs.writeShellScript "wt-wrapper" ''
         export WT_PYTHON="${pythonWithTomlkit}/bin/python3"
+        export WT_LSOF="${pkgs.lsof}/bin/lsof"
         exec "${config.home.homeDirectory}/.local/bin/.wt-real" "$@"
       '';
     in

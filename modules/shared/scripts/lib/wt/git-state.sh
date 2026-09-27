@@ -41,7 +41,7 @@ _wt_registration_block() {
 }
 
 # 이 worktree가 git에 잠겨(locked) 있는가.
-# stdout: locked | unlocked | unknown (tmux·등록 상태 probe와 같은 삼상태 계약)
+# stdout: locked | unlocked | unknown (등록 상태 probe와 같은 삼상태 계약)
 _wt_lock_state() {
   local block
   block=$(_wt_registration_block "$1" "$2") || { printf 'unknown\n'; return 0; }
