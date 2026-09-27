@@ -74,6 +74,7 @@ WT_REPO_LIB_DIR=""
 WT_HELPERS=(
   ui
   tmux
+  process
   git-state
   bootstrap
   create

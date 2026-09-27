@@ -1,0 +1,130 @@
+# shellcheck shell=bash
+# ── 활성 작업 판정: worktree를 작업 위치(cwd)로 둔 프로세스 ────────────────────
+#
+# worktree를 지우거나 재생성하기 전에 "누가 이 폴더를 쓰고 있는가"를 본다. 기준은 폴더다 —
+# 대상 worktree의 물리 경로와 같거나 그 아래를 cwd로 둔 프로세스는 명령 종류와 무관하게
+# 사용 중으로 본다. 유휴 셸도 포함한다: wt는 창을 닫지 않으므로 셸을 통과시키면 사라진
+# cwd를 붙잡은 셸이 남는다. 명령 이름으로 예외를 두지 않는 이유도 같다(이름 표기는 바뀐다 —
+# lsof는 Claude Code를 버전 문자열로, nix coreutils의 sleep을 "coreutils"로 보고한다).
+#
+# 판정에서 빼는 것:
+#   - wt 자신, 조상 체인 전체, 자손. 조상은 wt를 부른 셸과 세션이다 — worktree에서 시작한
+#     에이전트 세션이 저장소 루트로 옮겨 정리할 때 자기 자신 때문에 매번 멈추지 않게 한다.
+#     자손은 탐지 명령 자신을 포함한다. 같은 세션이 따로 띄운 백그라운드 셸은 형제라서
+#     그대로 잡힌다(막는 쪽이라 안전하다).
+#   - 현재 사용자 소유가 아닌 프로세스. 다른 사용자·root 프로세스의 cwd는 권한 없이 읽을 수
+#     없고, 읽지 못한 것을 "사용 중"으로 두면 늘 있는 root 프로세스 때문에 매번 막힌다.
+#     그래서 "쓰지 않음"으로 본다 — 남는 제약이다.
+# 그 밖의 남는 제약: cwd가 worktree 밖인 프로세스(폴더를 열어 둔 GUI 편집기 등)와, 탐지 뒤
+# 제거 전에 새로 들어온 프로세스는 보지 못한다.
+#
+# 수단: lsof로 현재 사용자의 cwd를 한 번에 훑고(-d cwd) 경로로 거른다. 두 플랫폼이 같은
+# 파서를 쓰도록 lsof는 wt 래퍼가 Nix store 경로로 고정해 WT_LSOF로 넘긴다 — lsof는 NixOS
+# 시스템 PATH에 늘 있지 않다. 없으면 PATH의 lsof를 쓰고, 그것도 없으면 판정 실패다.
+
+# 대상 worktree(하위 포함)를 cwd로 둔 프로세스 목록.
+# stdout: 판정하면 붙잡은 프로세스마다 "PID<TAB>명령줄" 한 줄(없으면 빈 출력),
+#         판정하지 못하면 원인 한 줄.
+# 반환: 0 = 판정함, 1 = 판정하지 못함.
+_wt_cwd_holders() {
+  local wt_path="$1"
+  local lsof_bin="${WT_LSOF:-lsof}"
+  local target uid scan table rc=0
+
+  # lsof는 물리 경로를 보고한다(macOS에서 /tmp로 들어간 프로세스도 /private/tmp/...).
+  target=$(cd "$wt_path" 2>/dev/null && pwd -P) || {
+    printf 'worktree 경로를 확인하지 못했습니다: %s\n' "$wt_path"
+    return 1
+  }
+  if ! command -v "$lsof_bin" >/dev/null 2>&1; then
+    printf 'lsof를 찾지 못했습니다: %s\n' "$lsof_bin"
+    return 1
+  fi
+  uid=$(id -u) || { printf '현재 사용자 ID를 읽지 못했습니다\n'; return 1; }
+
+  # -a: 선택 조건을 AND로 묶는다(기본은 OR라 -u만으로 cwd 아닌 fd까지 섞인다).
+  # -F pn: 필드 출력(PID·이름). f 필드는 lsof 빌드에 따라 함께 나오기도 해서 p·n만 해석한다.
+  # -w: 경고(읽지 못한 파일 시스템 등)는 판정과 무관하므로 끈다. 오류는 stderr로 그대로 낸다.
+  scan=$("$lsof_bin" -w -n -a -u "$uid" -d cwd -F pn) || rc=$?
+  if (( rc != 0 )); then
+    printf 'lsof 실행 실패 (종료 코드 %s)\n' "$rc"
+    return 1
+  fi
+
+  # 비교 규칙은 "== 대상 또는 대상/로 시작"이다 — feat_a와 feat_ab를 섞지 않는다.
+  local line pid="" candidates=""
+  while IFS= read -r line; do
+    case "$line" in
+      p*) pid="${line#p}" ;;
+      n*)
+        if [[ -n "$pid" && ( "${line#n}" == "$target" || "${line#n}" == "$target/"* ) ]]; then
+          candidates+="$pid"$'\n'
+        fi
+        ;;
+    esac
+  done <<< "$scan"
+  [[ -n "$candidates" ]] || return 0
+
+  # 부모 관계와 명령줄은 ps 한 번으로 얻는다. lsof 뒤에 부르므로 스캔 때 본 프로세스 중
+  # 아직 살아 있는 것은 모두 이 표에 있다. 표에 없으면 그 사이 끝난 것이라 건너뛴다.
+  table=$(ps -A -ww -o pid=,ppid=,command=) || {
+    printf 'ps로 프로세스 관계를 읽지 못했습니다\n'
+    return 1
+  }
+  WT_HOLDER_CANDIDATES="$candidates" awk -v self="$$" '
+    {
+      cmd = $0
+      sub(/^[ \t]*[0-9]+[ \t]+[0-9]+[ \t]*/, "", cmd)
+      parent[$1] = $2
+      cmdline[$1] = cmd
+    }
+    END {
+      # wt 자신과 조상 체인
+      p = self
+      while (p != "" && !(p in skip)) {
+        skip[p] = 1
+        if (!(p in parent)) break
+        p = parent[p]
+      }
+      n = split(ENVIRON["WT_HOLDER_CANDIDATES"], cand, "\n")
+      for (i = 1; i <= n; i++) {
+        pid = cand[i]
+        if (pid == "" || (pid in seen)) continue
+        seen[pid] = 1
+        if (!(pid in parent) || (pid in skip)) continue
+        # 자손: 부모 사슬을 거슬러 올라가 wt를 만나면 뺀다
+        q = pid; hops = 0; descendant = 0
+        while ((q in parent) && hops++ < 4096) {
+          q = parent[q]
+          if (q == self) { descendant = 1; break }
+        }
+        if (!descendant) printf "%s\t%s\n", pid, cmdline[pid]
+      }
+    }
+  ' <<< "$table"
+}
+
+# 활성 작업 가드. 대상 worktree를 cwd로 둔 프로세스가 있거나 판정하지 못하면 안내를 내고
+# 0(막음)을 반환한다. 판정하지 못한 것을 "없음"으로 보지 않는다 — 되돌릴 수 없는 작업에서
+# 잠금 상태 unknown을 막는 것과 같은 정책이다(fail-closed).
+#   label      — 머리말 ("스킵: x", "재생성 불가: x")
+#   bypass_cmd — 위험을 알고 진행하는 재실행 명령 (`--yes` 형태)
+# 우회 여부는 호출자가 정한다: 이 함수를 부르지 않는 것이 우회다.
+_wt_active_process_blocks() {
+  local label="$1" wt_path="$2" bypass_cmd="$3"
+  local holders pid cmd
+
+  if ! holders=$(_wt_cwd_holders "$wt_path"); then
+    _warn "$label (이 worktree를 쓰는 프로세스를 확인하지 못해 멈춥니다 — $holders)"
+    _warn "  원인을 해결하고 다시 실행하거나, 위험을 알고 진행하려면: $bypass_cmd"
+    return 0
+  fi
+  [[ -n "$holders" ]] || return 1
+
+  _warn "$label (이 worktree를 작업 위치로 쓰는 프로세스가 있습니다)"
+  while IFS=$'\t' read -r pid cmd; do
+    _warn "  PID $pid: $cmd"
+  done <<< "$holders"
+  _warn "  프로세스를 끝낸 뒤 다시 실행하거나, 위험을 알고 진행하려면: $bypass_cmd"
+  return 0
+}

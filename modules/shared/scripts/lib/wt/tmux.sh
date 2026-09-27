@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # wt의 tmux 관여는 "정리"뿐이다. 윈도우/세션을 만들거나 전환하는 presentation은
 # 제거했고(경로 출력 계약으로 통일), 여기 남은 것은 worktree를 지우기 전후에 필요한
-# 판정과 뒷정리다: 대상 worktree의 pane 찾기, 그 pane에 살아 있는 프로세스 판정,
-# 그리고 창·세션 닫기.
+# 뒷정리다: 대상 worktree의 pane 찾기와 창·세션 닫기. (활성 프로세스 판정은 process.sh로
+# 옮겼다.)
 #
 # 두 close의 대상 범위가 다르다. 창(_wt_tmux_close)은 이름을 보지 않는다 — cwd가 그
 # worktree 경로 아래인 창이면 누가 만들었든 닫는다(현재 창·마지막 창은 예외). wt가
@@ -28,30 +28,6 @@ _wt_find_tmux_window() {
       done)
 
   [[ -n "$window_id" ]] && echo "$window_id" && return 0
-  return 1
-}
-
-# tmux 윈도우에 셸 이외의 포그라운드 프로세스가 있는지 확인 (전체 pane 검사)
-# 있으면 return 0 (true), 없으면 return 1 (false)
-_wt_has_active_process() {
-  local wt_path="$1"
-  tmux list-sessions &>/dev/null || return 1
-
-  local window_id
-  window_id=$(_wt_find_tmux_window "$wt_path") || return 1
-
-  # 모든 pane 검사 (분할 pane의 비활성 pane도 포함)
-  local pane_cmd
-  while IFS= read -r pane_cmd; do
-    case "$pane_cmd" in
-      zsh|bash|fish) ;;  # 셸 — 안전
-      *)
-        _info "스킵: $(basename "$wt_path") — 실행 중인 프로세스: $pane_cmd"
-        return 0
-        ;;
-    esac
-  done < <(tmux list-panes -t "$window_id" -F '#{pane_current_command}' 2>/dev/null)
-
   return 1
 }
 

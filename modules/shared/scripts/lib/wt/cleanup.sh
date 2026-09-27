@@ -48,8 +48,9 @@ _wt_cleanup_skip_suffix() {
 cmd_cleanup() {
   local auto=false
   local names_filter=()
-  # --yes는 두 가지를 한다: _confirm 자동 승인(WT_ASSUME_YES)과 제거 전략 강제.
-  # 후자는 이 명령의 정책이므로 전역 변수에 얹지 않고 로컬 상태로 둔다.
+  # --yes는 세 가지를 한다: _confirm 자동 승인(WT_ASSUME_YES), 제거 전략 강제, 그리고 이름
+  # 지정 정리의 활성 작업 가드 우회. 뒤의 둘은 이 명령의 정책이므로 전역 변수에 얹지 않고
+  # 로컬 상태로 둔다 — 환경에 남은 WT_ASSUME_YES로 가드가 조용히 꺼지지 않는다.
   local force_removal=false
 
   while [[ $# -gt 0 ]]; do
@@ -124,9 +125,9 @@ cmd_cleanup() {
     fi
 
     # 잠긴(locked) worktree는 어떤 경로로도 정리하지 않는다 (--auto·이름 지정·--yes 공통).
-    # git lock은 "다른 주체가 이 worktree를 붙잡고 있다"는 독립 신호이며, tmux pane 유무로
-    # 보는 활성 판정(_wt_has_active_process)에는 잡히지 않는다 — 예: Claude 브리지가 잠근
-    # worktree는 pane이 없어도 살아 있어야 한다. 잠금 해제는 잠근 주체의 몫이므로
+    # git lock은 "다른 주체가 이 worktree를 붙잡고 있다"는 독립 신호이며, cwd로 보는 활성
+    # 작업 판정(process.sh)에는 잡히지 않을 수 있다 — 예: Claude 브리지가 잠근 worktree는
+    # 그 안을 cwd로 둔 프로세스가 없어도 살아 있어야 한다. 잠금 해제는 잠근 주체의 몫이므로
     # --yes(위험 인지 선언)로도 우회시키지 않고 후보 수집 단계에서 뺀다.
     if _wt_is_locked "$git_root" "$wt"; then
       local _locked_name _locked_reason _safe_locked
@@ -260,6 +261,9 @@ cmd_cleanup() {
           _warn "스킵: $name (PR 상태 확인 이후 HEAD가 바뀌었습니다 — 다시 실행해 확인하세요)"
           continue
         fi
+        # 활성 작업 가드는 --yes로도 우회하지 않는다(active_guard 기본값 check). 여러
+        # worktree를 한 번에 지우는 경로라 쓰는 중인 것까지 지우지 않는다 — 편집기의 저장하지
+        # 않은 내용은 위 dirty와 같은 종류의 미보존 작업이다.
         _remove_worktree "$wt_path" "$branch" "$git_root" "forced" \
           || _info "경고: $name 삭제 실패"
         continue
@@ -408,7 +412,12 @@ cmd_cleanup() {
       mode="guarded"
       verified_oid=$(_wt_guarded_delete_oid "$wt_path" "$_wt_cleanup_tmp/$cache_key.head" "$name") || continue
     fi
-    if _remove_worktree "$wt_path" "$branch" "$git_root" "$mode" "$verified_oid"; then
+    # 활성 작업 가드 우회는 --yes로 대상을 직접 고른 경우뿐이다. 막힐 때 붙잡은 프로세스의
+    # PID와 명령을 보여 주므로 --yes는 그것을 보고 내린 판단이 된다. 확인 프롬프트 통과는
+    # dirty/unpushed에 대한 승인이라 우회로 치지 않는다.
+    local active_guard="check"
+    [[ "$force_removal" == "true" ]] && active_guard="bypass"
+    if _remove_worktree "$wt_path" "$branch" "$git_root" "$mode" "$verified_oid" "$active_guard"; then
       removed=$((removed + 1))
     fi
   done

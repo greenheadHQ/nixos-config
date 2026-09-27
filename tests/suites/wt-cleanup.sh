@@ -1311,7 +1311,7 @@ test_wt_existing_worktree_interactive_choice_checks_checkout_unit() {
     # shellcheck disable=SC2034
     WT_LAST_FILE=".claude/worktrees/.wt-last"
     local helper out rc
-    for helper in ui tmux git-state bootstrap create; do
+    for helper in ui tmux process git-state bootstrap create; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
@@ -1536,14 +1536,14 @@ test_wt_remove_worktree_guarded_rechecks_branch_unit() {
     local recorded_oid
     recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
 
-    for helper in ui git-state tmux bootstrap; do
+    for helper in ui git-state tmux process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
     # 이 테스트의 대상은 근거 재확인뿐이다. 삭제 경로의 나머지 부수 효과(helper 요구,
     # tmux, plugin 등록)는 stub으로 걷어내 재확인 결과만 관찰한다.
     _wt_require_state_helpers() { :; }
-    _wt_has_active_process() { return 1; }
+    _wt_cwd_holders() { :; }
     _wt_tmux_session_state() { printf 'absent\n'; }
     _wt_tmux_close() { :; }
     _wt_tmux_session_close() { :; }
@@ -1587,12 +1587,12 @@ test_wt_remove_worktree_guarded_keeps_reused_branch_unit() {
     local recorded_oid
     recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
 
-    for helper in ui git-state tmux bootstrap; do
+    for helper in ui git-state tmux process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
     _wt_require_state_helpers() { :; }
-    _wt_has_active_process() { return 1; }
+    _wt_cwd_holders() { :; }
     _wt_tmux_session_state() { printf 'absent\n'; }
     _wt_tmux_close() { :; }
     _wt_tmux_session_close() { :; }
@@ -1633,12 +1633,12 @@ test_wt_remove_worktree_guarded_clears_branch_config_unit() {
     local recorded_oid
     recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
 
-    for helper in ui git-state tmux bootstrap; do
+    for helper in ui git-state tmux process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
     _wt_require_state_helpers() { :; }
-    _wt_has_active_process() { return 1; }
+    _wt_cwd_holders() { :; }
     _wt_tmux_session_state() { printf 'absent\n'; }
     _wt_tmux_close() { :; }
     _wt_tmux_session_close() { :; }
@@ -1678,13 +1678,13 @@ test_wt_remove_worktree_forced_refuses_locked_unit() {
     git -C "$repo" commit -q --allow-empty -m first
     git -C "$repo" worktree add -q "$wt_path" -b feature
 
-    for helper in ui git-state tmux bootstrap; do
+    for helper in ui git-state tmux process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
     # 관찰 대상은 잠금 가드뿐이다. 나머지 부수 효과는 stub으로 걷어낸다.
     _wt_require_state_helpers() { :; }
-    _wt_has_active_process() { return 1; }
+    _wt_cwd_holders() { :; }
     _wt_tmux_session_state() { printf 'absent\n'; }
     _wt_tmux_close() { :; }
     _wt_tmux_session_close() { :; }
@@ -1738,12 +1738,12 @@ test_wt_remove_worktree_forced_keeps_path_when_remove_fails_unit() {
     git -C "$repo" commit -q --allow-empty -m first
     git -C "$repo" worktree add -q "$wt_path" -b feature
 
-    for helper in ui git-state tmux bootstrap; do
+    for helper in ui git-state tmux process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
     _wt_require_state_helpers() { :; }
-    _wt_has_active_process() { return 1; }
+    _wt_cwd_holders() { :; }
     _wt_tmux_session_state() { printf 'absent\n'; }
     _wt_tmux_close() { :; }
     _wt_tmux_session_close() { :; }
@@ -1788,12 +1788,12 @@ test_wt_remove_worktree_refuses_unknown_lock_state_unit() {
     git -C "$repo" commit -q --allow-empty -m first
     git -C "$repo" worktree add -q "$wt_path" -b feature
 
-    for helper in ui git-state tmux bootstrap; do
+    for helper in ui git-state tmux process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
     _wt_require_state_helpers() { :; }
-    _wt_has_active_process() { return 1; }
+    _wt_cwd_holders() { :; }
     _wt_tmux_session_state() { printf 'absent\n'; }
     _wt_tmux_close() { :; }
     _wt_tmux_session_close() { :; }
@@ -1838,12 +1838,12 @@ test_wt_remove_worktree_failure_notes_registration_state_unit() {
     git -C "$repo" commit -q --allow-empty -m first
     git -C "$repo" worktree add -q "$wt_path" -b feature
 
-    for helper in ui git-state tmux bootstrap; do
+    for helper in ui git-state tmux process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
     _wt_require_state_helpers() { :; }
-    _wt_has_active_process() { return 1; }
+    _wt_cwd_holders() { :; }
     _wt_tmux_session_state() { printf 'absent\n'; }
     _wt_tmux_close() { :; }
     _wt_tmux_session_close() { :; }
@@ -1879,12 +1879,12 @@ test_wt_remove_worktree_failure_notes_registration_state_unit() {
     set -euo pipefail
     export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
-    for helper in ui git-state tmux bootstrap; do
+    for helper in ui git-state tmux process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
     _wt_require_state_helpers() { :; }
-    _wt_has_active_process() { return 1; }
+    _wt_cwd_holders() { :; }
     _wt_tmux_session_state() { printf 'absent\n'; }
     _wt_tmux_close() { :; }
     _wt_tmux_session_close() { :; }
@@ -2049,19 +2049,17 @@ STUB
 }
 
 test_wt_remove_worktree_preserves_active_process_unit() {
-  # tmux presentation(윈도우/세션 생성·전환)과 같은 파일에 있지만 성격이 다른 가드다.
-  # pane에 셸이 아닌 프로세스(nvim, claude 등)가 살아 있으면 그 worktree는 누군가
-  # 쓰는 중이므로 삭제하지 않는다 — 이 가드가 사라지면 편집 중인 작업이 조용히 날아간다.
-  # presentation 제거 리팩토링에서 함께 지워지지 않도록 두 삭제 전략 모두에 대해 고정한다.
-  local sandbox repo wt_path stub_dir log
+  # 활성 작업 가드는 두 삭제 전략(forced/guarded)이 모두 지난다 — 전략별로 갈리면 무확인
+  # 삭제가 우회로가 된다. 탐지(_wt_cwd_holders)를 대역으로 바꿔, 붙잡은 프로세스가 있을 때와
+  # 판정하지 못했을 때 둘 다 멈추고 worktree·등록·브랜치를 그대로 두는지 본다. 붙잡은
+  # 프로세스가 없으면 같은 호출이 지운다(과잉 차단 아님).
+  local sandbox repo wt_path calls
   sandbox=$(new_sandbox)
   repo="$sandbox/repo"
   mkdir -p "$repo"
   repo="$(cd "$repo" && pwd -P)"
   wt_path="$(cd "$sandbox" && pwd -P)/wt"
-  stub_dir="$sandbox/stubbin"
-  log="$sandbox/tmux-calls.log"
-  install_wt_tmux_guard_stub "$stub_dir"
+  calls="$sandbox/holder-calls.log"
 
   (
     set -euo pipefail
@@ -2074,38 +2072,47 @@ test_wt_remove_worktree_preserves_active_process_unit() {
     local recorded_oid
     recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
 
-    # tmux 안이 아닌 상태로 고정한다 — "현재 윈도우는 닫지 않는다" 분기를 타면
-    # 관찰하려는 활성 프로세스 가드와 원인이 섞인다.
-    unset TMUX
-    export PATH="$stub_dir:$PATH"
-    export TMUX_STUB_LOG="$log"
-    export TMUX_STUB_PANE_PATH="$wt_path"
-    # 첫 pane은 셸, 둘째 pane에 편집기 — 활성 판정은 전체 pane을 봐야 성립한다.
-    export TMUX_STUB_PANE_COMMANDS=$'zsh\nnvim'
-
-    for helper in ui git-state tmux bootstrap; do
+    for helper in ui git-state tmux process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
-    # 관찰 대상은 활성 프로세스 가드뿐이다. 나머지 부수 효과는 stub으로 걷어낸다.
+    # 관찰 대상은 활성 작업 가드뿐이다. 나머지 부수 효과는 stub으로 걷어낸다.
     _wt_require_state_helpers() { :; }
+    _wt_tmux_session_state() { printf 'absent\n'; }
+    _wt_tmux_close() { :; }
+    _wt_tmux_session_close() { :; }
     _wt_remove_claude_local_plugins_for_worktree() { :; }
     _wt_untrust_codex_project() { :; }
+    local holder_mode=held
+    _wt_cwd_holders() {
+      printf '%s\n' "$1" >> "$calls"
+      case "$holder_mode" in
+        held)  printf '4242\tnvim notes.md\n' ;;
+        error) printf 'lsof 실행 실패 (종료 코드 1)\n'; return 1 ;;
+      esac
+    }
 
     local output
-    output=$(_remove_worktree "$wt_path" feature "$repo" forced 2>&1) && exit 11
-    [[ "$output" == *"실행 중인 프로세스: nvim"* ]] || exit 12
-    # 무확인 삭제(guarded)도 같은 가드를 지나야 한다 — 전략별로 갈리면 우회로가 된다.
-    output=$(_remove_worktree "$wt_path" feature "$repo" guarded "$recorded_oid" 2>&1) && exit 13
-    [[ "$output" == *"실행 중인 프로세스: nvim"* ]] || exit 14
+    for holder_mode in held error; do
+      output=$(_remove_worktree "$wt_path" feature "$repo" forced 2>&1) && exit 11
+      [[ "$holder_mode" == error || "$output" == *"PID 4242: nvim notes.md"* ]] || exit 12
+      [[ "$holder_mode" == held || "$output" == *"확인하지 못해 멈춥니다"* ]] || exit 13
+      output=$(_remove_worktree "$wt_path" feature "$repo" guarded "$recorded_oid" 2>&1) && exit 14
+      [[ "$holder_mode" == error || "$output" == *"PID 4242: nvim notes.md"* ]] || exit 15
+      [[ "$holder_mode" == held || "$output" == *"확인하지 못해 멈춥니다"* ]] || exit 16
+      [[ "$output" == *"wt cleanup wt --yes"* ]] || exit 17
+    done
 
-    [[ -d "$wt_path" ]] || exit 15
-    command git -C "$repo" worktree list --porcelain | grep -qxF "worktree $wt_path" || exit 16
-    command git -C "$repo" show-ref --verify --quiet refs/heads/feature || exit 17
-    # 윈도우·세션도 건드리지 않아야 한다: 지우지 않을 worktree의 작업 문맥만 날리는
-    # 부분 정리가 되면 안 된다.
-    [[ ! -s "$log" ]] || exit 18
-  ) || fail "_remove_worktree가 활성 프로세스 worktree를 보존하는지 확인 실패 (exit $?)"
+    [[ -d "$wt_path" ]] || exit 18
+    command git -C "$repo" worktree list --porcelain | grep -qxF "worktree $wt_path" || exit 19
+    command git -C "$repo" show-ref --verify --quiet refs/heads/feature || exit 20
+    # 네 호출 모두 대상 경로로 탐지를 불렀다.
+    [[ "$(grep -cxF "$wt_path" "$calls")" == "4" ]] || exit 21
+
+    holder_mode=free
+    _remove_worktree "$wt_path" feature "$repo" guarded "$recorded_oid" >/dev/null 2>&1 || exit 22
+    [[ ! -d "$wt_path" ]] || exit 23
+  ) || fail "_remove_worktree가 쓰는 중인 worktree를 두 전략 모두에서 보존하는지 확인 실패 (exit $?)"
 }
 
 test_wt_remove_worktree_closes_tmux_before_remove_unit() {
@@ -2140,7 +2147,7 @@ test_wt_remove_worktree_closes_tmux_before_remove_unit() {
     export TMUX_STUB_PANE_PATH="$wt_path"
     export TMUX_STUB_PANE_COMMANDS=zsh   # 모든 pane이 셸 = 삭제 가능
 
-    for helper in ui git-state tmux bootstrap; do
+    for helper in ui git-state tmux process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
@@ -2196,7 +2203,7 @@ test_wt_remove_worktree_guarded_closes_tmux_after_remove_unit() {
     # 아니라 스킵을 통과한 뒤의 정리 호출이므로 세션을 absent로 둔다.
     export TMUX_STUB_SESSION_ABSENT=1
 
-    for helper in ui git-state tmux bootstrap; do
+    for helper in ui git-state tmux process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done

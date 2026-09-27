@@ -282,6 +282,15 @@ run_test "wt forced remove keeps path when remove fails unit" test_wt_remove_wor
 run_test "wt remove refuses unknown lock state unit" test_wt_remove_worktree_refuses_unknown_lock_state_unit
 run_test "wt remove failure notes registration state unit" test_wt_remove_worktree_failure_notes_registration_state_unit
 run_test "wt remove preserves active process worktree unit" test_wt_remove_worktree_preserves_active_process_unit
+run_test "wt cwd holders process table unit" test_wt_cwd_holders_process_table_unit
+run_test "wt cwd holders fail closed unit" test_wt_cwd_holders_fails_closed_unit
+run_test "wt active process guard messages unit" test_wt_active_process_blocks_messages_unit
+run_test "wt cleanup preserves worktree held by process" test_wt_cleanup_preserves_worktree_held_by_process
+run_test "wt recreate preserves worktree held by process" test_wt_recreate_preserves_worktree_held_by_process
+run_test "wt cleanup active guard matches physical folder" test_wt_cleanup_active_guard_matches_physical_folder
+run_test "wt cleanup --yes bypasses active guard only when named" test_wt_cleanup_yes_bypasses_active_guard_only_when_named
+run_test "wt recreate --yes bypasses active guard" test_wt_recreate_yes_bypasses_active_guard
+run_test "wt remove active guard bypass scope unit" test_wt_remove_worktree_active_guard_bypass_scope_unit
 run_test "wt remove closes tmux before worktree remove unit" test_wt_remove_worktree_closes_tmux_before_remove_unit
 run_test "wt remove guarded closes tmux after worktree remove unit" test_wt_remove_worktree_guarded_closes_tmux_after_remove_unit
 run_test "missing managed helpers fail closed" test_missing_managed_helpers_fail_closed

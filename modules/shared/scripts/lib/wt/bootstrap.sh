@@ -281,8 +281,14 @@ _wt_branch_checkout_state() {
 }
 
 # 호출 형태 (mode는 필수, 폐쇄 집합):
-#   _remove_worktree <wt_path> <branch> <git_root> forced
-#   _remove_worktree <wt_path> <branch> <git_root> guarded <expected_oid>
+#   _remove_worktree <wt_path> <branch> <git_root> forced ["" [active_guard]]
+#   _remove_worktree <wt_path> <branch> <git_root> guarded <expected_oid> [active_guard]
+#
+# active_guard는 활성 작업 가드(process.sh)를 볼지 정한다: check(기본) | bypass.
+# bypass는 호출자가 `--yes`로 이름을 지정한 정리에만 넘긴다(cleanup.sh). mode로는 `--yes`를
+# 구분할 수 없어 따로 받는다 — forced는 확인 프롬프트 통과와 clean한 비-MERGED 이름 지정에도
+# 쓰인다. 기본값이 안전한 쪽이라 bypass가 아닌 값은 모두 check로 본다. 잠금·cwd 가드는
+# bypass와 무관하게 본다.
 #
 # mode는 제거 전략을 고른다. "승인 여부"를 직접 뜻하지 않는다 — 어떤 전략을 쓸지는
 # 호출자가 정책으로 판단하며, 이 함수는 그 결정을 실행만 한다:
@@ -308,6 +314,7 @@ _wt_branch_checkout_state() {
 # 사라져도 `git worktree add`로 되살릴 수 있다.
 _remove_worktree() {
   local wt_path="$1" branch="$2" git_root="$3" mode="${4:-}" expected_oid="${5:-}"
+  local active_guard="${6:-check}"
   local name
   name=$(basename "$wt_path")
 
@@ -331,18 +338,21 @@ _remove_worktree() {
     return 1
   fi
 
-  # 활성 프로세스 가드: tmux 윈도우에 실행 중인 프로세스(nvim, claude 등)가 있으면 중단
-  if _wt_has_active_process "$wt_path"; then
+  # 활성 작업 가드: 다른 프로세스가 이 worktree(하위 포함)를 작업 위치(cwd)로 두고 있으면
+  # 중단한다. 두 전략(forced/guarded)이 같은 가드를 지난다 — 전략별로 갈리면 무확인 삭제가
+  # 우회로가 된다. 판정과 안내는 process.sh가 소유한다.
+  if [[ "$active_guard" != "bypass" ]] \
+    && _wt_active_process_blocks "스킵: $name" "$wt_path" "wt cleanup $(printf '%q' "$name") --yes"; then
     return 1
   fi
 
   # 잠금 가드 (mode와 무관): git lock은 "다른 주체가 이 worktree를 붙잡고 있다"는 신호를
-  # tmux pane과 독립적으로 낸다. 활성 판정을 pane 유무(_wt_has_active_process)에만 맡기면
-  # pane 없이 살아 있는 주체(예: worktree를 잠근 브리지 프로세스)를 활성으로 보지 못한다.
-  # 그래서 잠금을 독립 신호로 승격해 삭제 전략(forced/guarded)보다 먼저 본다 — 해제는
-  # 잠근 주체가 `git worktree unlock`으로 해야 하며, `--yes`는 그 권한을 대신하지 않는다.
-  # 확인하지 못한 상태(unknown)도 지우지 않는다: 되돌릴 수 없는 작업에서 "잠기지 않았다"를
-  # 확인 없이 가정하지 않는다(fail-closed, tmux 세션 probe와 같은 정책).
+  # 활성 작업 가드와 독립적으로 낸다. 활성 작업 가드는 cwd가 worktree 안인 프로세스만 보므로
+  # cwd를 밖에 둔 채 worktree를 잠근 주체(예: 브리지 프로세스)는 잡지 못한다. 그래서 잠금을
+  # 독립 신호로 승격해 삭제 전략(forced/guarded)보다 먼저 본다 — 해제는 잠근 주체가
+  # `git worktree unlock`으로 해야 하며, `--yes`는 그 권한을 대신하지 않는다(활성 작업 가드
+  # 우회와 다르다). 확인하지 못한 상태(unknown)도 지우지 않는다: 되돌릴 수 없는 작업에서
+  # "잠기지 않았다"를 확인 없이 가정하지 않는다(fail-closed, 활성 작업 판정 실패와 같은 정책).
   #
   # 심링크가 낀 경로 대응은 조회 헬퍼(_wt_effective_lock_state)가 소유한다 — create.sh의
   # 재생성 경로도 같은 헬퍼를 써야 두 파괴적 경로의 잠금 판정이 갈라지지 않는다.
