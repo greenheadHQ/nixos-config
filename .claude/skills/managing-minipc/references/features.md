@@ -10,7 +10,6 @@ MiniPC(greenhead-minipc)에서 사용되는 NixOS 전용 설정입니다.
 - [하드웨어 모니터링](#하드웨어-모니터링)
 - [네트워크/보안 설정](#네트워크보안-설정)
 - [SSH 서버 설정](#ssh-서버-설정)
-- [mosh 설정](#mosh-설정)
 - [Tailscale 설정](#tailscale-설정)
 - [호스트 설정](#호스트-설정)
 - [NixOS Alias](#nixos-alias)
@@ -101,7 +100,6 @@ nix-shell -p ethtool --run "sudo ethtool enp2s0 | grep Wake"
 | 모듈 | 파일 | 설명 |
 |------|------|------|
 | SSH 서버 | `programs/ssh.nix` | 공개키 인증, 비밀번호 비활성화, LAN 포트 미개방 |
-| mosh | `programs/mosh.nix` | 모바일 쉘, LAN 포트 미개방 |
 | Tailscale | `programs/tailscale.nix` | VPN (100.79.80.95), 유일한 접근 경로 |
 
 방화벽 정책 (tailscale.nix):
@@ -152,18 +150,6 @@ services.openssh = {
     ClientAliveCountMax = 3;
   };
 };
-```
-
-## mosh 설정
-
-불안정한 네트워크(모바일 등)에서 연결 유지를 위한 mosh 서버입니다.
-
-```bash
-# 클라이언트(Mac/iPhone)에서 접속
-mosh greenhead@100.79.80.95
-
-# 또는 tmux와 함께
-mosh greenhead@100.79.80.95 -- tmux new-session -A -s main
 ```
 
 ## Tailscale 설정

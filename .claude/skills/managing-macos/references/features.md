@@ -4,7 +4,7 @@ macOS 관련 시스템 설정 및 Homebrew 관리입니다.
 
 ## 목차
 
-- [원격 접속 (SSH/mosh)](#원격-접속-sshmosh)
+- [원격 접속 (SSH)](#원격-접속-ssh)
   - [SSH 세션 로케일 설정](#ssh-세션-로케일-설정)
 - [Shell Alias](#shell-alias)
 - [보안](#보안)
@@ -23,18 +23,17 @@ macOS 관련 시스템 설정 및 Homebrew 관리입니다.
 
 `modules/darwin/configuration.nix`에서 관리됩니다.
 
-## 원격 접속 (SSH/mosh)
+## 원격 접속 (SSH)
 
-`modules/darwin/programs/sshd/`와 `modules/darwin/programs/mosh/`에서 관리됩니다.
+`modules/darwin/programs/sshd/`에서 관리됩니다.
 
-Termius 등 외부 기기에서 맥북에 SSH/mosh로 원격 접속할 수 있도록 설정합니다.
+Termius 등 외부 기기에서 맥북에 SSH로 원격 접속할 수 있도록 설정합니다.
 
 구성 요소:
 
 | 모듈 | 파일 | 설명 |
 |------|------|------|
 | SSH 서버 보안 | `programs/sshd/default.nix` | 공개키 인증만 허용, 비밀번호 비활성화 |
-| mosh | `programs/mosh/default.nix` | mosh-server 설치 (불안정한 네트워크 대응) |
 | authorized_keys | `configuration.nix` | SSH 접속 허용 키 등록 |
 
 SSH 서버 보안 설정:
@@ -80,14 +79,6 @@ Termius 연결 정보:
 | Port | `22` |
 | Username | `greenhead` |
 | Auth | SSH Key (`mobile-ssh`, Ed25519) |
-
-mosh 사용:
-
-```bash
-# Termius에서 mosh 연결 시 자동으로 mosh-server 사용
-# 또는 CLI에서:
-mosh greenhead@100.65.50.98
-```
 
 > 참고: macOS의 launchd가 SSH 소켓을 직접 관리하므로 `sshd_config`의 `ListenAddress` 설정은 적용되지 않습니다. LAN 접근 제한이 필요한 경우 pf 방화벽을 사용해야 합니다.
 
