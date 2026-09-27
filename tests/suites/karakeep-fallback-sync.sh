@@ -979,6 +979,37 @@ test_karakeep_fallback_sync_identifier_tags_read_only_in_head() {
     "$h/after-script" > "$sandbox/fallback/after-script.html"
   _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$h/after-empty-comment"
   printf '<head><!--><link rel="canonical" href="%s"></head>\n' "$h/after-empty-comment" > "$sandbox/fallback/after-empty-comment.html"
+  # template 내용은 문서에 적용되지 않는 inert 조각이다. 중첩 깊이가 0이 될 때까지 건너뛰고,
+  # 닫히지 않으면 끝까지 건너뛴다. template 안의 주석·script에 든 `</template>` 텍스트는 끝 태그가 아니다.
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/in-template"
+  printf '<head><template><link rel="canonical" href="%s"></template></head>\n' "$h/in-template" > "$sandbox/fallback/in-template.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/in-nested-template"
+  printf '<head><template><template></template><link rel="canonical" href="%s"></template></head>\n' \
+    "$h/in-nested-template" > "$sandbox/fallback/in-nested-template.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/template-end-in-comment"
+  printf '<head><template><!-- </template> --><link rel="canonical" href="%s"></template></head>\n' \
+    "$h/template-end-in-comment" > "$sandbox/fallback/template-end-in-comment.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/template-end-in-script"
+  printf '<head><template><script>var s = "</template>";</script><link rel="canonical" href="%s"></template></head>\n' \
+    "$h/template-end-in-script" > "$sandbox/fallback/template-end-in-script.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/unclosed-template"
+  printf '<head><template><link rel="canonical" href="%s">\n' "$h/unclosed-template" > "$sandbox/fallback/unclosed-template.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$h/after-template"
+  printf '<head><template><p>x</p></template><link rel="canonical" href="%s"></head>\n' \
+    "$h/after-template" > "$sandbox/fallback/after-template.html"
+  # 스크립트가 켜진 브라우저는 head의 noscript·noframes 내용을 원시 텍스트로 읽으므로 요소가 아니다.
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/in-noscript"
+  printf '<head><noscript><link rel="canonical" href="%s"></noscript></head>\n' "$h/in-noscript" > "$sandbox/fallback/in-noscript.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/in-noframes"
+  printf '<head><noframes><link rel="canonical" href="%s"></noframes></head>\n' "$h/in-noframes" > "$sandbox/fallback/in-noframes.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$h/after-noscript-img"
+  printf '<head><noscript><img src="https://example.com/pixel.gif"></noscript><link rel="canonical" href="%s"></head>\n' \
+    "$h/after-noscript-img" > "$sandbox/fallback/after-noscript-img.html"
+  # 이름이 template·noscript로 시작할 뿐인 태그는 건너뛰기 대상이 아니다.
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$h/after-templatex"
+  printf '<head><templatex><link rel="canonical" href="%s"></head>\n' "$h/after-templatex" > "$sandbox/fallback/after-templatex.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$h/after-noscriptx"
+  printf '<head><noscriptx><link rel="canonical" href="%s"></head>\n' "$h/after-noscriptx" > "$sandbox/fallback/after-noscriptx.html"
   # SingleFile 저장 주석은 태그 파서와 따로 원본에서 읽으므로 head 한정의 영향을 받지 않는다.
   _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$h/singlefile-saved"
   _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/singlefile-srcdoc"
