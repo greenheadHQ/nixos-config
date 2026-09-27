@@ -18,7 +18,7 @@ from mcp.types import Tool
 from starlette.routing import Route
 from uvicorn.logging import AccessFormatter
 
-from anki_mcp.authoring import AUTHORING_GUIDANCE
+from anki_mcp.authoring import AUTHORING_GUIDANCE, CARD_QUALITY, REQUIRED_RULES
 from anki_mcp.config import Settings
 from anki_mcp.metadata import export_catalog
 from anki_mcp.server import build, serve
@@ -228,7 +228,63 @@ async def test_split_apps_metadata_and_full_oauth_flow(tmp_path, auth_method):
             assert AUTHORING_GUIDANCE not in listed["anki_find_notes"]["description"]
             assert listed["anki_add_notes"]["inputSchema"]["required"] == ["notes"]
             assert listed["anki_update_note_fields"]["inputSchema"]["required"] == ["note_id", "fields"]
-            assert "anki://x-callback-url" not in AUTHORING_GUIDANCE
+            assert "anki://x-callback-url" not in CARD_QUALITY + REQUIRED_RULES + AUTHORING_GUIDANCE
+            instructions = initialized.json()["result"]["instructions"]
+            assert instructions.count(CARD_QUALITY) == 1
+            assert instructions.index(CARD_QUALITY) < instructions.index(REQUIRED_RULES) < instructions.index(AUTHORING_GUIDANCE)
+            for name in ("anki_add_notes", "anki_update_note_fields", "anki_update_notes_fields"):
+                assert listed[name]["description"].startswith(CARD_QUALITY + "\n\n" + REQUIRED_RULES)
+                assert listed[name]["description"].count(CARD_QUALITY) == 1
+                assert listed[name]["description"].count(REQUIRED_RULES) == 1
+                assert listed[name]["description"].split("\n", 1)[0] == "카드 품질(쓰기 전 확인, 앞 항목 우선)"
+            assert CARD_QUALITY not in listed["anki_find_notes"]["description"]
+            assert REQUIRED_RULES not in listed["anki_find_notes"]["description"]
+            assert "카드 품질" not in AUTHORING_GUIDANCE
+            assert "multiple-choice question tool" in listed["anki_note_info"]["description"]
+            assert "still working" in listed["anki_note_info"]["description"]
+            assert "follow anki_note_info's single cleanup question" in listed["anki_remove_tags"]["description"]
+            assert "Do not invent new tags" in listed["anki_add_tags"]["description"]
+            new_note = listed["anki_add_notes"]["inputSchema"]["$defs"]["NewNote"]
+            assert "do not invent new tags" in new_note["properties"]["tags"]["description"]
+            assert "no note uses anymore" in listed["anki_tags"]["description"]
+            assert "새 태그를 만들어 붙이지 않는다" in REQUIRED_RULES
+            assert "대화 자체는 출처가 아니다" in REQUIRED_RULES
+            assert "메타데이터" not in CARD_QUALITY + REQUIRED_RULES + AUTHORING_GUIDANCE
+            # 필수 규칙 문장은 쓰기 도구 설명마다 한 번만 나온다. 나머지 원칙에서 되풀이하지 않는다.
+            for name in ("anki_add_notes", "anki_update_note_fields", "anki_update_notes_fields"):
+                for rule in ("세션 시작부터 카드 작성을 전제하지 않는다", "raw anki:// URL", "대화 자체는 출처가 아니다",
+                             "Mac 로컬 경로를 iPhone에서", "새 태그를 만들어 붙이지 않는다"):
+                    assert listed[name]["description"].count(rule) == 1, (name, rule)
+            # 2026-09-27 실측(#1440): Claude 웹·Mac 앱·iOS 앱이 도구 설명을 앞 2,048자에서 잘랐다.
+            claude_description_chars = 2048
+            required_sentence_ends = {
+                "anki_add_notes": (
+                    "never repeat a write to rerun it.",
+                    "Reuse request_id for every retry.",
+                    "it can generate cards even in a hidden memo field.",
+                ),
+                "anki_update_note_fields": (
+                    "Reuse request_id for retries.",
+                    "pass expected_fields with exact old values for the same keys.",
+                    "it can generate cards even in a hidden memo field.",
+                    "Do not silently rewrite an existing memo.",
+                    "with the exact last-read full memo.",
+                    "do not drop the guard or automatically replace its value. Follow anki_note_info.",
+                ),
+                "anki_update_notes_fields": (
+                    "Inspect partial/unknown receipts instead of repeating with a new request_id.",
+                    "Reuse the same request_id for retries.",
+                    "and do not silently rewrite an existing memo.",
+                    "with each note's exact last-read full memo.",
+                    "do not drop the guard or automatically replace its value. Follow anki_note_info.",
+                ),
+            }
+            for name, ends in required_sentence_ends.items():
+                head = listed[name]["description"][:claude_description_chars]
+                assert REQUIRED_RULES in head
+                for end in ends:
+                    assert listed[name]["description"].count(end) == 1, (name, end)
+                    assert end in head, (name, end)
 
             # 7. Host·Origin의 포트도 일치해야 한다. 다른 포트나 포트 생략은 토큰이 있어도 거부한다.
             for wrong_host in ("evil.example", FQDN, f"{FQDN}:443", APPROVAL_HOST):
