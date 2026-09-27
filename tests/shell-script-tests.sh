@@ -418,6 +418,8 @@ run_test "karakeep fallback-sync reads identifier tags spanning lines" test_kara
 run_test "karakeep fallback-sync flatten error is a match error" test_karakeep_fallback_sync_flatten_error_is_a_match_error
 run_test "karakeep fallback-sync trailing slash is ignored only in path" test_karakeep_fallback_sync_trailing_slash_is_ignored_only_in_path
 run_test "karakeep fallback-sync identifier tag attribute syntax" test_karakeep_fallback_sync_identifier_tag_attribute_syntax
+run_test "karakeep fallback-sync identifier tags read only in head" test_karakeep_fallback_sync_identifier_tags_read_only_in_head
+run_test "karakeep fallback-sync SingleFile parser error is a match error" test_karakeep_fallback_sync_singlefile_parser_error_is_a_match_error
 run_test "immich backup happy path creates dump atomically" test_immich_backup_happy_path_creates_dump_atomically
 run_test "immich backup integrity failure exits nonzero" test_immich_backup_integrity_failure_exits_nonzero
 run_test "immich backup retention deletes only old dumps in dir" test_immich_backup_retention_deletes_only_old_dumps_in_dir

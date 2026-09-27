@@ -269,11 +269,16 @@ tag_identifier_source() {
 }
 
 # 평탄화한 snippet에서 canonical link와 og:url·twitter:url meta의 URL을 "출처<TAB>URL"로 낸다.
+# 문서 head만 읽는다: 첫 `<body`나 `</head>`(대소문자 무시, 뒤가 공백·`>`·`/`)에서 멈추고, 둘 다
+# 없으면 끝까지 읽는다. head 안에서도 주석과 script·style 본문은 건너뛴다. 그 안의 태그 모양
+# 텍스트나 body의 iframe srcdoc 같은 임베드 문서의 canonical은 원문 식별자가 아니다. 닫히지
+# 않은 주석이나 script·style은 문서 끝까지 건너뛴다 (#1495).
 # 태그는 `<link`·`<meta` 뒤가 공백이나 `/`인 곳부터 첫 `>`까지다. 속성은 HTML 문법대로 읽는다:
 # 이름과 키워드의 대소문자 무시, `=` 앞뒤 공백, 큰·작은따옴표와 따옴표 없는 값, 순서 무관,
 # 중복 속성은 첫 값, 값 앞뒤 공백 제거. rel은 공백으로 나눈 토큰 집합이라 canonical 토큰이
 # 있으면 된다. 따옴표 안의 `>`는 지원하지 않는다. 값이 `>`에서 잘려 닫는 따옴표가 없으면
-# 그 속성부터 버리므로 식별자가 빠져 보류 쪽으로 떨어진다.
+# 그 속성부터 버리므로 그 식별자는 판정에서 빠진다(다른 식별자가 큐와 일치하면 그 URL로
+# 연결된다).
 extract_identifier_tags() {
   LC_ALL=C awk -v q="'" '
     function parse_attrs(s,   name, value, quote, close_pos) {
@@ -305,13 +310,40 @@ extract_identifier_tags() {
       sub(/[[:space:]]+$/, "", v)
       return v
     }
+    # seg가 name 태그로 시작하고 그 뒤가 공백·`>`·`/`인지 본다(대소문자 무시).
+    function starts_tag(seg, name,   len) {
+      len = length(name)
+      return tolower(substr(seg, 1, len)) == name && substr(seg, len + 1, 1) ~ /^[[:space:]>\/]$/
+    }
     {
       n = split($0, parts, "<")
       for (i = 2; i <= n; i++) {
         seg = parts[i]
+        # skip은 건너뛰는 중인 문맥이다: 주석은 `-->`, script·style은 그 끝 태그까지.
+        if (skip == "comment") {
+          if (index(seg, "-->")) skip = ""
+          continue
+        }
+        if (skip != "") {
+          if (starts_tag(seg, "/" skip)) skip = ""
+          continue
+        }
+        if (substr(seg, 1, 3) == "!--") {
+          # `<!-->`·`<!--->`는 곧바로 닫히는 빈 주석이다.
+          if (!index(substr(seg, 2), "-->")) skip = "comment"
+          continue
+        }
+        if (starts_tag(seg, "body") || starts_tag(seg, "/head")) exit
+        if (starts_tag(seg, "script")) {
+          skip = "script"
+          continue
+        }
+        if (starts_tag(seg, "style")) {
+          skip = "style"
+          continue
+        }
+        if (!starts_tag(seg, "link") && !starts_tag(seg, "meta")) continue
         tag = tolower(substr(seg, 1, 4))
-        if (tag != "link" && tag != "meta") continue
-        if (substr(seg, 5, 1) !~ /^[[:space:]\/]$/) continue
         close_pos = index(seg, ">")
         if (close_pos == 0) continue
         parse_attrs(substr(seg, 5, close_pos - 5))

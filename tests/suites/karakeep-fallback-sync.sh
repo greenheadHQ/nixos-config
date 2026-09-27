@@ -836,9 +836,24 @@ _karakeep_fallback_sync_syntax_expect() {
   printf '%s\t%s\n' "$expect" "$queue_url" >> "$sandbox/syntax-expect"
 }
 
+_karakeep_fallback_sync_assert_syntax_expectations() {
+  local sandbox="$1"
+  local uploaded expect url
+  uploaded=$(_karakeep_fallback_sync_uploaded_urls "$sandbox")
+  while IFS=$'\t' read -r expect url; do
+    if [ "$expect" = relink ]; then
+      printf '%s\n' "$uploaded" | grep -Fqx -- "$url" || fail "expected syntax case to relink: $url"
+      ! grep -Fqx -- "$url" "$sandbox/state/failed-urls.txt" || fail "expected relinked syntax case to leave the queue: $url"
+    else
+      ! printf '%s\n' "$uploaded" | grep -Fqx -- "$url" || fail "expected syntax case to be held: $url"
+      grep -Fqx -- "$url" "$sandbox/state/failed-urls.txt" || fail "expected held syntax case to stay queued: $url"
+    fi
+  done < "$sandbox/syntax-expect"
+}
+
 # 식별자 태그(canonical link, og:url·twitter:url meta)의 HTML 속성 문법 변형 (#1495 리뷰 P2).
 test_karakeep_fallback_sync_identifier_tag_attribute_syntax() {
-  local sandbox b tab nl expect url uploaded
+  local sandbox b tab nl
   sandbox=$(new_sandbox)
   _karakeep_fallback_sync_prepare_sandbox "$sandbox"
   : > "$sandbox/state/failed-urls.txt"
@@ -882,8 +897,8 @@ test_karakeep_fallback_sync_identifier_tag_attribute_syntax() {
   _karakeep_fallback_sync_syntax_expect "$sandbox" held "$b/duplicate-second"
   printf '<link rel="canonical" href="%s" href="%s">\n' "$b/duplicate-first" "$b/duplicate-second" > "$sandbox/fallback/duplicate.html"
 
-  # 따옴표 안의 `>`는 지원하지 않는다. 값이 잘려 보류로 떨어져야 하고, 잘린 값과 정확히
-  # 같은 큐 URL이 있어도 그 URL로 덮어쓰지 않는다.
+  # 따옴표 안의 `>`는 지원하지 않는다. 그 식별자는 판정에서 빠진다. 이 파일에는 다른 식별자가
+  # 없어 보류되고, 잘린 값과 정확히 같은 큐 URL이 있어도 그 URL로 덮어쓰지 않는다.
   _karakeep_fallback_sync_syntax_expect "$sandbox" held "$b/quoted-gt?x=>1"
   _karakeep_fallback_sync_syntax_expect "$sandbox" held "$b/quoted-gt?x="
   printf '<link rel="canonical" href="%s">\n' "$b/quoted-gt?x=>1" > "$sandbox/fallback/quoted-gt.html"
@@ -902,14 +917,105 @@ test_karakeep_fallback_sync_identifier_tag_attribute_syntax() {
   _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
     || fail "expected attribute syntax run to exit 0"
 
-  uploaded=$(_karakeep_fallback_sync_uploaded_urls "$sandbox")
-  while IFS=$'\t' read -r expect url; do
-    if [ "$expect" = relink ]; then
-      printf '%s\n' "$uploaded" | grep -Fqx -- "$url" || fail "expected syntax case to relink: $url"
-      ! grep -Fqx -- "$url" "$sandbox/state/failed-urls.txt" || fail "expected relinked syntax case to leave the queue: $url"
-    else
-      ! printf '%s\n' "$uploaded" | grep -Fqx -- "$url" || fail "expected syntax case to be held: $url"
-      grep -Fqx -- "$url" "$sandbox/state/failed-urls.txt" || fail "expected held syntax case to stay queued: $url"
-    fi
-  done < "$sandbox/syntax-expect"
+  _karakeep_fallback_sync_assert_syntax_expectations "$sandbox"
+}
+
+# 식별자 태그는 문서 head에서만 읽는다. head 안에서도 주석과 script·style 본문의 태그 모양
+# 텍스트는 태그가 아니다. body 안 iframe srcdoc 같은 임베드 문서의 canonical이 섞이면 그 URL만
+# 큐에 있을 때 다른 북마크를 덮어쓴다 (#1495 재리뷰).
+test_karakeep_fallback_sync_identifier_tags_read_only_in_head() {
+  local sandbox h
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  : > "$sandbox/state/failed-urls.txt"
+  : > "$sandbox/syntax-expect"
+  h="https://example.com/context"
+
+  # head의 canonical은 읽고, body 안 srcdoc의 따옴표 없는 canonical은 읽지 않는다.
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$h/head-source"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/srcdoc-embed"
+  printf '<!doctype html><html><head><link rel="canonical" href="%s"></head><body><iframe srcdoc="<link rel=canonical href=%s>"></iframe></body></html>\n' \
+    "$h/head-source" "$h/srcdoc-embed" > "$sandbox/fallback/srcdoc-with-head.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/srcdoc-only"
+  printf '<!doctype html><html><head><title>t</title></head><body><iframe srcdoc="<link rel=canonical href=%s>"></iframe></body></html>\n' \
+    "$h/srcdoc-only" > "$sandbox/fallback/srcdoc-only.html"
+  # body 시작 태그가 생략돼도 </head>에서 멈춘다.
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/after-head-end"
+  printf '<head><title>t</title></head><div><iframe srcdoc="<link rel=canonical href=%s>"></iframe></div>\n' \
+    "$h/after-head-end" > "$sandbox/fallback/after-head-end.html"
+  # </head>가 생략돼도 body 시작 태그에서 멈춘다. 이름의 대소문자는 가리지 않는다.
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/after-body"
+  printf '<head><title>t</title><body><link rel=canonical href=%s>\n' "$h/after-body" > "$sandbox/fallback/after-body.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/after-upper-body"
+  printf '<HTML><HEAD><TITLE>t</TITLE><BODY class="x"><LINK REL="canonical" HREF="%s">\n' \
+    "$h/after-upper-body" > "$sandbox/fallback/after-upper-body.html"
+  # 이름이 body로 시작할 뿐인 태그는 경계가 아니다.
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$h/after-bodyx"
+  printf '<head><bodyx><link rel="canonical" href="%s">\n' "$h/after-bodyx" > "$sandbox/fallback/after-bodyx.html"
+  # head와 body 태그가 없는 문서는 끝까지 읽는다.
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$h/no-head-body"
+  printf '<p>본문</p>\n<link rel="canonical" href="%s">\n' "$h/no-head-body" > "$sandbox/fallback/no-head-body.html"
+  # head 안 주석과 script·style 본문의 태그 모양 텍스트는 읽지 않는다.
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/in-comment"
+  printf '<head><!-- <link rel="canonical" href="%s"> --></head>\n' "$h/in-comment" > "$sandbox/fallback/in-comment.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/in-multiline-comment"
+  printf '<head><!--\n<link\n  rel="canonical"\n  href="%s">\n--></head>\n' \
+    "$h/in-multiline-comment" > "$sandbox/fallback/in-multiline-comment.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/in-script"
+  printf "<head><script>var s = '<link rel=\"canonical\" href=\"%s\">';</script></head>\n" \
+    "$h/in-script" > "$sandbox/fallback/in-script.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/in-style"
+  printf '<head><style>/* <link rel="canonical" href="%s"> */</style></head>\n' "$h/in-style" > "$sandbox/fallback/in-style.html"
+  # 닫히지 않은 주석과 script는 거기서 스캔을 끝낸다.
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/unclosed-comment"
+  printf '<head><!-- <link rel="canonical" href="%s">\n' "$h/unclosed-comment" > "$sandbox/fallback/unclosed-comment.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/unclosed-script"
+  printf '<head><script><link rel="canonical" href="%s">\n' "$h/unclosed-script" > "$sandbox/fallback/unclosed-script.html"
+  # 주석과 script가 끝난 뒤의 head 태그는 읽는다. `<!-->`는 곧바로 닫히는 빈 주석이다.
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$h/after-comment"
+  printf '<head><!-- x --><link rel="canonical" href="%s"></head>\n' "$h/after-comment" > "$sandbox/fallback/after-comment.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$h/after-script"
+  printf '<head><script>if (a < b) {}</script><link rel="canonical" href="%s"></head>\n' \
+    "$h/after-script" > "$sandbox/fallback/after-script.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$h/after-empty-comment"
+  printf '<head><!--><link rel="canonical" href="%s"></head>\n' "$h/after-empty-comment" > "$sandbox/fallback/after-empty-comment.html"
+  # SingleFile 저장 주석은 태그 파서와 따로 원본에서 읽으므로 head 한정의 영향을 받지 않는다.
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$h/singlefile-saved"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$h/singlefile-srcdoc"
+  {
+    _karakeep_fallback_sync_singlefile_header "$h/singlefile-saved"
+    printf '<title>t</title></head><body><iframe srcdoc="<link rel=canonical href=%s>"></iframe></body></html>\n' \
+      "$h/singlefile-srcdoc"
+  } > "$sandbox/fallback/singlefile.html"
+  cp "$sandbox/state/failed-urls.txt" "$sandbox/queue-before"
+
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected head context run to exit 0"
+
+  _karakeep_fallback_sync_assert_syntax_expectations "$sandbox"
+}
+
+# SingleFile 저장 주석 파서가 실패해도 나머지 식별자만으로 판정하지 않는다.
+test_karakeep_fallback_sync_singlefile_parser_error_is_a_match_error() {
+  local sandbox file real_awk
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  _karakeep_fallback_sync_write_queue "$sandbox" "https://example.com/articles/source"
+  file="$sandbox/fallback/archive.html"
+  printf '<link rel="canonical" href="https://example.com/articles/source">\n' > "$file"
+  # 저장 주석 파서(awk 프로그램에 마커 문자열이 들어 있는 호출)만 실패시킨다.
+  real_awk=$(command -v awk)
+  cat > "$sandbox/stub-bin/awk" <<STUB
+#!/usr/bin/env bash
+case "\$*" in
+  *"Page saved with SingleFile"*) echo "awk: simulated read error" >&2; exit 2 ;;
+esac
+exec "$real_awk" "\$@"
+STUB
+  chmod +x "$sandbox/stub-bin/awk"
+
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected SingleFile parser error run to keep script-level exit 0"
+
+  _karakeep_fallback_sync_assert_match_error "$sandbox" "$file"
 }
