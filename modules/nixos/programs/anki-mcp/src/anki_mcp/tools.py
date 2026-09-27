@@ -249,7 +249,8 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         After completing the requested review work and necessary readback, report results and ask once, as one
         multiple-choice question for all completed notes: clear both star and memo / clear only the star /
         keep both / still working (ask again later). Use your client's multiple-choice question tool if it has
-        one; otherwise ask in chat. Merely listing or reading notes is not completion. Keep both unchanged
+        one; otherwise ask in chat. Recommend one choice with a brief reason, such as whether the memo is still
+        needed. Merely listing or reading notes is not completion. Keep both unchanged
         while awaiting the choice or when still working; do not ask again if the user already explicitly
         authorized that cleanup choice for those notes.
         Exclude notes with unfinished work or unresolved memo questions, including those about sibling cards.

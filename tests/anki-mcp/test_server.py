@@ -242,6 +242,7 @@ async def test_split_apps_metadata_and_full_oauth_flow(tmp_path, auth_method):
             assert "카드 품질" not in AUTHORING_GUIDANCE
             assert "multiple-choice question tool" in listed["anki_note_info"]["description"]
             assert "still working" in listed["anki_note_info"]["description"]
+            assert "Recommend one choice with a brief reason" in listed["anki_note_info"]["description"]
             assert "follow anki_note_info's single cleanup question" in listed["anki_remove_tags"]["description"]
             assert "Do not invent new tags" in listed["anki_add_tags"]["description"]
             new_note = listed["anki_add_notes"]["inputSchema"]["$defs"]["NewNote"]
@@ -285,6 +286,8 @@ async def test_split_apps_metadata_and_full_oauth_flow(tmp_path, auth_method):
                 for end in ends:
                     assert listed[name]["description"].count(end) == 1, (name, end)
                     assert end in head, (name, end)
+            # #1461은 anki_note_info 설명(정리 질문과 메모 보호)이 Claude에서도 끝까지 닿는다고 보고 문단을 옮기지 않았다.
+            assert len(listed["anki_note_info"]["description"]) <= claude_description_chars
 
             # 7. Host·Origin의 포트도 일치해야 한다. 다른 포트나 포트 생략은 토큰이 있어도 거부한다.
             for wrong_host in ("evil.example", FQDN, f"{FQDN}:443", APPROVAL_HOST):
