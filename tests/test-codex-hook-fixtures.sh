@@ -1134,6 +1134,11 @@ _pinning_codex_mention_table() {
     "sudo \$GH pr comment 12 --body x"
     "command \"\$HOME/bin/gh\" pr comment 12 --body x"
     $'g\\\nh pr comment 12 --body x'
+    # 사전 필터는 g 뒤나 h 앞에 치환·ANSI-C 따옴표가 붙은 이름도 lexer로 넘긴다.
+    "g\$''h pr comment 12 --body x"
+    "g\${x}h pr comment 12 --body x"
+    "g\`echo h\` pr comment 12 --body x"
+    "X=g; \${X}h pr comment 12 --body x"
     # bash·zsh는 역슬래시로 이은 논리 줄을 heredoc 종결자와 비교하므로 뒤 줄은 명령이다.
     $'cat <<EOF\nx\nEOF\\\n\ngh pr comment 12 --body x\nEOF'
     $'cat <<EOF\nx\nE\\\nOF\ngh pr comment 12 --body x\nEOF'
@@ -1173,6 +1178,9 @@ _pinning_codex_mention_table() {
     "bash -c \"\${GH-gh} pr comment 12 --body x\""
     "bash -c '\${GH-gh} pr comment 12 --body x'"
     "bash -c \"\${a[0]-gh} pr comment 12 --body x\""
+    # 배열 첨자가 식이거나 기본값이 gh 래퍼(gh-auth)여도 같다.
+    "bash -c \"\${a[i+1]-gh} pr comment 12 --body x\""
+    "bash -c \"\${X-gh-auth} pr comment 12 --body x\""
     "X=\"\${1-gh}\"; bash -c \"\$X pr comment 12 --body x\""
     $'bash -c \'gh\\\n pr comment 12 --body x\''
     # 셸 실행기에 들어가는 heredoc 본문의 $는 실행기가 확장하므로 동적 입력이다.
@@ -1192,16 +1200,42 @@ _pinning_codex_mention_table() {
     $'cat <<$\'EOF\'\nx\nEOF\ng\'\'h pr comment 12 --body x'
     $'x=$(cat <<EOF\nEOF)\nit\'s body\nEOF\n)\ng\\\nh pr comment 12 --body x'
     $'cat <<$\'EOF\'\nx\nEOF\ng\\\n\\\n\'\'h pr comment 12 --body x'
-    $'cat <<$\'EOF\'\nx\nEOF\n: aaaaaaaaaaaaaaaaaaaaaaaa; g\\\nh pr comment 12 --body x'
+    $'cat <<$\'EOF\'\nx\nEOF\n: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; g\\\nh pr comment 12 --body x'
+    # 주석이나 역슬래시 두 개로 끝난 줄은 이어지지 않는다. 기본값 안의 끊은 gh와 ANSI-C 따옴표로 끊은
+    # 이름도 센다.
+    $'cat <<$\'EOF\'\nx\nEOF\n# note x\\\ng\\h pr comment 12 --body x'
+    $'cat <<$\'EOF\'\nx\nEOF\necho x\\\\\ng\\h pr comment 12 --body x'
+    $'cat <<$\'EOF\'\nx\nEOF\n${X-g\'\'h} pr comment 12 --body x'
+    $'cat <<$\'EOF\'\nx\nEOF\ng$\'\'h pr comment 12 --body x\n: night'
     # bash 5.3은 치환 안 heredoc에서 구분자로 시작하고 ) 가 든 줄에서 끝내고 나머지를 명령으로 읽는다.
     $'x=$(cat <<\'EOF\'\nhi\nEOF gh pr comment 12 --body x)\n: <<\'EOF\'\nEOF\n)'
     $'x=$(cat <<-EOF\n\thi\n\tEOF) gh pr comment 12 --body x\n\tEOF\n)'
     # 백틱 치환은 heredoc 본문의 백틱에서 끝난다.
     $'x=`cat <<\'EOF\'\na`; gh pr comment 12 --body x; `\nEOF\n`'
-    # bash 5.3의 함수 치환 \${ cmd; } 는 명령을 실행한다.
+    # 치환 안 heredoc을 일찍 끝낸 줄은 bash처럼 끝내는 해석과 zsh처럼 본문으로 이어 읽는 해석을 모두
+    # 본다. 판정 불확실이면 변수·치환이 든 명령어 뒤의 pr·issue·api와 대문자로 끊은 이름(G''H)도 센다.
+    $'x=$(cat <<EOF\nEOFX)\nit\'s\nEOF\n)\n$GH_BIN pr comment 12 --body x'
+    $'x=$(cat <<\'EOF\'\nhi\nEOF foo)\n$GH_BIN pr comment 12 --body x\nEOF\n)'
+    $'x=`cat <<\'EOF\'\nuse `ls`\nit\'s\nEOF\n`\n$GH_BIN pr comment 12 --body x'
+    $'x=`cat <<\'EOF\'\na`; $GH_BIN pr comment 12 --body x; `\nEOF\n`'
+    $'x=`cat <<\'EOF\'\na`; G\'\'H pr comment 12 --body x; `\nEOF\n`'
+    $'x=`cat <<\'EOF\'\na`; $GH_BIN -R o/r pr comment 12 --body x; `\nEOF\n`'
+    $'x=`cat <<\'EOF\'\na`; g`:`h pr comment 12 --body x; `\nEOF\n`'
+    $'cat <<$\'EOF\'\nx\nEOF\n$(echo g)h pr comment 12 --body x'
+    # 옵션 값에 공백이 있어(-R "o r") 문자열로 판정할 수 없으면, 두 해석 가운데 그 줄을 명령으로 읽는
+    # 쪽의 lexer 판정을 쓴다.
+    $'x=$(cat <<EOF\nEOFX)\nit\'s\nEOF\n)\n$GH_BIN -R "o r" pr comment 12 --body x'
+    $'x=`cat <<\'EOF\'\nuse `ls`\nit\'s\nEOF\n`\n$GH_BIN -R "o r" pr comment 12 --body x'
+    $'x=$(cat <<\'EOF\'\nhi\nEOF foo)\n$GH_BIN -R "o r" pr comment 12 --body x\nEOF\n)'
+    # 일찍 끝낸 줄의 나머지가 줄 이음으로 이어지면 이음 앞의 명령어와 옵션까지 이어 본다.
+    $'x=`cat <<\'EOF\'\na`; $GH_BIN -R owner/repo \\\npr comment 12 --body x; `\nEOF\n`'
+    # 따옴표 없는 구분자의 본문에서 구분자 뒤 백틱 쌍은 종결이 아니라 명령 치환이다.
+    $'x=$(cat <<EOF\nhi\nEOF ` $GH_BIN pr comment 12 --body x `\nEOF\n)'
+    # bash 5.3의 함수 치환 \${ cmd; } 는 명령을 실행한다. 여는 괄호 뒤 줄 이음도 같다.
     "x=\${ gh pr comment 12 --body x; }"
     "x=\${| gh pr comment 12 --body x; }"
     $'x=${\ngh pr comment 12 --body x; }'
+    $'x=${\\\n gh pr comment 12 --body x; }'
     # $[ ] 는 산술 확장이라 << 뒤 줄은 heredoc 본문이 아니다.
     $'x=$[a[1]<<2]\ngh pr comment 12 --body x\n2]'
   )
@@ -1265,8 +1299,9 @@ _pinning_codex_mention_table() {
     # 옵션과 그 값은 건너뛴다.
     "GH=/opt/homebrew/bin/gh; \$GH api \"repos/\$R/pulls/1/comments\" --jq '.[].body'"
     "\$GH -R \"\$REPO\" pr view 1"
-    # 하이픈이 든 기본값(\${X-foo-gh})은 gh가 아니다.
+    # 하이픈이 든 기본값(\${X-foo-gh})과 gh로 시작하는 다른 단어(\${X-ghost})는 gh가 아니다.
     "eval \"\$X\"; echo \"\${X-foo-gh}\"; gh pr view 1"
+    "bash -c \"echo \${X-ghost}\""
     # 출력 리다이렉트는 셸 실행기의 입력이 아니다.
     "bash x.sh > \"\$LOG\"; echo 'gh pr comment 12 --body x'"
     # \$[ ] 의 << 는 시프트다.
@@ -1275,12 +1310,18 @@ _pinning_codex_mention_table() {
     # 본문이다.
     $'x=$(cat <<EOF\nEOFX\nEOF\n)\ngh pr view 1'
     $'cat <<EOF\nEOF)\nEOF\ngh pr view 1'
-    # 명령 치환 안 heredoc 본문의 인라인 코드 백틱은 본문이다(백틱 치환 안에서만 치환을 끝낸다).
+    # 명령 치환 안 heredoc 본문의 백틱은 구분자로 시작하는 줄에서도 본문이다(백틱 치환 안에서만 치환을
+    # 끝낸다).
     $'x=$(cat <<\'EOF\'\nuse `ls` here\nEOF\n); gh pr view 1'
+    $'x=$(cat <<\'EOF\'\nEOF `date`\nEOF\n); gh pr view 1'
+    # 구분자로 시작하지 않는 줄의 ) 는 치환을 끝내지 않는다.
+    $'x=$(cat <<\'EOF\'\nsee (docs)\nEOF\n); gh pr view 1'
     # 판정 불확실이어도 줄 이음으로 이은 글자가 gh가 아니면 대상이 아니다. 긴 줄을 잘라 이은 글자를 줄
     # 시작으로 읽지 않는다.
     $'cat <<$\'EOF\'\nx\nEOF\necho g\\\nhx'
-    $'cat <<$\'EOF\'\nx\nEOF\necho aaaaaagh; zzzzzzzzzzzz\\\nyy'
+    $'cat <<$\'EOF\'\nx\nEOF\necho aaaaaagh; zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\\\nyy'
+    # 판정 불확실이어도 변수 명령어 뒤 단어가 pr·issue·api가 아니면 대상이 아니다.
+    $'x=`cat <<\'EOF\'\na`; $GH_BIN prx view 1; `\nEOF\n`'
   )
   for cmd in "${scope_in[@]}"; do
     assert_eq "$(if pinning_codex_mention_scope "$cmd"; then printf in; else printf out; fi)" "in" \
