@@ -86,10 +86,9 @@ def spawn_bridge(tmp_path):
         env["SINGLEFILE_BRIDGE_LISTEN"] = "127.0.0.1"
         env["SINGLEFILE_BRIDGE_PORT"] = str(port)
         env["PYTHONDONTWRITEBYTECODE"] = "1"
-        # A timed-out test's SIGKILL beats SIGABRT to the punch most of the
-        # time, but on the rare hang wait_or_fail sends SIGABRT first, and
-        # this makes that dump a stack trace to stdout before the process
-        # dies.
+        # wait_or_fail sends SIGABRT before falling back to SIGKILL on a
+        # hang; this makes that SIGABRT dump each thread's stack to stdout
+        # before the process dies.
         env["PYTHONFAULTHANDLER"] = "1"
         env["TMPDIR"] = str(tmp_path)
         env["PUSHOVER_TOKEN"] = ""

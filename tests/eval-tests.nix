@@ -812,6 +812,19 @@ let
   immichDbBackup = nixosCfg.systemd.services."immich-db-backup";
   immichOriginalsMirror = nixosCfg.systemd.services."immich-originals-mirror";
 
+  # ── #1391: 브리지가 SIGTERM을 받으면 실행 중 요청을 최대
+  # SHUTDOWN_DRAIN_TIMEOUT_SEC(소스 기본값)까지 drain한 뒤 스스로 종료한다.
+  # 유닛의 TimeoutStopSec이 그 상한보다 짧으면 systemd가 정상 drain이 끝나기 전에
+  # SIGKILL을 보내버리므로, 두 값의 대소 관계를 고정한다.
+  karakeepSinglefileBridgeSvc = nixosCfg.systemd.services."karakeep-singlefile-bridge";
+  karakeepSinglefileBridgeSrc = builtins.readFile ../modules/nixos/programs/docker/karakeep-singlefile-bridge/files/singlefile-bridge.py;
+  karakeepSinglefileBridgeDrainDefaultMatch = builtins.match ".*SHUTDOWN_DRAIN_TIMEOUT_SEC = int\\(os\\.environ\\.get\\(\"SINGLEFILE_BRIDGE_SHUTDOWN_DRAIN_SEC\", \"([0-9]+)\"\\)\\).*" karakeepSinglefileBridgeSrc;
+  karakeepSinglefileBridgeDrainDefaultSec =
+    if karakeepSinglefileBridgeDrainDefaultMatch == null then
+      null
+    else
+      builtins.fromJSON (builtins.elemAt karakeepSinglefileBridgeDrainDefaultMatch 0);
+
   # ── headless Anki (#1306): loopback 전용·인스턴스 격리·sync/backup 타이머 계약 고정
   ankiHostCfg = nixosCfg.homeserver.ankiHost;
   ankiRuntimeCheck = flake.checks.x86_64-linux.anki-host-runtime;
@@ -1709,6 +1722,13 @@ let
       # 이 이슈의 마운트 가드가 부팅 실패를 유발하지 않는다는 전제가 성립한다.
       name = "Test MG5: fileSystems.\${mediaData}.options에 nofail이 있어야 함(부팅 정책 유지)";
       cond = builtins.elem "nofail" nixosCfg.fileSystems.${constants.paths.mediaData}.options;
+    }
+    {
+      name = "Test KB1: karakeep-singlefile-bridge의 TimeoutStopSec(${toString karakeepSinglefileBridgeSvc.serviceConfig.TimeoutStopSec}s)이 브리지 소스의 drain 상한 기본값(${toString karakeepSinglefileBridgeDrainDefaultSec}s)보다 커야 함 — 짧으면 systemd가 정상 drain을 못 기다리고 SIGKILL로 끊는다";
+      cond =
+        karakeepSinglefileBridgeDrainDefaultSec != null
+        &&
+          karakeepSinglefileBridgeSvc.serviceConfig.TimeoutStopSec > karakeepSinglefileBridgeDrainDefaultSec;
     }
   ]
   ++ darwinIntentTests

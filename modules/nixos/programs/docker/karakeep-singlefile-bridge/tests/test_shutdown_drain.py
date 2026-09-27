@@ -181,10 +181,7 @@ def test_shutdown_still_ignores_idle_connections_without_a_full_request(
     This pins the boundary of the fix: only handler calls that are actually
     running are waited on. A connection that merely opened a socket and sent
     a partial request line must not be able to extend shutdown at all, let
-    alone up to the drain deadline. (This subsumes what used to be a
-    separate, more narrowly-named test in test_shutdown_signal_handling.py;
-    that one is gone now that this covers the same scenario plus the drain
-    log assertion below.)
+    alone up to the drain deadline.
     """
     drain_timeout_sec = 10  # deliberately generous; the assertion is on speed
     bridge = spawn_bridge(
@@ -197,6 +194,11 @@ def test_shutdown_still_ignores_idle_connections_without_a_full_request(
     lingering = socket.create_connection(("127.0.0.1", bridge.port), timeout=5)
     try:
         lingering.sendall(b"GET /healthz HTTP/1.1\r\nHost: x\r\n")  # headers incomplete on purpose
+        # Give the server's accept loop time to actually accept() this
+        # connection and spawn its handler thread before we signal shutdown
+        # — same margin the other drain tests use to make sure their
+        # request is genuinely past the "not yet accepted" state.
+        time.sleep(0.3)
 
         bridge.proc.send_signal(signal.SIGTERM)
         rc = wait_or_fail(

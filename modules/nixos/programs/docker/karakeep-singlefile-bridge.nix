@@ -52,6 +52,11 @@ in
         EnvironmentFile = pushoverCredPath;
         Restart = "on-failure";
         RestartSec = "5s";
+        # 90 = systemd 기본값과 동일(동작 변화 없음). 이 브리지 코드는 SIGTERM을 받으면
+        # 실행 중인 요청을 최대 SHUTDOWN_DRAIN_TIMEOUT_SEC(기본 30초, singlefile-bridge.py)까지
+        # 기다린 뒤 스스로 종료한다. 그 상한보다 이 값이 짧아지면 systemd가 브리지의 정상
+        # drain을 못 기다리고 SIGKILL로 끊어버리므로, 항상 drain 상한보다 여유 있게 크게 둔다.
+        TimeoutStopSec = 90;
         PrivateTmp = true;
         NoNewPrivileges = true;
       };

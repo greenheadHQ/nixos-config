@@ -742,34 +742,19 @@ def main() -> None:
 
     def _shutdown(signum, _frame) -> None:
         nonlocal shutdown_started
-        # server.shutdown() blocks until serve_forever()'s loop notices the
-        # request and exits. serve_forever() runs on this same (main) thread,
-        # so calling shutdown() directly from here deadlocks: the loop can't
-        # notice anything while this handler hasn't returned. Hand the
-        # request off to a throwaway thread instead.
+        # server.shutdown() blocks until serve_forever()'s loop (this same
+        # thread) exits, so calling it directly here would deadlock. Hand
+        # it to a throwaway thread instead.
         #
-        # CPython signal handlers are reentrant: while this handler is
-        # running, another signal can interrupt it and start a second,
-        # nested call on the same (main) thread — confirmed here with a
-        # tight-loop SIGTERM stress harness (see PR discussion), which hit
-        # multiple concurrent shutdown starts in most runs. That rules out
-        # any lock-based guard (threading.Event/Lock/Condition): if the
-        # first call is suspended mid-way through acquiring a non-reentrant
-        # lock (as Event.set() does internally) when the second call tries
-        # to acquire that same lock, the main thread deadlocks with itself —
-        # exactly the kind of hang this module exists to fix, just moved to
-        # a new spot.
-        #
-        # nonlocal shutdown_started is a plain bool instead: the check and
-        # the set happen back to back with no function call or backward
-        # jump between them, so there is no point where CPython re-checks
-        # for a pending signal between "read the flag" and "write the
-        # flag" — a reentrant call arriving here always sees the flag
-        # already written by whichever call got here first, so at most one
-        # shutdown ever starts. Only code AFTER the flag is set may call
-        # into anything lock-based (thread.start(), log()); a reentrant
-        # call arriving during that window returns immediately at the
-        # check above instead of running any of it.
+        # Signal handlers are reentrant: a second signal can start a nested
+        # call of this function while the first is still running. A
+        # lock-based guard (Event/Lock/Condition) can then deadlock on
+        # itself if a reentrant call arrives mid-acquire. This plain bool
+        # avoids that: nothing between the check and the set gives CPython
+        # a point to recheck a pending signal, so a reentrant call always
+        # sees the flag already written by whichever call got here first.
+        # Only code after the set may call anything lock-based
+        # (thread.start(), log()).
         if shutdown_started:
             return
         shutdown_started = True
@@ -777,10 +762,14 @@ def main() -> None:
         try:
             thread.start()
         except RuntimeError as exc:
-            # Leave the flag set to False so a later signal can retry,
-            # instead of every future signal silently doing nothing.
+            # log() first, while the flag is still True: a reentrant signal
+            # arriving during this log() call must still see it set. Only
+            # after logging do we clear it, so a later signal isn't
+            # silently ignored (this isn't a systemd retry — nothing here
+            # asks it to resend SIGTERM — it just leaves the door open if
+            # something else does).
+            log(f"received signal {signum} but failed to start shutdown thread: {exc}")
             shutdown_started = False
-            log(f"received signal {signum} but failed to start shutdown thread: {exc}; will retry on next signal")
             return
         log(f"received signal {signum}, shutting down...")
 

@@ -24,9 +24,7 @@ SHUTDOWN_TIMEOUT_SEC = 5.0
 # Fires this many SIGTERMs in a tight loop in test_signal_burst_starts_
 # shutdown_at_most_once. CPython signal handlers are reentrant, and a burst
 # this size reliably lands a second delivery inside _shutdown() while the
-# first call is still running (confirmed manually: a prior threading.Event
-# based guard showed more than one "received signal" line in the large
-# majority of runs at this burst size — see PR discussion for exact counts).
+# first call is still running.
 SIGNAL_BURST_COUNT = 800
 
 
@@ -149,21 +147,36 @@ def test_shutdown_flag_check_and_set_have_no_reentrancy_window(bridge_module):
 
     instructions = list(dis.get_instructions(shutdown_code))
     read_idx = next(
-        i
-        for i, instr in enumerate(instructions)
-        if instr.opname in ("LOAD_DEREF", "LOAD_FAST") and instr.argval == "shutdown_started"
+        (
+            i
+            for i, instr in enumerate(instructions)
+            if instr.opname in ("LOAD_DEREF", "LOAD_FAST") and instr.argval == "shutdown_started"
+        ),
+        None,
     )
+    assert read_idx is not None, "could not find a read of shutdown_started in _shutdown's bytecode"
     write_idx = next(
-        i
-        for i, instr in enumerate(instructions[read_idx + 1 :], start=read_idx + 1)
-        if instr.opname in ("STORE_DEREF", "STORE_FAST") and instr.argval == "shutdown_started"
+        (
+            i
+            for i, instr in enumerate(instructions[read_idx + 1 :], start=read_idx + 1)
+            if instr.opname in ("STORE_DEREF", "STORE_FAST") and instr.argval == "shutdown_started"
+        ),
+        None,
     )
+    assert write_idx is not None, "could not find a write of shutdown_started after its first read"
 
+    # CALL*/JUMP_BACKWARD*/FOR_ITER are the bytecode-level recheck points.
+    # LOAD_ATTR/STORE_ATTR/COMPARE_OP/BINARY_OP are included too: on
+    # shutdown_started (a plain bool) they're just as safe, but a future
+    # refactor that swaps it for something with a property, __eq__, or
+    # other dunder could turn one of these into an implicit call without
+    # the bytecode looking any different at a glance.
     between = instructions[read_idx + 1 : write_idx]
+    risky_opnames = {"FOR_ITER", "LOAD_ATTR", "STORE_ATTR", "COMPARE_OP", "BINARY_OP"}
     risky = [
         instr.opname
         for instr in between
-        if instr.opname.startswith("CALL") or "JUMP_BACKWARD" in instr.opname or instr.opname == "FOR_ITER"
+        if instr.opname.startswith("CALL") or "JUMP_BACKWARD" in instr.opname or instr.opname in risky_opnames
     ]
     assert risky == [], (
         f"found {risky} between the shutdown_started check and set — CPython can recheck for a "
