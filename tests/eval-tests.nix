@@ -31,6 +31,7 @@ let
   # Darwin intent 검증은 여기서 직접 수행한다.
   # 범위: evaluation-safe value-level 설정만 검증.
   # 제외: postActivation, symbolic hotkeys, GUI 세션/WindowServer 의존 동작.
+  #   postActivation은 문자열 구조(D36: 스크롤 복구의 실행 주체와 순서)만 예외로 검증한다 (#1400).
   darwinCfgs = flake.darwinConfigurations;
   personalDarwinHosts = [
     "greenhead-MacBookPro"
@@ -431,6 +432,59 @@ let
       && activation.${name} ? data
       && builtins.isString activation.${name}.data
     ) shottrActivationEntryNames;
+
+  # #1400: postActivation은 root 컨텍스트로 실행되므로, activateSettings가 롤백시키는
+  # 스크롤 방향을 재설정하는 defaults write에도 asUser 전환이 없으면 root의 전역
+  # 환경설정에 기록되고 대상(로그인) 사용자의 값은 복구되지 않는다. symbolic hotkeys와
+  # 동일한 asUser 패턴을 강제해 이 회귀를 evaluation 단계에서 잡는다.
+  #
+  # 사용자·값·도메인을 느슨한 hasInfix로만 검사하면 asUser에 다른 사용자(root 등)를
+  # 넣거나 값을 true로 뒤집거나 도메인을 바꿔도 통과한다. modules/darwin/configuration.nix의
+  # asUser는 evaluation에서 직접 참조할 수 없는 순수 let 바인딩이므로, D2
+  # (darwinSudoRuleMatchesExactly)와 같은 방식으로 cfg.system.primaryUser(asUser가 확장하는
+  # ${username}과 동일한 값, configuration.nix의 `system.primaryUser = username;`)로 기대
+  # 줄 전체를 재구성해 정확히 일치하는지 비교한다.
+  postActivationLines =
+    cfg: nixpkgsLib.splitString "\n" cfg.system.activationScripts.postActivation.text;
+  isCommentLine = line: builtins.match "[[:space:]]*#.*" line != null;
+  trimLeadingWhitespace =
+    line:
+    let
+      m = builtins.match "[[:space:]]*(.*)" line;
+    in
+    if m == null then line else builtins.head m;
+  # needle을 포함하는(주석 줄 제외) 첫 줄의 인덱스. 없으면 null.
+  firstCodeLineIndexContaining =
+    needle: codeLines:
+    let
+      idxs = builtins.filter (i: i != null) (
+        nixpkgsLib.imap0 (i: line: if nixpkgsLib.hasInfix needle line then i else null) codeLines
+      );
+    in
+    if idxs == [ ] then null else builtins.elemAt idxs 0;
+  expectedScrollRestoreLine =
+    cfg:
+    let
+      user = cfg.system.primaryUser;
+    in
+    ''launchctl asuser "$(id -u -- ${user})" sudo --user=${user} --set-home -- defaults write -g com.apple.swipescrolldirection -bool false'';
+  scrollRestoreIsAsUserAfterActivate =
+    cfg:
+    let
+      # 셸 주석에서 스크롤 키를 언급해도 오탐하지 않도록 실행 줄만 본다.
+      codeLines = builtins.filter (line: !isCommentLine line) (postActivationLines cfg);
+      activateIdx = firstCodeLineIndexContaining "activateSettings -u" codeLines;
+      scrollCodeLines = builtins.filter (
+        line: nixpkgsLib.hasInfix "com.apple.swipescrolldirection" line
+      ) codeLines;
+      scrollIdx = firstCodeLineIndexContaining "com.apple.swipescrolldirection" codeLines;
+    in
+    activateIdx != null
+    && scrollIdx != null
+    && scrollIdx > activateIdx
+    # 키를 언급하는 실행 줄이 정확히 1개여야 함 (중복·bare 줄 잔존 방지)
+    && builtins.length scrollCodeLines == 1
+    && trimLeadingWhitespace (builtins.elemAt scrollCodeLines 0) == expectedScrollRestoreLine cfg;
 
   # tmux 순정 계약 (#1101): 플러그인·직접 만든 키·pane 노트 스크립트 배선이 없고,
   # 호환 설정·상태줄·pane 테두리의 Git 브랜치 표시는 남는다. darwin 호스트 루프와
@@ -913,10 +967,60 @@ let
                 true
             );
         }
+        {
+          name = "Test D36 ${hostName}: postActivation에 스크롤 키를 언급하는 실행 줄(주석 제외)이 정확히 1개이며, activateSettings 뒤에서 cfg.system.primaryUser로 asUser 전환된 정확한 defaults write와 일치해야 함";
+          cond = hasHost && scrollRestoreIsAsUserAfterActivate cfg;
+        }
       ]
       ++ tmuxVanillaTests hostName hasHost hm
     ) expectedDarwinHosts
   );
+
+  # ── #1387: 스모크 검사의 백업 신선도 대상은 유닛 환경 변수로 주입된다. 활성 여부는 추출 전과
+  # 같은 옵션(immichBackup·karakeepBackup·backup.enable 인스턴스)을 따르고, 백업 유닛이 있으면 그
+  # 유닛이 실제로 쓰는 BACKUP_DIR·INSTANCES를 봐야 한다.
+  smokeEnvOf = cfg: cfg.systemd.services.homeserver-smoke-test.environment;
+  smokeBackupWiringOk =
+    cfg:
+    let
+      hs = cfg.homeserver;
+      services = cfg.systemd.services;
+      smokeEnv = smokeEnvOf cfg;
+      dirMatches =
+        enable: dir: unit:
+        (dir != "") == enable && (!(services ? ${unit}) || dir == services.${unit}.environment.BACKUP_DIR);
+      ankiUnit = services.anki-host-backup or null;
+      ankiNames =
+        if ankiUnit == null then
+          [ ]
+        else
+          map (entry: builtins.head (nixpkgsLib.splitString ":" entry)) (
+            nixpkgsLib.splitString " " ankiUnit.environment.INSTANCES
+          );
+    in
+    dirMatches hs.immichBackup.enable smokeEnv.IMMICH_BACKUP_DIR "immich-db-backup"
+    && dirMatches hs.karakeepBackup.enable smokeEnv.KARAKEEP_BACKUP_DIR "karakeep-backup"
+    && smokeEnv.ANKI_BACKUP_INSTANCES == builtins.concatStringsSep " " ankiNames
+    && (ankiUnit == null || smokeEnv.ANKI_BACKUP_ROOT == ankiUnit.environment.BACKUP_DIR);
+  # MiniPC는 백업이 모두 켜져 있어 실 config로는 빈 값 분기를 평가하지 못한다. retentionDaysEval처럼
+  # extendModules로 옵션만 끈 config를 만든다. extendModules 한 번이 eval-tests 전체 시간을 눈에 띄게
+  # 늘리므로 조합은 둘로 줄였다: 두 조합 모두 immich·karakeep 중 한쪽만 꺼야 한쪽 옵션을 다른 쪽
+  # 변수에 잘못 건 배선이 드러나고, anki 비활성 두 경로(백업 인스턴스 0개·ankiHost 비활성)를 하나씩 얹는다.
+  smokeBackupVariant = modules: (nixosBase.extendModules { inherit modules; }).config;
+  # A: immichBackup 끔 + anki 백업 인스턴스 0개(인스턴스는 두고 backup.enable만 끔)
+  smokeImmichAnkiOff = smokeBackupVariant [
+    { homeserver.immichBackup.enable = nixpkgsLib.mkForce false; }
+    {
+      homeserver.ankiHost.instances = nixpkgsLib.mapAttrs (_: _: {
+        backup.enable = nixpkgsLib.mkForce false;
+      }) nixosCfg.homeserver.ankiHost.instances;
+    }
+  ];
+  # B: karakeepBackup 끔 + ankiHost 비활성
+  smokeKarakeepAnkiOff = smokeBackupVariant [
+    { homeserver.karakeepBackup.enable = nixpkgsLib.mkForce false; }
+    { homeserver.ankiHost.enable = nixpkgsLib.mkForce false; }
+  ];
 
   # ── #1369: 백업 대상 HDD(mediaData)가 nofail이라 미마운트여도 부팅은 계속되므로,
   # 세 백업/미러 유닛이 RequiresMountsFor로 실제 마운트를 실행 전제로 요구하는지 확인한다
@@ -1821,6 +1925,26 @@ let
       # 이 이슈의 마운트 가드가 부팅 실패를 유발하지 않는다는 전제가 성립한다.
       name = "Test MG5: fileSystems.\${mediaData}.options에 nofail이 있어야 함(부팅 정책 유지)";
       cond = builtins.elem "nofail" nixosCfg.fileSystems.${constants.paths.mediaData}.options;
+    }
+    {
+      # #1387: 스모크 검사 본체를 files/로 추출하면서 백업 신선도 검사의 활성 조건과 대상이 유닛 환경
+      # 변수로 옮겨졌다 — 판정은 위 smokeBackupWiringOk.
+      name = "Test SM1: homeserver-smoke-test 백업 검사 환경이 백업 옵션과 백업 유닛의 BACKUP_DIR·INSTANCES를 따라야 함";
+      cond = smokeBackupWiringOk nixosCfg;
+    }
+    {
+      name = "Test SM2: immichBackup·anki 백업 인스턴스를 끄면 IMMICH_BACKUP_DIR·ANKI_BACKUP_INSTANCES는 빈 값이어야 함";
+      cond =
+        smokeBackupWiringOk smokeImmichAnkiOff
+        && (smokeEnvOf smokeImmichAnkiOff).IMMICH_BACKUP_DIR == ""
+        && (smokeEnvOf smokeImmichAnkiOff).ANKI_BACKUP_INSTANCES == "";
+    }
+    {
+      name = "Test SM3: karakeepBackup·ankiHost를 끄면 KARAKEEP_BACKUP_DIR·ANKI_BACKUP_INSTANCES는 빈 값이어야 함";
+      cond =
+        smokeBackupWiringOk smokeKarakeepAnkiOff
+        && (smokeEnvOf smokeKarakeepAnkiOff).KARAKEEP_BACKUP_DIR == ""
+        && (smokeEnvOf smokeKarakeepAnkiOff).ANKI_BACKUP_INSTANCES == "";
     }
   ]
   ++ tmuxVanillaTests "greenhead-minipc" true nixosHm
