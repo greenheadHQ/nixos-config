@@ -818,12 +818,18 @@ let
   # SIGKILL을 보내버리므로, 두 값의 대소 관계를 고정한다.
   karakeepSinglefileBridgeSvc = nixosCfg.systemd.services."karakeep-singlefile-bridge";
   karakeepSinglefileBridgeSrc = builtins.readFile ../modules/nixos/programs/docker/karakeep-singlefile-bridge/files/singlefile-bridge.py;
-  karakeepSinglefileBridgeDrainDefaultMatch = builtins.match ".*SHUTDOWN_DRAIN_TIMEOUT_SEC = int\\(os\\.environ\\.get\\(\"SINGLEFILE_BRIDGE_SHUTDOWN_DRAIN_SEC\", \"([0-9]+)\"\\)\\).*" karakeepSinglefileBridgeSrc;
+  # 파일 전체에 `.*` 정규식을 걸지 않고 줄 단위로 찾는다. 정의 줄은 정확히 하나여야 한다.
+  karakeepSinglefileBridgeDrainDefaultMatches = builtins.filter (m: m != null) (
+    map (
+      line:
+      builtins.match "SHUTDOWN_DRAIN_TIMEOUT_SEC = int\\(os\\.environ\\.get\\(\"SINGLEFILE_BRIDGE_SHUTDOWN_DRAIN_SEC\", \"([0-9]+)\"\\)\\)" line
+    ) (nixpkgsLib.splitString "\n" karakeepSinglefileBridgeSrc)
+  );
   karakeepSinglefileBridgeDrainDefaultSec =
-    if karakeepSinglefileBridgeDrainDefaultMatch == null then
-      null
+    if builtins.length karakeepSinglefileBridgeDrainDefaultMatches == 1 then
+      builtins.fromJSON (builtins.head (builtins.head karakeepSinglefileBridgeDrainDefaultMatches))
     else
-      builtins.fromJSON (builtins.elemAt karakeepSinglefileBridgeDrainDefaultMatch 0);
+      null;
 
   # ── headless Anki (#1306): loopback 전용·인스턴스 격리·sync/backup 타이머 계약 고정
   ankiHostCfg = nixosCfg.homeserver.ankiHost;
