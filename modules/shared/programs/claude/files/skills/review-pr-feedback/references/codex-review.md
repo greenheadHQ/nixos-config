@@ -13,12 +13,14 @@ Codex GitHub 앱의 PR 리뷰를 기다리고, 지적에 반응·답글을 남�
 `codex-review-status <PR> -R OWNER/REPO --json`은 조회만 하는 명령이다. PR과 `-R`을 함께 생략하면 현재 브랜치의 PR을 본다. PR 본문 반응, 요약 코멘트, 리뷰 객체, 한도·오류 코멘트를 조합해 상태를 판정하고 다음 값을 함께 낸다. 필드명은 `--json` 출력 기준이다.
 
 - `reviewed_commit`: 봇이 리뷰한 커밋. 짧은 SHA일 수 있다.
-- `stale`: `reviewed_commit`과 현재 `head`가 다르다.
+- `stale`: `reviewed_commit`과 현재 `head`가 다르다. 리뷰한 커밋을 알 수 없으면(커밋 표시 없이 👍만 남은 경우 등) `null`이다.
+- `trigger`: 이번 리뷰 주기의 트리거 종류(`kind`: `pr_opened`, `ready_for_review`, `review_request`)와 시각(`at`).
 - `rereview_requests`: 재리뷰 요청 코멘트 수.
-- `unhandled_threads`: 답글·반응·resolve 중 빠진 것이 있는 봇 스레드와 빠진 항목(`missing`). 이미 resolve된 스레드도 답글이나 반응이 빠졌으면 나온다. 반응에 쓸 REST id는 `comment_id`다.
+- `unhandled_threads`: 답글·반응·resolve 중 빠진 것이 있는 봇 스레드. 빠진 항목은 `missing`에 `reply`, `reaction`, `resolve`로 나온다. 이미 resolve된 스레드도 답글이나 반응이 빠졌으면 나온다. `thread_id`는 답글·resolve mutation에 쓰는 GraphQL id, `comment_id`는 반응에 쓰는 REST id, `url`은 스레드 첫 코멘트 주소다. 봇 스레드인지는 작성자 이름이 아니라 이 목록으로 판별한다.
+- `viewer`: 조회한 계정. 반응 여부를 이 계정 기준으로 보므로 반응도 이 계정으로 단다. 다른 계정으로 단 반응은 `missing`에서 빠지지 않는다.
 - `settings_warning`: 봇이 리뷰했어야 할 PR에 흔적이 없을 때의 점검 안내.
 
-트리거는 PR 생성, draft 해제, 재리뷰 요청 코멘트 중 가장 최근 것이다. 리뷰·👍·완료 표시·한도·오류 같은 결과 신호는 트리거 뒤의 것만 세고, 진행 중 표시(👀, Running)는 대기 한도까지 진행 중으로 본다. 트리거 뒤에 봇이 새 리뷰를 시작했고 그 뒤로 결과가 없으면 그 시작부터 센다.
+트리거는 PR 생성, draft 해제, 재리뷰 요청 코멘트 중 가장 최근 것이다. 공개 저장소에서는 누구나 코멘트할 수 있으므로, 재리뷰 요청과 스레드 답글은 저장소 권한자(OWNER·MEMBER·COLLABORATOR)나 조회 계정·PR 작성자가 쓴 것만 센다. 리뷰·👍·완료 표시·한도·오류 같은 결과 신호는 트리거 뒤의 것만 세고, 진행 중 표시(👀, Running)는 대기 한도까지 진행 중으로 본다. 트리거 뒤에 봇이 새 리뷰를 시작했고 그 뒤로 결과가 없으면 결과 신호와 경과 시간을 그 시작부터 센다.
 
 | 상태 | 뜻 |
 |------|----|
@@ -31,7 +33,7 @@ Codex GitHub 앱의 PR 리뷰를 기다리고, 지적에 반응·답글을 남�
 | `timeout` | 리뷰 시작(보통 트리거) 뒤 대기 한도(`pending_timeout_seconds`, 현재 15분)가 지나도 진행 중이다 |
 | `absent` | 트리거 뒤 `absent_after_seconds`(현재 2분)가 지나도 봇 흔적이 없다 |
 
-- `pending`이면 `--wait 540`을 붙여 다시 조회한다. 540초는 `--help`에 나오는 `--wait` 상한이다. 그동안 반환하지 않을 수 있으므로 셸 명령 제한 시간을 600초로 늘리거나 백그라운드로 실행해 끝난 뒤 출력을 본다. 제한 시간에 걸려 중단됐다면 도구 실패가 아니므로 같은 명령을 다시 호출한다. 끝난 뒤에도 `pending`이면 다시 호출한다. 대기 한도가 지나면 도구가 `timeout`을 내므로 끝없이 기다리지 않는다.
+- `pending`이면 `--wait 540`을 붙여 다시 조회한다. 540초는 `--help`에 나오는 `--wait` 상한이다. 그동안 반환하지 않을 수 있으므로 셸 명령 제한 시간을 600초로 늘리거나 백그라운드로 실행해 끝난 뒤 출력을 본다. 셸 명령이 제한 시간에 걸려 중단됐다면 명령 실패(exit 1·2)가 아니므로 같은 명령을 다시 호출한다. 끝난 뒤에도 `pending`이면 다시 호출한다. 대기 한도가 지나면 `codex-review-status`가 `timeout`을 내므로 끝없이 기다리지 않는다.
 - `settings_warning`이 있으면 그 문구를 사용자에게 그대로 보고한다.
 - 명령이 실패하면(exit 1·2) 출력된 원인(인증, 네트워크, PR 지정)을 고쳐 다시 조회한다. 명령을 찾지 못하면 `nrs`가 아직 적용되지 않은 호스트다. nixos-config 작업 트리 안에서는 `python3 modules/shared/scripts/codex-review-status.py`로 같은 조회를 할 수 있다. 해결하지 못하면 finish-pr는 봇 상태를 모르는 채로 머지하지 않고 사용자에게 보고한다. review-pr-feedback은 봇 상태 없이 수집을 계속하고 그 사실을 보고한다.
 
@@ -67,11 +69,11 @@ gh api -X POST "repos/$OWNER/$REPO/pulls/comments/$COMMENT_ID/reactions" -f cont
 
 PR·이슈 제목과 본문, 코멘트, 스레드 답글 어디에도 봇 멘션(`@codex`)을 쓰지 않는다. 백틱이나 인용 안에 있어도 봇이 작업 요청으로 읽어 클라우드 작업(새 PR 생성 등)을 시작한다. 봇 계정 이름(`@chatgpt-codex-connector`)으로도 멘션하지 않는다. 봇을 가리킬 때는 "Codex 봇"처럼 멘션 없이 쓰고, 봇 작성 코멘트에 연결할 때는 코멘트 URL을 쓴다. 예외는 아래 재리뷰 요청 한 가지다.
 
-pinning-guard는 GitHub 게시 명령의 명령 문자열과, 경로가 그대로 적힌 본문 파일에서 봇 멘션을 막는다. 변수로 넘긴 본문 파일(`-F body=@"$BODY_FILE"`)과 stdin 본문은 읽지 못하므로, 그런 본문은 게시 전에 봇 멘션이 없는지 별도 명령으로 확인한다.
+pinning-guard는 GitHub 게시 명령의 명령 문자열과, 경로가 그대로 적힌 본문 파일에서 봇 멘션을 막는다. 게시 명령이 있으면 명령 문자열 전체를 보므로, 멘션을 찾는 조회(jq 필터, `rg` 등)는 게시 명령과 따로 실행한다. GraphQL query를 파일이나 변수로 넘긴 `gh api graphql`은 mutation인지 알 수 없어 조회여도 게시로 본다. 그런 조회의 멘션 필터는 결과를 받은 뒤 별도 명령으로 적용한다. 변수로 넘긴 본문 파일(`-F body=@"$BODY_FILE"`), `~`로 시작하는 경로(`--body-file ~/body.md`), 명령 치환으로 만든 본문(`--body "$(cat body.md)"`), stdin 본문은 읽지 못한다. 그런 본문은 게시 전에 `rg -n -i '@(codex|chatgpt-codex-connector)' <본문 파일>`을 따로 실행해 봇 멘션이 없는지 확인한다.
 
 ## 재리뷰 요청
 
-`reviewed_commit` 뒤의 변경(`stale: true`)에 다음 중 하나가 있으면 재리뷰를 요청한다.
+`reviewed_commit` 뒤의 변경(`stale: true`, 범위는 `git diff <reviewed_commit> <head>`)에 다음 중 하나가 있으면 재리뷰를 요청한다. `stale`이 `null`이면 트리거(`trigger.at`) 뒤에 push한 커밋을 리뷰 뒤의 변경으로 본다.
 
 - 로직 변경
 - 새 기능이나 새 파일
@@ -83,4 +85,4 @@ pinning-guard는 GitHub 게시 명령의 명령 문자열과, 경로가 그대�
 gh pr comment <PR> -R OWNER/REPO --body '@codex review'
 ```
 
-이 한 줄 그대로 보낸다. 문구를 덧붙이거나 본문 파일로 보내면 pinning-guard가 막는다. 요청 뒤에는 상태가 다시 `pending`이 된다. 기다림과 새 지적 처리는 finish-pr 게이트가 맡으므로, review-pr-feedback은 요청 뒤 기다리지 않고 남은 답글·반응·resolve를 이어서 마친다.
+이 형태 그대로 보낸다. PR 번호와 저장소는 변수로 넘겨도 된다. 문구를 덧붙이거나, 본문 파일로 보내거나, heredoc이 있는 명령에 섞으면 pinning-guard가 막는다. 요청 뒤에는 상태가 다시 `pending`이 된다. 기다림과 그 뒤에 도착하는 지적 처리는 finish-pr 게이트가 맡으므로, review-pr-feedback은 요청 뒤 기다리지 않고 남은 답글·반응·resolve를 이어서 마친다. 마치기 전에 재리뷰 지적이 이미 도착했으면 새 스레드로 검증부터 처리한다.

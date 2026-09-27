@@ -15,7 +15,7 @@ PR에 달린 모든 리뷰 코멘트를 수집하고, 각 피드백을 다각도
 | 항목 | 설명 |
 |------|------|
 | 입력 | 현재 브랜치의 PR 또는 PR 번호/URL |
-| 출력 | 유효 피드백 반영 커밋 + 전체 피드백 답글 + resolve 재확인 |
+| 출력 | 유효 피드백 반영 커밋 + 전체 피드백 답글 + Codex 봇 반응·재리뷰 요청 + resolve 재확인 |
 | 대상 | CodeRabbit, Codex 리뷰 봇, AI 리뷰어, 인간 팀원의 모든 코멘트 |
 | 핵심 도구 | gh CLI, GraphQL reviewThreads, `codex-review-status`, 코드베이스 검색 |
 
@@ -149,7 +149,7 @@ Codex 봇 스레드는 답글 전에 판정에 맞는 👍/👎 반응을 먼저
 쿼리 스니펫과 retry/실패 정책은 [references/reply-and-resolve.md](references/reply-and-resolve.md)의 "Retry policy"가 정본이다.
 `thread.id`가 null/empty인 thread는 이 단계를 건너뛰고 사용자 보고 대상으로 남긴다.
 PR 일반 코멘트는 resolve가 없으므로 이 단계를 건너뛴다.
-Codex 봇 스레드는 마지막에 `codex-review-status --json`의 `unhandled_threads`가 비었는지로 답글·반응·resolve를 한 번에 확인한다. 남은 스레드는 `missing`의 항목만 채우고 한 번 다시 조회한다. 그래도 남으면 스레드 URL과 빠진 항목을 사용자에게 보고한다.
+Codex 봇 스레드는 마지막에 `codex-review-status --json`의 `unhandled_threads`가 비었는지로 답글·반응·resolve를 한 번에 확인한다. Step 1 뒤에 새로 생긴 스레드(재리뷰 결과 등)는 빠진 항목만 채우지 않고 Step 3부터 같은 절차로 처리한다. 이미 판정한 스레드는 `missing`의 항목만 채우고 한 번 다시 조회한다. 그래도 남으면 스레드 URL과 빠진 항목을 사용자에게 보고한다.
 
 ## 검증 의무
 

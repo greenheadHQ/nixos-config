@@ -24,12 +24,13 @@ description: |
 1. 대상 PR을 확정한다. 인자가 없으면 `gh pr view --json number,url,headRefName,baseRefName,state,isDraft,mergeStateStatus,reviewDecision,statusCheckRollup,body,commits`로 현재 브랜치의 PR을 확인한다.
 2. base가 의도한 기본 브랜치인지, PR이 open 상태인지, draft가 아닌지 확인한다.
 3. CI와 review 상태를 확인한다. 미완료 check가 있으면 대기하거나 사용자에게 현재 상태를 보고한다. 실패 check, merge conflict, required review 미승인은 STOP한다.
-4. Codex 리뷰 게이트를 확인한다. Codex 봇은 check run을 만들지 않으므로 CI가 끝나도 리뷰가 남았을 수 있다. `codex-review-status <PR> -R OWNER/REPO --json`으로 상태를 보고 [Codex 리뷰 봇 처리](../review-pr-feedback/references/codex-review.md)를 따른다.
-   - `draft`: 2번 확인대로 처리한다. ready로 바꿨다면 봇 리뷰가 새로 시작되므로 `pending`부터 다시 확인한다.
-   - `pending`: `--wait 540`을 붙여 기다린다. 이 호출은 오래 걸리므로 셸 명령 제한 시간을 600초로 늘리거나 백그라운드로 실행한다. 상태가 바뀔 때까지 반복한다 (대기 한도가 지나면 도구가 `timeout`을 낸다).
-   - 상태와 관계없이 `unhandled_threads`가 남아 있으면 머지하지 않는다. 이전 리뷰의 스레드와 이미 resolve된 스레드도 포함된다. review-pr-feedback 절차로 빠진 답글·반응·resolve를 채운 뒤 이 게이트부터 다시 확인한다. 그래도 같은 스레드가 남으면 머지하지 않고 STOP한다.
-   - `reviewed`·`lgtm`이면서 `stale`이면 재리뷰 요청 기준을 적용한다. 요청했다면 `pending`부터 다시 확인한다.
-   - `limited`·`failed`·`timeout`·`absent`: 재리뷰를 요청하지 않고 봇 리뷰 없이 진행한다. 4단계 PR 후속 코멘트에 그 상태와 사유를 한 줄로 남긴다. `settings_warning`이 있으면 사용자 보고에 포함한다.
+4. Codex 리뷰 게이트를 확인한다. Codex 봇은 check run을 만들지 않으므로 CI가 끝나도 봇 리뷰는 아직 진행 중일 수 있다. `codex-review-status <PR> -R OWNER/REPO --json`으로 상태를 보고 [Codex 리뷰 봇 처리](../review-pr-feedback/references/codex-review.md)를 따른다.
+   - `draft`: 머지하지 않고 사용자에게 보고한다. 사용자 승인으로 ready로 바꿨다면 봇 리뷰가 새로 시작되므로 `pending`부터 다시 확인한다.
+   - `pending`: `--wait 540`을 붙여 기다린다. 이 호출은 오래 걸리므로 셸 명령 제한 시간을 600초로 늘리거나 백그라운드로 실행한다. 상태가 바뀔 때까지 반복한다 (대기 한도가 지나면 `codex-review-status`가 `timeout`을 낸다).
+   - 상태와 관계없이 `unhandled_threads`가 남아 있으면 머지하지 않는다. 이전 리뷰의 스레드와 이미 resolve된 스레드도 포함된다. review-pr-feedback 절차로 처리한 뒤 이 게이트부터 다시 확인한다. 그래도 같은 스레드가 남으면 머지하지 않고 STOP한다.
+   - 이 게이트에서 지적을 반영해 새 커밋을 push했으면, 게이트를 다시 통과해도 바로 머지하지 않는다. 반영한 변경과 봇 상태를 사용자에게 보고하고 확인을 받는다. 답글·반응·resolve만 채웠으면 계속 진행한다.
+   - `reviewed`·`lgtm`이면서 `stale`이 `true`나 `null`이면 [재리뷰 요청 기준](../review-pr-feedback/references/codex-review.md#재리뷰-요청)을 적용한다. 요청했다면 `pending`부터 다시 확인한다.
+   - `limited`·`failed`·`timeout`·`absent`: 재리뷰를 요청하지 않고 봇 리뷰 없이 진행한다. 절차 4의 PR 후속 코멘트에 그 상태와 사유를 한 줄로 남긴다. 단 `absent`이면서 `settings_warning`이 없으면 봇을 쓰지 않는 저장소일 수 있어 남기지 않는다. `settings_warning`이 있으면 사용자 보고에 포함한다.
    - 명령이 실패하면 원인을 고쳐 다시 조회한다. 해결하지 못하면 머지하지 않고 STOP한다.
 
 Skip 조건:
@@ -38,7 +39,7 @@ Skip 조건:
 
 ### 2. squash merge
 
-1. 머지 직전에 `gh pr view --json headRefOid,statusCheckRollup,reviewDecision,mergeStateStatus`를 재조회하고 현재 head의 CI·리뷰 상태를 확인한다. 검증한 head가 바뀌었으면 Codex 리뷰 게이트를 포함해 변경 범위에 필요한 확인을 다시 수행한다. 확인한 SHA를 `HEAD_OID`로 고정해 `gh pr merge <pr> --squash --match-head-commit "$HEAD_OID"`로 squash merge한다 (확인~merge 사이에 새 push가 끼어들면 merge가 실패하도록).
+1. 머지 직전에 `gh pr view --json headRefOid,statusCheckRollup,reviewDecision,mergeStateStatus`와 `codex-review-status <PR> -R OWNER/REPO --json`(대기 없이)을 재조회하고 현재 head의 CI·리뷰 상태를 확인한다. 검증한 head가 바뀌었거나 게이트 뒤에 봇 결과가 도착했으면(대기 한도를 넘겨 온 리뷰 등) Codex 리뷰 게이트를 포함해 변경 범위에 필요한 확인을 다시 수행한다. 확인한 SHA를 `HEAD_OID`로 고정해 `gh pr merge <pr> --squash --match-head-commit "$HEAD_OID"`로 squash merge한다 (확인~merge 사이에 새 push가 끼어들면 merge가 실패하도록).
 2. merge 실패, 충돌, 미승인, 권한 오류가 나면 STOP하고 원문 오류를 요약해 보고한다.
 3. merge 성공 후 PR 번호, URL, merge 결과 메시지, squash commit SHA를 가능한 범위에서 기록해 둔다.
 
@@ -67,7 +68,7 @@ Skip 조건:
    - merge 결과와 main 최신화 여부
    - 실행한 검증 명령
    - 성공/실패 요약
-   - Codex 리뷰 게이트를 봇 리뷰 없이 통과했다면 그 상태와 사유 (봇 멘션 없이 "Codex 봇"으로 쓴다)
+   - 1단계 Codex 리뷰 게이트에서 남기기로 한 봇 리뷰 없는 진행의 상태와 사유 (봇 멘션 없이 "Codex 봇"으로 쓴다)
    - 실패 시 원문 오류의 핵심 부분과 다음 조치
 2. 검증 실패 시 코멘트를 남긴 뒤 STOP한다. 관련 이슈 close와 워크트리 정리는 하지 않는다.
 

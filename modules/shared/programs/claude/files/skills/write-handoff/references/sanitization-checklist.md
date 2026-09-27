@@ -1,9 +1,9 @@
 # 공개용 Sanitization Checklist
 
-> `create-issue`/`write-handoff` 스킬이 공유하는 public-safe sanitization 단일 진실 원천.
-> 규칙 변경 시 이 파일을 먼저 수정하고, 소비자 문서(두 SKILL.md, `issue-template.md`, `guide-template.md`)의 요약 문구/포인터도 함께 점검한다.
+> `create-issue`/`write-handoff`/`create-pr` 스킬이 공유하는 public-safe sanitization 단일 진실 원천.
+> 규칙 변경 시 이 파일을 먼저 수정하고, 소비자 문서(세 SKILL.md, `issue-template.md`, `guide-template.md`)의 요약 문구/포인터도 함께 점검한다.
 
-적용 범위: GitHub에 게시되는 산출물 — `create-issue`의 이슈 본문, `write-handoff` 기본 모드의 이슈 코멘트. `write-handoff` 로컬 모드(`HANDOFF-*.local.md`)는 공개 게시물이 아니므로 S1 중 시크릿/토큰/키/복호화 값 금지만 적용한다 ([local-workflow.md](local-workflow.md)의 로컬 킥오프 구조 참조).
+적용 범위: GitHub에 게시되는 산출물 — `create-issue`의 이슈 본문, `write-handoff` 기본 모드의 이슈 코멘트, `create-pr`의 PR 본문. `write-handoff` 로컬 모드(`HANDOFF-*.local.md`)는 공개 게시물이 아니므로 S1 중 시크릿/토큰/키/복호화 값 금지만 적용한다 ([local-workflow.md](local-workflow.md)의 로컬 킥오프 구조 참조).
 
 배경: 이 repo는 PUBLIC이다. 기존 규칙은 "시크릿 금지" 수준에 머물러 절대경로·개인/회사 식별자를 놓치거나, 반대로 유용한 repo-relative 맥락까지 과하게 지우는 즉석 판단이 반복됐다. 상세 배경과 실전 사례는 #405 참조.
 
@@ -28,6 +28,7 @@
 | 세션 로그의 사용자 발화 원문 인용 | 패턴 요약 + 횟수로 대체 |
 | 공개 불필요한 dirty state — `git status` 출력, 워크트리 오염 상태, 로컬 임시 파일 목록 | 작업 단계 서술로 대체 |
 | 악용 가능 절차의 단계별 상세 | 증상 수준 서술로 축약 ("문서대로 하면 기능이 조용히 사라진다"는 허용, 악용 재현 절차는 배제) |
+| Codex 봇 멘션 — 앳(@) 바로 뒤에 `codex`나 봇 계정 이름(`chatgpt-codex-connector`)을 붙인 문자열. 백틱·인용 안도 해당 | 멘션 없이 "Codex 봇"으로 쓴다. 봇이 작업 요청으로 읽어 클라우드 작업을 시작한다 ([codex-review.md](../../review-pr-feedback/references/codex-review.md#봇-멘션-금지)) |
 
 ## S2. 보존 항목 (지우지 않는다)
 
@@ -69,6 +70,13 @@ S1과 겹치면 S1이 우선한다 — 아래 보존 범주에 속해도 문자�
    `path:LINE`·`path:START-END` 인용은 3)·4) 검사 전에 trailing `:[0-9]+(-[0-9]+)?` suffix를 떼어낸 순수 경로로 검사한다 — Git은 suffix를 파일명 일부로 해석해 실재 경로도 부재로 오판한다 (게시 원문의 인용 표기는 그대로 보존).
    0)에서 visibility가 PUBLIC이 아니거나 `nameWithOwner`가 의도한 대상이 아니면, 1)·2)의 SHA가 다르면, 로컬 `origin/$BR`은 공개 상태의 근거가 아니다. 확인 실패·미커밋·미푸시·비공개 브랜치에만 있는 값/경로는 모두 S1로 처리한다 (fail-closed).
    게시 대상이 cwd origin과 다른 repo면(예: handoff에 외부 이슈 URL 지정) 검사 대상과 게시 대상을 결합해 판단한다: 이 검사(0~4)는 "cwd 유래 정보가 이미 인터넷에 공개돼 있는가"를 cwd origin 기준으로 판정하는 것이므로, cwd origin이 PUBLIC으로 확인될 때만 게시 대상과 무관하게 유효하다. cwd origin이 비공개·불명이면 게시 대상 repo가 무엇이든 S1이며, 게시 대상 repo 자체의 식별·공개 여부는 `gh repo view <owner/repo> --json nameWithOwner,visibility`로 별도 확인한다.
+5. Codex 봇 멘션을 검색한다. pinning-guard는 변수·명령 치환·stdin으로 넘긴 본문을 읽지 못하므로 이 검사가 그 경로의 방어선이다. 매치를 판정한 뒤 게시하도록 게시 명령과 따로 실행한다:
+
+   ```bash
+   rg -n -i '@(codex|chatgpt-codex-connector)' <초안 파일>
+   ```
+
+   매치는 S1에 따라 "Codex 봇"으로 바꾼다. 재리뷰 요청은 게시 본문에 넣지 않고 [정해진 한 줄 명령](../../review-pr-feedback/references/codex-review.md#재리뷰-요청)으로만 보낸다.
 
 ## S4. 언어 유지 규칙
 

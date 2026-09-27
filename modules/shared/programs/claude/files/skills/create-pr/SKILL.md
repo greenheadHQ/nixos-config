@@ -26,4 +26,5 @@ description: |
 3. `update`이면 현재 제목·본문·첨부를 읽고 최종 변경을 반영한다. 유효한 근거와 기존 첨부 URL은 보존한다.
 4. 본문은 private 임시 디렉터리(0700)의 일반 파일(0600)에 작성한다. [공개 정보 처리 기준](../write-handoff/references/sanitization-checklist.md)을 최종 본문에 적용한다. 제공된 이미지·영상은 [첨부 절차](../attaching-github-media/SKILL.md)에 따라 본문 참조와 `--attach` 인자를 준비한다.
 5. 생성은 `gh pr create -R OWNER/REPO --title "<제목>" --body-file <파일>`, 갱신은 `gh pr edit <number> -R OWNER/REPO --body-file <파일>`을 사용한다. 첨부 인자는 같은 명령에 추가한다. 별도 관례가 없으면 제목은 70자 미만의 conventional commit 형식으로 쓴다.
-6. 반환된 PR URL과 원격 본문을 확인한다. Codex 리뷰 봇은 PR을 열거나 draft를 ready로 바꾸면 몇 분 뒤 리뷰를 남기며, 머지 전 확인은 finish-pr가 한다. 실패·부분 성공이면 파일을 보존하고 원격 게시 여부부터 확인하여 중복 생성을 피한다. 첨부 복구는 [재시도 규칙](../attaching-github-media/SKILL.md#실패와-재시도)을 따른다. 성공을 확인한 뒤에만 이 작업이 만든 임시 본문을 정리한다.
+6. 반환된 PR URL과 원격 본문을 확인한다. 실패·부분 성공이면 파일을 보존하고 원격 게시 여부부터 확인하여 중복 생성을 피한다. 첨부 복구는 [재시도 규칙](../attaching-github-media/SKILL.md#실패와-재시도)을 따른다. 성공을 확인한 뒤에만 이 작업이 만든 임시 본문을 정리한다.
+7. 사용자 보고에 PR URL과 함께, Codex 리뷰 봇이 PR을 열거나 draft를 ready로 바꾼 뒤 보통 3~8분 안에 리뷰를 남기고 머지 전 확인은 finish-pr가 한다고 적는다.
