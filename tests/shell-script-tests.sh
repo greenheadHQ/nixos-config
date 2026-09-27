@@ -396,6 +396,8 @@ run_test "upload-immich notification counts remaining originals" test_upload_imm
 run_test "upload-immich deletes only live server duplicates" test_upload_immich_deletes_only_live_server_duplicates
 run_test "upload-immich keeps originals when server check fails" test_upload_immich_keeps_originals_when_server_check_fails
 run_test "upload-immich CLI major matches server image" test_upload_immich_cli_major_matches_server_image
+run_test "upload-immich rejects malformed check ids" test_upload_immich_rejects_malformed_check_ids
+run_test "upload-immich rechecks before deleting duplicates" test_upload_immich_rechecks_before_deleting_duplicates
 run_test "karakeep fallback-sync success removes only matched queue URL" test_karakeep_fallback_sync_success_removes_only_matched_queue_url
 run_test "karakeep fallback-sync upload failure preserves queue" test_karakeep_fallback_sync_upload_failure_preserves_queue_and_records_notify_state
 run_test "karakeep fallback-sync GC removes expired state" test_karakeep_fallback_sync_gc_removes_only_expired_state_entries

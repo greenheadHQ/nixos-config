@@ -498,8 +498,9 @@ test_folder_actions_video_jobs_run_with_launchd_minimal_path() (
 # ── upload-immich 결과 처리 fixture (#1401) ───────────────────────────────────
 # Immich CLI와 서버는 대역이다.
 # - bun 대역: `bun x @immich/cli@3 upload ... -- <파일...>` 호출 인자를 기록하고, 넘겨받은 파일 중
-#   사례가 업로드 성공으로 지정한 것만 지운다(CLI --delete가 이번 실행에 업로드한 파일만 지우는
-#   동작). 끝나기 직전 감시 폴더 목록을 남겨 CLI 처리 직후와 스크립트 종료 뒤를 나눠 본다.
+#   사례가 업로드 성공으로 지정한 것만 짝 .xmp와 함께 지운다(CLI --delete가 이번 실행에 업로드한
+#   파일과 그 사이드카만 지우는 동작). 끝나기 직전 감시 폴더 목록을 남겨 CLI 처리 직후와 스크립트
+#   종료 뒤를 나눠 본다.
 # - curl 대역: 서버 ping은 성공시키고, stdin config로 온 bulk-upload-check 요청은 파일 SHA1별로
 #   사례가 지정한 판정(accept / duplicate / trashed)을 서버 v3 응답 모양으로 돌려준다.
 # 락과 스크립트 자신의 삭제는 위 배포 레이아웃 사본으로 격리해 calls.log에 기록한다.
@@ -551,7 +552,9 @@ for arg in "$@"; do printf 'ARG=%s\n' "$arg"; done >> "$sandbox/bun.log"
 files=0
 for arg in "$@"; do
   if [ "$files" = 1 ]; then
-    if /usr/bin/grep -Fqx -- "${arg##*/}" "$sandbox/cli-uploads"; then /bin/rm -f "$arg"; fi
+    if /usr/bin/grep -Fqx -- "${arg##*/}" "$sandbox/cli-uploads"; then
+      /bin/rm -f "$arg" "${arg%.*}.xmp" "$arg.xmp"
+    fi
   elif [ "$arg" = "--" ]; then
     files=1
   fi
@@ -562,7 +565,8 @@ exit "$cli_rc"
 EOF_BUN
   } > "$sandbox/tools/bun"
 
-  # 응답 대신 check-fail이 있으면 HTTP 오류(curl -f의 22), check-response가 있으면 그 본문을 준다.
+  # check-fail이 있으면 HTTP 오류(curl -f의 22), check-response가 있으면 그 본문을 준다.
+  # check-mutate에 적힌 파일은 응답 직전에 내용을 바꾼다(확인과 삭제 사이의 변경).
   {
     printf '#!/bin/sh\nsandbox=%s\n' "'$sandbox'"
     cat <<'EOF_CURL'
@@ -573,6 +577,9 @@ esac
 printf 'check argv=%s\n' "$*" >> "$sandbox/curl.log"
 /bin/cat > "$sandbox/check-request.cfg"
 [ -e "$sandbox/check-fail" ] && exit 22
+if [ -e "$sandbox/check-mutate" ]; then
+  while IFS= read -r target; do printf '%s\n' changed >> "$target"; done < "$sandbox/check-mutate"
+fi
 if [ -e "$sandbox/check-response" ]; then /bin/cat "$sandbox/check-response"; exit 0; fi
 /usr/bin/sed -n 's/^data-binary = "\(.*\)"$/\1/p' "$sandbox/check-request.cfg" | /usr/bin/sed 's/\\"/"/g' \
   | /usr/bin/grep -oE '"id":"[0-9]+","checksum":"[0-9a-f]{40}"' \
@@ -591,6 +598,19 @@ if [ -e "$sandbox/check-response" ]; then /bin/cat "$sandbox/check-response"; ex
 EOF_CURL
   } > "$sandbox/tools/curl"
   chmod 755 "$sandbox/tools/curl" "$sandbox/tools/bun"
+}
+
+# <sandbox> <파일>: 스크립트 사본의 /bin/rm 대역이 이 파일에서만 실패하게 한다.
+_upload_immich_fail_rm_on() {
+  local sandbox="$1" target="$2"
+  {
+    printf '#!/bin/sh\nsandbox=%s\ntarget=%s\n' "'$sandbox'" "'$target'"
+    cat <<'EOF_RM'
+{ printf '%s' rm; for arg in "$@"; do printf '\t%s' "$arg"; done; printf '\n'; } >> "$sandbox/calls.log"
+for arg in "$@"; do [ "$arg" = "$target" ] && exit 1; done
+exec /bin/rm "$@"
+EOF_RM
+  } > "$sandbox/stubs/rm"
 }
 
 # <sandbox> <파일> <duplicate|trashed>: 서버에 같은 SHA1 자산이 있다고 답하게 한다.
@@ -660,11 +680,13 @@ test_upload_immich_notification_counts_remaining_originals() (
   watch="$sandbox/home/FolderActions/upload-immich"
   _upload_immich_prepare "$sandbox" 0 a.jpg b.dng
   printf '%s\n' a > "$watch/a.jpg"
+  printf '%s\n' '<xmp/>' > "$watch/a.xmp"
   printf '%s\n' b > "$watch/b.dng"
   printf '%s\n' note > "$watch/note.txt"
   out=$(_upload_immich_run_script "$sandbox" 2>&1) || fail "all-uploaded run must exit 0: $out"
   assert_line_count "$sandbox/pushover.log" "title=Immich [✅ 업로드 완료]" 1
   assert_file_contains "$sandbox/pushover.log" "message=📸 2개 파일 (4B) → Desktop Upload"
+  # 시작 전 비미디어 2개 중 a.xmp는 CLI가 사이드카로 올리고 지웠다.
   assert_file_contains "$sandbox/pushover.log" "⚠️ 비미디어 1개 무시됨"
   [[ -e "$watch/note.txt" ]] || fail "non-media files must stay"
   assert_not_contains "$(cat "$sandbox/bun.log")" "note.txt"
@@ -747,7 +769,8 @@ test_upload_immich_keeps_originals_when_server_check_fails() (
   _upload_immich_fixture_runnable || return 0
 
   # 서버가 중복이라고 답할 파일이라도 확인 요청이 실패하거나 응답을 해석할 수 없으면 지우지 않는다.
-  for entry in http-error results-count-mismatch missing-is-trashed not-json; do
+  for entry in http-error results-count-mismatch missing-is-trashed not-json unknown-action \
+    sha1-unreadable; do
     sandbox=$(new_sandbox)
     watch="$sandbox/home/FolderActions/upload-immich"
     _upload_immich_prepare "$sandbox" 0 new.jpg
@@ -761,9 +784,17 @@ test_upload_immich_keeps_originals_when_server_check_fails() (
         printf '%s' '{"results":[{"id":"0","action":"reject","reason":"duplicate"}]}' > "$sandbox/check-response"
         ;;
       not-json) printf '%s' '<html>proxy error</html>' > "$sandbox/check-response" ;;
+      unknown-action) printf '%s' '{"results":[{"id":"0","action":"skip"}]}' > "$sandbox/check-response" ;;
+      sha1-unreadable) chmod 000 "$watch/dup.jpg" ;;
     esac
     out=$(_upload_immich_run_script "$sandbox" 2>&1) || fail "$entry run must exit 0: $out"
-    assert_line_count "$sandbox/curl.log" "check argv=-q -sf --max-time 30 --config -" 1
+    chmod 600 "$watch/dup.jpg" 2>/dev/null || true
+    if [ "$entry" = sha1-unreadable ]; then
+      # SHA1을 못 구하면 요청 자체를 보내지 않는다.
+      assert_not_contains "$(cat "$sandbox/curl.log")" "check argv="
+    else
+      assert_line_count "$sandbox/curl.log" "check argv=-q -sf --max-time 30 --config -" 1
+    fi
     [[ "$(cat "$watch/dup.jpg" 2>/dev/null)" == "dup" ]] || fail "$entry must keep the original: $out"
     ! grep -Fq "$watch" "$sandbox/calls.log" || fail "$entry must not delete: $(cat "$sandbox/calls.log")"
     assert_line_count "$sandbox/pushover.log" "title=Immich [⚠️ 일부 미업로드]" 1
@@ -780,4 +811,95 @@ test_upload_immich_cli_major_matches_server_image() (
   [[ "$cli" =~ ^@immich/cli@[0-9]+$ ]] || fail "upload-immich.sh must pin exactly one CLI major: $cli"
   [[ "$server" =~ ^immich-server:v[0-9]+$ ]] || fail "immich.nix must declare exactly one server major: $server"
   [[ "${cli##*@}" == "${server##*:v}" ]] || fail "CLI major ($cli) must match the server image ($server)"
+)
+
+# 응답 id는 요청 때 보낸 10진 순번과 정확히 같아야 한다. 앞자리 0은 bash 배열 첨자에서 8진수로
+# 읽혀(08은 산술 오류, 010은 8번) 판정이 다른 파일에 붙을 수 있다.
+_upload_immich_check_response() {
+  local sandbox="$1" entry item result=""
+  shift
+  for entry in "$@"; do
+    case "${entry#*=}" in
+      accept) item='"action":"accept"' ;;
+      duplicate)
+        item='"action":"reject","reason":"duplicate","assetId":"00000000-0000-4000-8000-000000000000","isTrashed":false'
+        ;;
+      *) fail "unknown check verdict: $entry" ;;
+    esac
+    result="${result:+$result,}{${entry%%=*},$item}"
+  done
+  printf '{"results":[%s]}' "$result" > "$sandbox/check-response"
+}
+
+test_upload_immich_rejects_malformed_check_ids() (
+  local entry count i sandbox watch out
+  _upload_immich_fixture_runnable || return 0
+
+  for entry in leading-zero-08:9 leading-zero-010:11 numeric-id:1 out-of-range:1 duplicate-id:2; do
+    count="${entry##*:}"
+    sandbox=$(new_sandbox)
+    watch="$sandbox/home/FolderActions/upload-immich"
+    _upload_immich_prepare "$sandbox" 0
+    for ((i = 0; i < count; i++)); do
+      printf 'f%02d\n' "$i" > "$watch/f$(printf '%02d' "$i").jpg"
+    done
+    case "${entry%%:*}" in
+      leading-zero-08)
+        _upload_immich_check_response "$sandbox" '"id":"0"=accept' '"id":"1"=accept' '"id":"2"=accept' \
+          '"id":"3"=accept' '"id":"4"=accept' '"id":"5"=accept' '"id":"6"=accept' '"id":"7"=accept' \
+          '"id":"08"=duplicate'
+        ;;
+      leading-zero-010)
+        _upload_immich_check_response "$sandbox" '"id":"0"=accept' '"id":"1"=accept' '"id":"2"=accept' \
+          '"id":"3"=accept' '"id":"4"=accept' '"id":"5"=accept' '"id":"6"=accept' '"id":"7"=accept' \
+          '"id":"010"=duplicate' '"id":"9"=accept' '"id":"10"=accept'
+        ;;
+      numeric-id) _upload_immich_check_response "$sandbox" '"id":0=duplicate' ;;
+      out-of-range) _upload_immich_check_response "$sandbox" '"id":"1"=duplicate' ;;
+      duplicate-id) _upload_immich_check_response "$sandbox" '"id":"0"=duplicate' '"id":"0"=accept' ;;
+    esac
+    out=$(_upload_immich_run_script "$sandbox" 2>&1) || fail "$entry run must exit 0: $out"
+    [[ "$(find "$watch" -name 'f*.jpg' | wc -l | tr -d ' ')" == "$count" ]] \
+      || fail "$entry must keep every original: $(ls "$watch")"
+    ! grep -Fq "$watch" "$sandbox/calls.log" || fail "$entry must not delete: $(cat "$sandbox/calls.log")"
+    assert_line_count "$sandbox/pushover.log" "title=Immich [❌ 업로드된 파일 없음]" 1
+    assert_file_contains "$sandbox/pushover.log" "⚠️ 서버 확인 실패로 ${count}개 원본 보존"
+  done
+)
+
+test_upload_immich_rechecks_before_deleting_duplicates() (
+  local sandbox watch out
+  _upload_immich_fixture_runnable || return 0
+
+  # 서버에 있는 원본인데 삭제가 실패하면 따로 세어 알린다.
+  sandbox=$(new_sandbox)
+  watch="$sandbox/home/FolderActions/upload-immich"
+  _upload_immich_prepare "$sandbox" 0 new.jpg
+  printf '%s\n' dup > "$watch/dup.jpg"
+  printf '%s\n' new > "$watch/new.jpg"
+  _upload_immich_server_has "$sandbox" "$watch/dup.jpg" duplicate
+  _upload_immich_fail_rm_on "$sandbox" "$watch/dup.jpg"
+  out=$(_upload_immich_run_script "$sandbox" 2>&1) || fail "rm-failure run must exit 0: $out"
+  [[ "$(_folder_actions_count_calls_on "$sandbox" rm "$watch/dup.jpg")" == 1 ]] \
+    || fail "the script must try to delete the duplicate once: $(cat "$sandbox/calls.log")"
+  [[ -e "$watch/dup.jpg" ]] || fail "the fixture rm must have failed"
+  assert_line_count "$sandbox/pushover.log" "title=Immich [⚠️ 원본 정리 실패]" 1
+  assert_file_contains "$sandbox/pushover.log" "message=📸 2/2개 업로드 → Desktop Upload"
+  assert_file_contains "$sandbox/pushover.log" "⚠️ 서버에 있으나 삭제 실패 1개 원본 보존"
+  assert_not_contains "$(cat "$sandbox/pushover.log")" "♻️"
+
+  # 서버 확인 뒤 삭제 전에 내용이 바뀐 원본은 확인 실패로 남긴다.
+  sandbox=$(new_sandbox)
+  watch="$sandbox/home/FolderActions/upload-immich"
+  _upload_immich_prepare "$sandbox" 0 new.jpg
+  printf '%s\n' dup > "$watch/dup.jpg"
+  printf '%s\n' new > "$watch/new.jpg"
+  _upload_immich_server_has "$sandbox" "$watch/dup.jpg" duplicate
+  printf '%s\n' "$watch/dup.jpg" > "$sandbox/check-mutate"
+  out=$(_upload_immich_run_script "$sandbox" 2>&1) || fail "changed-file run must exit 0: $out"
+  [[ "$(cat "$watch/dup.jpg")" == $'dup\nchanged' ]] || fail "a file changed after the check must stay: $out"
+  ! grep -Fq "$watch" "$sandbox/calls.log" || fail "changed-file run must not delete: $(cat "$sandbox/calls.log")"
+  assert_line_count "$sandbox/pushover.log" "title=Immich [⚠️ 일부 미업로드]" 1
+  assert_file_contains "$sandbox/pushover.log" "message=📸 1/2개 업로드 → Desktop Upload"
+  assert_file_contains "$sandbox/pushover.log" "⚠️ 서버 확인 실패로 1개 원본 보존"
 )

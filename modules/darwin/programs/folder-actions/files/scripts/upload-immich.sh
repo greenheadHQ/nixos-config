@@ -25,6 +25,7 @@ SELF_REAP_DIR=""
 # 업로드 대상 확장자. CLI에는 이 목록에 든 파일만 넘기므로 서버가 받는 목록과 같아야 한다.
 # 출처: immich-server v3.0.0 server/src/utils/mime-types.ts의 image(4-70행: raw,
 # webSupportedImage, webUnsupportedImage)와 video(106-127행). 서버 이미지 메이저를 올리면 다시 맞춘다.
+# .ts는 서버 목록대로 영상(MPEG-TS)으로 본다.
 MEDIA_EXT="3fr|ari|arw|cap|cin|cr2|cr3|crw|dcr|dng|erf|fff|iiq|k25|kdc|mrw|nef|nrw|orf|ori"
 MEDIA_EXT="${MEDIA_EXT}|pef|psd|raf|raw|rw2|rwl|sr2|srf|srw|x3f"
 MEDIA_EXT="${MEDIA_EXT}|avif|bmp|gif|jpeg|jpg|png|webp"
@@ -604,6 +605,7 @@ wait_all_stable() {
 # 확인 요청이 실패하거나 응답을 해석할 수 없으면 아무것도 지우지 않는다.
 
 CHECK_FILES=()
+CHECK_SUMS=()
 CHECK_VERDICTS=()
 
 sha1_hex() {
@@ -626,13 +628,22 @@ curl_cfg_escape() {
     printf '%s' "$v"
 }
 
+# CHECK_FILES의 SHA1을 CHECK_SUMS에 채운다. 하나라도 계산하지 못하면 1을 돌려준다.
+compute_check_sums() {
+    local i
+
+    CHECK_SUMS=()
+    for ((i = 0; i < ${#CHECK_FILES[@]}; i++)); do
+        CHECK_SUMS[$i]=$(sha1_hex "${CHECK_FILES[$i]}") || return 1
+    done
+}
+
 # API 키는 명령줄에 싣지 않고 curl config로 stdin에 넘긴다.
 request_bulk_check() {
-    local body="" sep="" sum i
+    local body="" sep="" i
 
-    for ((i = 0; i < ${#CHECK_FILES[@]}; i++)); do
-        sum=$(sha1_hex "${CHECK_FILES[$i]}") || return 1
-        body="${body}${sep}{\"id\":\"${i}\",\"checksum\":\"${sum}\"}"
+    for ((i = 0; i < ${#CHECK_SUMS[@]}; i++)); do
+        body="${body}${sep}{\"id\":\"${i}\",\"checksum\":\"${CHECK_SUMS[$i]}\"}"
         sep=","
     done
 
@@ -652,6 +663,8 @@ json_value() {
 # 모든 결과를 해석하지 못하면 1을 돌려준다.
 parse_bulk_check() {
     local resp="$1" n count i id action reason trashed
+    # 요청 때 쓴 10진 순번만 받는다. 앞자리 0은 배열 첨자에서 8진수로 읽힌다.
+    local id_re='^(0|[1-9][0-9]{0,8})$'
 
     n=${#CHECK_FILES[@]}
     CHECK_VERDICTS=()
@@ -660,7 +673,7 @@ parse_bulk_check() {
 
     for ((i = 0; i < n; i++)); do
         id=$(json_value "$resp" "results.$i.id" string) || return 1
-        [[ "$id" =~ ^[0-9]+$ ]] && [ "$id" -lt "$n" ] || return 1
+        [[ "$id" =~ $id_re ]] && [ "$id" -lt "$n" ] || return 1
         [ -z "${CHECK_VERDICTS[$id]:-}" ] || return 1
         action=$(json_value "$resp" "results.$i.action" string) || return 1
         case "$action" in
@@ -737,6 +750,7 @@ log "파일 안정화 완료"
 # ─── 파일 분류 + 기록 ─────────────────────────────────────────
 
 media_files=()
+non_media_files=()
 non_media_count=0
 total_size=0
 
@@ -749,6 +763,7 @@ for f in "$WATCH_DIR"/*; do
         file_size=$(/usr/bin/stat -f%z "$f" 2>/dev/null || echo 0)
         total_size=$((total_size + file_size))
     else
+        non_media_files+=("$f")
         non_media_count=$((non_media_count + 1))
     fi
 done
@@ -799,6 +814,12 @@ log "업로드 시작: ${media_count}개 (${readable_size})"
 # 파일만 지우고, 업로드 실패로 남은 파일은 지우지 않는다. 서버에 이미 있어 업로드를 건너뛴
 # 파일은 아래 서버 저장 확인에서 다룬다. 메이저 버전은
 # modules/nixos/programs/docker/immich.nix의 immich-server 이미지와 맞춘다.
+# 남은 제약:
+# - 업로드 경합: CLI가 bulk-check한 뒤 업로드하기 전에 다른 클라이언트가 같은 파일을 올리면
+#   서버가 업로드에 DUPLICATE로 답하고 --delete가 원본과 짝 .xmp를 지운다. 원본은 서버에
+#   있지만 .xmp는 저장되지 않았을 수 있다.
+# - 인자 길이: 목록을 인자로 넘기므로 ARG_MAX(macOS 1MiB, 경로 길이에 따라 대략 1만 개)를
+#   넘으면 실행 자체가 실패한다(126). 그때는 원본을 모두 남기고 실패로 알린다.
 upload_output=$(bun x @immich/cli@3 upload \
     --album-name "Desktop Upload" \
     --delete \
@@ -825,18 +846,25 @@ log "CLI 업로드 ${uploaded_count}/${media_count}개, 남은 원본 ${remainin
 # 남은 원본 중 서버에 있고 휴지통이 아닌 것만 원본을 지운다 (사이드카는 남긴다).
 # CLI가 실패했으면 확인하지 않는다: 앨범 추가 같은 뒷단계가 다음 실행에서 다시 돌게 둔다.
 duplicate_count=0
+delete_failed_count=0
 trashed_count=0
 missing_count=0
 unchecked_count=0
 if [ "$upload_exit" -eq 0 ] && [ "$remaining" -gt 0 ]; then
     CHECK_FILES=("${remaining_files[@]}")
-    if check_response=$(request_bulk_check) && parse_bulk_check "$check_response"; then
+    if compute_check_sums && check_response=$(request_bulk_check) \
+        && parse_bulk_check "$check_response"; then
         for ((i = 0; i < remaining; i++)); do
             case "${CHECK_VERDICTS[$i]}" in
                 duplicate)
-                    if /bin/rm -f "${CHECK_FILES[$i]}"; then
+                    # 확인에 쓴 내용과 달라진 파일은 서버 판정이 맞지 않으므로 남긴다.
+                    if [ "$(sha1_hex "${CHECK_FILES[$i]}")" != "${CHECK_SUMS[$i]}" ]; then
+                        unchecked_count=$((unchecked_count + 1))
+                        log_warn "서버 확인 뒤 내용이 바뀌어 보존: ${CHECK_FILES[$i]}"
+                    elif /bin/rm -f "${CHECK_FILES[$i]}"; then
                         duplicate_count=$((duplicate_count + 1))
                     else
+                        delete_failed_count=$((delete_failed_count + 1))
                         log_warn "서버에 있는 원본 삭제 실패: ${CHECK_FILES[$i]}"
                     fi
                     ;;
@@ -848,9 +876,17 @@ if [ "$upload_exit" -eq 0 ] && [ "$remaining" -gt 0 ]; then
         unchecked_count=$remaining
         log_warn "서버 저장 확인 실패; 남은 원본 ${remaining}개를 지우지 않음"
     fi
-    log "서버 확인: 중복 삭제 ${duplicate_count}, 휴지통 보존 ${trashed_count}, 미업로드 ${missing_count}, 확인 실패 ${unchecked_count}"
+    log "서버 확인: 중복 삭제 ${duplicate_count}, 삭제 실패 ${delete_failed_count}, 휴지통 보존 ${trashed_count}, 미업로드 ${missing_count}, 확인 실패 ${unchecked_count}"
 fi
-stored_count=$((uploaded_count + duplicate_count))
+stored_count=$((uploaded_count + duplicate_count + delete_failed_count))
+
+# 시작 전 비미디어 중 실행 뒤에도 남은 것만 센다 (CLI는 업로드한 원본의 짝 .xmp를 함께 지운다).
+non_media_left=0
+for f in "${non_media_files[@]}"; do
+    if [ -e "$f" ]; then
+        non_media_left=$((non_media_left + 1))
+    fi
+done
 
 if [ "$upload_exit" -ne 0 ]; then
     error_tail=$(echo "$upload_output" | tail -c 200)
@@ -859,7 +895,7 @@ if [ "$upload_exit" -ne 0 ]; then
     priority=0
     sound="falling"
 else
-    if [ "$stored_count" -eq "$media_count" ]; then
+    if [ "$stored_count" -eq "$media_count" ] && [ "$delete_failed_count" -eq 0 ]; then
         title="Immich [✅ 업로드 완료]"
         message="📸 ${media_count}개 파일 (${readable_size}) → Desktop Upload"
         priority=-1
@@ -867,6 +903,8 @@ else
     else
         if [ "$stored_count" -eq 0 ]; then
             title="Immich [❌ 업로드된 파일 없음]"
+        elif [ "$stored_count" -eq "$media_count" ]; then
+            title="Immich [⚠️ 원본 정리 실패]"
         else
             title="Immich [⚠️ 일부 미업로드]"
         fi
@@ -876,6 +914,9 @@ else
     fi
     if [ "$duplicate_count" -gt 0 ]; then
         message="${message}"$'\n'"♻️ 서버에 이미 있던 ${duplicate_count}개 원본 정리"
+    fi
+    if [ "$delete_failed_count" -gt 0 ]; then
+        message="${message}"$'\n'"⚠️ 서버에 있으나 삭제 실패 ${delete_failed_count}개 원본 보존"
     fi
     if [ "$missing_count" -gt 0 ]; then
         message="${message}"$'\n'"⚠️ 업로드 안 된 ${missing_count}개 원본 보존"
@@ -887,8 +928,8 @@ else
         message="${message}"$'\n'"⚠️ 서버 확인 실패로 ${unchecked_count}개 원본 보존"
     fi
 fi
-if [ "$non_media_count" -gt 0 ]; then
-    message="${message}"$'\n'"⚠️ 비미디어 ${non_media_count}개 무시됨"
+if [ "$non_media_left" -gt 0 ]; then
+    message="${message}"$'\n'"⚠️ 비미디어 ${non_media_left}개 무시됨"
 fi
 send_notification "$title" "$message" "$priority" "$sound"
 
