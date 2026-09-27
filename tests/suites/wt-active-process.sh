@@ -646,3 +646,32 @@ test_wt_cleanup_active_guard_matches_escaped_path() {
     done
   )
 }
+
+test_wt_cleanup_confirmed_dirty_keeps_active_guard() {
+  # 확인 프롬프트 통과는 dirty/unpushed에 대한 승인이지 활성 가드 우회가 아니다. 커밋하지
+  # 않은 변경이 있는 worktree를 WT_ASSUME_YES=1로 승인하면 제거 전략은 강제로 바뀌지만,
+  # 그 worktree를 쓰는 프로세스가 있으면 여전히 보존하고 PID를 알려야 한다(--yes 인자 없음).
+  local sandbox home_dir repo_root target_path
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  target_path="$repo_root/.claude/worktrees/feature_one"
+  mkdir -p "$target_path/sub"
+  echo "unsaved" > "$target_path/sub/notes.txt"
+
+  (
+    wt_holder_pid=""
+    trap stop_wt_cwd_holder EXIT
+    start_wt_cwd_holder "$target_path/sub"
+    local output
+    output=$(WT_ASSUME_YES=1 run_fixture_wt "$home_dir" "$repo_root" "" cleanup feature_one 2>&1) \
+      || fail "cleanup <name> 비정상 종료: $output"
+    assert_contains "$output" "uncommitted 변경사항"
+    assert_contains "$output" "PID $wt_holder_pid: sleep 120"
+    [[ -f "$target_path/sub/notes.txt" ]] || fail "확인 승인만으로 쓰는 중인 worktree가 지워짐: $output"
+  )
+}
