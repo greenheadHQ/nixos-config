@@ -427,9 +427,34 @@ run_test "upload-immich CLI major matches server image" test_upload_immich_cli_m
 run_test "upload-immich rejects malformed check ids" test_upload_immich_rejects_malformed_check_ids
 run_test "upload-immich rechecks before deleting duplicates" test_upload_immich_rechecks_before_deleting_duplicates
 run_test "karakeep fallback-sync success removes only matched queue URL" test_karakeep_fallback_sync_success_removes_only_matched_queue_url
+run_test "karakeep fallback-sync query-only difference is held" test_karakeep_fallback_sync_query_only_difference_is_held
 run_test "karakeep fallback-sync upload failure preserves queue" test_karakeep_fallback_sync_upload_failure_preserves_queue_and_records_notify_state
 run_test "karakeep fallback-sync GC removes expired state" test_karakeep_fallback_sync_gc_removes_only_expired_state_entries
 run_test "karakeep fallback-sync unmatched notification is deduplicated" test_karakeep_fallback_sync_unmatched_notification_is_deduplicated
+run_test "karakeep fallback-sync canonical beats body link in either queue order" test_karakeep_fallback_sync_canonical_beats_body_link_in_either_queue_order
+run_test "karakeep fallback-sync body link without identifier is held" test_karakeep_fallback_sync_body_link_without_identifier_is_held
+run_test "karakeep fallback-sync conflicting queued identifiers are held" test_karakeep_fallback_sync_conflicting_queued_identifiers_are_held
+run_test "karakeep fallback-sync selects the only queued identifier" test_karakeep_fallback_sync_selects_the_only_queued_identifier
+run_test "karakeep fallback-sync duplicate identifier sources count once" test_karakeep_fallback_sync_duplicate_identifier_sources_count_once
+run_test "karakeep fallback-sync selects exact query among variants" test_karakeep_fallback_sync_selects_exact_query_among_variants
+run_test "karakeep fallback-sync query variants without exact match are held" test_karakeep_fallback_sync_query_variants_without_exact_match_are_held
+run_test "karakeep fallback-sync ignores url text outside SingleFile comment" test_karakeep_fallback_sync_ignores_url_text_outside_singlefile_comment
+run_test "karakeep fallback-sync video id query is not matched loosely" test_karakeep_fallback_sync_video_id_query_is_not_matched_loosely
+run_test "karakeep fallback-sync ignores saved comment after the first" test_karakeep_fallback_sync_ignores_saved_comment_after_the_first
+run_test "karakeep fallback-sync duplicate queue lines count once" test_karakeep_fallback_sync_duplicate_queue_lines_count_once
+run_test "karakeep fallback-sync identifier extraction error is retried" test_karakeep_fallback_sync_identifier_extraction_error_is_retried
+run_test "karakeep fallback-sync unreadable file is a match error" test_karakeep_fallback_sync_unreadable_file_is_a_match_error
+run_test "karakeep fallback-sync unreadable queue is a match error" test_karakeep_fallback_sync_unreadable_queue_is_a_match_error
+run_test "karakeep fallback-sync comment open inside saved comment is text" test_karakeep_fallback_sync_comment_open_inside_saved_comment_is_text
+run_test "karakeep fallback-sync skips saved comment without url" test_karakeep_fallback_sync_skips_saved_comment_without_url
+run_test "karakeep fallback-sync upload failure notify key keeps query" test_karakeep_fallback_sync_upload_failure_notify_key_keeps_query
+run_test "karakeep fallback-sync processed state matches exact hash" test_karakeep_fallback_sync_processed_state_matches_exact_hash
+run_test "karakeep fallback-sync reads identifier tags spanning lines" test_karakeep_fallback_sync_reads_identifier_tags_spanning_lines
+run_test "karakeep fallback-sync flatten error is a match error" test_karakeep_fallback_sync_flatten_error_is_a_match_error
+run_test "karakeep fallback-sync trailing slash is ignored only in path" test_karakeep_fallback_sync_trailing_slash_is_ignored_only_in_path
+run_test "karakeep fallback-sync identifier tag attribute syntax" test_karakeep_fallback_sync_identifier_tag_attribute_syntax
+run_test "karakeep fallback-sync identifier tags read only in head" test_karakeep_fallback_sync_identifier_tags_read_only_in_head
+run_test "karakeep fallback-sync SingleFile parser error is a match error" test_karakeep_fallback_sync_singlefile_parser_error_is_a_match_error
 run_test "immich backup happy path creates dump atomically" test_immich_backup_happy_path_creates_dump_atomically
 run_test "immich backup integrity failure exits nonzero" test_immich_backup_integrity_failure_exits_nonzero
 run_test "immich backup retention deletes only old dumps in dir" test_immich_backup_retention_deletes_only_old_dumps_in_dir
