@@ -222,8 +222,13 @@ acquire_rebuild_lock() {
 
 release_rebuild_lock() {
     [[ "$NRS_REBUILD_LOCK_HELD" != true ]] && return 0
-    # fd 닫으면 flock/lockf 자동 해제
-    exec 200>&- 2>/dev/null || true
+    # fd 닫으면 flock/lockf 자동 해제.
+    # 명령 없는 `exec 200>&- 2>/dev/null`는 리다이렉션이 현재 셸에 영구 적용되어
+    # fd 200 뿐 아니라 호출 셸의 표준 오류(fd 2)까지 /dev/null 로 영구 리다이렉트한다
+    # (#1380). `{ ...; } 2>/dev/null`로 그룹 스코프에 가두면 그룹 안의 exec는
+    # 그대로 fd 200 을 닫지만, 2>/dev/null 는 그룹 실행에만 적용되어 그룹이 끝나면
+    # 호출자의 원래 표준 오류 대상으로 돌아간다.
+    { exec 200>&-; } 2>/dev/null || true
     NRS_REBUILD_LOCK_HELD=false
 }
 
