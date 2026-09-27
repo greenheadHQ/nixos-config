@@ -81,7 +81,7 @@ if ghostty then
   hs.timer.doAfter(0.2, function()
     hs.eventtap.keyStroke({"cmd"}, "n")
     hs.timer.doAfter(0.6, function()
-      hs.eventtap.keyStrokes('cd "' .. path .. '" && clear')
+      hs.eventtap.keyStrokes('cd -- ' .. shellQuotePath(path) .. ' && clear')
       hs.eventtap.keyStroke({}, "return")
     end)
   end)
