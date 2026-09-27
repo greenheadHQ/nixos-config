@@ -907,10 +907,12 @@ test_immich_restore_doc_invocations_match_suite() {
   grep -Fxq 'immich_switch_to_restore' "$doc" || fail "immich-update.md에 immich_switch_to_restore 실행 줄이 없다"
   grep -Eq '^immich_revert_restore immich_before_restore_' "$doc" \
     || fail "immich-update.md에 immich_revert_restore 실행 줄이 없다"
-  # 동작 테스트가 결과로 구분하지 못하는 방어(부분 커밋 방지, 빈 템플릿)를 정적으로 고정한다.
+  # 동작 테스트가 결과로 구분하지 못하는 방어(부분 커밋 방지, 빈 템플릿, autovacuum worker를 세지
+  # 않는 연결 확인)를 정적으로 고정한다.
   procedure="$(_immich_restore_extract_procedure)"
   assert_contains "$procedure" "-v ON_ERROR_STOP=1 --single-transaction -U immich -d immich_restore"
   assert_contains "$procedure" "CREATE DATABASE immich_restore OWNER immich TEMPLATE template0;"
+  assert_contains "$procedure" "WHERE backend_type = 'client backend'"
   # 옛 형태(일반 사용자 셸이 백업을 여는 복원 명령)가 문서에 남지 않아야 한다.
   if grep -Eq '^gunzip -c .*\| *\\?$|^gunzip -c .*\| *sudo|< /mnt/data/backups/|< /var/lib/immich-update/' "$doc"; then
     fail "immich-update.md에 일반 사용자 셸이 백업을 여는 옛 복원 형태가 남아 있다"
