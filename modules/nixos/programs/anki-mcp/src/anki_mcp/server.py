@@ -31,7 +31,7 @@ from starlette.routing import Route
 
 from .ankiconnect import AnkiConnect
 from .approval import Lockout, build_approval_app
-from .authoring import AUTHORING_GUIDANCE
+from .authoring import compose_guidance
 from .config import Settings, read_local_key, read_passphrase
 from .guard import RequestGuard
 from .helper import Helper
@@ -59,7 +59,7 @@ INSTRUCTIONS = (
     "rerun a link check or automatically repair links; preserve the receipt and inspect the current notes. "
     "Read back affected notes/cards after changes. Note-type structural changes are prepared here and executed only by the root approval command. "
     "The ordinary sync tool never chooses a full upload/download."
-) + "\n\n" + AUTHORING_GUIDANCE
+) + "\n\n" + compose_guidance()
 
 
 class PublicClientRevocation:
