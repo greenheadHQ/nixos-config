@@ -52,7 +52,6 @@ in
   imports = [
     ./programs/homebrew.nix # Homebrew 패키지 관리 (GUI 앱)
     ./programs/sshd # SSH 서버 보안 설정
-    ./programs/mosh # mosh 서버 (Termius 등에서 사용)
   ];
   # 폰트 설치 (nix-darwin이 /Library/Fonts/Nix Fonts에 자동 링크)
   #

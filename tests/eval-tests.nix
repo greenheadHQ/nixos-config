@@ -1324,7 +1324,6 @@ let
     }
     {
       # openssh는 LAN 노출 시 brute-force 표면이 되므로, 다른 openFirewall 서비스보다 중요
-      # (mosh의 openFirewall은 Test 6b/6e가 이미 잡으므로 별도 테스트 불필요)
       name = "Test 5a: openssh.openFirewall이 false이어야 함 (true이면 LAN에서 SSH 접근 가능)";
       cond = nixosCfg.services.openssh.openFirewall == false;
     }
@@ -1423,6 +1422,12 @@ let
         && nixpkgsLib.hasInfix "no-port-forwarding" (builtins.head hl)
         && nixpkgsLib.hasInfix "no-agent-forwarding" (builtins.head hl)
         && nixpkgsLib.hasInfix "no-X11-forwarding" (builtins.head hl);
+    }
+    {
+      # setgid utmp wrapper는 이를 켜던 원격 셸 모듈을 퇴역하며 없앴다 (#1454).
+      # 다시 생기면 어느 모듈이 켰는지 확인하고, 의도한 것이면 이 테스트와 함께 재결정한다.
+      name = "Test 5f: security.wrappers에 utempter(setgid utmp)가 없어야 함";
+      cond = !(nixosCfg.security.wrappers ? utempter);
     }
     {
       name = "Test 6a: networking.firewall.enable이 true이어야 함";

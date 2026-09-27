@@ -28,7 +28,7 @@ macOS와 NixOS 개발 환경을 **nix-darwin/NixOS + Home Manager**로 선언적
 
 **플랫폼별 설정**:
 - macOS: Homebrew GUI 앱, Hammerspoon, VSCode, Ghostty, Shottr, 폴더 액션
-- NixOS: 홈서버 서비스, Tailscale VPN, SSH/mosh, 하드웨어 모니터링
+- NixOS: 홈서버 서비스, Tailscale VPN, SSH, 하드웨어 모니터링
 
 ---
 

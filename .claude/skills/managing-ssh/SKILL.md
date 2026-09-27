@@ -1,8 +1,8 @@
 ---
 name: managing-ssh
 description: |
-  Configure SSH, Tailscale VPN, mosh, sudo auth.
-  Trigger: 'SSH 인증 실패', 'Tailscale', 'ssh-agent 문제', 'MagicDNS', 'mosh', 'authorized_keys 설정'.
+  Configure SSH, Tailscale VPN, sudo auth.
+  Trigger: 'SSH 인증 실패', 'Tailscale', 'ssh-agent 문제', 'MagicDNS', 'authorized_keys 설정'.
   NOT for Atuin (use syncing-atuin).
 ---
 
@@ -96,7 +96,6 @@ tailscale ip -4
 | `modules/darwin/programs/ssh/default.nix` | macOS 1Password SSH agent/host 설정 |
 | `modules/nixos/programs/ssh-client/default.nix` | NixOS SSH 클라이언트 설정 |
 | `modules/nixos/programs/tailscale.nix` | NixOS Tailscale VPN + 방화벽 설정 |
-| `modules/nixos/programs/mosh.nix` | NixOS mosh 설정 (Tailscale 전용, LAN 비노출) |
 | `modules/nixos/home.nix` | NixOS `services.ssh-agent`/`programs.keychain` 설정 |
 | `libraries/constants.nix` | SSH 공개키, 1Password agent socket, Tailscale IP 단일 소스 |
 
