@@ -13,17 +13,18 @@
 
 ## 동작 플로우
 
-파일 감지 → 안정화 대기 (5분 타임아웃) → 서버 ping → `bun x @immich/cli@3 upload` (저장 확인된 원본 삭제) → Pushover 알림
+파일 감지 → 안정화 대기 (5분 타임아웃) → 서버 ping → `bun x @immich/cli@3 upload --delete -- <미디어 목록>` → 남은 원본 서버 확인 (`bulk-upload-check`) → Pushover 알림
 
 ## 핵심 설계
 
-- 원본 삭제는 CLI만 한다: `--delete`는 업로드 응답을 받은 파일, `--delete-duplicates`는 서버에 이미 있는 파일을 지운다. CLI는 일부 업로드가 실패해도 종료 코드 0으로 끝나므로 스크립트는 종료 코드만 보고 파일을 지우지 않는다
-- 데이터 손실 방지: 업로드 전에 미디어 목록을 기록하고, CLI 실행 뒤 그 목록에서 남은 원본 수를 센다. 업로드 실패·서버 미지원 형식·중복 확인 실패로 남은 원본은 보존한다
-- 알림: 종료 코드 0이고 남은 원본이 없으면 완료, 종료 코드 0인데 남은 원본이 있으면 일부 미업로드(업로드 수/전체 수), 종료 코드가 0이 아니면 실패(남은 수 포함)
-- CLI 버전: `@immich/cli@3`으로 메이저를 고정한다. 서버 이미지(`modules/nixos/programs/docker/immich.nix`의 immich-server)와 메이저를 맞춘다
+- 업로드 대상: 확장자가 서버 v3.0.0이 받는 이미지·영상 목록(`MEDIA_EXT`, 출처는 스크립트 주석)에 든 파일만 안정화 뒤 확정한 목록으로 CLI에 넘긴다. 폴더를 통째로 넘기지 않으므로 대기 중에 새로 들어온 파일은 다음 실행에서 처리한다
+- 비미디어 파일: 업로드 대상에 넣지 않는다. 미디어 없이 비미디어만 있으면 알림 없이 끝나고(알림 스팸 방지), 미디어와 섞여 있으면 알림에 무시한 수를 적는다. 예외로 업로드되는 원본과 이름이 맞는 `.xmp`(`<이름>.xmp`, `<파일>.xmp`)는 CLI가 사이드카로 함께 올리고 원본과 함께 지운다
+- 원본 삭제 규칙: CLI의 `--delete`는 이번 실행에 업로드 응답을 받은 파일만 지운다. CLI는 일부 업로드가 실패해도 종료 코드 0으로 끝나므로 스크립트는 종료 코드만 보고 파일을 지우지 않는다
+- 중복 처리: CLI의 `--delete-duplicates`는 쓰지 않는다. 서버 휴지통에만 있는 자산도 중복으로 보고 지우며, 올린 적 없는 `.xmp` 사이드카까지 함께 지우기 때문이다. 대신 CLI가 끝난 뒤 남은 원본의 SHA1을 스크립트가 `POST /api/assets/bulk-upload-check`로 확인해, `reject`/`duplicate`이고 `isTrashed=false`인 원본만 지운다(사이드카는 남긴다). 휴지통 중복과 서버에 없는 파일(`accept`)은 남긴다. 확인 요청이 실패하거나 응답을 해석할 수 없으면 아무것도 지우지 않는다. API 키는 curl config로 stdin에 넘겨 명령줄과 로그에 남기지 않는다. CLI가 0이 아닌 코드로 끝나면 확인하지 않고 남은 원본을 모두 둔다
+- 알림: CLI 종료 코드가 0이 아니면 실패(남은 수 포함). 0이면 서버 저장이 확인된 수(업로드 + 서버에 이미 있던 중복)로 나눈다: 전부면 완료, 0개면 업로드된 파일 없음, 그 사이면 일부 미업로드. 남긴 원본은 사유별(업로드 안 됨, 서버 휴지통, 서버 확인 실패)로 센다
+- CLI 버전: `@immich/cli@3`으로 메이저를 고정한다. 서버 이미지(`modules/nixos/programs/docker/immich.nix`의 immich-server)와 메이저가 같아야 하며, `test_upload_immich_cli_major_matches_server_image`가 이를 검사한다
 - 업로드 실행 시간 제한 없음: launchd는 `TimeOut` 키를 구현하지 않는다. 멈춘 실행도 저장이 확인되지 않은 원본은 지우지 않으며, 그 프로세스를 끝내면 다음 실행이 stale lock을 회수한다
-- `IMMICH_INSTANCE_URL`: `constants.nix`에서 IP/포트 자동 구성 (launchd EnvironmentVariables)
-- 비미디어 파일: 미디어 없이 비미디어만 있으면 무시 (알림 스팸 방지)
+- `IMMICH_INSTANCE_URL`: `https://<immich 서브도메인>.<기본 도메인>` (`constants.nix`의 `domain.subdomains.immich`·`domain.base`, launchd EnvironmentVariables). ping과 서버 확인도 이 주소의 `/api`를 쓴다
 
 ## 디버깅
 
