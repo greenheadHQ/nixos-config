@@ -80,10 +80,10 @@ fi
 # ─── 5. 새 버전 발견 → 알림 전송 ────────────────────────────────
 echo "New version available: $CURRENT → $LATEST"
 
-# 릴리즈 노트 추출 (jq로 안전하게)
-RELEASE_BODY=$(echo "$GITHUB_RESPONSE" | jq -r '.body // "릴리즈 노트 없음"' | head -20)
-# 1024자 제한 (Pushover 메시지 제한)
-RELEASE_BODY="${RELEASE_BODY:0:1024}"
+# 릴리즈 노트 추출: 줄 수(20)·문자 수(1024, Pushover 메시지 제한) 제한을 jq 안에서 처리한다.
+# jq 출력을 head로 끊으면 큰 본문에서 jq가 SIGPIPE로 죽어 pipefail로 스크립트가 실패한다(#1385).
+# jq 문자열 슬라이스는 코드포인트 단위라 로케일과 무관하다. tostring은 문자열이 아닌 body도 그대로 낸다.
+RELEASE_BODY=$(echo "$GITHUB_RESPONSE" | jq -r '(.body // "릴리즈 노트 없음") | tostring | split("\n")[0:20] | join("\n") | .[0:1024]')
 
 # 알림 메시지 구성
 MESSAGE="현재: v${CURRENT} → 최신: v${LATEST}

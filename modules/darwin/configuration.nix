@@ -390,7 +390,9 @@ in
     fi
 
     # activateSettings가 스크롤 방향을 롤백시키므로 명시적으로 재설정
-    defaults write -g com.apple.swipescrolldirection -bool false
+    # postActivation은 root 컨텍스트로 실행되므로 asUser 없이 쓰면 대상 사용자 대신
+    # root의 전역 환경설정에 기록된다 (#1400) — symbolic hotkeys와 동일하게 asUser로 전환
+    ${asUser} defaults write -g com.apple.swipescrolldirection -bool false
 
     # Hammerspoon 재시작은 nrs.sh의 restart_hammerspoon()에서 처리 (kill+open)
     # 여기서 hs.reload()를 호출하면 nrs.sh와 이중 리로드되어 알림 2회 발생
