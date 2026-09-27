@@ -918,6 +918,59 @@ let
     ) expectedDarwinHosts
   );
 
+  # ── #1387: 스모크 검사의 백업 신선도 대상은 유닛 환경 변수로 주입된다. 활성 여부는 추출 전과
+  # 같은 옵션(immichBackup·karakeepBackup·backup.enable 인스턴스)을 따르고, 백업 유닛이 있으면 그
+  # 유닛이 실제로 쓰는 BACKUP_DIR·INSTANCES를 봐야 한다.
+  smokeEnvOf = cfg: cfg.systemd.services.homeserver-smoke-test.environment;
+  smokeBackupWiringOk =
+    cfg:
+    let
+      hs = cfg.homeserver;
+      services = cfg.systemd.services;
+      smokeEnv = smokeEnvOf cfg;
+      dirMatches =
+        enable: dir: unit:
+        (dir != "") == enable && (!(services ? ${unit}) || dir == services.${unit}.environment.BACKUP_DIR);
+      ankiUnit = services.anki-host-backup or null;
+      ankiNames =
+        if ankiUnit == null then
+          [ ]
+        else
+          map (entry: builtins.head (nixpkgsLib.splitString ":" entry)) (
+            nixpkgsLib.splitString " " ankiUnit.environment.INSTANCES
+          );
+    in
+    dirMatches hs.immichBackup.enable smokeEnv.IMMICH_BACKUP_DIR "immich-db-backup"
+    && dirMatches hs.karakeepBackup.enable smokeEnv.KARAKEEP_BACKUP_DIR "karakeep-backup"
+    && smokeEnv.ANKI_BACKUP_INSTANCES == builtins.concatStringsSep " " ankiNames
+    && (ankiUnit == null || smokeEnv.ANKI_BACKUP_ROOT == ankiUnit.environment.BACKUP_DIR);
+  # MiniPC는 백업이 모두 켜져 있어 실 config로는 빈 값 분기를 평가하지 못한다. retentionDaysEval처럼
+  # extendModules로 해당 옵션만 끈 config를 만든다.
+  smokeBackupVariant = modules: (nixosBase.extendModules { inherit modules; }).config;
+  immichBackupOff = {
+    homeserver.immichBackup.enable = nixpkgsLib.mkForce false;
+  };
+  karakeepBackupOff = {
+    homeserver.karakeepBackup.enable = nixpkgsLib.mkForce false;
+  };
+  smokeImmichOff = smokeBackupVariant [ immichBackupOff ];
+  smokeKarakeepOff = smokeBackupVariant [ karakeepBackupOff ];
+  smokeBothOff = smokeBackupVariant [
+    immichBackupOff
+    karakeepBackupOff
+  ];
+  # anki 백업 인스턴스 0개 — 인스턴스는 두고 backup.enable만 모두 끈다
+  smokeAnkiNoBackup = smokeBackupVariant [
+    {
+      homeserver.ankiHost.instances = nixpkgsLib.mapAttrs (_: _: {
+        backup.enable = nixpkgsLib.mkForce false;
+      }) nixosCfg.homeserver.ankiHost.instances;
+    }
+  ];
+  smokeAnkiOff = smokeBackupVariant [
+    { homeserver.ankiHost.enable = nixpkgsLib.mkForce false; }
+  ];
+
   # ── #1369: 백업 대상 HDD(mediaData)가 nofail이라 미마운트여도 부팅은 계속되므로,
   # 세 백업/미러 유닛이 RequiresMountsFor로 실제 마운트를 실행 전제로 요구하는지 확인한다
   # (미마운트 시 목적지가 루트 파일시스템의 일반 디렉터리가 되어 백업이 SSD에 오기록·성공 오인될 위험).
@@ -1824,30 +1877,32 @@ let
     }
     {
       # #1387: 스모크 검사 본체를 files/로 추출하면서 백업 신선도 검사의 활성 조건과 대상이 유닛 환경
-      # 변수로 옮겨졌다. 활성 여부는 추출 전과 같은 옵션(immichBackup·karakeepBackup·backup.enable
-      # 인스턴스)을 따르고, 백업 유닛이 있으면 그 유닛이 실제로 쓰는 BACKUP_DIR·INSTANCES를 봐야 한다.
+      # 변수로 옮겨졌다 — 판정은 위 smokeBackupWiringOk.
       name = "Test SM1: homeserver-smoke-test 백업 검사 환경이 백업 옵션과 백업 유닛의 BACKUP_DIR·INSTANCES를 따라야 함";
+      cond = smokeBackupWiringOk nixosCfg;
+    }
+    {
+      name = "Test SM2: immichBackup만 끄면 스모크 IMMICH_BACKUP_DIR은 빈 값이어야 함";
+      cond = smokeBackupWiringOk smokeImmichOff && (smokeEnvOf smokeImmichOff).IMMICH_BACKUP_DIR == "";
+    }
+    {
+      name = "Test SM3: karakeepBackup만 끄면 스모크 KARAKEEP_BACKUP_DIR은 빈 값이어야 함";
       cond =
-        let
-          hs = nixosCfg.homeserver;
-          services = nixosCfg.systemd.services;
-          smokeEnv = services.homeserver-smoke-test.environment;
-          dirMatches =
-            enable: dir: unit:
-            (dir != "") == enable && (!(services ? ${unit}) || dir == services.${unit}.environment.BACKUP_DIR);
-          ankiUnit = services.anki-host-backup or null;
-          ankiNames =
-            if ankiUnit == null then
-              [ ]
-            else
-              map (entry: builtins.head (nixpkgsLib.splitString ":" entry)) (
-                nixpkgsLib.splitString " " ankiUnit.environment.INSTANCES
-              );
-        in
-        dirMatches hs.immichBackup.enable smokeEnv.IMMICH_BACKUP_DIR "immich-db-backup"
-        && dirMatches hs.karakeepBackup.enable smokeEnv.KARAKEEP_BACKUP_DIR "karakeep-backup"
-        && smokeEnv.ANKI_BACKUP_INSTANCES == builtins.concatStringsSep " " ankiNames
-        && (ankiUnit == null || smokeEnv.ANKI_BACKUP_ROOT == ankiUnit.environment.BACKUP_DIR);
+        smokeBackupWiringOk smokeKarakeepOff && (smokeEnvOf smokeKarakeepOff).KARAKEEP_BACKUP_DIR == "";
+    }
+    {
+      name = "Test SM4: immichBackup·karakeepBackup을 모두 끄면 두 백업 디렉터리 변수가 빈 값이어야 함";
+      cond =
+        smokeBackupWiringOk smokeBothOff
+        && (smokeEnvOf smokeBothOff).IMMICH_BACKUP_DIR == ""
+        && (smokeEnvOf smokeBothOff).KARAKEEP_BACKUP_DIR == "";
+    }
+    {
+      name = "Test SM5: anki 백업 인스턴스가 없거나 ankiHost가 꺼지면 ANKI_BACKUP_INSTANCES는 빈 값이어야 함";
+      cond = builtins.all (cfg: smokeBackupWiringOk cfg && (smokeEnvOf cfg).ANKI_BACKUP_INSTANCES == "") [
+        smokeAnkiNoBackup
+        smokeAnkiOff
+      ];
     }
   ]
   ++ tmuxVanillaTests "greenhead-minipc" true nixosHm

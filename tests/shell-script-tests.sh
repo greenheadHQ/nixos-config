@@ -437,6 +437,7 @@ run_test "immich cleanup empty album exits zero" test_immich_cleanup_empty_album
 run_test "immich cleanup partial delete failure exits nonzero" test_immich_cleanup_partial_delete_failure_exits_nonzero
 run_test "immich cleanup all delete failure exits nonzero" test_immich_cleanup_all_delete_failure_exits_nonzero
 run_test "immich cleanup notification failure keeps delete failure" test_immich_cleanup_notification_failure_keeps_delete_failure
+run_test "immich cleanup unexpected failure sends single error notification" test_immich_cleanup_unexpected_failure_sends_single_error_notification
 
 # homeserver-smoke-test suite (tests/suites/homeserver-smoke-test.sh) — 종료 코드·알림 계약 (#1387)
 run_test "smoke test all pass exits zero without notification" test_smoke_test_all_pass_exits_zero_without_notification
