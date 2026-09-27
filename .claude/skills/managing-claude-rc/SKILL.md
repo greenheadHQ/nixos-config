@@ -71,6 +71,7 @@ Claude 모바일 앱/claude.ai에서 이 flake가 관리하는 머신의 Claude 
 - macOS periodic ensure는 죽은 bridge만 복구하고 live drift를 보존한다. NixOS 수동 ensure는 재시작까지 할 수 있으므로 lifecycle/recovery 계약을 먼저 확인한다.
 - `source=declared`는 다음 ensure가 선언값으로 되돌린다. 지속 중지·옵션 변경은 Nix 선언에서 한다.
 - `cleanup`은 Git 등록이 끊긴 잔해만 대상으로 한다. 등록된 worktree·dirty/unpushed 작업·live lock을 우회하지 않으며 lock 해제 확인 전 정리 성공을 주장하지 않는다.
+- `cleanup`은 `.claude/worktrees`의 첫 단계 디렉터리 단위로 판정한다. 등록 worktree를 하위에 품은 디렉터리는 그 안의 미등록 잔해째 보존하고, `.claude/worktrees` 아래의 심링크는 링크 자체만 지운다.
 - status 파일은 과거 snapshot이다. 현재 생존은 `claude-rc ls`로 판별한다.
 - persistent root는 `~/Workspace`다. 보호 폴더는 활성 세션의 `/add-dir` opt-in으로 접근하며 선언 launcher에 임의 `--add-dir`를 넣지 않는다.
 
