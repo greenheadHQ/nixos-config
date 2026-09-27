@@ -54,8 +54,8 @@ Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 �
 | `send_notification()` | Pushover 알림 (기본 priority `-1` 무음) |
 | `fetch_github_release()` | GitHub API → 전역변수 `GITHUB_LATEST_VERSION`, `GITHUB_RESPONSE` 설정 |
 | `get_image_digest()` | podman inspect로 컨테이너 이미지 digest 반환 |
-| `check_watchdog()` | 3일 초과 실패 시 경고 알림 |
-| `check_initial_run()` | 최초 실행 시 버전 기록만 (알림 없음) |
+| `check_watchdog()` | 3일 이상 실패 시 경고 알림 |
+| `check_initial_run()` | 최초 실행 시 현재 버전과 조회 성공 시각 기록 (알림 없음) |
 | `record_success()` | last-success 타임스탬프 갱신 |
 | `http_health_check()` | HTTP 200 응답 대기 (헬스체크) |
 
