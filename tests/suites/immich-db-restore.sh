@@ -546,9 +546,10 @@ test_immich_restore_legacy_forms_fail_on_root_only_backup() {
 }
 
 # 복원 또는 검증 실패: 전체 실패, 전환·앱 재시작 없음, 기존 DB 그대로, immich_restore 없음.
-# 운영자가 실패를 무시하고 전환까지 실행해도 전환하지 않아야 한다.
+# 운영자가 실패를 무시하고 전환까지 실행해도 전환하지 않아야 한다. $4는 첫 오류에서 멈췄다면
+# 나오지 않아야 하는 출력(선택).
 _immich_restore_assert_failure_case() {
-  local label="$1" backup="$2" expected="$3"
+  local label="$1" backup="$2" expected="$3" unexpected="${4:-}"
   local snapshot output rc
   snapshot="$(_immich_restore_snapshot immich)"
   : > "$FAKE_TRACE"
@@ -559,6 +560,7 @@ _immich_restore_assert_failure_case() {
   [ "$rc" != 0 ] || fail "$label: immich_restore_db가 성공했다: $output"
   assert_contains "$output" "$expected"
   assert_not_contains "$output" "검증 통과"
+  [ -z "$unexpected" ] || assert_not_contains "$output" "$unexpected"
   _immich_restore_db_exists immich_restore && fail "$label: 실패 뒤 immich_restore가 남았다"
 
   set +e
@@ -575,7 +577,7 @@ _immich_restore_assert_failure_case() {
   [ "$(_immich_restore_app_connections)" = 1 ] || fail "$label: 앱이 immich DB에서 떨어졌다"
 }
 
-# 계약 3: 손상된 gzip, 중간 SQL 오류, pg_restore 실패, 검증 실패.
+# 계약 3: 손상된 gzip, 중간 SQL 오류, pg_restore 실패, 검증 실패(행·확장·테이블).
 test_immich_restore_failures_keep_existing_db() {
   _immich_restore_require_tools || return 0
   (
@@ -617,16 +619,32 @@ test_immich_restore_failures_keep_existing_db() {
     _immich_restore_psql -d postgres -c 'DROP DATABASE scratch'
     _immich_restore_place_backup "$sandbox/empty.dump" mnt/data/backups/immich/immich-db-2026-09-27_055000.dump >/dev/null
 
+    # (e) 검증 실패: 필수 확장(unaccent)이 없는 백업. (f) 검증 실패: 핵심 테이블(album)이 없는 백업.
+    _immich_restore_make_db scratch
+    PGOPTIONS='-c client_min_messages=warning' _immich_restore_psql -d scratch -c 'DROP EXTENSION unaccent CASCADE'
+    pg_dump -Fc -U immich scratch | cat > "$sandbox/noext.dump"
+    _immich_restore_psql -d scratch -c 'DROP TABLE album'
+    pg_dump -Fc -U immich scratch | cat > "$sandbox/notable.dump"
+    _immich_restore_psql -d postgres -c 'DROP DATABASE scratch'
+    _immich_restore_place_backup "$sandbox/noext.dump" mnt/data/backups/immich/immich-db-2026-09-27_056000.dump >/dev/null
+    _immich_restore_place_backup "$sandbox/notable.dump" mnt/data/backups/immich/immich-db-2026-09-27_057000.dump >/dev/null
+
     _immich_restore_lock_user_view
     file_state="$(_immich_restore_file_state)"
 
     _immich_restore_assert_failure_case "손상된 gzip" "$backup" "unexpected end of file"
     _immich_restore_assert_failure_case "중간 SQL 오류" \
-      "$sandbox/fs/var/lib/immich-update/backups/backup-20260927-041000.sql.gz" "immich_missing_extension"
+      "$sandbox/fs/var/lib/immich-update/backups/backup-20260927-041000.sql.gz" "immich_missing_extension" \
+      "current transaction is aborted"
     _immich_restore_assert_failure_case "pg_restore 실패" \
-      "$sandbox/fs/mnt/data/backups/immich/immich-db-2026-09-27_054000.dump" 'role "immich_gone" does not exist'
-    _immich_restore_assert_failure_case "검증 실패" \
+      "$sandbox/fs/mnt/data/backups/immich/immich-db-2026-09-27_054000.dump" 'role "immich_gone" does not exist' \
+      "errors ignored on restore"
+    _immich_restore_assert_failure_case "검증 실패(행)" \
       "$sandbox/fs/mnt/data/backups/immich/immich-db-2026-09-27_055000.dump" "비어 있다"
+    _immich_restore_assert_failure_case "검증 실패(확장)" \
+      "$sandbox/fs/mnt/data/backups/immich/immich-db-2026-09-27_056000.dump" "확장이 없다: unaccent"
+    _immich_restore_assert_failure_case "검증 실패(테이블)" \
+      "$sandbox/fs/mnt/data/backups/immich/immich-db-2026-09-27_057000.dump" "핵심 테이블이 없다: album"
     [ "$(_immich_restore_file_state)" = "$file_state" ] || fail "백업 파일·디렉터리의 권한이나 소유자, 내용이 바뀌었다"
   )
 }
