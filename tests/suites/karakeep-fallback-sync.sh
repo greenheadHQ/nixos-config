@@ -729,3 +729,75 @@ test_karakeep_fallback_sync_processed_state_matches_exact_hash() {
   grep -Fq -- "--form-string url=$other_url " "$sandbox/curl.log" \
     || fail "expected a file whose hash only appears as a substring to be relinked"
 }
+
+# 식별자 태그의 속성이 여러 줄에 걸쳐도 읽는다. 매치는 태그의 첫 `>`에서 끝나야 하므로,
+# 뒤따르는 다른 태그의 rel·href와 섞여 본문 링크가 식별자로 잡히면 안 된다 (#1495 리뷰).
+test_karakeep_fallback_sync_reads_identifier_tags_spanning_lines() {
+  local sandbox source_url related_url body_url
+  related_url="https://example.com/articles/related"
+  body_url="https://example.com/articles/body-link"
+
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  source_url="https://example.com/articles/canonical-multiline"
+  _karakeep_fallback_sync_write_queue "$sandbox" "$related_url" "$source_url" "$body_url"
+  printf '%s\n' \
+    '<!doctype html>' \
+    '<link' \
+    '  rel="canonical"' \
+    "  href=\"$source_url\">" \
+    '<link' \
+    '  rel="stylesheet"' \
+    '  href="/style.css"><a' \
+    '  rel="canonical"' \
+    "  href=\"$related_url\">related</a>" \
+    '<a' \
+    "  href=\"$body_url\"" \
+    '>body</a>' > "$sandbox/fallback/archive.html"
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected multi-line canonical run to exit 0"
+  _karakeep_fallback_sync_assert_relinked "$sandbox" "$source_url"
+  assert_file_contains "$sandbox/state/failed-urls.txt" "$related_url"
+  assert_file_contains "$sandbox/state/failed-urls.txt" "$body_url"
+
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  source_url="https://example.com/articles/og-multiline"
+  _karakeep_fallback_sync_write_queue "$sandbox" "$body_url" "$source_url"
+  printf '%s\r\n' \
+    '<!doctype html>' \
+    '<meta' \
+    '  property="og:url"' \
+    "  content=\"$source_url\"" \
+    '>' \
+    '<a' \
+    "  href=\"$body_url\"" \
+    '>body</a>' > "$sandbox/fallback/archive.html"
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected multi-line og:url run to exit 0"
+  _karakeep_fallback_sync_assert_relinked "$sandbox" "$source_url"
+  assert_file_contains "$sandbox/state/failed-urls.txt" "$body_url"
+}
+
+test_karakeep_fallback_sync_flatten_error_is_a_match_error() {
+  local sandbox file real_tr
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  _karakeep_fallback_sync_write_queue "$sandbox" "https://example.com/articles/source"
+  file="$sandbox/fallback/archive.html"
+  printf '<link rel="canonical" href="https://example.com/articles/source">\n' > "$file"
+  real_tr=$(command -v tr)
+  cat > "$sandbox/stub-bin/tr" <<STUB
+#!/usr/bin/env bash
+case "\$*" in
+  *'\\r\\n'*) echo "tr: simulated write error" >&2; exit 1 ;;
+esac
+exec "$real_tr" "\$@"
+STUB
+  chmod +x "$sandbox/stub-bin/tr"
+
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected flatten error run to keep script-level exit 0"
+
+  _karakeep_fallback_sync_assert_match_error "$sandbox" "$file"
+}

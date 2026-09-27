@@ -271,29 +271,37 @@ grep_optional() {
 # 원문 식별자만 "출처<TAB>URL"로 출력한다. 본문의 일반 링크는 관련 글일 수 있어
 # overwrite 대상 판정 근거에서 뺀다 (#1388). 한 단계라도 실패하면 일부 식별자만으로
 # 판정하지 않도록 전체를 실패로 돌려준다.
+# 태그 속성은 여러 줄에 걸칠 수 있어 태그 grep은 CR·LF를 공백으로 바꾼 사본에서 찾는다.
+# 패턴이 `[^>]`로 태그의 첫 `>`에서 끝나므로 평탄화해도 다른 태그와 섞이지 않는다.
+# 저장 주석 파서는 줄 머리의 `url:`을 봐야 하므로 원본을 쓴다.
 extract_url_candidates() {
   local file="$1"
-  local snippet quote_class candidates rc=0
+  local snippet flat_snippet quote_class candidates rc=0
   snippet=$(mktemp) || return 1
+  if ! flat_snippet=$(mktemp); then
+    rm -f "$snippet"
+    return 1
+  fi
   quote_class='["'"'"']'
 
   candidates=$(
     head -c 2097152 "$file" > "$snippet" &&
+      tr '\r\n' '  ' < "$snippet" > "$flat_snippet" &&
       {
         extract_singlefile_saved_url "$snippet" | tag_identifier_source singlefile &&
-          grep_optional -Eoi "<link[^>]+rel=${quote_class}canonical${quote_class}[^>]*>" "$snippet" \
+          grep_optional -Eoi "<link[^>]+rel=${quote_class}canonical${quote_class}[^>]*>" "$flat_snippet" \
             | sed -En "s/.*href=${quote_class}([^\"']+)${quote_class}.*/\\1/ip" \
             | tag_identifier_source canonical &&
-          grep_optional -Eoi "<meta[^>]+property=${quote_class}og:url${quote_class}[^>]*>" "$snippet" \
+          grep_optional -Eoi "<meta[^>]+property=${quote_class}og:url${quote_class}[^>]*>" "$flat_snippet" \
             | sed -En "s/.*content=${quote_class}([^\"']+)${quote_class}.*/\\1/ip" \
             | tag_identifier_source og:url &&
-          grep_optional -Eoi "<meta[^>]+name=${quote_class}twitter:url${quote_class}[^>]*>" "$snippet" \
+          grep_optional -Eoi "<meta[^>]+name=${quote_class}twitter:url${quote_class}[^>]*>" "$flat_snippet" \
             | sed -En "s/.*content=${quote_class}([^\"']+)${quote_class}.*/\\1/ip" \
             | tag_identifier_source twitter:url
       } | sed -E 's/&amp;/\&/g' | awk -F '\t' '$2 ~ /^https?:\/\//' | sort -u
   ) || rc=$?
 
-  rm -f "$snippet"
+  rm -f "$snippet" "$flat_snippet"
   [ "$rc" -eq 0 ] || return 1
   if [ -n "$candidates" ]; then
     printf '%s\n' "$candidates"

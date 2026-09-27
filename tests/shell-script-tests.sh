@@ -414,6 +414,8 @@ run_test "karakeep fallback-sync comment open inside saved comment is text" test
 run_test "karakeep fallback-sync skips saved comment without url" test_karakeep_fallback_sync_skips_saved_comment_without_url
 run_test "karakeep fallback-sync upload failure notify key keeps query" test_karakeep_fallback_sync_upload_failure_notify_key_keeps_query
 run_test "karakeep fallback-sync processed state matches exact hash" test_karakeep_fallback_sync_processed_state_matches_exact_hash
+run_test "karakeep fallback-sync reads identifier tags spanning lines" test_karakeep_fallback_sync_reads_identifier_tags_spanning_lines
+run_test "karakeep fallback-sync flatten error is a match error" test_karakeep_fallback_sync_flatten_error_is_a_match_error
 run_test "immich backup happy path creates dump atomically" test_immich_backup_happy_path_creates_dump_atomically
 run_test "immich backup integrity failure exits nonzero" test_immich_backup_integrity_failure_exits_nonzero
 run_test "immich backup retention deletes only old dumps in dir" test_immich_backup_retention_deletes_only_old_dumps_in_dir
