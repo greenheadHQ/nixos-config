@@ -22,6 +22,11 @@ KARAKEEP_BASE_URL = os.environ.get("KARAKEEP_BASE_URL", "http://127.0.0.1:3000")
 LISTEN_HOST = os.environ.get("SINGLEFILE_BRIDGE_LISTEN", "127.0.0.1")
 LISTEN_PORT = int(os.environ.get("SINGLEFILE_BRIDGE_PORT", "3010"))
 REQUEST_TIMEOUT_SEC = int(os.environ.get("SINGLEFILE_BRIDGE_TIMEOUT_SEC", "240"))
+# Ceiling for waiting on in-flight do_GET/do_POST calls during shutdown. Kept
+# well under systemd's default TimeoutStopSec (90s) so a future regression
+# here shows up as a slow-but-bounded stop, not a silent return to the
+# same-thread deadlock this module was fixed for.
+SHUTDOWN_DRAIN_TIMEOUT_SEC = int(os.environ.get("SINGLEFILE_BRIDGE_SHUTDOWN_DRAIN_SEC", "30"))
 KARAKEEP_DB_PATH = os.environ.get("KARAKEEP_DB_PATH", "/mnt/data/karakeep/db.db")
 KARAKEEP_QUEUE_DB_PATH = os.environ.get("KARAKEEP_QUEUE_DB_PATH", "/mnt/data/karakeep/queue.db")
 SQLITE_BUSY_TIMEOUT_MS = int(os.environ.get("SINGLEFILE_BRIDGE_SQLITE_TIMEOUT_MS", "5000"))
@@ -366,6 +371,63 @@ def cleanup_stale_crawler_tasks(bookmark_id: str) -> int:
     return with_sqlite_write(KARAKEEP_QUEUE_DB_PATH, _write)
 
 
+class ShutdownTracker:
+    """Counts do_GET/do_POST calls currently executing.
+
+    Shutdown waits (bounded) for this count to reach zero so an in-flight
+    request gets a chance to finish and respond. Connections that are open
+    but haven't sent a full request yet are never counted here, so they
+    can't hold up shutdown the way the pre-fix same-thread deadlock did.
+    """
+
+    def __init__(self) -> None:
+        self._condition = threading.Condition()
+        self._count = 0
+
+    @property
+    def count(self) -> int:
+        with self._condition:
+            return self._count
+
+    def track(self) -> "_InFlight":
+        return _InFlight(self)
+
+    def _enter(self) -> None:
+        with self._condition:
+            self._count += 1
+
+    def _exit(self) -> None:
+        with self._condition:
+            self._count -= 1
+            if self._count <= 0:
+                self._condition.notify_all()
+
+    def wait_for_drain(self, timeout: float) -> bool:
+        """Block until the count reaches zero or `timeout` elapses.
+
+        Returns True if every tracked call finished in time, False if the
+        timeout elapsed with calls still in flight.
+        """
+        with self._condition:
+            return self._condition.wait_for(lambda: self._count <= 0, timeout=timeout)
+
+
+class _InFlight:
+    __slots__ = ("_tracker",)
+
+    def __init__(self, tracker: ShutdownTracker) -> None:
+        self._tracker = tracker
+
+    def __enter__(self) -> None:
+        self._tracker._enter()
+
+    def __exit__(self, *exc_info: object) -> None:
+        self._tracker._exit()
+
+
+SHUTDOWN_TRACKER = ShutdownTracker()
+
+
 class SingleFileBridgeHandler(BaseHTTPRequestHandler):
     server_version = "KarakeepSingleFileBridge/1.0"
 
@@ -384,6 +446,10 @@ class SingleFileBridgeHandler(BaseHTTPRequestHandler):
         self.respond_bytes(status, body, "application/json; charset=utf-8")
 
     def do_GET(self) -> None:
+        with SHUTDOWN_TRACKER.track():
+            self._do_get()
+
+    def _do_get(self) -> None:
         parsed = urlsplit(self.path)
         if parsed.path in ("/healthz", "/health"):
             self.respond_json(
@@ -398,6 +464,10 @@ class SingleFileBridgeHandler(BaseHTTPRequestHandler):
         self.respond_json(404, {"error": "Not Found"})
 
     def do_POST(self) -> None:
+        with SHUTDOWN_TRACKER.track():
+            self._do_post()
+
+    def _do_post(self) -> None:
         parsed = urlsplit(self.path)
         if parsed.path not in ("/api/v1/bookmarks/singlefile", "/"):
             self.respond_json(404, {"error": "Not Found"})
@@ -675,20 +745,21 @@ def main() -> None:
         # notice anything while this handler hasn't returned. Hand the
         # request off to a throwaway thread instead.
         #
-        # shutdown_requested makes repeat signals (two SIGTERMs, or
-        # SIGTERM+SIGINT) a no-op so at most one shutdown ever starts.
-        #
-        # In-flight requests run on ThreadingHTTPServer's daemon connection
-        # threads (daemon_threads=True) and are not waited for here: once
-        # serve_forever() returns the process is free to exit and those
-        # daemon threads are cut off. That is the bridge's pre-existing
-        # behavior and keeps shutdown bounded regardless of
-        # REQUEST_TIMEOUT_SEC.
+        # shutdown_requested is set only after the thread has actually
+        # started, and guards repeat signals (two SIGTERMs, or
+        # SIGTERM+SIGINT) into a no-op so at most one shutdown ever starts.
+        # If starting the thread fails, the flag stays clear so a later
+        # signal can retry instead of every future signal silently doing
+        # nothing.
         if shutdown_requested.is_set():
+            return
+        thread = threading.Thread(target=server.shutdown, daemon=True)
+        try:
+            thread.start()
+        except RuntimeError:
             return
         shutdown_requested.set()
         log(f"received signal {signum}, shutting down...")
-        threading.Thread(target=server.shutdown, daemon=True).start()
 
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
@@ -701,6 +772,20 @@ def main() -> None:
         server.serve_forever()
     finally:
         server.server_close()
+        # In-flight do_GET/do_POST calls run on ThreadingHTTPServer's daemon
+        # connection threads and would otherwise be cut off mid-call the
+        # instant this process exits. Give them up to
+        # SHUTDOWN_DRAIN_TIMEOUT_SEC to finish and respond. Idle connections
+        # that haven't sent a full request are never counted by
+        # SHUTDOWN_TRACKER, so they can't extend shutdown the way the
+        # pre-fix deadlock did.
+        if SHUTDOWN_TRACKER.wait_for_drain(SHUTDOWN_DRAIN_TIMEOUT_SEC):
+            log("in-flight requests drained before shutdown")
+        else:
+            log(
+                f"shutdown drain deadline ({SHUTDOWN_DRAIN_TIMEOUT_SEC}s) reached with "
+                f"{SHUTDOWN_TRACKER.count} in-flight request(s) still running; exiting anyway"
+            )
         log("karakeep-singlefile-bridge stopped")
 
 

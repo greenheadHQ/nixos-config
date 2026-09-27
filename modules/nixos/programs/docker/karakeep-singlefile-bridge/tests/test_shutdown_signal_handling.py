@@ -51,11 +51,24 @@ def test_sigint_triggers_clean_shutdown_without_forced_kill(bridge_server):
 def test_listening_socket_is_released_after_shutdown(bridge_server):
     port = bridge_server.port
     bridge_server.proc.send_signal(signal.SIGTERM)
-    _wait_or_fail(bridge_server.proc, "bridge did not exit before checking socket release")
+    rc = _wait_or_fail(bridge_server.proc, "bridge did not exit before checking socket release")
+    assert rc == 0
 
-    # server_close() must have run: a fresh socket can bind the same port.
+    # A bare bind() is not proof server_close() ran: the process exiting
+    # closes every fd regardless, and macOS refuses to bind over a port that
+    # still has a very recent connection in TIME_WAIT (left behind by this
+    # fixture's own /healthz probes) unless the new socket opts in via
+    # SO_REUSEADDR — exactly like the bridge's own listening socket does
+    # (HTTPServer.allow_reuse_address). Without SO_REUSEADDR this bind flakes
+    # on "Address already in use" even when shutdown was perfectly clean.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         probe.bind(("127.0.0.1", port))
+
+    # The actual evidence that server_close() ran: the finally block in
+    # main() only reaches this log line after server_close() returns.
+    out = bridge_server.proc.stdout.read() if bridge_server.proc.stdout else ""
+    assert "karakeep-singlefile-bridge stopped" in out
 
 
 def test_duplicate_signals_do_not_hang_or_raise(bridge_server):
@@ -67,6 +80,11 @@ def test_duplicate_signals_do_not_hang_or_raise(bridge_server):
 
     out = bridge_server.proc.stdout.read() if bridge_server.proc.stdout else ""
     assert "Traceback" not in out
+    # Only the first signal should start a shutdown; the Event guard must
+    # turn the extra SIGTERM and the SIGINT into no-ops, not extra
+    # "received signal" lines (a mutant that drops the guard logs one line
+    # per signal instead).
+    assert out.count("received signal") == 1
 
 
 def test_shutdown_meets_deadline_while_a_request_is_in_flight(bridge_server):

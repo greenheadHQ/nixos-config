@@ -4,8 +4,10 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
@@ -53,36 +55,122 @@ def _wait_for_health(port: int, timeout: float) -> bool:
 
 
 @pytest.fixture
-def bridge_server():
-    """Start singlefile-bridge.py as a real subprocess on a free loopback port.
+def spawn_bridge():
+    """Factory fixture: spawn_bridge(env_overrides=None) -> BridgeProcess.
 
-    Yields a BridgeProcess once /healthz responds. Signal-handling tests send
-    signals to `proc` themselves; this fixture only guarantees cleanup by pid
-    if a test leaves the process running (never by name/pattern).
+    Starts singlefile-bridge.py as a real subprocess on a free loopback port
+    and waits for /healthz. Every process this factory spawns is torn down
+    at fixture teardown by pid (never by name/pattern), even if a test
+    forgets to clean up or fails early.
+
+    PUSHOVER_* is always blanked and KARAKEEP_* defaults to unroutable
+    addresses so a test run from a shell with real production env vars
+    still can't reach real external services by accident. Pass
+    env_overrides to point KARAKEEP_BASE_URL at a local stub, tighten
+    SINGLEFILE_BRIDGE_SHUTDOWN_DRAIN_SEC for a faster test, etc.
     """
-    port = _free_tcp_port()
-    env = dict(os.environ)
-    env["SINGLEFILE_BRIDGE_LISTEN"] = "127.0.0.1"
-    env["SINGLEFILE_BRIDGE_PORT"] = str(port)
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
-    proc = subprocess.Popen(
-        [sys.executable, SOURCE_PATH],
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-    try:
+    spawned: list[subprocess.Popen] = []
+
+    def _spawn(env_overrides: dict | None = None) -> BridgeProcess:
+        port = _free_tcp_port()
+        env = dict(os.environ)
+        env["SINGLEFILE_BRIDGE_LISTEN"] = "127.0.0.1"
+        env["SINGLEFILE_BRIDGE_PORT"] = str(port)
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        # A timed-out test's SIGKILL beats SIGABRT to the punch most of the
+        # time, but on the rare hang this still gets a stack trace on
+        # stderr before that happens.
+        env["PYTHONFAULTHANDLER"] = "1"
+        env["PUSHOVER_TOKEN"] = ""
+        env["PUSHOVER_USER"] = ""
+        env.setdefault("KARAKEEP_BASE_URL", "http://127.0.0.1:1")
+        env.setdefault("KARAKEEP_DB_PATH", "/nonexistent/karakeep-bridge-test-fixture/db.db")
+        env.setdefault("KARAKEEP_QUEUE_DB_PATH", "/nonexistent/karakeep-bridge-test-fixture/queue.db")
+        if env_overrides:
+            env.update(env_overrides)
+        proc = subprocess.Popen(
+            [sys.executable, SOURCE_PATH],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        spawned.append(proc)
         if not _wait_for_health(port, 10.0):
             proc.kill()
             proc.wait(timeout=5)
             out = proc.stdout.read() if proc.stdout else ""
             raise RuntimeError(f"bridge did not become healthy on port {port}: {out}")
-        yield BridgeProcess(proc=proc, port=port)
+        return BridgeProcess(proc=proc, port=port)
+
+    try:
+        yield _spawn
     finally:
-        if proc.poll() is None:
-            proc.kill()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                pass
+        for proc in spawned:
+            if proc.poll() is None:
+                proc.kill()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+
+
+@pytest.fixture
+def bridge_server(spawn_bridge):
+    """A single bridge subprocess with default (safe, unroutable) env.
+
+    Signal-handling tests send signals to `.proc` themselves; teardown is
+    handled by the underlying spawn_bridge factory.
+    """
+    return spawn_bridge()
+
+
+class _FakeKarakeepHandler(BaseHTTPRequestHandler):
+    """Stub for Karakeep's API: sleeps `delay_seconds`, then returns 201.
+
+    That status (not 200) makes the bridge skip its alreadyExists-notify
+    branch and fall straight through to relaying the response body/status,
+    which is all this fixture needs to exercise the happy path.
+    """
+
+    delay_seconds = 0.0
+
+    def log_message(self, *args: object) -> None:  # keep test output quiet
+        pass
+
+    def do_POST(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length:
+            self.rfile.read(length)
+        time.sleep(self.delay_seconds)
+        body = b'{"ok": true}'
+        self.send_response(201)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+@pytest.fixture
+def fake_karakeep_upstream():
+    """A minimal loopback HTTP stub standing in for Karakeep's API.
+
+    Set `.RequestHandlerClass.delay_seconds` before triggering a bridge POST
+    to control how long the bridge's request handling (and thus its
+    in-flight tracker) stays busy waiting on this stub.
+
+    serve_forever() runs on a background thread here and shutdown() is
+    called from the fixture's own (different) thread at teardown — the
+    correct non-deadlocking pairing, unlike the bug singlefile-bridge.py
+    used to have.
+    """
+    handler_cls = type("FakeKarakeepHandler", (_FakeKarakeepHandler,), {"delay_seconds": 0.0})
+    server = HTTPServer(("127.0.0.1", 0), handler_cls)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
