@@ -11,6 +11,7 @@
 #     FAKE_RACE_DB를 주면 이름 변경 직전에 그 DB로 연결을 연다(확인과 변경 사이의 경합).
 #   - systemctl: podman-immich-server/ml 유닛만 받는다. server 시작은 immich DB에 연결을 여는
 #     앱 대역을 띄우고, 중지는 그 연결이 끊길 때까지 기다린다. root가 아니면 거부한다.
+#     FAKE_START_FAIL을 주면 start가 실패한다.
 #   - sudo: root 권한을 흉내 낸다. 실제 root 전용(0700) 디렉터리는 만들 수 없으므로, 일반 사용자가
 #     보는 백업 경로는 권한 000 디렉터리 아래에 두고(열면 Permission denied) sudo 대역만 그 경로를
 #     root 시점 트리(0700 디렉터리, 0600 파일)로 옮겨 적는다. 그래서 일반 사용자 셸이 여는 형태
@@ -137,6 +138,10 @@ for unit in "$@"; do
   esac
 done
 printf 'systemctl %s %s\n' "$action" "$*" >> "$FAKE_TRACE"
+if [ "$action" = start ] && [ -n "${FAKE_START_FAIL:-}" ]; then
+  echo "Job for podman-immich-server.service failed (fake)." >&2
+  exit 1
+fi
 [ "$server" = 1 ] || exit 0
 app_connections() {
   psql -X -At -U immich -d postgres \
@@ -230,7 +235,7 @@ _immich_restore_psql() {
 
 _immich_restore_make_db() {
   local db="$1"
-  _immich_restore_psql -d postgres -c "CREATE DATABASE \"$db\" OWNER immich"
+  _immich_restore_psql -d postgres -c "CREATE DATABASE \"$db\" OWNER immich TEMPLATE template0"
   _immich_restore_fixture_sql | _immich_restore_psql -d "$db" >/dev/null
 }
 
@@ -336,6 +341,8 @@ _immich_restore_setup() {
     -o "-k '$sock' -c listen_addresses='' -c fsync=off" -w start >/dev/null
   _immich_restore_psql -d postgres -c 'CREATE ROLE immich_mutator'
   _immich_restore_make_db immich
+  # template1에 객체를 둔다. 복원 DB를 template1로 만들면 이 테이블이 섞여 스냅샷이 달라진다.
+  _immich_restore_psql -d template1 -c 'CREATE TABLE public.template1_leak (id int)'
 
   procedure_file="$sandbox/procedure.sh"
   _immich_restore_extract_procedure > "$procedure_file"
@@ -477,6 +484,17 @@ test_immich_restore_dump_switch_and_revert() {
     [ "$rc" = 2 ] || fail "인자 없는 immich_revert_restore가 사용법 오류(2)로 끝나지 않았다: rc=$rc $output"
     [ ! -s "$FAKE_TRACE" ] || fail "사용법 오류에서 명령을 실행했다: $(cat "$FAKE_TRACE")"
 
+    # 없는 이전 DB 이름이면 앱을 멈추기 전에 거부한다.
+    set +e
+    output="$(_immich_restore_run zsh "$IMMICH_RESTORE_DUMP" 'immich_revert_restore immich_before_restore_19990101_000000' 2>&1)"
+    rc=$?
+    set -e
+    [ "$rc" != 0 ] || fail "없는 이전 DB로 복귀가 성공했다: $output"
+    assert_contains "$output" "immich_before_restore_19990101_000000"
+    if grep -q '^systemctl' "$FAKE_TRACE"; then
+      fail "없는 이전 DB로 복귀하면서 앱을 멈췄다: $(cat "$FAKE_TRACE")"
+    fi
+
     set +e
     output="$(_immich_restore_run zsh "$IMMICH_RESTORE_DUMP" "immich_revert_restore $IMMICH_RESTORE_OLD_DB" 2>&1)"
     rc=$?
@@ -488,6 +506,20 @@ test_immich_restore_dump_switch_and_revert() {
     [ "$(_immich_restore_snapshot immich_restore)" = "$before" ] || fail "복귀 뒤 복원 DB가 immich_restore로 남지 않았다"
     [ -z "$(_immich_restore_before_dbs)" ] || fail "복귀 뒤 immich_before_restore_* DB가 남았다"
     [ "$(_immich_restore_app_connections)" = 1 ] || fail "복귀 뒤 앱이 immich DB에 연결되지 않았다"
+
+    # 복귀 뒤 남은 immich_restore(전환 기간의 쓰기가 들어 있을 수 있다)는 다시 전환하지 않는다.
+    : > "$FAKE_TRACE"
+    set +e
+    output="$(_immich_restore_run zsh "$IMMICH_RESTORE_DUMP" 'immich_switch_to_restore' 2>&1)"
+    rc=$?
+    set -e
+    [ "$rc" != 0 ] || fail "복귀 뒤 남은 immich_restore로 다시 전환했다: $output"
+    assert_contains "$output" "검증 완료 표식이 없다"
+    if grep -q '^systemctl' "$FAKE_TRACE"; then
+      fail "재전환 거부에서 앱을 멈추거나 시작했다: $(cat "$FAKE_TRACE")"
+    fi
+    [ "$(_immich_restore_snapshot immich)" = "$IMMICH_RESTORE_MUTATED_SNAPSHOT" ] || fail "재전환 거부가 immich DB를 바꿨다"
+    [ "$(_immich_restore_snapshot immich_restore)" = "$before" ] || fail "재전환 거부가 immich_restore를 바꾸거나 지웠다"
   )
 }
 
@@ -604,11 +636,11 @@ test_immich_restore_failures_keep_existing_db() {
     plain="$sandbox/plain.sql"
     gzip -dc "$sandbox/src.sql.gz" > "$plain"
 
-    # (a) 손상된 gzip: 앞쪽 멤버는 post-data(PK·FK·인덱스) 직전까지의 완결된 SQL이고, 뒤쪽 멤버는
-    #     헤더만 남아 압축 해제가 실패한다. psql만 보면 성공하고 검증(테이블·행)도 통과하는 부분
-    #     복원이므로, 압축 해제 실패가 pipefail로 전달돼야만 전환을 막는다.
-    cut="$(awk '/^    ADD CONSTRAINT /{ print NR - 2; exit }' "$plain")"
-    [ -n "$cut" ] && [ "$cut" -gt 0 ] || fail "plain dump에서 post-data 경계를 찾지 못했다"
+    # (a) 손상된 gzip: 앞쪽 멤버는 마지막 제약(FK) 직전까지의 완결된 SQL이고, 뒤쪽 멤버는 헤더만
+    #     남아 압축 해제가 실패한다. psql만 보면 성공하고 검증(테이블·PK·FK·인덱스·행)도 통과하는
+    #     부분 복원이므로, 압축 해제 실패가 pipefail로 전달돼야만 전환을 막는다.
+    cut="$(awk '/^    ADD CONSTRAINT /{ last = NR - 2 } END { print last }' "$plain")"
+    [ -n "$cut" ] && [ "$cut" -gt 0 ] || fail "plain dump에서 마지막 제약 경계를 찾지 못했다"
     { head -n "$cut" "$plain" | gzip; printf 'SELECT 1;\n' | gzip | head -c 10; } > "$sandbox/corrupt.sql.gz"
     backup="$(_immich_restore_place_backup "$sandbox/corrupt.sql.gz" var/lib/immich-update/backups/backup-20260927-040000.sql.gz)"
 
@@ -625,12 +657,18 @@ test_immich_restore_failures_keep_existing_db() {
     _immich_restore_psql -d postgres -c 'DROP DATABASE scratch' -c 'DROP ROLE immich_gone'
     _immich_restore_place_backup "$sandbox/rolefail.dump" mnt/data/backups/immich/immich-db-2026-09-27_054000.dump >/dev/null
 
-    # (d) 검증 실패: 복원은 되지만 asset이 빈 백업.
+    # (d) 검증 실패: 복원은 되지만 asset이 빈 백업. (g) user만 빈 백업(asset의 user FK를 뺀다).
     _immich_restore_make_db scratch
     _immich_restore_psql -d scratch -c 'DELETE FROM asset'
     pg_dump -Fc -U immich scratch | cat > "$sandbox/empty.dump"
     _immich_restore_psql -d postgres -c 'DROP DATABASE scratch'
     _immich_restore_place_backup "$sandbox/empty.dump" mnt/data/backups/immich/immich-db-2026-09-27_055000.dump >/dev/null
+    _immich_restore_make_db scratch
+    _immich_restore_psql -d scratch -c 'ALTER TABLE asset DROP CONSTRAINT "asset_ownerId_fkey"' \
+      -c 'DELETE FROM album' -c 'DELETE FROM "user"'
+    pg_dump -Fc -U immich scratch | cat > "$sandbox/nouser.dump"
+    _immich_restore_psql -d postgres -c 'DROP DATABASE scratch'
+    _immich_restore_place_backup "$sandbox/nouser.dump" mnt/data/backups/immich/immich-db-2026-09-27_058000.dump >/dev/null
 
     # (e) 검증 실패: 필수 확장(unaccent)이 없는 백업. (f) 검증 실패: 핵심 테이블(album)이 없는 백업.
     _immich_restore_make_db scratch
@@ -652,8 +690,10 @@ test_immich_restore_failures_keep_existing_db() {
     _immich_restore_assert_failure_case "pg_restore 실패" \
       "$sandbox/fs/mnt/data/backups/immich/immich-db-2026-09-27_054000.dump" 'role "immich_gone" does not exist' \
       "errors ignored on restore"
-    _immich_restore_assert_failure_case "검증 실패(행)" \
-      "$sandbox/fs/mnt/data/backups/immich/immich-db-2026-09-27_055000.dump" "비어 있다"
+    _immich_restore_assert_failure_case "검증 실패(asset 행)" \
+      "$sandbox/fs/mnt/data/backups/immich/immich-db-2026-09-27_055000.dump" "asset 테이블이 비어 있다"
+    _immich_restore_assert_failure_case "검증 실패(user 행)" \
+      "$sandbox/fs/mnt/data/backups/immich/immich-db-2026-09-27_058000.dump" "user 테이블이 비어 있다"
     _immich_restore_assert_failure_case "검증 실패(확장)" \
       "$sandbox/fs/mnt/data/backups/immich/immich-db-2026-09-27_056000.dump" "확장이 없다: unaccent"
     _immich_restore_assert_failure_case "검증 실패(테이블)" \
@@ -692,7 +732,7 @@ _immich_restore_close_client() {
 test_immich_restore_switch_refuses_open_connections() {
   _immich_restore_require_tools || return 0
   (
-    local sandbox before mutated restored output rc
+    local sandbox before mutated restored output rc old
     sandbox="$(new_sandbox)"
     IMMICH_RESTORE_SANDBOX="$sandbox"
     FAKE_APP_PIDS="$sandbox/app.pids"
@@ -725,6 +765,8 @@ test_immich_restore_switch_refuses_open_connections() {
     set -e
     [ "$rc" != 0 ] || fail "연결이 남았는데 전환이 성공했다: $output"
     assert_contains "$output" "연결"
+    assert_contains "$output" "lingering-client"
+    assert_contains "$output" "sudo systemctl start podman-immich-ml.service podman-immich-server.service"
     assert_not_contains "$output" "전환 완료"
     [ -z "$(_immich_restore_before_dbs)" ] || fail "연결이 남았는데 이름을 바꿨다"
     _immich_restore_db_exists immich_restore || fail "전환 실패가 검증된 immich_restore를 지웠다"
@@ -753,24 +795,122 @@ test_immich_restore_switch_refuses_open_connections() {
     fi
     _immich_restore_close_client race-client
 
+    # 재실행: 이름 변경은 성공하고 앱 시작만 실패하면, 이전 DB 이름과 복귀 명령을 안내한다.
+    set +e
+    output="$(
+      export FAKE_START_FAIL=1
+      _immich_restore_run bash "$IMMICH_RESTORE_SQL_GZ" 'immich_switch_to_restore' 2>&1
+    )"
+    rc=$?
+    set -e
+    [ "$rc" != 0 ] || fail "앱 시작이 실패했는데 전환이 성공으로 끝났다: $output"
+    old="$(_immich_restore_before_dbs)"
+    case "$old" in
+      immich_before_restore_[0-9]*_[0-9]*) ;;
+      *) fail "재실행한 전환이 이름을 바꾸지 않았다: '$old' $output" ;;
+    esac
+    assert_contains "$output" "이전 DB: $old"
+    assert_contains "$output" "immich_revert_restore $old"
+    assert_not_contains "$output" "전환 완료"
+    [ "$(_immich_restore_snapshot immich)" = "$before" ] || fail "재실행한 전환 뒤 immich DB가 백업 시점과 다르다"
+
+    # 복귀도 남은 연결이 있으면 이름을 바꾸지 않고, 앱 시작 명령을 안내한다.
+    _immich_restore_open_client lingering-client immich
+    set +e
+    output="$(_immich_restore_run bash "$IMMICH_RESTORE_SQL_GZ" "immich_revert_restore $old" 2>&1)"
+    rc=$?
+    set -e
+    [ "$rc" != 0 ] || fail "연결이 남았는데 복귀가 성공했다: $output"
+    assert_contains "$output" "lingering-client"
+    assert_contains "$output" "sudo systemctl start podman-immich-ml.service podman-immich-server.service"
+    [ "$(_immich_restore_before_dbs)" = "$old" ] || fail "복귀 실패 뒤 이전 DB 이름이 바뀌었다"
+    [ "$(_immich_restore_snapshot immich)" = "$before" ] || fail "복귀 실패 뒤 immich DB가 바뀌었다"
+    _immich_restore_close_client lingering-client
+
+    set +e
+    output="$(_immich_restore_run bash "$IMMICH_RESTORE_SQL_GZ" "immich_revert_restore $old" 2>&1)"
+    rc=$?
+    set -e
+    [ "$rc" = 0 ] || fail "연결을 정리한 뒤 복귀가 실패했다: $output"
+    [ "$(_immich_restore_snapshot immich)" = "$mutated" ] || fail "복귀 뒤 immich DB가 전환 전 DB와 다르다"
+    [ "$(_immich_restore_app_connections)" = 1 ] || fail "복귀 뒤 앱이 immich DB에 연결되지 않았다"
+  )
+}
+
+# 1(차단): 검증 완료 표식이 없거나 post-data(PK·FK·인덱스)가 빠진 immich_restore는 앱을 건드리지
+# 않고 전환을 거부한다. 잔재는 복원이 도중에 끊기거나(SSH 끊김·Ctrl-C, psql -1은 입력이 끝나면
+# COMMIT한다) 실패 뒤 DROP도 실패할 때 생긴다.
+test_immich_restore_switch_refuses_unverified_restore() {
+  _immich_restore_require_tools || return 0
+  (
+    local sandbox mutated plain cut output rc
+    sandbox="$(new_sandbox)"
+    IMMICH_RESTORE_SANDBOX="$sandbox"
+    FAKE_APP_PIDS="$sandbox/app.pids"
+    trap _immich_restore_teardown EXIT
+    _immich_restore_setup "$sandbox"
+    _immich_restore_make_backups
+    _immich_restore_lock_user_view
+    _immich_restore_mutate_original
+    mutated="$(_immich_restore_snapshot immich)"
+
+    plain="$sandbox/plain.sql"
+    gzip -dc "$sandbox/src.sql.gz" > "$plain"
+    cut="$(awk '/^    ADD CONSTRAINT /{ print NR - 2; exit }' "$plain")"
+    [ -n "$cut" ] && [ "$cut" -gt 0 ] || fail "plain dump에서 post-data 경계를 찾지 못했다"
+    _immich_restore_psql -d postgres -c 'CREATE DATABASE immich_restore OWNER immich TEMPLATE template0'
+    head -n "$cut" "$plain" | _immich_restore_psql -1 -o /dev/null -d immich_restore
+    [ "$(psql -X -At -U immich -d immich_restore -c "SELECT count(*) FROM pg_constraint WHERE connamespace = 'public'::regnamespace AND contype IN ('p', 'f')")" = 0 ] \
+      || fail "부분 복원 fixture에 post-data가 들어갔다"
+
+    # 표식 없음: 거부하고 immich_restore를 지우지 않는다(내용 확인 뒤 수동 DROP).
+    : > "$FAKE_TRACE"
     set +e
     output="$(_immich_restore_run bash "$IMMICH_RESTORE_SQL_GZ" 'immich_switch_to_restore' 2>&1)"
     rc=$?
     set -e
-    [ "$rc" = 0 ] || fail "연결을 정리한 뒤 다시 실행한 전환이 실패했다: $output"
-    [ "$(_immich_restore_snapshot immich)" = "$before" ] || fail "재실행한 전환 뒤 immich DB가 백업 시점과 다르다"
-    [ "$(_immich_restore_app_connections)" = 1 ] || fail "재실행한 전환 뒤 앱이 immich DB에 연결되지 않았다"
+    [ "$rc" != 0 ] || fail "표식 없는 부분 복원으로 전환했다: $output"
+    assert_contains "$output" "검증 완료 표식이 없다"
+    assert_contains "$output" "immich_restore_db로 다시 복원"
+    assert_not_contains "$output" "이름 변경 완료"
+    if grep -q '^systemctl' "$FAKE_TRACE"; then
+      fail "표식 없는 immich_restore에서 앱을 멈추거나 시작했다: $(cat "$FAKE_TRACE")"
+    fi
+    [ "$(_immich_restore_snapshot immich)" = "$mutated" ] || fail "전환 거부가 immich DB를 바꿨다"
+    [ "$(_immich_restore_app_connections)" = 1 ] || fail "전환 거부 뒤 앱이 immich DB에서 떨어졌다"
+    _immich_restore_db_exists immich_restore || fail "표식 없는 immich_restore를 지웠다"
+
+    # 표식이 있어도 post-data가 없으면 검증에서 멈춘다(검증 실패는 immich_restore를 지운다).
+    _immich_restore_psql -d postgres -c "COMMENT ON DATABASE immich_restore IS 'verified:forged.dump'"
+    set +e
+    output="$(_immich_restore_run bash "$IMMICH_RESTORE_SQL_GZ" 'immich_switch_to_restore' 2>&1)"
+    rc=$?
+    set -e
+    [ "$rc" != 0 ] || fail "post-data 없는 immich_restore로 전환했다: $output"
+    assert_contains "$output" "기본 키가 없다"
+    assert_not_contains "$output" "이름 변경 완료"
+    if grep -q '^systemctl' "$FAKE_TRACE"; then
+      fail "post-data 없는 immich_restore에서 앱을 멈추거나 시작했다: $(cat "$FAKE_TRACE")"
+    fi
+    [ "$(_immich_restore_snapshot immich)" = "$mutated" ] || fail "전환 거부가 immich DB를 바꿨다"
+    [ "$(_immich_restore_app_connections)" = 1 ] || fail "전환 거부 뒤 앱이 immich DB에서 떨어졌다"
+    _immich_restore_db_exists immich_restore && fail "검증에 실패한 immich_restore가 남았다"
+    [ -z "$(_immich_restore_before_dbs)" ] || fail "전환 거부 뒤 이름을 바꿨다"
   )
 }
 
 # 문서의 실행 블록이 이 스위트가 부르는 함수와 같은지 고정한다.
 test_immich_restore_doc_invocations_match_suite() {
-  local doc
+  local doc procedure
   doc="$(_immich_restore_doc)"
   grep -Fxq 'immich_restore_db' "$doc" || fail "immich-update.md에 immich_restore_db 실행 줄이 없다"
   grep -Fxq 'immich_switch_to_restore' "$doc" || fail "immich-update.md에 immich_switch_to_restore 실행 줄이 없다"
   grep -Eq '^immich_revert_restore immich_before_restore_' "$doc" \
     || fail "immich-update.md에 immich_revert_restore 실행 줄이 없다"
+  # 동작 테스트가 결과로 구분하지 못하는 방어(부분 커밋 방지, 빈 템플릿)를 정적으로 고정한다.
+  procedure="$(_immich_restore_extract_procedure)"
+  assert_contains "$procedure" "-v ON_ERROR_STOP=1 --single-transaction -U immich -d immich_restore"
+  assert_contains "$procedure" "CREATE DATABASE immich_restore OWNER immich TEMPLATE template0;"
   # 옛 형태(일반 사용자 셸이 백업을 여는 복원 명령)가 문서에 남지 않아야 한다.
   if grep -Eq '^gunzip -c .*\| *\\?$|^gunzip -c .*\| *sudo|< /mnt/data/backups/|< /var/lib/immich-update/' "$doc"; then
     fail "immich-update.md에 일반 사용자 셸이 백업을 여는 옛 복원 형태가 남아 있다"

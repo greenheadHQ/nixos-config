@@ -116,13 +116,18 @@ Immich DB 백업은 두 계층으로 나뉜다. disko 재설치는 NVMe(`/dev/nv
 - 파이프 실패를 전체 실패로 만든다. 파이프 앞단의 실패는 `pipefail`이 없으면 빈 입력을 받은 뒷단의 성공(종료 코드 0)에 가려지므로, root 셸도 `bash -o pipefail`로 띄운다.
 - SQL 오류에서 멈춘다. `.dump`는 `pg_restore --exit-on-error`, `.sql.gz`는 `psql -v ON_ERROR_STOP=1 --single-transaction`으로 복원한다.
 - 복원이나 검증이 실패하면 `immich_restore`를 지우고 멈춘다. 이때 `immich` DB와 앱은 복원 전 그대로다.
+- 전환은 `immich_restore_db`가 복원과 검증을 모두 마쳐 검증 완료 표식(`COMMENT ON DATABASE immich_restore IS 'verified:<백업 파일 이름>'`)을 남긴 DB만 받는다. 표식은 전환 트랜잭션에서 지워지므로, 도중에 끊긴 복원(SSH 끊김·Ctrl-C)이나 복귀 뒤 남은 `immich_restore`는 앱을 건드리지 않고 거부된다.
 - 앱은 검증과 이름 맞바꿈이 모두 성공한 뒤에만 다시 시작한다.
+- 앱 버전을 백업 시점에 맞춘다. 업데이트 직전 백업은 새 이미지를 받기 전에 만든 것이다. 백업 시점과 현재 이미지 태그(`modules/nixos/programs/docker/immich.nix`의 `immich-server`·`immich-ml`)가 다르면, 태그를 먼저 되돌려 `nrs`한 뒤 전환한다. 새 앱이 옛 스키마에 마이그레이션을 다시 실행하지 않게 하려는 것이다.
+- 백업 시점 이후(복원하는 동안 포함)에 올린 사진은 전환 뒤 DB에 행이 없다.
 
 #### 1. 준비
 
-MiniPC의 셸(bash 또는 zsh)에 아래 블록을 붙여 넣는다. 먼저 `BACKUP`을 복원할 파일 경로로 바꾼다. 함수는 root가 필요한 명령에만 `sudo`를 붙인다. SQL은 heredoc(표준 입력)으로만 넘긴다. `podman exec -i`가 붙여 넣은 다음 줄을 입력으로 가져가지 않게 하려는 것이다. 새 셸을 열었으면 이 블록을 다시 붙여 넣는다.
+MiniPC의 셸(bash 또는 zsh)에 아래 블록을 붙여 넣는다. 먼저 `BACKUP`을 복원할 파일 경로로 바꾼다. 첫 줄은 zsh가 블록 안의 주석을 명령으로 읽지 않게 하는 설정이고, bash에서는 아무 일도 하지 않는다. 함수는 root가 필요한 명령에만 `sudo`를 붙인다. SQL은 heredoc(표준 입력)으로만 넘긴다. `podman exec -i`가 붙여 넣은 다음 줄을 입력으로 가져가지 않게 하려는 것이다. 새 셸을 열었으면 이 블록을 다시 붙여 넣는다.
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt interactive_comments; fi
+
 # 복원할 백업 — 둘 중 하나를 골라 실제 파일 이름으로 바꾼다
 BACKUP=/mnt/data/backups/immich/immich-db-YYYY-MM-DD_HHMMSS.dump
 # BACKUP=/var/lib/immich-update/backups/backup-YYYYMMDD-HHMMSS.sql.gz
@@ -141,24 +146,43 @@ DROP DATABASE IF EXISTS immich_restore;
 SQL
 }
 
-# immich 계열 DB(immich, immich_restore, immich_before_restore_*)에 연결이 없어야 통과
+# immich 계열 DB(immich, immich_restore, immich_before_restore_*)에 클라이언트 연결이 없어야 통과
 immich_assert_no_connections() {
   immich_psql -d postgres <<'SQL'
 DO $$
 DECLARE
-  n int;
+  sessions text;
 BEGIN
-  SELECT count(*) INTO n FROM pg_stat_activity
-   WHERE datname = 'immich' OR datname LIKE 'immich\_%';
-  IF n > 0 THEN
-    RAISE EXCEPTION 'immich 계열 DB에 연결 % 개가 남아 있다', n;
+  SELECT string_agg(format('pid=%s db=%s app=%s client=%s',
+                           pid, datname, application_name, client_addr), '; ')
+    INTO sessions
+    FROM pg_stat_activity
+   WHERE backend_type = 'client backend'
+     AND (datname = 'immich' OR datname LIKE 'immich\_%');
+  IF sessions IS NOT NULL THEN
+    RAISE EXCEPTION 'immich 계열 DB에 연결이 남아 있다: %', sessions;
   END IF;
 END
 $$;
 SQL
 }
 
-# 1) 빈 DB immich_restore에 복원하고 검증한다. 복원이 실패하면 immich_restore를 지운다
+# public 스키마의 기본 키·외래 키·UNIQUE·인덱스 수를 immich와 immich_restore 나란히 출력한다
+immich_postdata_counts() {
+  local db
+  printf '%-16s %4s %4s %6s %6s\n' DB PK FK UNIQUE INDEX
+  for db in immich immich_restore; do
+    immich_psql -d "$db" -At <<'SQL' || printf '%-16s (읽지 못함)\n' "$db"
+SELECT format('%-16s %4s %4s %6s %6s', current_database(),
+              count(*) FILTER (WHERE contype = 'p'), count(*) FILTER (WHERE contype = 'f'),
+              count(*) FILTER (WHERE contype = 'u'),
+              (SELECT count(*) FROM pg_indexes WHERE schemaname = 'public'))
+  FROM pg_constraint WHERE connamespace = 'public'::regnamespace;
+SQL
+  done
+}
+
+# 1) 빈 DB immich_restore에 복원하고 검증한다. 둘 다 성공해야 검증 완료 표식을 남긴다
 immich_restore_db() {
   sudo test -f "$BACKUP" || { printf '백업 파일이 없다: %s\n' "$BACKUP" >&2; return 1; }
   # 같은 이름의 DB가 이미 있으면(이전 시도의 잔재) 지우지 않고 멈춘다
@@ -182,10 +206,14 @@ SQL
     immich_drop_restore
     return 1
   }
-  immich_verify_restore
+  immich_verify_restore || return 1
+  # 전환은 이 표식이 있는 immich_restore만 받는다. 표식은 전환 트랜잭션에서 지워진다
+  immich_psql -d postgres -v marker="verified:${BACKUP##*/}" <<'SQL'
+COMMENT ON DATABASE immich_restore IS :'marker';
+SQL
 }
 
-# 2) 복원 DB 검증: 핵심 테이블·확장·행 수. 실패하면 immich_restore를 지운다
+# 2) 복원 DB 검증: 핵심 테이블·post-data(PK·FK·인덱스)·확장·행 수. 실패하면 immich_restore를 지운다
 immich_verify_restore() {
   if ! immich_psql -d immich_restore -v required="$IMMICH_REQUIRED_EXTENSIONS" <<'SQL'
 SET restore.required_extensions = :'required';
@@ -199,14 +227,32 @@ BEGIN
   IF missing IS NOT NULL THEN
     RAISE EXCEPTION '핵심 테이블이 없다: %', missing;
   END IF;
+  -- post-data는 복원 끝부분에 만들어지므로, 도중에 끊긴 복원에서 빠진다
+  SELECT string_agg(t, ', ') INTO missing
+    FROM unnest(ARRAY['user', 'asset', 'album']) AS t
+   WHERE NOT EXISTS (SELECT 1 FROM pg_constraint
+                      WHERE conrelid = format('public.%I', t)::regclass AND contype = 'p');
+  IF missing IS NOT NULL THEN
+    RAISE EXCEPTION '기본 키가 없다: %', missing;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                  WHERE connamespace = 'public'::regnamespace AND contype = 'f') THEN
+    RAISE EXCEPTION 'public 스키마에 외래 키가 없다';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public') THEN
+    RAISE EXCEPTION 'public 스키마에 인덱스가 없다';
+  END IF;
   SELECT string_agg(e, ', ') INTO missing
     FROM regexp_split_to_table(current_setting('restore.required_extensions'), '\s+') AS e
    WHERE e <> '' AND NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = e);
   IF missing IS NOT NULL THEN
     RAISE EXCEPTION '확장이 없다: %', missing;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM public."user") OR NOT EXISTS (SELECT 1 FROM public.asset) THEN
-    RAISE EXCEPTION 'user 또는 asset 테이블이 비어 있다';
+  IF NOT EXISTS (SELECT 1 FROM public."user") THEN
+    RAISE EXCEPTION 'user 테이블이 비어 있다';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.asset) THEN
+    RAISE EXCEPTION 'asset 테이블이 비어 있다';
   END IF;
 END
 $$;
@@ -220,26 +266,49 @@ SQL
     immich_drop_restore
     return 1
   fi
-  printf '검증 통과 — 위 확장 목록과 행 수를 확인한다\n'
+  immich_postdata_counts
+  printf '검증 통과 — 위 확장 목록, 행 수, 제약·인덱스 수를 확인한다\n'
 }
 
-# 3) 전환: 재검증 → 앱 중지 → 연결 확인 → 이름 맞바꿈 → 앱 시작
+# 3) 전환: 표식 확인 → 재검증 → 앱 중지 → 연결 확인 → 이름 맞바꿈 → 앱 시작
 immich_switch_to_restore() {
   local old
   old="immich_before_restore_$(date +%Y%m%d_%H%M%S)"
+  if ! immich_psql -d postgres <<'SQL'
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'immich_restore') THEN
+    RAISE EXCEPTION 'immich_restore DB가 없다';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'immich_restore'
+                    AND shobj_description(oid, 'pg_database') LIKE 'verified:%') THEN
+    RAISE EXCEPTION 'immich_restore에 검증 완료 표식이 없다';
+  END IF;
+END
+$$;
+SQL
+  then
+    printf '전환 거부 — immich_restore_db로 다시 복원한다 (남은 immich_restore는 내용을 확인한 뒤 수동으로 DROP)\n' >&2
+    return 1
+  fi
   immich_verify_restore || return 1
   sudo systemctl stop podman-immich-server.service podman-immich-ml.service || return 1
   if ! immich_assert_no_connections || ! immich_psql -d postgres -v old="$old" <<'SQL'
 BEGIN;
+COMMENT ON DATABASE immich_restore IS NULL;
 ALTER DATABASE immich RENAME TO :"old";
 ALTER DATABASE immich_restore RENAME TO immich;
 COMMIT;
 SQL
   then
-    printf '전환 실패 — DB 이름은 그대로이고 앱은 멈춰 있다\n' >&2
+    printf '전환 실패 — DB 이름은 그대로이고 앱은 멈춰 있다. 원인을 해결해 다시 실행하거나, 복원을 포기하려면: sudo systemctl start podman-immich-ml.service podman-immich-server.service\n' >&2
     return 1
   fi
-  sudo systemctl start podman-immich-ml.service podman-immich-server.service || return 1
+  printf '이름 변경 완료 — 이전 DB: %s\n' "$old"
+  if ! sudo systemctl start podman-immich-ml.service podman-immich-server.service; then
+    printf '앱 시작 실패 — 로그(sudo podman logs --tail 50 immich-server)를 보거나 immich_revert_restore %s로 되돌린다\n' "$old" >&2
+    return 1
+  fi
   printf '전환 완료 — 이전 DB: %s\n' "$old"
 }
 
@@ -252,6 +321,17 @@ immich_revert_restore() {
       return 2
       ;;
   esac
+  # 앱을 멈추기 전에 이전 DB가 있는지 본다
+  immich_psql -d postgres -v old="$1" <<'SQL' || return 1
+SET restore.old_db = :'old';
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = current_setting('restore.old_db')) THEN
+    RAISE EXCEPTION '이전 DB % 가 없다', current_setting('restore.old_db');
+  END IF;
+END
+$$;
+SQL
   sudo systemctl stop podman-immich-server.service podman-immich-ml.service || return 1
   if ! immich_assert_no_connections || ! immich_psql -d postgres -v old="$1" <<'SQL'
 BEGIN;
@@ -260,10 +340,13 @@ ALTER DATABASE :"old" RENAME TO immich;
 COMMIT;
 SQL
   then
-    printf '복귀 실패 — DB 이름은 그대로이고 앱은 멈춰 있다\n' >&2
+    printf '복귀 실패 — DB 이름은 그대로이고 앱은 멈춰 있다. 원인을 해결해 다시 실행하거나, 지금 DB로 앱을 시작하려면: sudo systemctl start podman-immich-ml.service podman-immich-server.service\n' >&2
     return 1
   fi
-  sudo systemctl start podman-immich-ml.service podman-immich-server.service || return 1
+  if ! sudo systemctl start podman-immich-ml.service podman-immich-server.service; then
+    printf '앱 시작 실패 — 로그(sudo podman logs --tail 50 immich-server)를 본다\n' >&2
+    return 1
+  fi
   printf '복귀 완료 — 복원했던 DB는 immich_restore로 남았다\n'
 }
 ```
@@ -288,8 +371,14 @@ immich_restore_db
 - 새 DB `immich_restore`(소유자 `immich`, `template0` 기반)를 만든다. 같은 이름이 이미 있으면 지우지 않고 멈춘다. 이전 시도의 잔재인지 확인한 뒤 5절의 명령으로 지운다.
 - 확장자로 형식을 고른다. `.dump`는 `pg_restore --exit-on-error`, `.sql.gz`는 `gzip -dc`를 거쳐 `psql -v ON_ERROR_STOP=1 --single-transaction`으로 복원한다. 둘 다 root 셸(`sudo bash -o pipefail -c`)이 파일을 연다.
 - 복원이 실패하면 `immich_restore`를 지우고 종료 코드 1로 끝난다.
-- 이어서 `immich_verify_restore`가 복원 DB를 검증한다. 핵심 테이블 `user`·`asset`·`album`, `IMMICH_REQUIRED_EXTENSIONS`의 확장이 모두 있고 `user`·`asset`에 행이 있어야 통과한다. 실패하면 `immich_restore`를 지우고 멈춘다.
-- 통과하면 확장 목록과 사용자·자산·앨범 수를 출력한다. 수가 기대(예: 사고 전 웹 UI의 사진 수)와 맞는지 확인한 뒤 전환한다.
+- 이어서 `immich_verify_restore`가 복원 DB를 검증한다. 다음이 모두 있어야 통과한다.
+  - 핵심 테이블 `user`·`asset`·`album`과 각 테이블의 기본 키
+  - public 스키마의 외래 키와 인덱스
+  - `IMMICH_REQUIRED_EXTENSIONS`의 확장
+  - `user`·`asset`의 행
+- 검증에 실패하면 `immich_restore`를 지우고 멈춘다.
+- 통과하면 확장 목록과 사용자·자산·앨범 수를 출력하고, 현재 `immich`와 `immich_restore`의 기본 키·외래 키·UNIQUE·인덱스 수를 나란히 출력한다. 수가 기대(예: 사고 전 웹 UI의 사진 수)와 맞는지 확인한 뒤 전환한다. 제약·인덱스 수가 다르다는 이유만으로 멈추지는 않으니, 차이가 있으면 원인을 판단한다.
+- 마지막으로 `immich_restore`에 검증 완료 표식을 남긴다.
 
 #### 3. 전환
 
@@ -297,13 +386,14 @@ immich_restore_db
 immich_switch_to_restore
 ```
 
-1. 검증을 다시 실행한다. 실패하면 앱을 건드리지 않고 멈춘다.
-2. `podman-immich-server`와 `podman-immich-ml`을 멈춘다.
-3. `immich`·`immich_restore`·`immich_before_restore_*` DB에 남은 연결이 없는지 확인한다.
-4. `postgres` DB에서 한 트랜잭션으로 이름을 바꾼다: `immich` → `immich_before_restore_<시각>`, `immich_restore` → `immich`. 하나라도 실패하면 둘 다 되돌려진다.
-5. 앱을 시작하고 이전 DB 이름을 출력한다. 복귀와 정리에 이 이름을 쓴다.
+1. `immich_restore`에 검증 완료 표식이 있는지 본다. 없으면 앱을 건드리지 않고 거부한다. `immich_restore_db`로 다시 복원하되, 남은 `immich_restore`는 내용을 확인한 뒤 5절 방법으로 지운다.
+2. 검증을 다시 실행한다. 실패하면 앱을 건드리지 않고 멈춘다.
+3. `podman-immich-server`와 `podman-immich-ml`을 멈춘다.
+4. `immich`·`immich_restore`·`immich_before_restore_*` DB에 남은 클라이언트 연결이 없는지 확인한다. 남아 있으면 각 연결의 pid·DB·앱 이름·주소를 출력한다.
+5. `postgres` DB에서 한 트랜잭션으로 표식을 지우고 이름을 바꾼다: `immich` → `immich_before_restore_<시각>`, `immich_restore` → `immich`. 하나라도 실패하면 모두 되돌려진다.
+6. 이전 DB 이름을 먼저 출력하고 앱을 시작한다. 복귀와 정리에 이 이름을 쓴다. 앱 시작이 실패하면 복귀 명령을 안내한다.
 
-3·4에서 실패하면 DB 이름은 그대로이고 앱은 멈춘 채 남는다. 원인(예: 남은 연결)을 해결하고 `immich_switch_to_restore`를 다시 실행한다. 복원을 포기하려면 기존 DB 그대로 앱을 시작한다: `sudo systemctl start podman-immich-ml.service podman-immich-server.service`.
+4·5에서 실패하면 DB 이름은 그대로이고 앱은 멈춘 채 남는다. 원인(예: 남은 연결)을 해결하고 `immich_switch_to_restore`를 다시 실행한다. 복원을 포기하려면 기존 DB 그대로 앱을 시작한다: `sudo systemctl start podman-immich-ml.service podman-immich-server.service`.
 
 전환 뒤 앱을 확인한다. Immich는 시작할 때 확장 버전과 마이그레이션을 점검하므로, 로그에 오류가 없고 웹에서 사진·앨범이 보이는지 본다.
 
@@ -320,7 +410,9 @@ sudo podman logs --tail 50 immich-server
 immich_revert_restore immich_before_restore_YYYYMMDD_HHMMSS
 ```
 
-앱을 멈추고 연결을 확인한 뒤, 한 트랜잭션으로 `immich` → `immich_restore`, `immich_before_restore_<시각>` → `immich`로 바꾸고 앱을 시작한다. 복원했던 DB는 `immich_restore`로 남는다.
+먼저 이전 DB가 있는지 보고, 없으면 앱을 멈추지 않고 끝난다. 이어서 앱을 멈추고 연결을 확인한 뒤, 한 트랜잭션으로 `immich` → `immich_restore`, `immich_before_restore_<시각>` → `immich`로 바꾸고 앱을 시작한다. 복원했던 DB는 표식 없이 `immich_restore`로 남으므로 다시 전환되지 않는다.
+
+복귀가 실패하면 DB 이름은 그대로이고 앱은 멈춘 채 남는다. 원인(예: 남은 연결)을 해결해 다시 실행하거나, 지금 DB로 앱을 시작한다: `sudo systemctl start podman-immich-ml.service podman-immich-server.service`.
 
 #### 5. 정리
 
@@ -336,7 +428,7 @@ DROP DATABASE immich_before_restore_YYYYMMDD_HHMMSS;
 SQL
 ```
 
-복귀 뒤 남은 `immich_restore`나 이전 시도의 잔재도 같은 방법(`DROP DATABASE immich_restore;`)으로 지운다.
+복귀 뒤 남은 `immich_restore`에는 전환 기간에 앱이 쓴 행(새 업로드·편집)이 들어 있다. 필요한 내용을 옮기거나 버려도 되는지 확인한 뒤에 지운다. 이전 시도의 잔재도 같은 방법(`DROP DATABASE immich_restore;`)으로 지운다.
 
 #### 검증 범위와 미확인 조건
 
@@ -345,13 +437,16 @@ SQL
 - 두 형식 모두 원본을 바꾼 뒤 복원·전환하면 행·스키마·제약·인덱스·소유자가 백업 시점과 같다. 전환 전 DB는 그대로 남고 복귀로 되찾는다.
 - 일반 사용자가 열 수 없는 백업을 root 셸로 읽고, 백업 파일의 권한·소유자·내용은 바뀌지 않는다. 옛 형태(파이프 앞단 `gunzip`, 입력 리다이렉션)는 `Permission denied`로 실패하고, 파이프 형태는 `pipefail`이 없으면 종료 코드 0으로 실패를 가린다.
 - 손상된 gzip, 중간 SQL 오류, `pg_restore` 실패, 검증 실패(행·확장·테이블)는 모두 종료 코드 1로 끝나고, 전환과 앱 재시작 없이 기존 DB를 그대로 둔다.
-- 연결이 남아 있으면 이름을 바꾸지 않는다. 확인 뒤 생긴 연결로 두 번째 이름 변경이 실패해도 첫 번째 변경까지 되돌려진다.
+- post-data가 빠진 `immich_restore`는 표식이 없으면 표식 확인에서, 표식이 있으면 검증에서 전환을 거부한다. 복귀 뒤 남은 `immich_restore`도 다시 전환하지 않는다.
+- 연결이 남아 있으면 이름을 바꾸지 않는다. 확인 뒤 생긴 연결로 두 번째 이름 변경이 실패해도 첫 번째 변경과 표식 삭제까지 되돌려진다.
+- 복원 DB는 `template0`에서 만들어 `template1`의 객체가 섞이지 않는다.
 
 합성 환경에서 확인하지 못한 조건:
 
 - 운영 이미지(`ghcr.io/immich-app/postgres:16-vectorchord0.4.3-pgvectors0.2.0`)의 VectorChord·pgvector 확장. 테스트는 `IMMICH_REQUIRED_EXTENSIONS`에서 `vector`·`vchord`를 빼고 실행하므로, 실제 복원에서는 검증 단계가 두 확장의 존재를 확인한다.
 - 확장 목록과 핵심 테이블 이름은 Immich v3.0.0 소스(`server/src/schema`) 기준이다. Immich를 올리면 다시 확인한다. pgvecto.rs를 쓰던 시기(이 저장소의 v3.0 전환 이전)의 백업은 `vchord`가 없어 검증에서 멈춘다.
 - [Immich 공식 복원 문서](https://docs.immich.app/administration/backup-and-restore)는 평문 SQL을 넣기 전에 `search_path` 설정 줄을 `sed`로 바꾼다. 합성 스키마(스키마를 명시한 SQL 함수와 식 인덱스)는 바꾸지 않고도 복원됐지만 실제 덤프로는 확인하지 않았다. `search_path` 관련 오류(`function … does not exist` 등)로 복원이 실패해도 절차는 기존 DB를 그대로 두고 멈춘다.
+- 복원은 운영 중인 같은 postgres 컨테이너(메모리 제한 1g, `libraries/constants.nix`)에서 인덱스를 다시 만든다. 메모리가 모자라 OOM이 나면 PostgreSQL 전체가 복구 과정에 들어가 운영 연결도 끊길 수 있다. 합성 DB는 작아서 이 부하를 재현하지 않았다.
 - DB 수준 설정(`ALTER DATABASE … SET`)은 `pg_dump`가 담지 않고, 이름 맞바꾸기로도 옮겨지지 않는다. Immich v3.0.0은 VectorChord 확장을 처음 만들 때만 `vchordrq.probes`를 DB 수준으로 설정하고, 검색 쿼리마다 `SET LOCAL`로 다시 지정한다(소스 기준). 전환 뒤 두 DB의 설정 차이는 아래로 본다.
 
 ```bash
