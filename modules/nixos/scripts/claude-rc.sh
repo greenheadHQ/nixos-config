@@ -390,10 +390,32 @@ do_ls() {
     done
 }
 
+LIVE_WORKTREES=()
+
+# stdin의 `git worktree list --porcelain -z` 출력에서 등록 worktree 경로를 LIVE_WORKTREES에
+# 담는다. 필드는 NUL로 끝나고, 레코드는 "worktree <path>" 필드로 시작해 빈 필드로 끝난다.
+# NUL 경계로 읽으므로 경로의 개행·탭·따옴표·백슬래시도 원형 그대로 남는다. 잘린 필드나
+# 레코드, 형식 밖 필드, 레코드 0개(main worktree조차 없음)는 목록 일부만 본 것일 수 있어
+# 실패로 돌린다 — 그 목록으로 orphan을 판정하면 등록 worktree를 지우게 된다.
+load_live_worktrees_z() {
+    local field="" in_record=false
+    LIVE_WORKTREES=()
+    while IFS= read -r -d '' field; do
+        if [ "$in_record" = false ]; then
+            [[ "$field" == "worktree "?* ]] || return 1
+            LIVE_WORKTREES+=("${field#worktree }")
+            in_record=true
+        elif [ -z "$field" ]; then
+            in_record=false
+        fi
+    done
+    # NUL 없이 EOF를 만난 read는 남은 바이트를 field에 남긴다.
+    [ -z "$field" ] && [ "$in_record" = false ] && [ "${#LIVE_WORKTREES[@]}" -gt 0 ]
+}
+
 do_cleanup() {
     require_common_cmds
-    local instance_path wt_dir prune_output porcelain_output dir canonical
-    local -a live_worktrees=()
+    local instance_path wt_dir prune_output list_file list_error dir canonical
     instance_path=$(current_git_root)
 
     if ! prune_output=$(git -C "$instance_path" worktree prune --expire=now --verbose 2>&1); then
@@ -412,23 +434,29 @@ do_cleanup() {
         return 0
     fi
 
-    if ! porcelain_output=$(git -C "$instance_path" worktree list --porcelain 2>&1); then
-        log_error "git worktree list 실패 — orphan sweep 건너뜀"
-        echo "$porcelain_output" >&2
+    # 명령 치환은 NUL을 버리므로 목록을 임시 파일로 받아 git 종료 상태와 파싱 결과를
+    # 모두 확인한다. 둘 중 하나라도 실패하면 orphan을 판정하지 않는다.
+    list_file=$(mktemp) || {
+        log_error "worktree 목록 임시 파일 생성 실패 — orphan sweep 건너뜀"
+        exit 1
+    }
+    list_error=""
+    if ! git -C "$instance_path" worktree list --porcelain -z >"$list_file"; then
+        list_error="git worktree list 실패"
+    elif ! load_live_worktrees_z <"$list_file"; then
+        list_error="git worktree list 출력을 해석하지 못함"
+    fi
+    rm -f "$list_file"
+    if [ -n "$list_error" ]; then
+        log_error "$list_error — orphan sweep 건너뜀"
         exit 1
     fi
-
-    while IFS= read -r line; do
-        if [[ "$line" == worktree\ * ]]; then
-            live_worktrees+=("${line#worktree }")
-        fi
-    done <<<"$porcelain_output"
 
     for dir in "$wt_dir"/*/; do
         [ -d "$dir" ] || continue
         canonical=$(canonical_existing_path "$dir") || continue
         local is_live=false live canonical_live
-        for live in "${live_worktrees[@]}"; do
+        for live in "${LIVE_WORKTREES[@]}"; do
             canonical_live=$(canonical_existing_path "$live" 2>/dev/null || true)
             if [ -n "$canonical_live" ] && [ "$canonical_live" = "$canonical" ]; then
                 is_live=true

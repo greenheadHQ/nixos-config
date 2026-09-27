@@ -115,7 +115,9 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 
 Immich: API 버전 조회 가능 → "현재 v2.5.5 → 최신 v2.6.0" 형태 알림. 상세: [references/immich-update.md](references/immich-update.md)
 
-Immich DB 백업: `immich-db-backup` 서비스가 매일 05:30에 `podman exec immich-postgres pg_dump -Fc`로 커스텀 포맷 백업 생성. 디스크 공간 검사, pg_restore --list 무결성 검증, 원자적 파일 이동, 30일 보관. 실패 시 Pushover 알림 (`pushover-immich` 재사용). `sudo systemctl start immich-db-backup`으로 수동 실행.
+Immich DB 백업: `immich-db-backup` 서비스가 매일 05:30에 `podman exec immich-postgres pg_dump -Fc`로 커스텀 포맷 백업 생성. 대상 HDD(`mediaData`) 마운트 가드(`RequiresMountsFor` + 스크립트 `mountpoint` 검사), 디스크 공간 검사, pg_restore --list 무결성 검증, 원자적 파일 이동, 30일 보관. 실패 시 Pushover 알림 (`pushover-immich` 재사용). `sudo systemctl start immich-db-backup`으로 수동 실행.
+
+Immich 원본 미러·Anki(headless) 백업도 대상 HDD(`mediaData`) 마운트를 `RequiresMountsFor`로 요구한다 (`immich-originals-mirror`는 스크립트 자체에도 `mountpoint` 검사가 있다) — HDD는 `nofail`이라 미마운트여도 부팅은 계속되므로, 마운트 없이 쓰기·삭제·성공 기록이 진행되지 않도록 막는 가드다. `RequiresMountsFor`가 막으면 스크립트가 아예 실행되지 않아 실패 Pushover 알림도 나가지 않는다 — 그 무실행은 스모크 테스트의 백업 신선도 검사(아래 "런타임 스모크 테스트" 절)로 드러난다. 다만 원본 미러(`immich-originals-mirror`)는 신선도 검사 대상이 아니므로, 미마운트가 오래 지속되면 그 사이엔 드러나지 않는다.
 
 Uptime Kuma/Copyparty/Karakeep: pinned tag 기준 — 설정된 이미지를 pull → digest 비교 (같은 태그의 재빌드만 반영). GitHub latest는 새 버전 알림/안내용이며, 실제 버전 반영은 해당 서비스 모듈(`modules/nixos/programs/docker/*.nix`)의 image 태그 수정 후 `nrs`. 상세: [references/service-update-system.md](references/service-update-system.md)
 Karakeep 수동 업데이트는 `--ack-bridge-risk` 플래그가 필수다 (브릿지/로그 의존성 인지 강제).
@@ -124,9 +126,12 @@ Karakeep 이벤트 알림: `karakeep-notify`가 웹훅→Pushover 브리지(soca
 
 ### 런타임 스모크 테스트
 
-`homeserver.smokeTest.enable = true` (`modules/nixos/programs/smoke-test.nix`). 매일 06:00에
-활성 서비스의 HTTPS 엔드포인트 헬스체크 + 백업 신선도(기본 상한 초과 여부)를 검사하고,
-실패 시 Pushover 알림 (`pushover-system-monitor` 공유). 수동 실행:
+`homeserver.smokeTest.enable = true` (`modules/nixos/programs/smoke-test.nix`, 본체
+`modules/nixos/programs/smoke-test/files/smoke-test.sh`). 매일 06:00에 활성 서비스의 HTTPS
+엔드포인트 헬스체크 + 백업 신선도(기본 상한 초과 여부) + 실패한 systemd 유닛을 검사하고,
+실패 시 Pushover 요약 알림(`pushover-system-monitor` 공유) 뒤 유닛도 failed로 끝난다 — 수동
+`systemctl start`도 0이 아닌 코드를 낸다. `immich-cleanup`의 삭제 실패도 유닛 failed로 남아
+다음 날 이 검사가 한 번 더 알린다(실패를 숨기지 않기 위한 의도된 동작). 수동 실행:
 
 ```bash
 sudo systemctl start homeserver-smoke-test

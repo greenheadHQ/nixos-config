@@ -10,7 +10,8 @@
 #      - verify_path_security <path> <expected_mode> <label>
 #      - WATCH_DIR, CURRENT_PID
 #      - set -euo pipefail
-#   2) drain_queue 호출 전에 정의되어 있어야 함:
+#   2) 외부 도구를 쓰는 스크립트는 drain_queue 전에 require_commands_or_abort 호출
+#   3) drain_queue 호출 전에 정의되어 있어야 함:
 #      - find_candidates    — 처리 대상 파일을 한 줄씩 stdout으로 출력
 #      - process_one <file> — drain_queue가 호출하는 단일 파일 processor
 
@@ -203,4 +204,20 @@ quarantine_or_abort() {
         log_error "quarantine 실패; run 중단 (락 해제 후 외부 이벤트 시 재시도)"
         exit 1
     fi
+}
+
+# 필수 실행파일 사전 확인 + 없으면 abort (#1402).
+# 도구 부재는 입력 파일 결함이 아니라 환경 오류다. 처리 실패로 흘러가면 quarantine이
+# 멀쩡한 입력을 격리하므로, drain_queue 전에 run을 중단하고 입력은 watch dir에 그대로 둔다.
+# launchd PATH는 default.nix가 Nix 패키지 bin으로 선언한다. 셸에서 직접 실행하면 호출자 PATH를 쓴다.
+require_commands_or_abort() {
+    local cmd missing=""
+    for cmd in "$@"; do
+        command -v "$cmd" >/dev/null 2>&1 || missing="${missing:+$missing, }$cmd"
+    done
+    [ -z "$missing" ] && return 0
+
+    log_error "환경 오류: 필수 실행파일 없음: ${missing} (PATH=${PATH}); 입력 파일은 그대로 두고 run 중단"
+    notify_failure "FolderActions 환경 오류" "$(basename "$WATCH_DIR"): 필수 실행파일 없음: ${missing}" 1
+    exit 1
 }

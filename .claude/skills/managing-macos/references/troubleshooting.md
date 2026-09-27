@@ -158,7 +158,7 @@ system.activationScripts.postActivation.text = ''
 
 # O 권장: cfprefsd kill → activateSettings → 스크롤 방향 재설정
 system.activationScripts.postActivation.text = ''
-  # symbolic hotkeys를 defaults write -dict-add로 작성한 뒤...
+  # symbolic hotkeys를 ${asUser} defaults write -dict-add로 작성한 뒤...
 
   # cfprefsd kill로 디스크 plist에서 강제 재읽기
   killall cfprefsd 2>/dev/null || true
@@ -168,7 +168,9 @@ system.activationScripts.postActivation.text = ''
   /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
 
   # activateSettings가 스크롤 방향을 롤백시키므로 명시적으로 재설정
-  defaults write -g com.apple.swipescrolldirection -bool false
+  # postActivation은 root 컨텍스트로 실행되므로 asUser 없이 쓰면 대상 사용자 대신
+  # root의 전역 환경설정에 기록된다 (#1400) — symbolic hotkeys와 동일하게 asUser로 전환
+  ${asUser} defaults write -g com.apple.swipescrolldirection -bool false
 '';
 ```
 
@@ -177,6 +179,7 @@ system.activationScripts.postActivation.text = ''
 - 단, 스크롤 방향을 롤백시키는 부작용이 있음
 - 해결: `activateSettings` 직후 `defaults write`로 스크롤 방향 재설정
 - `killall cfprefsd`는 postActivation에서 `defaults write -dict-add` → `cfprefsd kill` → `activateSettings` 순서로 사용해야 함. 단독 사용 또는 `activateSettings` 없이 사용하면 설정 롤백 위험
+- postActivation 전체가 root 컨텍스트로 실행되므로, 이 스크롤 방향 재설정에도 `modules/darwin/configuration.nix`에 정의된 `asUser` helper(같은 파일의 symbolic hotkeys 항목이 쓰는 것과 동일한 정의)로 대상 사용자로 전환해야 함. 전환 없이 쓰면 root의 전역 환경설정에 기록되어 로그인 사용자의 값은 복구되지 않음 (#1400)
 
 임시 복구 (이미 발생한 경우):
 

@@ -33,7 +33,7 @@ Claude Code에서 `agenix -e` 실패 (`/dev/stdin` 에러)
 
 | 레벨 | 설정 위치 | 기본 배포 경로 | 용도 |
 |------|----------|---------------|------|
-| Home Manager | `modules/shared/programs/secrets/default.nix` | 사용자 지정 경로 (`~/.config/...`) | Pushover, pane-note 등 사용자 레벨 |
+| Home Manager | `modules/shared/programs/secrets/default.nix` | 사용자 지정 경로 (`~/.config/...`) | Pushover 등 사용자 레벨 |
 | NixOS 시스템 | 각 서비스 모듈 (`immich.nix`, `smartd.nix`, `temp-monitor/` 등) | `/run/agenix/<secret-name>` | immich-db-password, pushover-system-monitor 등 시스템 서비스 |
 
 두 레벨이 공존하며, NixOS 시스템 레벨은 `flake.nix`에서 `inputs.agenix.nixosModules.default`로 활성화.
@@ -69,7 +69,6 @@ agenix `.age` 22개(디스크 실측 — 재검증: `ls secrets/*.age | wc -l`) 
 | Name | Storage | Vault | 배포경로·위치 | 소비처 | recipient |
 |------|---------|-------|---------------|--------|-----------|
 | `pushover-share.age` | agenix | — | `~/.config/pushover/share` (Mac+MiniPC home) | sharing-text 수동 push; opnix-health-mac SA 조회 상태 알림 `PUSHOVER_FILE` source | allHosts |
-| `pane-note-links.age` | agenix | — | `~/.config/pane-note/links.txt` (Mac+MiniPC home) | pane-note.sh 새 노트 Links 섹션 | allHosts |
 | `immich-db-password.age` | agenix | — | `/run/agenix/immich-db-password` (MiniPC) | immich.nix dbPasswordPath → PostgreSQL | minipcOnly |
 | `immich-api-key.age` | agenix | — | Mac `~/.config/immich/api-key` / MiniPC `/run/agenix/immich-api-key` | immich-update·immich-cleanup FolderAction upload | allHosts |
 | `pushover-immich.age` | agenix | — | Mac `~/.config/pushover/immich` / MiniPC `/run/agenix/pushover-immich` | immich-update·cleanup·backup 알림 | allHosts |

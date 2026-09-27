@@ -31,6 +31,7 @@ let
   # Darwin intent 검증은 여기서 직접 수행한다.
   # 범위: evaluation-safe value-level 설정만 검증.
   # 제외: postActivation, symbolic hotkeys, GUI 세션/WindowServer 의존 동작.
+  #   postActivation은 문자열 구조(D36: 스크롤 복구의 실행 주체와 순서)만 예외로 검증한다 (#1400).
   darwinCfgs = flake.darwinConfigurations;
   personalDarwinHosts = [
     "greenhead-MacBookPro"
@@ -432,6 +433,170 @@ let
       && builtins.isString activation.${name}.data
     ) shottrActivationEntryNames;
 
+  # #1400: postActivation은 root 컨텍스트로 실행되므로, activateSettings가 롤백시키는
+  # 스크롤 방향을 재설정하는 defaults write에도 asUser 전환이 없으면 root의 전역
+  # 환경설정에 기록되고 대상(로그인) 사용자의 값은 복구되지 않는다. symbolic hotkeys와
+  # 동일한 asUser 패턴을 강제해 이 회귀를 evaluation 단계에서 잡는다.
+  #
+  # 사용자·값·도메인을 느슨한 hasInfix로만 검사하면 asUser에 다른 사용자(root 등)를
+  # 넣거나 값을 true로 뒤집거나 도메인을 바꿔도 통과한다. modules/darwin/configuration.nix의
+  # asUser는 evaluation에서 직접 참조할 수 없는 순수 let 바인딩이므로, D2
+  # (darwinSudoRuleMatchesExactly)와 같은 방식으로 cfg.system.primaryUser(asUser가 확장하는
+  # ${username}과 동일한 값, configuration.nix의 `system.primaryUser = username;`)로 기대
+  # 줄 전체를 재구성해 정확히 일치하는지 비교한다.
+  postActivationLines =
+    cfg: nixpkgsLib.splitString "\n" cfg.system.activationScripts.postActivation.text;
+  isCommentLine = line: builtins.match "[[:space:]]*#.*" line != null;
+  trimLeadingWhitespace =
+    line:
+    let
+      m = builtins.match "[[:space:]]*(.*)" line;
+    in
+    if m == null then line else builtins.head m;
+  # needle을 포함하는(주석 줄 제외) 첫 줄의 인덱스. 없으면 null.
+  firstCodeLineIndexContaining =
+    needle: codeLines:
+    let
+      idxs = builtins.filter (i: i != null) (
+        nixpkgsLib.imap0 (i: line: if nixpkgsLib.hasInfix needle line then i else null) codeLines
+      );
+    in
+    if idxs == [ ] then null else builtins.elemAt idxs 0;
+  expectedScrollRestoreLine =
+    cfg:
+    let
+      user = cfg.system.primaryUser;
+    in
+    ''launchctl asuser "$(id -u -- ${user})" sudo --user=${user} --set-home -- defaults write -g com.apple.swipescrolldirection -bool false'';
+  scrollRestoreIsAsUserAfterActivate =
+    cfg:
+    let
+      # 셸 주석에서 스크롤 키를 언급해도 오탐하지 않도록 실행 줄만 본다.
+      codeLines = builtins.filter (line: !isCommentLine line) (postActivationLines cfg);
+      activateIdx = firstCodeLineIndexContaining "activateSettings -u" codeLines;
+      scrollCodeLines = builtins.filter (
+        line: nixpkgsLib.hasInfix "com.apple.swipescrolldirection" line
+      ) codeLines;
+      scrollIdx = firstCodeLineIndexContaining "com.apple.swipescrolldirection" codeLines;
+    in
+    activateIdx != null
+    && scrollIdx != null
+    && scrollIdx > activateIdx
+    # 키를 언급하는 실행 줄이 정확히 1개여야 함 (중복·bare 줄 잔존 방지)
+    && builtins.length scrollCodeLines == 1
+    && trimLeadingWhitespace (builtins.elemAt scrollCodeLines 0) == expectedScrollRestoreLine cfg;
+
+  # tmux 순정 계약 (#1101): 플러그인·직접 만든 키·pane 노트 스크립트 배선이 없고,
+  # 호환 설정·상태줄·pane 테두리의 Git 브랜치 표시는 남는다. darwin 호스트 루프와
+  # NixOS 전역 리스트가 같은 판정을 공유한다(guard가 false면 hm을 평가하지 않는다).
+  # 실제 로드 본문은 HM이 만든 ~/.config/tmux/tmux.conf와, 그 마지막 줄의
+  # source-file이 읽는 ~/.tmux/tmux.conf 링크 원본을 이어 붙인 것이다.
+  tmuxDeployedConf =
+    hm:
+    hm.xdg.configFile."tmux/tmux.conf".text
+    + "\n"
+    + builtins.readFile hm.home.file.".tmux/tmux.conf".source;
+  tmuxConfLines = hm: nixpkgsLib.splitString "\n" (tmuxDeployedConf hm);
+  # 줄 맨 앞의 tmux 명령(별칭 포함)으로 거른다. 휠 바인딩처럼 인자 안에 든 명령은 세지 않는다.
+  tmuxCommandLines =
+    hm: commands:
+    builtins.filter (line: builtins.match "[[:space:]]*(${commands})([[:space:]].*)?" line != null) (
+      tmuxConfLines hm
+    );
+  tmuxBindLines = hm: tmuxCommandLines hm "bind|bind-key|unbind|unbind-key";
+  tmuxOptionHasInfix =
+    hm: option: needle:
+    builtins.any (
+      line: nixpkgsLib.hasPrefix "set -g ${option} " line && nixpkgsLib.hasInfix needle line
+    ) (tmuxConfLines hm);
+  tmuxVanillaTests = label: guard: hm: [
+    {
+      name = "Test TMX1 ${label}: tmux 플러그인이 비어 있고 sensible도 로드하지 않아야 함";
+      cond = guard && hm.programs.tmux.plugins == [ ] && !hm.programs.tmux.sensibleOnTop;
+    }
+    {
+      name = "Test TMX2 ${label}: home.file에 .tmux/scripts/ 스크립트 링크가 없어야 함";
+      cond =
+        guard && !builtins.any (nixpkgsLib.hasInfix ".tmux/scripts/") (builtins.attrNames hm.home.file);
+    }
+    {
+      name = "Test TMX3 ${label}: home.packages에 yq-go가 없어야 함";
+      cond = guard && !builtins.any (p: (p.pname or p.name or "") == "yq-go") hm.home.packages;
+    }
+    {
+      # 노트와 세션 저장 파일이 든 상위 폴더(~/.tmux, ~/.local/share/tmux)까지 본다.
+      # 상위 폴더를 통째로 지우거나 옮기는 activation도 같은 데이터를 건드린다.
+      name = "Test TMX4 ${label}: createTmuxDirs가 없고 어떤 activation도 노트·resurrect 경로와 그 상위 폴더를 다루지 않아야 함";
+      cond =
+        guard
+        && !(hm.home.activation ? createTmuxDirs)
+        && !builtins.any (
+          entry:
+          let
+            data = entry.data or "";
+          in
+          builtins.any (needle: nixpkgsLib.hasInfix needle data) [
+            "pane-notes"
+            "tmux/resurrect"
+            ".tmux"
+            "share/tmux"
+          ]
+        ) (builtins.attrValues hm.home.activation);
+    }
+    {
+      name = "Test TMX5 ${label}: age.secrets에 pane-note-links가 없어야 함";
+      cond =
+        guard
+        && !(hm.age.secrets ? "pane-note-links")
+        && !builtins.any (secret: nixpkgsLib.hasInfix "pane-note" secret.path) (
+          builtins.attrValues hm.age.secrets
+        );
+    }
+    {
+      # bind 줄로 드러나지 않는 로드 경로도 막는다: 최상위 run-shell·if-shell은 외부 스크립트나
+      # 조건부 bind를 실행하고, 추가 source-file은 이 본문 밖의 설정을 읽는다.
+      name = "Test TMX6 ${label}: tmux 바인딩은 마우스 휠 두 줄뿐이고 run-shell·if-shell·추가 source-file과 칸 제목·노트·스크립트 참조가 없어야 함";
+      cond =
+        guard
+        && (
+          let
+            binds = tmuxBindLines hm;
+            conf = tmuxDeployedConf hm;
+          in
+          builtins.length binds == 2
+          && builtins.any (nixpkgsLib.hasInfix "-n WheelUpPane ") binds
+          && builtins.any (nixpkgsLib.hasInfix "-n WheelDownPane ") binds
+          && tmuxCommandLines hm "run-shell|run|if-shell|if" == [ ]
+          && tmuxCommandLines hm "source-file|source" == [ "source-file ~/.tmux/tmux.conf" ]
+          && !nixpkgsLib.hasInfix "@custom_pane_title" conf
+          && !nixpkgsLib.hasInfix "@pane_note_path" conf
+          && !nixpkgsLib.hasInfix ".tmux/scripts" conf
+        );
+    }
+    {
+      # 제거 과정에서 유지 대상이 함께 사라지는 회귀를 잡는 잠금. source-file 연결과
+      # mouse는 아래 설정·휠 바인딩이 실제로 로드되기 위한 전제다.
+      name = "Test TMX7 ${label}: 호환 설정과 상태줄·테두리의 Git 브랜치 표시가 유지되어야 함";
+      cond =
+        guard
+        && (
+          let
+            lines = tmuxConfLines hm;
+          in
+          nixpkgsLib.hasInfix "source-file ~/.tmux/tmux.conf" hm.xdg.configFile."tmux/tmux.conf".text
+          && hm.programs.tmux.mouse
+          && builtins.elem "set -g extended-keys-format csi-u" lines
+          && builtins.elem ''set -ga terminal-overrides ",xterm-256color:Tc"'' lines
+          && builtins.elem ''set -ga terminal-overrides ",xterm-ghostty:Tc"'' lines
+          && builtins.elem ''set -ga terminal-overrides ",tmux-256color:Tc"'' lines
+          && builtins.elem "set -g allow-passthrough on" lines
+          && builtins.elem "set -g set-clipboard on" lines
+          && tmuxOptionHasInfix hm "pane-border-format" "git symbolic-ref"
+          && tmuxOptionHasInfix hm "status-right" "git symbolic-ref"
+        );
+    }
+  ];
+
   darwinIntentTests = builtins.concatLists (
     map (
       hostName:
@@ -802,9 +967,102 @@ let
                 true
             );
         }
+        {
+          name = "Test D36 ${hostName}: postActivation에 스크롤 키를 언급하는 실행 줄(주석 제외)이 정확히 1개이며, activateSettings 뒤에서 cfg.system.primaryUser로 asUser 전환된 정확한 defaults write와 일치해야 함";
+          cond = hasHost && scrollRestoreIsAsUserAfterActivate cfg;
+        }
+        {
+          # launchd는 로그인 셸 PATH를 물려받지 않는다 (#1402). 도구를 쓰는 폴더 감시 작업의
+          # PATH는 home.packages로 선언한 그 도구의 bin과 macOS 시스템 경로로만 이뤄져야 한다.
+          # Homebrew 경로는 우연한 외부 설치로 선언을 가리고, 다른 패키지 bin(예: GNU coreutils)은
+          # 스크립트가 PATH로 찾는 find·basename 등을 BSD 도구에서 바꿔 놓는다.
+          name = "Test D37 ${hostName}: Folder Actions의 rar·ffmpeg 작업 launchd PATH가 선언된 Nix 도구 bin과 /usr/bin:/bin으로만 구성되어야 함";
+          cond =
+            hasHost
+            && (
+              let
+                # 같은 derivation이 여러 모듈에서 중복 선언돼도 bin 경로는 하나로 센다.
+                declaredBins =
+                  pname:
+                  nixpkgsLib.unique (
+                    map (pkg: "${nixpkgsLib.getBin pkg}/bin") (
+                      builtins.filter (pkg: (pkg.pname or "") == pname) hm.home.packages
+                    )
+                  );
+                pathEntries =
+                  agent: nixpkgsLib.splitString ":" hm.launchd.agents.${agent}.config.EnvironmentVariables.PATH;
+                systemPath = [
+                  "/usr/bin"
+                  "/bin"
+                ];
+                wiredTo =
+                  agent: pname:
+                  let
+                    bins = declaredBins pname;
+                  in
+                  builtins.length bins == 1 && pathEntries agent == bins ++ systemPath;
+              in
+              wiredTo "folder-action-compress-rar" "rar"
+              && wiredTo "folder-action-compress-video" "ffmpeg"
+              && wiredTo "folder-action-convert-video-to-gif" "ffmpeg"
+            );
+        }
       ]
+      ++ tmuxVanillaTests hostName hasHost hm
     ) expectedDarwinHosts
   );
+
+  # ── #1387: 스모크 검사의 백업 신선도 대상은 유닛 환경 변수로 주입된다. 활성 여부는 추출 전과
+  # 같은 옵션(immichBackup·karakeepBackup·backup.enable 인스턴스)을 따르고, 백업 유닛이 있으면 그
+  # 유닛이 실제로 쓰는 BACKUP_DIR·INSTANCES를 봐야 한다.
+  smokeEnvOf = cfg: cfg.systemd.services.homeserver-smoke-test.environment;
+  smokeBackupWiringOk =
+    cfg:
+    let
+      hs = cfg.homeserver;
+      services = cfg.systemd.services;
+      smokeEnv = smokeEnvOf cfg;
+      dirMatches =
+        enable: dir: unit:
+        (dir != "") == enable && (!(services ? ${unit}) || dir == services.${unit}.environment.BACKUP_DIR);
+      ankiUnit = services.anki-host-backup or null;
+      ankiNames =
+        if ankiUnit == null then
+          [ ]
+        else
+          map (entry: builtins.head (nixpkgsLib.splitString ":" entry)) (
+            nixpkgsLib.splitString " " ankiUnit.environment.INSTANCES
+          );
+    in
+    dirMatches hs.immichBackup.enable smokeEnv.IMMICH_BACKUP_DIR "immich-db-backup"
+    && dirMatches hs.karakeepBackup.enable smokeEnv.KARAKEEP_BACKUP_DIR "karakeep-backup"
+    && smokeEnv.ANKI_BACKUP_INSTANCES == builtins.concatStringsSep " " ankiNames
+    && (ankiUnit == null || smokeEnv.ANKI_BACKUP_ROOT == ankiUnit.environment.BACKUP_DIR);
+  # MiniPC는 백업이 모두 켜져 있어 실 config로는 빈 값 분기를 평가하지 못한다. retentionDaysEval처럼
+  # extendModules로 옵션만 끈 config를 만든다. extendModules 한 번이 eval-tests 전체 시간을 눈에 띄게
+  # 늘리므로 조합은 둘로 줄였다: 두 조합 모두 immich·karakeep 중 한쪽만 꺼야 한쪽 옵션을 다른 쪽
+  # 변수에 잘못 건 배선이 드러나고, anki 비활성 두 경로(백업 인스턴스 0개·ankiHost 비활성)를 하나씩 얹는다.
+  smokeBackupVariant = modules: (nixosBase.extendModules { inherit modules; }).config;
+  # A: immichBackup 끔 + anki 백업 인스턴스 0개(인스턴스는 두고 backup.enable만 끔)
+  smokeImmichAnkiOff = smokeBackupVariant [
+    { homeserver.immichBackup.enable = nixpkgsLib.mkForce false; }
+    {
+      homeserver.ankiHost.instances = nixpkgsLib.mapAttrs (_: _: {
+        backup.enable = nixpkgsLib.mkForce false;
+      }) nixosCfg.homeserver.ankiHost.instances;
+    }
+  ];
+  # B: karakeepBackup 끔 + ankiHost 비활성
+  smokeKarakeepAnkiOff = smokeBackupVariant [
+    { homeserver.karakeepBackup.enable = nixpkgsLib.mkForce false; }
+    { homeserver.ankiHost.enable = nixpkgsLib.mkForce false; }
+  ];
+
+  # ── #1369: 백업 대상 HDD(mediaData)가 nofail이라 미마운트여도 부팅은 계속되므로,
+  # 세 백업/미러 유닛이 RequiresMountsFor로 실제 마운트를 실행 전제로 요구하는지 확인한다
+  # (미마운트 시 목적지가 루트 파일시스템의 일반 디렉터리가 되어 백업이 SSD에 오기록·성공 오인될 위험).
+  immichDbBackup = nixosCfg.systemd.services."immich-db-backup";
+  immichOriginalsMirror = nixosCfg.systemd.services."immich-originals-mirror";
 
   # ── headless Anki (#1306): loopback 전용·인스턴스 격리·sync/backup 타이머 계약 고정
   ankiHostCfg = nixosCfg.homeserver.ankiHost;
@@ -1672,7 +1930,60 @@ let
           value = 0;
         };
     }
+    {
+      # #1369: nofail HDD가 미마운트여도 부팅은 계속되므로, 백업 실행 자체를 systemd가
+      # 막아야 한다 — mediaData가 일반 디렉터리로 존재하면 이 유닛이 시작하지 않아야 함.
+      name = "Test MG1: immich-db-backup은 대상 HDD(mediaData) 마운트를 RequiresMountsFor로 요구해야 함";
+      cond = builtins.elem constants.paths.mediaData (immichDbBackup.unitConfig.RequiresMountsFor or [ ]);
+    }
+    {
+      name = "Test MG2: immich-originals-mirror은 대상 HDD(mediaData) 마운트를 RequiresMountsFor로 요구해야 함";
+      cond = builtins.elem constants.paths.mediaData (
+        immichOriginalsMirror.unitConfig.RequiresMountsFor or [ ]
+      );
+    }
+    {
+      name = "Test MG3: anki-host-backup은 대상 HDD(mediaData) 마운트를 RequiresMountsFor로 요구해야 함";
+      cond = builtins.elem constants.paths.mediaData (ankiHostBackup.unitConfig.RequiresMountsFor or [ ]);
+    }
+    {
+      # 리뷰: MOUNT_ROOT가 실제 mediaData와 다른 값으로 새거나(오타 등) mediaData 자체가
+      # fileSystems에 등록되지 않은 상태로 갈라지지 않도록, 스크립트를 직접 실행하는 두 유닛의
+      # MOUNT_ROOT가 fileSystems 키 집합에 실제로 있는지 확인한다.
+      name = "Test MG4: immich-db-backup·immich-originals-mirror의 MOUNT_ROOT가 nixosCfg.fileSystems에 등록된 마운트 지점이어야 함";
+      cond =
+        immichDbBackup.environment.MOUNT_ROOT == constants.paths.mediaData
+        && immichOriginalsMirror.environment.MOUNT_ROOT == constants.paths.mediaData
+        && builtins.elem constants.paths.mediaData (builtins.attrNames nixosCfg.fileSystems);
+    }
+    {
+      # 완료 조건 "nofail 부팅 정책을 유지한다" — mediaData 파일시스템 옵션에 nofail이 있어야
+      # 이 이슈의 마운트 가드가 부팅 실패를 유발하지 않는다는 전제가 성립한다.
+      name = "Test MG5: fileSystems.\${mediaData}.options에 nofail이 있어야 함(부팅 정책 유지)";
+      cond = builtins.elem "nofail" nixosCfg.fileSystems.${constants.paths.mediaData}.options;
+    }
+    {
+      # #1387: 스모크 검사 본체를 files/로 추출하면서 백업 신선도 검사의 활성 조건과 대상이 유닛 환경
+      # 변수로 옮겨졌다 — 판정은 위 smokeBackupWiringOk.
+      name = "Test SM1: homeserver-smoke-test 백업 검사 환경이 백업 옵션과 백업 유닛의 BACKUP_DIR·INSTANCES를 따라야 함";
+      cond = smokeBackupWiringOk nixosCfg;
+    }
+    {
+      name = "Test SM2: immichBackup·anki 백업 인스턴스를 끄면 IMMICH_BACKUP_DIR·ANKI_BACKUP_INSTANCES는 빈 값이어야 함";
+      cond =
+        smokeBackupWiringOk smokeImmichAnkiOff
+        && (smokeEnvOf smokeImmichAnkiOff).IMMICH_BACKUP_DIR == ""
+        && (smokeEnvOf smokeImmichAnkiOff).ANKI_BACKUP_INSTANCES == "";
+    }
+    {
+      name = "Test SM3: karakeepBackup·ankiHost를 끄면 KARAKEEP_BACKUP_DIR·ANKI_BACKUP_INSTANCES는 빈 값이어야 함";
+      cond =
+        smokeBackupWiringOk smokeKarakeepAnkiOff
+        && (smokeEnvOf smokeKarakeepAnkiOff).KARAKEEP_BACKUP_DIR == ""
+        && (smokeEnvOf smokeKarakeepAnkiOff).ANKI_BACKUP_INSTANCES == "";
+    }
   ]
+  ++ tmuxVanillaTests "greenhead-minipc" true nixosHm
   ++ darwinIntentTests
   ++ [
     {

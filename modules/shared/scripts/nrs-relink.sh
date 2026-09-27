@@ -225,12 +225,24 @@ cmd_status() {
 # wt.sh, PostToolUse hook에서 호출. precmd는 성능상 인라인 canary 사용 (동일 로직).
 #───────────────────────────────────────────────────────────────────────────────
 cmd_fix_dangling() {
-    # settings.json을 대표 canary로 사용:
+    # settings.json과 CLAUDE.md를 대표 canary로 사용한다 (lib/rebuild/relink.sh의
+    # maybe_relink_or_restore가 이미 쓰는 2-probe와 동일 목록, #1381):
+    # settings.json은 hostType "work"에서 mkIf로 심링크 배치가 제외되어 비-symlink(무효
+    # canary)가 될 수 있으므로, 전 호스트 OOS 심링크인 CLAUDE.md를 함께 검사한다.
     # 모든 OOS 심링크가 동시에 relink/restore되므로, 하나만 dangling이면 전체가 dangling.
     # nrs-relink restore가 전체 OOS 심링크를 일괄 복원한다.
-    if [[ -L "$HOME/.claude/settings.json" && ! -e "$HOME/.claude/settings.json" ]]; then
-        cmd_restore
-    fi
+    #
+    # 이 목록은 _repair_claude_symlinks(modules/shared/programs/shell/default.nix)의
+    # 인라인 canary와 동일해야 한다 —
+    # tests/suites/rebuild-nrs.sh:test_fix_dangling_probe_lists_match_between_cli_and_inline이
+    # 두 목록의 일치를 고정한다.
+    local _probe
+    for _probe in "$HOME/.claude/settings.json" "$HOME/.claude/CLAUDE.md"; do
+        if [[ -L "$_probe" && ! -e "$_probe" ]]; then
+            cmd_restore
+            return
+        fi
+    done
 }
 
 #───────────────────────────────────────────────────────────────────────────────

@@ -13,6 +13,8 @@ wt — Git worktree 관리 (fzf TUI)
 
 [이미 존재할 때]
   기존 worktree 있음       → fzf 선택: 기존 열기 / 재생성 / 취소
+    단, 그 경로의 checkout이 요청 브랜치가 아니면(feat/a↔feat_a 경로 겹침, 직접 전환,
+    detached, 조회 실패) 선택 없이 실패 — 경로를 내지 않고 worktree도 건드리지 않음
   브랜치만 있음 (wt 없음)  → fzf 선택: 기존 브랜치 사용 / 새로 생성 / 취소
   재생성 시 dirty/unpushed  → 경고 + 확인 프롬프트
 
