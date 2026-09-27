@@ -23,8 +23,8 @@ API_KEY="$IMMICH_API_KEY"
 # shellcheck disable=SC1090
 source "$PUSHOVER_CRED_FILE"
 
-# 에러 발생 시 알림 전송
-trap 'send_notification "Immich Cleanup" "오류 발생: 스크립트 실패" 0' ERR
+# 에러 발생 시 알림 전송 — 알림 실패는 흡수해 원래 실패 코드로 끝나게 한다
+trap 'send_notification "Immich Cleanup" "오류 발생: 스크립트 실패" 0 || true' ERR
 
 PAGE_SIZE=1000
 UUID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'

@@ -288,28 +288,32 @@ test_immich_cleanup_notification_failure_keeps_delete_failure() {
 }
 
 test_immich_cleanup_unexpected_failure_sends_single_error_notification() {
-  local sandbox output rc real_jq
-  sandbox="$(new_sandbox)"
-  setup_immich_cleanup_fixture "$sandbox" paginated
-  # 예상하지 못한 명령 실패: 스크립트 본문의 DELETE body 생성(force 포함 jq -n)만 rc 5로 실패하고,
-  # 나머지 jq 호출(대역 curl 포함)은 실제 jq에 맡긴다.
+  local mode sandbox output rc real_jq
   real_jq="$(command -v jq)"
-  cat > "$sandbox/bin/jq" <<EOS
+  for mode in notify-ok notify-fail; do
+    sandbox="$(new_sandbox)"
+    setup_immich_cleanup_fixture "$sandbox" paginated
+    [[ "$mode" == notify-ok ]] || : > "$sandbox/notify-fail"
+    # 예상하지 못한 명령 실패: 스크립트 본문의 DELETE body 생성(force 포함 jq -n)만 rc 5로 실패하고,
+    # 나머지 jq 호출(대역 curl 포함)은 실제 jq에 맡긴다.
+    cat > "$sandbox/bin/jq" <<EOS
 #!/usr/bin/env bash
 case "\$*" in
   *"force: true"*) exit 5 ;;
 esac
 exec "$real_jq" "\$@"
 EOS
-  chmod +x "$sandbox/bin/jq"
+    chmod +x "$sandbox/bin/jq"
 
-  if output=$(run_immich_cleanup_fixture "$sandbox" 2>&1); then rc=0; else rc=$?; fi
+    if output=$(run_immich_cleanup_fixture "$sandbox" 2>&1); then rc=0; else rc=$?; fi
 
-  # 원래 실패 코드(5)로 끝나고, 요약 알림 없이 ERR trap 알림만 한 번 나간다.
-  [[ "$rc" == 5 ]] || fail "unexpected failure: expected exit 5, got $rc"
-  assert_not_contains "$output" "Cleanup completed."
-  assert_immich_cleanup_only_notification "$sandbox" "unexpected failure" "오류 발생: 스크립트 실패"
-  assert_line_count "$sandbox/requests.log" "page=1" 1
-  assert_line_count "$sandbox/requests.log" "page=2" 1
-  [[ ! -e "$sandbox/deletes.log" ]] || fail "unexpected failure must stop before asset delete"
+    # 원래 실패 코드(5)로 끝나고, 요약 알림 없이 ERR trap 알림만 한 번 나간다.
+    # 알림이 실패(7)해도 종료 코드는 5다.
+    [[ "$rc" == 5 ]] || fail "unexpected failure ($mode): expected exit 5, got $rc"
+    assert_not_contains "$output" "Cleanup completed."
+    assert_immich_cleanup_only_notification "$sandbox" "unexpected failure ($mode)" "오류 발생: 스크립트 실패"
+    assert_line_count "$sandbox/requests.log" "page=1" 1
+    assert_line_count "$sandbox/requests.log" "page=2" 1
+    [[ ! -e "$sandbox/deletes.log" ]] || fail "unexpected failure ($mode) must stop before asset delete"
+  done
 }

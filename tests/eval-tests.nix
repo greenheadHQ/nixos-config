@@ -945,29 +945,22 @@ let
     && smokeEnv.ANKI_BACKUP_INSTANCES == builtins.concatStringsSep " " ankiNames
     && (ankiUnit == null || smokeEnv.ANKI_BACKUP_ROOT == ankiUnit.environment.BACKUP_DIR);
   # MiniPC는 백업이 모두 켜져 있어 실 config로는 빈 값 분기를 평가하지 못한다. retentionDaysEval처럼
-  # extendModules로 해당 옵션만 끈 config를 만든다.
+  # extendModules로 옵션만 끈 config를 만든다. extendModules 한 번이 eval-tests 전체 시간을 눈에 띄게
+  # 늘리므로 조합은 둘로 줄였다: 두 조합 모두 immich·karakeep 중 한쪽만 꺼야 한쪽 옵션을 다른 쪽
+  # 변수에 잘못 건 배선이 드러나고, anki 비활성 두 경로(백업 인스턴스 0개·ankiHost 비활성)를 하나씩 얹는다.
   smokeBackupVariant = modules: (nixosBase.extendModules { inherit modules; }).config;
-  immichBackupOff = {
-    homeserver.immichBackup.enable = nixpkgsLib.mkForce false;
-  };
-  karakeepBackupOff = {
-    homeserver.karakeepBackup.enable = nixpkgsLib.mkForce false;
-  };
-  smokeImmichOff = smokeBackupVariant [ immichBackupOff ];
-  smokeKarakeepOff = smokeBackupVariant [ karakeepBackupOff ];
-  smokeBothOff = smokeBackupVariant [
-    immichBackupOff
-    karakeepBackupOff
-  ];
-  # anki 백업 인스턴스 0개 — 인스턴스는 두고 backup.enable만 모두 끈다
-  smokeAnkiNoBackup = smokeBackupVariant [
+  # A: immichBackup 끔 + anki 백업 인스턴스 0개(인스턴스는 두고 backup.enable만 끔)
+  smokeImmichAnkiOff = smokeBackupVariant [
+    { homeserver.immichBackup.enable = nixpkgsLib.mkForce false; }
     {
       homeserver.ankiHost.instances = nixpkgsLib.mapAttrs (_: _: {
         backup.enable = nixpkgsLib.mkForce false;
       }) nixosCfg.homeserver.ankiHost.instances;
     }
   ];
-  smokeAnkiOff = smokeBackupVariant [
+  # B: karakeepBackup 끔 + ankiHost 비활성
+  smokeKarakeepAnkiOff = smokeBackupVariant [
+    { homeserver.karakeepBackup.enable = nixpkgsLib.mkForce false; }
     { homeserver.ankiHost.enable = nixpkgsLib.mkForce false; }
   ];
 
@@ -1882,27 +1875,18 @@ let
       cond = smokeBackupWiringOk nixosCfg;
     }
     {
-      name = "Test SM2: immichBackup만 끄면 스모크 IMMICH_BACKUP_DIR은 빈 값이어야 함";
-      cond = smokeBackupWiringOk smokeImmichOff && (smokeEnvOf smokeImmichOff).IMMICH_BACKUP_DIR == "";
-    }
-    {
-      name = "Test SM3: karakeepBackup만 끄면 스모크 KARAKEEP_BACKUP_DIR은 빈 값이어야 함";
+      name = "Test SM2: immichBackup·anki 백업 인스턴스를 끄면 IMMICH_BACKUP_DIR·ANKI_BACKUP_INSTANCES는 빈 값이어야 함";
       cond =
-        smokeBackupWiringOk smokeKarakeepOff && (smokeEnvOf smokeKarakeepOff).KARAKEEP_BACKUP_DIR == "";
+        smokeBackupWiringOk smokeImmichAnkiOff
+        && (smokeEnvOf smokeImmichAnkiOff).IMMICH_BACKUP_DIR == ""
+        && (smokeEnvOf smokeImmichAnkiOff).ANKI_BACKUP_INSTANCES == "";
     }
     {
-      name = "Test SM4: immichBackup·karakeepBackup을 모두 끄면 두 백업 디렉터리 변수가 빈 값이어야 함";
+      name = "Test SM3: karakeepBackup·ankiHost를 끄면 KARAKEEP_BACKUP_DIR·ANKI_BACKUP_INSTANCES는 빈 값이어야 함";
       cond =
-        smokeBackupWiringOk smokeBothOff
-        && (smokeEnvOf smokeBothOff).IMMICH_BACKUP_DIR == ""
-        && (smokeEnvOf smokeBothOff).KARAKEEP_BACKUP_DIR == "";
-    }
-    {
-      name = "Test SM5: anki 백업 인스턴스가 없거나 ankiHost가 꺼지면 ANKI_BACKUP_INSTANCES는 빈 값이어야 함";
-      cond = builtins.all (cfg: smokeBackupWiringOk cfg && (smokeEnvOf cfg).ANKI_BACKUP_INSTANCES == "") [
-        smokeAnkiNoBackup
-        smokeAnkiOff
-      ];
+        smokeBackupWiringOk smokeKarakeepAnkiOff
+        && (smokeEnvOf smokeKarakeepAnkiOff).KARAKEEP_BACKUP_DIR == ""
+        && (smokeEnvOf smokeKarakeepAnkiOff).ANKI_BACKUP_INSTANCES == "";
     }
   ]
   ++ tmuxVanillaTests "greenhead-minipc" true nixosHm
