@@ -343,6 +343,13 @@ run_test "darwin nrs no-change releases worktree lock" test_darwin_nrs_no_change
 run_test "darwin nrs no-change activates when Codex artifact missing" test_darwin_nrs_no_changes_activates_when_codex_artifact_missing
 run_test "darwin nrs no-change skips relink without HM gcroot" test_darwin_nrs_no_changes_skips_relink_without_hm_gcroot
 run_test "darwin nrs no-change restores when HM gcroot present" test_darwin_nrs_no_changes_restores_when_hm_gcroot_present
+run_test "cmd_fix_dangling probe matrix calls restore only on dangling" test_cmd_fix_dangling_probe_matrix
+run_test "cmd_fix_dangling propagates restore failure" test_cmd_fix_dangling_propagates_restore_failure
+run_test "nrs-relink fix-dangling CLI no-ops when probes are healthy" test_nrs_relink_cli_fix_dangling_noop_when_probes_healthy
+run_test "nrs-relink fix-dangling CLI fails closed when restore cannot discover HMF" test_nrs_relink_cli_fix_dangling_fails_closed_when_restore_cannot_discover_hmf
+run_test "inline _repair_claude_symlinks probe matrix calls restore only on dangling" test_inline_repair_claude_symlinks_probe_matrix
+run_test "inline _repair_claude_symlinks retries after restore failure" test_inline_repair_claude_symlinks_retries_after_restore_failure
+run_test "fix-dangling probe lists match between CLI and inline" test_fix_dangling_probe_lists_match_between_cli_and_inline
 run_test "install-lefthook cleans up redundant local core.hooksPath" test_install_lefthook_cleanup_local_redundant
 run_test "install-lefthook preserves custom local core.hooksPath" test_install_lefthook_preserves_custom_local
 run_test "install-lefthook is silent on clean state" test_install_lefthook_silent_on_clean_state

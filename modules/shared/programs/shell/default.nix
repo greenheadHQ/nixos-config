@@ -228,15 +228,26 @@ in
         }
         precmd_functions+=(_update_delta_features)
 
+        # BEGIN nixos-config dangling symlink repair probe (#1381)
         # worktree 삭제 후 dangling 심링크 자동 복구 안전망 (#294)
         # 성능: nrs-relink fix-dangling(~12ms) 대신 인라인 canary(~4ms)로 hot path 최적화.
-        # fix-dangling과 동일 로직이지만, 매 프롬프트 fork 비용을 회피한다.
+        # fix-dangling(nrs-relink.sh cmd_fix_dangling)과 동일한 probe 목록을 유지한다
+        # (settings.json, CLAUDE.md — settings.json은 hostType "work"에서 심링크 배치가
+        # 제외될 수 있어 단독 canary로 불충분하다). 매 프롬프트 fork 비용을 회피하려고
+        # cmd_fix_dangling을 직접 호출하지 않고 같은 조건을 인라인으로 복제한다 — 두 목록의
+        # 일치는 tests/suites/rebuild-nrs.sh의
+        # test_fix_dangling_probe_lists_match_between_cli_and_inline이 고정한다.
         _repair_claude_symlinks() {
-          if [[ -L "$HOME/.claude/settings.json" && ! -e "$HOME/.claude/settings.json" ]]; then
-            "$HOME/.local/bin/nrs-relink" restore >/dev/null 2>&1
-          fi
+          local _probe
+          for _probe in "$HOME/.claude/settings.json" "$HOME/.claude/CLAUDE.md"; do
+            if [[ -L "$_probe" && ! -e "$_probe" ]]; then
+              "$HOME/.local/bin/nrs-relink" restore >/dev/null 2>&1
+              return
+            fi
+          done
         }
         precmd_functions+=(_repair_claude_symlinks)
+        # END nixos-config dangling symlink repair probe (#1381)
       '')
 
       # CIR: Home Manager only checks the zle option, but `zsh -i -c` keeps it
