@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "ssh minipc 'gh pr comment 12 --body \"@codex fix\"'"
+  }
+}

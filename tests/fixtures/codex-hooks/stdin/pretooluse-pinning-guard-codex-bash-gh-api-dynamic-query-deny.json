@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh api graphql -f query=\"$(cat /tmp/reply.graphql)\" -f tid=PRRT_x -f body='@codex 확인 부탁'"
+  }
+}

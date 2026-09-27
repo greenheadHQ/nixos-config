@@ -1,0 +1,7 @@
+{
+  "_fixture_existing_content": "반영했다.\n\n@codex fix the rest",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh api repos/o/r/issues/1/comments -F dummy=@/dev/stdin -F body=@__SANDBOX_BODY_FILE__"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "_fixture_existing_content": "반영했다.\n\n@codex fix the rest",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh api graphql -f tid=PRRT_x -F body=@\"__SANDBOX_BODY_FILE__\" -f query='mutation($tid: ID!, $body: String!) { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $tid, body: $body}) { comment { id } } }'"
+  }
+}

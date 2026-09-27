@@ -727,9 +727,10 @@ pinning_guard_findings_text_for_path() {
 # Not a full shell parser — a conservative (over-matching allowed) scan of a
 # fixed flag inventory. Quoted values (single/double) have the quotes
 # stripped; a quoted value containing whitespace is not supported (the
-# command is naively split on whitespace first). Callers must treat a
-# nonexistent "path" as a parse false-positive, not a scan target (the
-# underlying shell command would fail on it anyway).
+# command is naively split on whitespace first). Callers must treat anything
+# but an existing regular file as a parse false-positive, not a scan target:
+# gh cannot read a body from a missing path or a directory, and the flag
+# inventory also matches other tools' flags (`awk -F/` yields `/`).
 #
 # Runs entirely in awk (no shell array/glob surface) so this stays safely
 # sourceable from both bash (production hooks) and zsh (drift-check tooling).
@@ -742,12 +743,15 @@ pinning_guard_findings_text_for_path() {
 #     shorthand for --body-file).
 #   -F <value> / --field <value>                    where <value> is
 #     `key=@<path>`: gh api's file-forwarding field shape — path is the part
-#     after '@'. A `key=value` value with no '@' is not a file reference and
-#     is skipped.
+#     after '@', with its own quotes stripped (`body=@"/tmp/b.md"`). A
+#     `key=value` value with no '@' is not a file reference and is skipped.
+#   -F<value> / -F=<value> / --field=<value>        attached forms of the above
+#     (pflag and git parse-options both accept them).
+# LC_ALL=C keeps macOS awk from aborting on invalid UTF-8 bytes in the command.
 pinning_extract_body_file_paths() {
   local cmd="${1:-}"
   [ -n "$cmd" ] || return 0
-  printf '%s\n' "$cmd" | awk -v sq="'" -v dq='"' '
+  printf '%s\n' "$cmd" | LC_ALL=C awk -v sq="'" -v dq='"' '
     function strip_quotes(v,    n, first, last) {
       n = length(v)
       if (n < 2) return v
@@ -764,7 +768,7 @@ pinning_extract_body_file_paths() {
         return
       }
       at = index(v, "=@")
-      if (at > 0) print substr(v, at + 2)
+      if (at > 0) print strip_quotes(substr(v, at + 2))
     }
     {
       n = split($0, words, /[ \t]+/)
@@ -779,6 +783,10 @@ pinning_extract_body_file_paths() {
           sub(/^--file=/, "", w); print strip_quotes(w)
         } else if (w == "-F" || w == "--field") {
           if (i + 1 <= n) { emit_field_or_path(strip_quotes(words[i + 1])); i++ }
+        } else if (w ~ /^--field=/) {
+          sub(/^--field=/, "", w); emit_field_or_path(strip_quotes(w))
+        } else if (w ~ /^-F./) {
+          w = substr(w, 3); sub(/^=/, "", w); emit_field_or_path(strip_quotes(w))
         } else if (w == "--input") {
           # gh api --input: 요청 본문 전체를 파일로 넘긴다 (#1477).
           if (i + 1 <= n) { print strip_quotes(words[i + 1]); i++ }
@@ -795,138 +803,638 @@ pinning_extract_body_file_paths() {
 # Codex GitHub 앱(chatgpt-codex-connector)은 PR·이슈 코멘트의 봇 멘션을 작업 요청으로 읽어 클라우드
 # 작업을 시작한다. 백틱이나 인용 안에 있어도 그렇다 (기록 코멘트의 백틱 멘션이 PR 생성 작업을 띄운
 # 사례가 있다). 그래서 PR·이슈 본문과 코멘트를 게시하는 gh 명령에서 멘션을 막고, 재리뷰 요청 한
-# 형태만 명령 문자열에서 허용한다. A–D 범주와 달리 저장소 파일·커밋 메시지는 검사하지 않는다 —
-# 스킬 문서와 커밋은 그 형태를 설명해야 한다.
+# 형태만 명령 문자열에서 허용한다. 봇 계정 이름 멘션(@chatgpt-codex-connector)도 같이 막는다.
+# A–D 범주와 달리 저장소 파일·커밋 메시지는 검사하지 않는다 — 스킬 문서와 커밋은 그 형태를
+# 설명해야 한다.
 # hook은 셸 확장 전 문자열을 보므로 변수로 넘긴 본문 경로(`body=@"$BODY_FILE"`)와 stdin 본문
-# (`--input -`)은 읽지 못한다. A–D 검사와 같은 한계라 1차 방어선은 PR 스킬 지침이다.
+# (`--input -`), 인코딩하거나 조립한 멘션은 읽지 못한다. A–D 검사와 같은 한계라 1차 방어선은 PR
+# 스킬 지침이다.
 PINNING_CODEX_MENTION_LABEL="Codex 봇 멘션: 백틱이나 인용 안에 있어도 봇이 작업 요청으로 읽는다"
 
-# gh api 호출 중 GitHub에 내용을 쓰는 것만 고른다 (#1477). 읽기 조회는 jq 필터 등에 무엇이 있어도
-# 게시되지 않으므로 제외한다. 명령 구분자(;, &&, ||, |, 줄바꿈)로 나눈 조각마다 판정한다.
-# - REST: -X/--method가 POST·PATCH·PUT이거나, 메서드 지정 없이 필드(-f/-F/--field/--raw-field)나
-#   --input이 있을 때 쓰기다 (gh api는 이때 POST로 보낸다).
-# - GraphQL: 조회도 POST라 메서드로 가를 수 없다. 쿼리를 파일(=@, --input)로 넘기거나 명령 어디든
-#   mutation 키워드가 있으면 쓰기로 본다. 여러 줄 쿼리가 흔해 mutation은 명령 전체에서 찾는다.
-pinning_gh_api_posts_content() {
-  local cmd="${1:-}"
-  case "$cmd" in
-    *"gh api"*) ;;
-    *) return 1 ;;
-  esac
-  printf '%s\n' "$cmd" | awk -v sq="'" -v dq='"' '
-    function unquote(v,    n, first, last) {
-      n = length(v)
-      if (n < 2) return v
-      first = substr(v, 1, 1)
-      last = substr(v, n, 1)
-      if ((first == dq && last == dq) || (first == sq && last == sq)) return substr(v, 2, n - 2)
-      return v
-    }
-    { text = text $0 "\n" }
-    END {
-      gsub(/\\\n/, " ", text)
-      graphql_seen = 0
-      writes = 0
-      nseg = split(text, segs, "&&|[|][|]|;|[|]|\n")
-      for (s = 1; s <= nseg; s++) {
-        n = split(segs[s], w, "[ \t]+")
-        start = 0
-        for (i = 1; i < n; i++) {
-          if (w[i] ~ /(^|[\/$(`])gh$/ && w[i + 1] == "api") { start = i + 2; break }
-        }
-        if (!start) continue
-        graphql = 0; method = ""; fields = 0; file_field = 0; input = 0
-        for (i = start; i <= n; i++) {
-          t = w[i]
-          if (unquote(t) == "graphql") {
-            graphql = 1
-          } else if (t == "-X" || t == "--method") {
-            if (i < n) { i++; method = toupper(unquote(w[i])) }
-          } else if (t ~ /^-X/) {
-            method = toupper(unquote(substr(t, 3)))
-          } else if (t ~ /^--method=/) {
-            method = toupper(unquote(substr(t, 10)))
-          } else if (t == "-f" || t == "-F" || t == "--field" || t == "--raw-field") {
-            fields = 1
-            if (i < n) { i++; if (index(w[i], "=@") > 0) file_field = 1 }
-          } else if (t ~ /^-[fF]/ || t ~ /^--(raw-)?field=/) {
-            fields = 1
-            if (index(t, "=@") > 0) file_field = 1
-          } else if (t == "--input" || t ~ /^--input=/) {
-            input = 1
-          }
-        }
-        if (graphql) {
-          graphql_seen = 1
-          if (file_field || input) writes = 1
-          continue
-        }
-        if (method != "") {
-          if (method == "POST" || method == "PATCH" || method == "PUT") writes = 1
-          continue
-        }
-        if (fields || input) writes = 1
+# 셸 명령 문자열 lexer (awk 프로그램, #1477). 아래 함수들이 mode만 바꿔 쓴다.
+#   scope    — "<게시> <gh api 쓰기> <판정 불확실>"을 0/1 세 칸 한 줄로 낸다.
+#   findings — 명령 문자열의 봇 멘션 findings. 재리뷰 요청 허용 형태의 본문 위치만 뺀다.
+#   body     — 본문 파일의 봇 멘션 findings. 허용 형태 없이 모두 잡는다.
+# 게시 판정은 따옴표를 푼 단어와 세그먼트(구분자 사이 단순 명령)로 한다. 그래서 따옴표 안의
+# 구분자(`--jq '.a | .b'`), 커밋 메시지나 따옴표 있는 구분자의 heredoc 본문에 적힌 명령 이름을
+# 명령으로 오인하지 않는다.
+# - gh 호출: 세그먼트 안 어느 자리의 gh·gh-auth 단어든(경로 포함, 대소문자 무시; `sudo gh`·`env gh`도)
+#   거기서부터 cobra처럼 하위 명령을 찾는다 — `gh -R o/r pr comment`도 잡는다. pr의 create·new·
+#   edit·comment·review·revert·close·reopen, issue의 create·new·edit·comment·close·reopen, gh api
+#   쓰기가 게시다.
+# - gh api 쓰기: pflag 규칙(-X=POST, -XPOST, -iX POST, --field=k=v 등)으로 읽는다. REST는 메서드가
+#   GET·HEAD·DELETE가 아니거나, 메서드 없이 필드·--input이 있으면 쓰기다. GraphQL은 조회도 POST라
+#   query 값(문자열·주석 밖)의 mutation, 파일에서 읽는 필드, --input, 값을 알 수 없는 query를 쓰기로
+#   본다. 메서드·query·플래그 이름이 변수면 쓰기로 본다.
+# - 셸 명령을 받아 실행하는 명령(bash -c, ssh, eval 등)의 인자·here-string·heredoc 본문에 gh 호출이
+#   보이면 다시 분석하지 않고 게시로 본다. 그런 명령이 파이프로 입력을 받거나 인자를 명령 치환·
+#   변수로 만들면(`cat <<EOF | ssh host bash`, `bash -c "$(cat <<EOF ...)"`) 무엇이 실행될지 따지지
+#   않고, 명령 문자열 어디든 gh 호출이 보이면 게시로 본다. 명령어 자리가 변수면(`$GH pr comment`)
+#   뒤따르는 하위 명령과 인자로 판정한다.
+# - 허용 형태는 heredoc이 없는 명령에서, 명령 위치의 `gh pr comment`로만 인정한다. here-string(<<<),
+#   산술 시프트, 따옴표 안의 << 는 heredoc이 아니다.
+# 명령 문자열의 멘션은 게시 여부와 관계없이 전체를 본다. 파이프(`echo ... | gh pr comment -F -`)처럼
+# 다른 명령의 출력이 본문이 되는 경로가 있기 때문이다.
+# 셸마다 해석이 갈리는 문법(큰따옴표 안 ${ }의 작은따옴표)이나 짝이 맞지 않는 따옴표·괄호·heredoc을
+# 만나면 판정 불확실로 보고 허용 형태를 인정하지 않는다. PINNING_LEXER_MAX_BYTES보다 긴 명령은 lexer
+# 없이 판정 불확실로 본다 (macOS awk는 MB 단위 입력에 수십 초가 걸린다).
+# LC_ALL=C로 돌려 잘못된 UTF-8 바이트에서도 멈추지 않는다. 프로그램 안에는 작은따옴표를 쓰지 않는다.
+# shellcheck disable=SC2016  # awk 프로그램 본문이라 셸 확장을 막으려고 작은따옴표로 감싼다.
+_PINNING_SH_LEXER_AWK='
+    # 프레임: T 명령 문맥(최상위와 $( ), <( ), >( ) 안), B 백틱, D 큰따옴표, P ${ }, A 산술, H 따옴표
+    # 없는 구분자의 heredoc 본문. 단어는 T·B·H 프레임에 속하고 D·P·A의 글자는 아래 프레임의 단어에
+    # 붙는다. 작은따옴표와 ANSI-C 따옴표는 프레임 대신 sqm·ansi 상태로 다룬다.
+    function reset_word(d) { cw[d] = ""; cwn[d] = 0; cwon[d] = 0; cwdyn[d] = 0; cwq[d] = 0; cwat[d] = ""; cwlong[d] = 0 }
+    function push(t, dollar_,    below) {
+      below = sp > 0 ? ft[sp] : "T"
+      sp++; ft[sp] = t; fdollar[sp] = dollar_; par[sp] = 0
+      if (t == "T" || t == "B" || t == "H") {
+        own[sp] = sp; sn[sp] = 0; reset_word(sp); hdnext[sp] = 0; rtnext[sp] = 0; segid[sp] = ++segctr
+        pipe_in[sp] = 0
+      } else {
+        own[sp] = own[sp - 1]
       }
-      if (graphql_seen && tolower(text) ~ /(^|[^a-z0-9_])mutation([^a-z0-9_]|$)/) writes = 1
-      exit(writes ? 0 : 1)
+      if (t == "P") pctx[sp] = below == "P" ? pctx[sp - 1] : below
+    }
+    function pop() {
+      if (ft[sp] == "T" || ft[sp] == "B") { end_word(sp); end_seg(sp) }
+      sp--
+    }
+    function add(c, k, i,    o) {
+      o = own[sp]
+      cwon[o] = 1
+      if (cwn[o] < WCAP) { cw[o] = cw[o] c; cwn[o]++ } else cwlong[o] = 1
+      if (c == "@" && k > 0 && cwat[o] == "") cwat[o] = k ":" i
+    }
+    function mark_dyn(    o) { o = own[sp]; cwon[o] = 1; cwdyn[o] = 1; add("$", 0, 0) }
+    function mark_q(    o) { o = own[sp]; cwon[o] = 1; cwq[o] = 1 }
+    function end_word(d,    j) {
+      if (!cwon[d]) return
+      if (ft[d] == "H") { reset_word(d); return }
+      if (hdnext[d]) {
+        hq_n++; hq_delim[hq_n] = cw[d]; hq_quoted[hq_n] = cwq[d]; hq_dash[hq_n] = hdnext[d] == 2
+        hq_seg[hq_n] = segid[d]; hdnext[d] = 0; saw_hd = 1
+      } else {
+        j = ++sn[d]
+        sv[d, j] = cw[d]; sdy[d, j] = cwdyn[d] || cwlong[d]; sat[d, j] = cwat[d]
+        sk[d, j] = rtnext[d] == 2 ? "h" : rtnext[d] ? "r" : "w"
+        rtnext[d] = 0
+      }
+      reset_word(d)
+    }
+    # piped가 참이면 이 세그먼트의 출력이 다음 세그먼트로 파이프된다(|, |&).
+    function end_seg(d, piped) {
+      if (ft[d] == "H") return
+      if (sn[d] > 0) classify(d)
+      pipe_in[d] = piped ? 1 : 0
+      sn[d] = 0; hdnext[d] = 0; rtnext[d] = 0; segid[d] = ++segctr
+    }
+    function lower_base(w,    b) {
+      b = w
+      sub(/.*\//, "", b)
+      return tolower(b)
+    }
+    function is_gh(w,    b) { b = lower_base(w); return b == "gh" || b == "gh-auth" }
+    function is_runner(w) {
+      return lower_base(w) ~ /^(bash|sh|zsh|dash|ksh|mksh|fish|eval|ssh|su|runuser|script|watch|parallel|tmux|nix-shell)$/
+    }
+    # 셸 명령을 받아 실행하는 명령(셸 실행기)의 인자, here-string, heredoc 본문에 gh 호출이 보이면
+    # 게시로 본다. 셸 실행기가 파이프로 입력을 받거나 인자가 명령 치환·변수로 만들어지면 무엇이
+    # 실행될지 따지지 않고 END에서 명령 문자열 전체로 판정한다. 그 안의 명령은 다시 분석하지 않는다.
+    # 스크립트 안에서 따옴표로 감싼 gh도 잡도록 따옴표를 gh 앞뒤 경계로 본다.
+    function has_gh_text(s) { return s ~ GH_TEXT_RE }
+    function classify(d,    j, np, t, cmdpos, hstr, runner) {
+      np = 0; hstr = 0; runner = 0
+      for (j = 1; j <= sn[d]; j++) {
+        if (sk[d, j] == "h") { if (has_gh_text(sv[d, j])) hstr = 1; continue }
+        if (sk[d, j] != "w") continue
+        np++; pw[np] = sv[d, j]; pd[np] = sdy[d, j]; pa[np] = sat[d, j]
+      }
+      if (np == 0) return
+      check_allowed(np)
+      cmdpos = 1
+      while (cmdpos <= np && pw[cmdpos] ~ /^[A-Za-z_][A-Za-z0-9_]*=/) cmdpos++
+      for (t = 1; t <= np; t++) {
+        if (pd[t]) {
+          # 명령어 자리가 변수면($GH pr comment, $SHELL -c ...) 뒤따르는 하위 명령과 인자로 판정한다.
+          if (t == cmdpos) { gh_invocation(t, np, 1); if (runner_args(t, np)) posts = 1 }
+          continue
+        }
+        if (is_gh(pw[t])) gh_invocation(t, np, 0)
+        else if (is_runner(pw[t])) { runner = 1; if (runner_args(t, np)) posts = 1 }
+      }
+      if (!runner) return
+      runner_seg[segid[d]] = 1
+      if (hstr) posts = 1
+      if (pipe_in[d]) piped_runner = 1
+    }
+    # 동적 인자(명령 치환·변수·ANSI-C, 잘린 긴 단어)는 정적 텍스트만으로 알 수 없어 END로 넘긴다.
+    function runner_args(t, np,    u) {
+      for (u = t + 1; u <= np; u++) {
+        if (has_gh_text(pw[u])) return 1
+        if (pd[u]) dyn_runner = 1
+      }
+      return 0
+    }
+    # 재리뷰 요청 허용 형태: [NAME=값...] gh [-R 저장소] pr [-R 저장소] comment [PR 하나]
+    # [-R 저장소...] --body <재리뷰 요청 문구>. -b와 --body=도 받고, 본문 인자는 정확히 한 번이다.
+    # 문구는 따옴표를 푼 값이 정확히 @codex review(소문자)여야 하고, 그 @ 위치만 allowed에 넣는다.
+    function check_allowed(np,    u, w, st, npos, nbody, bpos) {
+      u = 1
+      while (u <= np && pw[u] ~ /^[A-Za-z_][A-Za-z0-9_]*=/) u++
+      if (u > np || pd[u] || pw[u] !~ /^(.*\/)?gh(-auth)?$/) return
+      st = 0; npos = 0; nbody = 0; bpos = ""
+      for (u++; u <= np; u++) {
+        w = pw[u]
+        if (w == "-R" || w == "--repo") { u++; if (u > np) return; continue }
+        if (substr(w, 1, 7) == "--repo=") continue
+        if (st == 0) { if (pd[u] || w != "pr") return; st = 1; continue }
+        if (st == 1) { if (pd[u] || w != "comment") return; st = 2; continue }
+        if (w == "--body" || w == "-b") {
+          u++
+          if (u > np || pd[u] || pw[u] != "@codex review") return
+          nbody++; bpos = pa[u]; continue
+        }
+        if (substr(w, 1, 7) == "--body=") {
+          if (pd[u] || substr(w, 8) != "@codex review") return
+          nbody++; bpos = pa[u]; continue
+        }
+        if (substr(w, 1, 1) == "-") return
+        if (++npos > 1) return
+      }
+      if (st == 2 && nbody == 1 && bpos != "") allowed[bpos] = 1
+    }
+    # gh의 명령 경로는 cobra처럼 찾는다: 등호 없는 모르는 플래그는 다음 단어를 값으로 먹는다.
+    # 그래서 `gh -R o/r pr comment`처럼 플래그가 하위 명령 앞에 와도 경로를 찾는다.
+    function gh_invocation(t, np, dyncmd,    u, w, ncmd, c1, c2, c1d, c2d, c1i) {
+      ncmd = 0
+      for (u = t + 1; u <= np && ncmd < 2; u++) {
+        w = pw[u]
+        if (w == "--" && !pd[u]) break
+        if (substr(w, 1, 1) == "-" && w != "-") {
+          if (substr(w, 1, 2) == "--") { if (index(w, "=") == 0 && w != "--help" && w != "--version") u++ }
+          else if (length(w) == 2 && w != "-h") u++
+          continue
+        }
+        ncmd++
+        if (ncmd == 1) { c1 = w; c1d = pd[u]; c1i = u } else { c2 = w; c2d = pd[u] }
+      }
+      if (ncmd == 0) return
+      if (dyncmd && (c1d || c1 !~ /^(pr|issue|api)$/)) return
+      if (c1d) { posts = 1; return }
+      if (c1 == "pr" || c1 == "issue") {
+        if (ncmd < 2) return
+        if (c2d) { posts = 1; return }
+        if (c2 ~ /^(create|new|edit|comment|close|reopen)$/ || (c1 == "pr" && c2 ~ /^(review|revert)$/)) posts = 1
+        return
+      }
+      if (c1 == "api" && api_writes(t, np, c1i)) { posts = 1; apiw = 1 }
+    }
+    # gh api 호출이 GitHub에 내용을 쓰는지. pflag 규칙으로 인자를 읽는다(-X=POST, -XPOST, -iX POST,
+    # --method=POST, --field=k=v 등).
+    function api_writes(t, np, api_i,    u, w, d, name, val, vd, eq, s, ch, rest, have_ep, ep, epd, endf) {
+      am = ""; amdyn = 0; afields = 0; afilef = 0; ainput = 0; aqdyn = 0; aqmut = 0; aunk = 0
+      have_ep = 0; endf = 0
+      for (u = t + 1; u <= np; u++) {
+        if (u == api_i) continue
+        w = pw[u]; d = pd[u]
+        if (endf || substr(w, 1, 1) != "-" || w == "-") {
+          if (!have_ep) { have_ep = 1; ep = w; epd = d }
+          else if (d) aunk = 1
+          continue
+        }
+        if (w == "--") { endf = 1; continue }
+        if (substr(w, 1, 2) == "--") {
+          name = substr(w, 3); eq = index(name, "=")
+          if (eq) { val = substr(name, eq + 1); name = substr(name, 1, eq - 1); vd = d }
+          if (index(name, "$")) { aunk = 1; continue }
+          if (name ~ /^(method|field|raw-field|header|input|jq|template|cache|hostname|preview)$/) {
+            if (!eq) { u++; if (u > np) break; val = pw[u]; vd = pd[u] }
+            api_opt(name, val, vd)
+          }
+          continue
+        }
+        s = substr(w, 2)
+        while (s != "") {
+          ch = substr(s, 1, 1); rest = substr(s, 2)
+          if (ch == "$") { aunk = 1; break }
+          if (ch ~ /^[XfFHqtp]$/) {
+            if (rest != "") { if (substr(rest, 1, 1) == "=") rest = substr(rest, 2); val = rest; vd = d }
+            else { u++; if (u > np) break; val = pw[u]; vd = pd[u] }
+            api_opt(ch == "X" ? "method" : ch == "f" ? "raw-field" : ch == "F" ? "field" : "other", val, vd)
+            break
+          }
+          s = rest
+        }
+      }
+      if (aunk) return 1
+      if (have_ep && !epd && ep == "graphql") return ainput || afilef || aqdyn || aqmut
+      if (amdyn) return 1
+      if (am != "") return !(am == "GET" || am == "HEAD" || am == "DELETE")
+      return afields || ainput
+    }
+    function api_opt(name, val, vd,    eq, key, v) {
+      if (name == "method") { am = toupper(val); amdyn = vd; return }
+      if (name == "input") { ainput = 1; return }
+      if (name != "field" && name != "raw-field") return
+      afields = 1
+      eq = index(val, "=")
+      if (eq) { key = substr(val, 1, eq - 1); v = substr(val, eq + 1) } else { key = val; v = "" }
+      if (name == "field" && substr(v, 1, 1) == "@") afilef = 1
+      if (vd && (key == "query" || index(key, "$"))) { aqdyn = 1; return }
+      if (key != "query") return
+      if (name == "field" && substr(v, 1, 1) == "@") aqdyn = 1
+      else if (gql_mutation(v)) aqmut = 1
+    }
+    # GraphQL 문서에 mutation 연산이 있는지. 문자열과 # 주석 안의 낱말은 세지 않는다.
+    function gql_mutation(q,    n, Q, i, c, instr) {
+      if (index(q, "mutation") == 0) return 0
+      n = split(q, Q, "")
+      instr = 0
+      for (i = 1; i <= n; i++) {
+        c = Q[i]
+        if (instr == 1) { if (c == "\\") i++; else if (c == dq) instr = 0; continue }
+        if (instr == 2) { if (c == dq && Q[i + 1] == dq && Q[i + 2] == dq) { instr = 0; i += 2 }; continue }
+        if (c == "#") { while (i <= n && Q[i] != "\n") i++; continue }
+        if (c == dq) { if (Q[i + 1] == dq && Q[i + 2] == dq) { instr = 2; i += 2 } else instr = 1; continue }
+        if (c == "m" && substr(q, i, 8) == "mutation" && (i == 1 || Q[i - 1] !~ /[A-Za-z0-9_]/) && Q[i + 8] !~ /[A-Za-z0-9_]/) return 1
+      }
+      return 0
+    }
+    function dollar(k, i, c2) {
+      if (c2 == "(") {
+        mark_dyn()
+        if (C[i + 2] == "(") { push("A", 0); return i + 2 }
+        push("T", 1); return i + 1
+      }
+      if (c2 == "{") { mark_dyn(); push("P", 0); return i + 1 }
+      if (ft[sp] == "T" || ft[sp] == "B") {
+        if (c2 == sq) { mark_dyn(); ansi = 1; return i + 1 }
+        if (c2 == dq) { mark_q(); push("D", 0); return i + 1 }
+      }
+      if (c2 ~ /^[A-Za-z0-9_@*#?$!-]$/) { mark_dyn(); return i }
+      add("$", k, i); return i
+    }
+    function redir(k, i, c, c2,    o) {
+      o = sp
+      if (c2 == "(") { mark_dyn(); push("T", 1); return i + 1 }
+      if (cwon[o] && !cwq[o] && !cwdyn[o] && cw[o] ~ /^[0-9]+$/) reset_word(o)
+      else end_word(o)
+      if (c == ">") {
+        if (c2 == ">" || c2 == "|" || c2 == "&") i++
+        rtnext[o] = 1; return i
+      }
+      if (c2 == "<") {
+        if (C[i + 2] == "<") { rtnext[o] = 2; return i + 2 }
+        if (C[i + 2] == "-") { hdnext[o] = 2; return i + 2 }
+        hdnext[o] = 1; return i + 1
+      }
+      if (c2 == "&" || c2 == ">") i++
+      rtnext[o] = 1; return i
+    }
+    function lex_T(k, i, n, c, c2) {
+      if (c == " " || c == "\t") { end_word(sp); return i }
+      if (c == "\\") {
+        if (i == n) { cont = 1; return i }
+        mark_q(); add(c2, k, i + 1); return i + 1
+      }
+      if (c == sq) { mark_q(); sqm = 1; return i }
+      if (c == dq) { mark_q(); push("D", 0); return i }
+      if (c == "`") {
+        if (ft[sp] == "B") { pop(); return i }
+        mark_dyn(); push("B", 0); return i
+      }
+      if (c == "$") return dollar(k, i, c2)
+      if (c == "#" && !cwon[sp]) return comment_end(i, n)
+      if (c == ";") { end_word(sp); end_seg(sp); return i }
+      if (c == "&") {
+        if (c2 == ">") { end_word(sp); i++; if (C[i + 1] == ">") i++; rtnext[sp] = 1; return i }
+        end_word(sp); end_seg(sp); if (c2 == "&") i++
+        return i
+      }
+      if (c == "|") {
+        end_word(sp)
+        if (c2 == "|") { end_seg(sp); return i + 1 }
+        end_seg(sp, 1); if (c2 == "&") i++
+        return i
+      }
+      if (c == "(") {
+        end_word(sp); end_seg(sp)
+        if (c2 == "(") { push("A", 0); return i + 1 }
+        par[sp]++; return i
+      }
+      if (c == ")") {
+        end_word(sp); end_seg(sp)
+        if (par[sp] > 0) par[sp]--
+        else if (ft[sp] == "T" && fdollar[sp]) pop()
+        else confused = 1
+        return i
+      }
+      if (c == "<" || c == ">") return redir(k, i, c, c2)
+      add(c, k, i); return i
+    }
+    # 주석은 줄 끝까지다. 백틱 치환 안에서는 셸이 닫는 백틱을 먼저 찾으므로 이스케이프되지 않은
+    # 백틱 앞에서 끝난다.
+    function comment_end(i, n,    j) {
+      if (ft[sp] != "B") return n
+      for (j = i + 1; j <= n; j++) {
+        if (C[j] == "\\") { j++; continue }
+        if (C[j] == "`") return j - 1
+      }
+      return n
+    }
+    function lex_D(k, i, n, c, c2) {
+      if (c == dq) { pop(); return i }
+      if (c == "\\") {
+        if (i == n) { cont = 1; return i }
+        if (c2 == "$" || c2 == "`" || c2 == dq || c2 == "\\") { add(c2, k, i + 1); return i + 1 }
+        add(c, k, i); return i
+      }
+      if (c == "$") return dollar(k, i, c2)
+      if (c == "`") { mark_dyn(); push("B", 0); return i }
+      add(c, k, i); return i
+    }
+    function lex_P(k, i, n, c, c2) {
+      if (c == "}") { pop(); return i }
+      if (c == "\\") {
+        if (i == n) { cont = 1; return i }
+        add(c2, k, i + 1); return i + 1
+      }
+      if (c == sq) {
+        if (pctx[sp] != "D" && pctx[sp] != "H") { sqm = 1; return i }
+        # 큰따옴표 안 ${ }의 작은따옴표는 bash가 인용으로, zsh·POSIX가 글자로 읽는다.
+        if (pctx[sp] == "D") confused = 1
+      }
+      if (c == dq) { push("D", 0); return i }
+      if (c == "$") return dollar(k, i, c2)
+      if (c == "`") { push("B", 0); return i }
+      add(c, k, i); return i
+    }
+    # 산술 확장 $(( )) 과 산술 명령 (( )). << 는 시프트 연산자다.
+    function lex_A(k, i, n, c, c2) {
+      if (c == "(") { par[sp]++; return i }
+      if (c == ")") {
+        if (par[sp] > 0) { par[sp]--; return i }
+        if (c2 == ")") { pop(); return i + 1 }
+        confused = 1; pop(); return i
+      }
+      if (c == "\\") { if (i == n) cont = 1; else i++; return i }
+      if (c == sq) { sqm = 1; return i }
+      if (c == dq) { push("D", 0); return i }
+      if (c == "$") return dollar(k, i, c2)
+      if (c == "`") { push("B", 0); return i }
+      add(c, k, i); return i
+    }
+    # 따옴표 없는 구분자의 heredoc 본문: 큰따옴표 안처럼 $, 백틱, 역슬래시만 특별하다.
+    function lex_H(k, i, n, c, c2) {
+      if (c == "\\") {
+        if (i == n) { cont = 1; return i }
+        if (c2 == "$" || c2 == "`" || c2 == "\\") return i + 1
+        return i
+      }
+      if (c == "$") return dollar(k, i, c2)
+      if (c == "`") { push("B", 0); return i }
+      return i
+    }
+    # ANSI-C 따옴표의 이스케이프. 제어문자(\n, \t 등)와 코드 표기(\x41, \101, \u 뒤 16진수)는 값을
+    # 풀지 않고 공백 하나로 넣어 단어 경계로만 쓴다. 반환값은 마지막으로 먹은 글자 위치다.
+    function ansi_esc(k, i, n, c2,    j, m, lim, cls) {
+      if (c2 ~ /^[abeEfnrtv]$/) { add(" ", k, i + 1); return i + 1 }
+      if (c2 == "c") { add(" ", k, i + 1); return i + 1 < n ? i + 2 : i + 1 }
+      if (c2 == "\\" || c2 == sq || c2 == dq || c2 == "?") { add(c2, k, i + 1); return i + 1 }
+      if (c2 ~ /^[0-7]$/) { j = i + 1; lim = 3; cls = "^[0-7]$" }
+      else if (c2 == "x") { j = i + 2; lim = 2; cls = "^[0-9A-Fa-f]$" }
+      else if (c2 == "u") { j = i + 2; lim = 4; cls = "^[0-9A-Fa-f]$" }
+      else if (c2 == "U") { j = i + 2; lim = 8; cls = "^[0-9A-Fa-f]$" }
+      else { add("\\", k, i); add(c2, k, i + 1); return i + 1 }
+      for (m = 0; m < lim && j <= n && C[j] ~ cls; m++) j++
+      add(" ", k, i + 1)
+      return j - 1
+    }
+    function lex_line(k,    n, i, c, c2, t) {
+      # heredoc 본문 줄에 $, 백틱, 역슬래시가 없으면 볼 것이 없다.
+      if (ft[sp] == "H" && !sqm && !ansi && LX[k] !~ /[$`\\]/) return
+      n = split(LX[k], C, "")
+      for (i = 1; i <= n; i++) {
+        c = C[i]; c2 = i < n ? C[i + 1] : ""
+        if (sqm) { if (c == sq) sqm = 0; else add(c, k, i); continue }
+        if (ansi) {
+          if (c == "\\") { if (i < n) i = ansi_esc(k, i, n, c2) }
+          else if (c == sq) ansi = 0
+          else add(c, k, i)
+          continue
+        }
+        t = ft[sp]
+        if (t == "T" || t == "B") i = lex_T(k, i, n, c, c2)
+        else if (t == "D") i = lex_D(k, i, n, c, c2)
+        else if (t == "P") i = lex_P(k, i, n, c, c2)
+        else if (t == "A") i = lex_A(k, i, n, c, c2)
+        else i = lex_H(k, i, n, c, c2)
+      }
+    }
+    function at_eol(k,    t) {
+      if (sqm || ansi) { add("\n", k, 0); return }
+      t = ft[sp]
+      if (t == "T" || t == "B") {
+        end_word(sp); end_seg(sp)
+        if (hq_n > 0) { if (in_hd) { confused = 1; hq_n = 0 } else hq_ready = 1 }
+        return
+      }
+      if (t == "D" || t == "P" || t == "A") add("\n", k, 0)
+    }
+    function delim_line(s, delim, dash) {
+      if (dash) sub(/^\t+/, "", s)
+      return s == delim
+    }
+    function lex_heredoc(a, b, script,    j, base) {
+      if (script) {
+        for (j = a; j <= b; j++) if (has_gh_text(LX[j])) { posts = 1; break }
+      }
+      in_hd = 1
+      push("H", 0); base = sp
+      for (j = a; j <= b; j++) {
+        lex_line(j)
+        if (!cont) at_eol(j)
+        cont = 0
+      }
+      if (sqm || ansi) { confused = 1; sqm = 0; ansi = 0 }
+      while (sp > base) { confused = 1; pop() }
+      pop()
+      in_hd = 0
+    }
+    function lex_all(    k, h, e, joined) {
+      sp = 0; sqm = 0; ansi = 0; cont = 0; hq_n = 0; hq_ready = 0; in_hd = 0
+      push("T", 0)
+      k = 1
+      while (k <= nlx) {
+        lex_line(k)
+        if (!cont) at_eol(k)
+        cont = 0
+        k++
+        if (hq_ready) {
+          hq_ready = 0
+          for (h = 1; h <= hq_n; h++) {
+            # 따옴표 없는 구분자의 본문에서 홀수 개 역슬래시로 끝나는 줄은 다음 줄과 이어지므로,
+            # 이어진 줄은 종결자가 아니다.
+            e = k; joined = 0
+            while (e <= nlx && (joined || !delim_line(LX[e], hq_delim[h], hq_dash[h]))) {
+              joined = !hq_quoted[h] && LX[e] ~ /(^|[^\\])(\\\\)*\\$/
+              e++
+            }
+            if (e > nlx) confused = 1
+            if (e > k) {
+              if (hq_quoted[h]) { if (runner_seg[hq_seg[h]]) lex_heredoc_script(k, e - 1) }
+              else lex_heredoc(k, e - 1, runner_seg[hq_seg[h]])
+            }
+            k = e + 1
+          }
+          hq_n = 0
+        }
+      }
+      if (sqm || ansi) confused = 1
+      while (sp > 1) { confused = 1; pop() }
+      end_word(1); end_seg(1)
+      if (confused || saw_hd) { split("", allowed) }
+    }
+    function lex_heredoc_script(a, b,    j) {
+      for (j = a; j <= b; j++) if (has_gh_text(LX[j])) { posts = 1; return }
+    }
+    # 봇 멘션 목록. use_allowed가 참이면 허용 형태의 본문 위치는 뺀다.
+    function scan_mentions(use_allowed,    k, rest, off, p, p2, nm, col, tok, after, found) {
+      found = 0
+      for (k = 1; k <= nl; k++) {
+        rest = tolower(L[k]); off = 0
+        while (1) {
+          p = index(rest, "@codex"); p2 = index(rest, "@chatgpt-codex-connector")
+          if (!p && !p2) break
+          if (p && (!p2 || p < p2)) nm = 6
+          else { p = p2; nm = 24 }
+          col = off + p
+          if (!(use_allowed && ((k ":" col) in allowed))) {
+            # 멘션 뒤 요청어 한 단어까지 보여 준다. ASCII만 이어 붙여 멀티바이트 경계를 자르지 않는다.
+            tok = substr(L[k], col, nm)
+            after = substr(L[k], col + nm, 64)
+            if (match(after, /^[A-Za-z0-9_-]*( [A-Za-z0-9_-]+)?/)) tok = tok substr(after, 1, RLENGTH)
+            if (!found) { printf "\n  - %s", label; found = 1 }
+            printf "\n%s%d: %s", indent, k, tok
+          }
+          off += p; rest = substr(rest, p + 1)
+        }
+      }
+    }
+    { L[++nl] = $0 }
+    END {
+      WCAP = 4096
+      GH_TEXT_RE = "(^|[^A-Za-z0-9_.-])gh(-auth)?([ \t\n;&|)<>`" sq dq "]|$)"
+      if (mode == "body") { scan_mentions(0); exit 0 }
+      for (k = 1; k <= nl; k++) LX[k] = L[k]
+      nlx = nl
+      lex_all()
+      if ((piped_runner || dyn_runner) && !posts) for (k = 1; k <= nl; k++) if (has_gh_text(L[k])) { posts = 1; break }
+      if (mode == "findings") { scan_mentions(1); exit 0 }
+      printf "%d %d %d\n", posts, apiw, confused
     }
   '
+
+# lexer에 넘길 명령의 최대 길이(바이트). 넘으면 lexer 없이 판정 불확실로 본다.
+PINNING_LEXER_MAX_BYTES=262144
+
+# awk가 실패하면 비0으로 끝난다. hook의 stderr를 오염시키지 않도록 awk 오류는 버린다.
+_pinning_sh_lexer() {
+  local mode="$1"
+  shift
+  LC_ALL=C awk -v mode="$mode" -v sq="'" -v dq='"' \
+    -v indent="$PINNING_REPORT_INDENT" -v label="$PINNING_CODEX_MENTION_LABEL" \
+    "$_PINNING_SH_LEXER_AWK" "$@" 2>/dev/null
+}
+
+_pinning_too_long_for_lexer() {
+  local LC_ALL=C
+  [ "${#1}" -gt "$PINNING_LEXER_MAX_BYTES" ]
+}
+
+# gh를 부를 수 있는 명령인지 빠르게 거른다. 따옴표·역슬래시로 끊은 이름(`g\h`, `g''h`)도 통과시킨다.
+_pinning_may_call_gh() {
+  local probe="$1"
+  probe="${probe//\\/}"
+  probe="${probe//\"/}"
+  probe="${probe//\'/}"
+  case "$probe" in
+    *[Gg][Hh]*) return 0 ;;
+  esac
+  return 1
+}
+
+# "<게시> <gh api 쓰기> <판정 불확실>". lexer 출력이 형식에 맞지 않으면 판정 불확실로 본다.
+_pinning_gh_profile() {
+  local profile
+  if _pinning_too_long_for_lexer "$1"; then
+    printf '0 0 1\n'
+    return 0
+  fi
+  profile="$(printf '%s\n' "$1" | _pinning_sh_lexer scope)" || profile=""
+  case "$profile" in
+    [01]" "[01]" "[01]) printf '%s\n' "$profile" ;;
+    *) printf '0 0 1\n' ;;
+  esac
+}
+
+# 판정이 불확실한 명령(닫히지 않은 따옴표·괄호, 끝나지 않은 heredoc 등)은 문자열로 보수적으로 판정한다.
+_pinning_gh_text_fallback() {
+  case "$1" in
+    *"gh pr "* | *"gh issue "* | *"gh api"* | *"gh -"* | *"gh-auth "*) return 0 ;;
+  esac
+  return 1
+}
+
+# gh api 호출 중 GitHub에 내용을 쓰는 것이 있는지 (#1477). 읽기 조회는 jq 필터 등에 무엇이 있어도
+# 게시되지 않으므로 제외한다. 판정 기준은 위 lexer 설명을 따른다. hook은 이 함수 대신
+# pinning_codex_mention_scope를 쓴다. 이 함수는 gh api 쓰기 판정만 따로 확인하는 테스트·진단용이다.
+pinning_gh_api_posts_content() {
+  local cmd="${1:-}" posts="" api="" confused=""
+  _pinning_may_call_gh "$cmd" || return 1
+  read -r posts api confused <<<"$(_pinning_gh_profile "$cmd")"
+  [ "$api" = 1 ] && return 0
+  if [ "$confused" = 1 ]; then
+    case "$cmd" in
+      *"gh api"* | *"gh-auth api"* | *"gh -"*" api "*) return 0 ;;
+    esac
+  fi
+  return 1
 }
 
 # 멘션 검사 대상 명령: PR·이슈 본문과 코멘트를 게시하는 gh 명령과 gh api 쓰기.
 # git commit과 gh pr merge(병합 커밋 메시지)는 대상이 아니다.
 pinning_codex_mention_scope() {
-  local cmd="${1:-}"
-  case "$cmd" in
-    *"gh pr create"* | *"gh pr edit"* | *"gh pr comment"* | *"gh pr review"* | \
-    *"gh issue create"* | *"gh issue edit"* | *"gh issue comment"*) return 0 ;;
-  esac
-  pinning_gh_api_posts_content "$cmd"
+  local cmd="${1:-}" posts="" api="" confused=""
+  _pinning_may_call_gh "$cmd" || return 1
+  read -r posts api confused <<<"$(_pinning_gh_profile "$cmd")"
+  [ "$posts" = 1 ] && return 0
+  [ "$confused" = 1 ] && _pinning_gh_text_fallback "$cmd" && return 0
+  return 1
 }
 
 # 멘션 findings. 출력은 A–D의 렌더 형식(라벨 한 줄 + `<line>: <token>`)을 따르고, 없으면 빈 출력이다.
+# awk가 실패하면 비0으로 끝난다.
 #   $1 scan_file
-#   $2 mode — command: 명령 문자열. `gh pr comment <PR> [인자...] --body '@codex review'`
-#             (-b, --body=, 큰따옴표 포함)만 빼고 검사한다. 줄 끝 역슬래시 이어쓰기는 한 줄로 본다.
-#           — body: --body-file 등으로 넘긴 본문. 허용 형태 없이 모든 멘션을 잡는다.
-# 대소문자를 가리지 않는다. 허용 형태는 소문자 원문 그대로일 때만 인정한다.
+#   $2 mode — command: 명령 문자열. 재리뷰 요청 허용 형태의 본문(`--body '@codex review'`)만 빼고
+#             검사한다. 명령에 heredoc이 있거나, lexer가 판정을 확신하지 못하거나, 명령이
+#             PINNING_LEXER_MAX_BYTES보다 길면 빼지 않는다.
+#           — body: --body-file 등으로 넘긴 본문. 허용 형태 없이 모든 멘션을 잡는다. NUL 바이트는
+#             지우고 본다 (macOS awk는 NUL에서 줄을 끊는다).
+# 대소문자를 가리지 않는다. 줄 번호는 입력의 실제 줄이다.
 pinning_codex_mention_findings_text() {
-  local scan_file="$1" mode="${2:-body}" allow=0
-  [ "$mode" = "command" ] && allow=1
-  awk -v allow="$allow" -v sq="'" -v dq='"' \
-    -v indent="$PINNING_REPORT_INDENT" -v label="$PINNING_CODEX_MENTION_LABEL" '
-    BEGIN {
-      arg = "[A-Za-z0-9_./:#=" sq dq "-]+[ \t]+"
-      allow_re = "[ \t;&|(/]gh[ \t]+pr[ \t]+comment[ \t]+(" arg ")*(--body[ \t]+|--body=|-b[ \t]+)(" \
-        sq "@codex review" sq "|" dq "@codex review" dq ")[ \t;&|)]"
-      found = 0
-    }
-    function report(text, lineno,    lower, pos, tok, after) {
-      lower = tolower(text)
-      while ((pos = index(lower, "@codex")) > 0) {
-        # 멘션 뒤 요청어 한 단어까지 보여 준다. ASCII만 이어 붙여 멀티바이트 경계를 자르지 않는다.
-        tok = substr(text, pos, 6)
-        after = substr(text, pos + 6)
-        if (match(after, /^[A-Za-z0-9_-]*( [A-Za-z0-9_-]+)?/)) tok = tok substr(after, 1, RLENGTH)
-        if (!found) { printf "\n  - %s", label; found = 1 }
-        printf "\n%s%d: %s", indent, lineno, tok
-        text = substr(text, pos + 6)
-        lower = substr(lower, pos + 6)
-      }
-    }
-    function scan(text, lineno,    line) {
-      line = " " text " "
-      if (allow) { while (gsub(allow_re, " ", line) > 0) {} }
-      report(line, lineno)
-    }
-    {
-      if (pending) { buf = buf " " $0 } else { buf = $0; start = NR }
-      if (allow && buf ~ /\\$/) { sub(/\\$/, "", buf); pending = 1; next }
-      pending = 0
-      scan(buf, start)
-    }
-    END { if (pending) scan(buf, start) }
-  ' "$scan_file"
+  local scan_file="$1" mode=body size=0
+  if [ "${2:-body}" = "command" ]; then
+    mode=findings
+    size=$(LC_ALL=C wc -c < "$scan_file") || return 1
+    [ "$((size + 0))" -gt "$PINNING_LEXER_MAX_BYTES" ] && mode=body
+  fi
+  if [ "$mode" = body ]; then
+    LC_ALL=C tr -d '\000' < "$scan_file" | _pinning_sh_lexer body
+  else
+    _pinning_sh_lexer findings "$scan_file"
+  fi
 }
 
 # 멘션 deny 사유. surface/target은 A–D deny와 같은 뜻이고 findings는 위 함수의 출력이다.
@@ -934,5 +1442,5 @@ pinning_codex_mention_deny_reason() {
   local surface="$1" target="$2" findings="$3"
   printf "[pinning-guard] %s on %s mentions the Codex GitHub app:%s\n%s" \
     "$surface" "$target" "$findings" \
-    "재리뷰 요청은 한 줄 명령 gh pr comment <PR> --body '@codex review'로만 보낸다. 그 밖에는 멘션 없이 'Codex 봇'처럼 쓰고 다시 시도한다."
+    "재리뷰 요청은 heredoc 없는 명령에서 gh pr comment <PR> -R OWNER/REPO --body '@codex review' 형태로만 보낸다. 그 밖의 게시물에는 멘션 없이 'Codex 봇'처럼 쓴다. 조회 필터처럼 게시하지 않는 부분의 멘션이면 게시 명령과 나눠 실행한다. Codex에 작업을 맡기려던 것이면 사용자에게 넘긴다."
 }

@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh pr create --title t --body \"$(cat <<'EOF'\n재리뷰 요청 형태:\ngh pr comment 12 --body '@codex review'\nEOF\n)\""
+  }
+}

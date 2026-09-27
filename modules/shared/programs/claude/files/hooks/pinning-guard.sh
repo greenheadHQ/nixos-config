@@ -46,16 +46,19 @@ _scan_text_file() {
   printf '%s' "$text" > "$out_file"
 }
 
+# gh 게시 명령 전반(gh api 쓰기, `gh -R o/r pr comment` 같은 형태 포함)은 아래 Bash 분기에서
+# pinning_codex_mention_scope가 먼저 A–D 대상으로 올린다 (#1477). 여기서는 그 밖의 durable 명령을
+# 문자열로 고른다.
 _targeted_bash_command() {
   local cmd="$1"
   case "$cmd" in
     *"git commit"* | *"git -"*" commit"* | \
     *"gh pr create"* | *"gh pr edit"* | *"gh pr comment"* | *"gh pr review"* | *"gh pr merge"* | \
-    *"gh issue create"* | *"gh issue edit"* | *"gh issue comment"* | \
+    *"gh pr close"* | *"gh pr reopen"* | *"gh pr revert"* | \
+    *"gh issue create"* | *"gh issue edit"* | *"gh issue comment"* | *"gh issue close"* | *"gh issue reopen"* | \
     *"gh api"*"issues/"*"comments"* | *"gh api"*"pulls/"*"comments"* | *"gh api"*"pulls/"*"reviews"*) return 0 ;;
   esac
-  # 엔드포인트와 무관하게 gh api 쓰기(GraphQL mutation 포함)도 게시면이다 (#1477).
-  pinning_gh_api_posts_content "$cmd"
+  return 1
 }
 
 case "$TOOL_NAME" in
@@ -119,22 +122,26 @@ case "$TOOL_NAME" in
   Bash)
     COMMAND_TEXT=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
     [ -n "$COMMAND_TEXT" ] || exit 0
-    # 박제 범주(A–D)와 Codex 봇 멘션(#1477)은 검사 대상 명령이 겹치지만 같지 않다.
+    # 박제 범주(A–D)와 Codex 봇 멘션(#1477)은 검사 대상 명령이 겹치지만 같지 않다. 멘션 대상(GitHub
+    # 게시 명령)은 모두 A–D 대상이고, A–D는 git commit·gh pr merge 같은 durable 명령을 더 본다.
     SCAN_PINNING=0
     SCAN_MENTION=0
-    if _targeted_bash_command "$COMMAND_TEXT"; then SCAN_PINNING=1; fi
-    if pinning_codex_mention_scope "$COMMAND_TEXT"; then SCAN_MENTION=1; fi
-    [ "$SCAN_PINNING" = 1 ] || [ "$SCAN_MENTION" = 1 ] || exit 0
+    if pinning_codex_mention_scope "$COMMAND_TEXT"; then
+      SCAN_MENTION=1
+      SCAN_PINNING=1
+    elif _targeted_bash_command "$COMMAND_TEXT"; then
+      SCAN_PINNING=1
+    fi
+    [ "$SCAN_PINNING" = 1 ] || exit 0
 
     _scan_text_file "$COMMAND_TEXT" "$SCAN_DIR/new.txt"
-    if [ "$SCAN_PINNING" = 1 ]; then
-      findings="$(pinning_findings_text "$SCAN_DIR/new.txt")"
-      if [ -n "$findings" ]; then
-        _deny "$TOOL_NAME" "durable shell command" "$findings"
-      fi
+    findings="$(pinning_findings_text "$SCAN_DIR/new.txt")"
+    if [ -n "$findings" ]; then
+      _deny "$TOOL_NAME" "durable shell command" "$findings"
     fi
     if [ "$SCAN_MENTION" = 1 ]; then
-      findings="$(pinning_codex_mention_findings_text "$SCAN_DIR/new.txt" command)"
+      findings="$(pinning_codex_mention_findings_text "$SCAN_DIR/new.txt" command)" \
+        || _deny_with_reason "[pinning-guard] Codex mention scan failed; denying by fail-closed policy."
       if [ -n "$findings" ]; then
         _deny_with_reason "$(pinning_codex_mention_deny_reason "$TOOL_NAME" "durable shell command" "$findings")"
       fi
@@ -144,18 +151,19 @@ case "$TOOL_NAME" in
     # command 문자열 자체는 클린해도 파일 내용에 박제 패턴이나 봇 멘션이 있는 케이스를 잡는다.
     while IFS= read -r body_file; do
       [ -n "$body_file" ] || continue
-      [ -e "$body_file" ] || continue
-      if ! cat "$body_file" > "$SCAN_DIR/new.txt" 2>/dev/null; then
+      # gh가 본문으로 읽는 것은 정규 파일뿐이다. 디렉터리(`awk -F/`의 `/`)·장치·파이프는 건너뛴다.
+      [ -f "$body_file" ] || continue
+      # cat이 루프의 stdin(남은 경로 목록)을 읽지 않도록 stdin을 막는다 (`-` 파일 등).
+      if ! cat -- "$body_file" > "$SCAN_DIR/new.txt" 2>/dev/null </dev/null; then
         _deny_with_reason "[pinning-guard] failed to read $body_file referenced via --body-file; denying by fail-closed policy."
       fi
-      if [ "$SCAN_PINNING" = 1 ]; then
-        findings="$(pinning_findings_text "$SCAN_DIR/new.txt")"
-        if [ -n "$findings" ]; then
-          _deny "$TOOL_NAME" "$body_file (via --body-file)" "$findings"
-        fi
+      findings="$(pinning_findings_text "$SCAN_DIR/new.txt")"
+      if [ -n "$findings" ]; then
+        _deny "$TOOL_NAME" "$body_file (via --body-file)" "$findings"
       fi
       if [ "$SCAN_MENTION" = 1 ]; then
-        findings="$(pinning_codex_mention_findings_text "$SCAN_DIR/new.txt" body)"
+        findings="$(pinning_codex_mention_findings_text "$SCAN_DIR/new.txt" body)" \
+          || _deny_with_reason "[pinning-guard] Codex mention scan failed; denying by fail-closed policy."
         if [ -n "$findings" ]; then
           _deny_with_reason "$(pinning_codex_mention_deny_reason "$TOOL_NAME" "$body_file (via --body-file)" "$findings")"
         fi

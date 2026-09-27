@@ -985,7 +985,8 @@ test_pinning_session_url_category_behavioral() {
 
 # Codex 봇 멘션 검사(#1477)의 lib 판정 표. hook 통합과 deny 문구는 7b fixture가 보고, 여기서는
 # gh api 쓰기 판별·검사 대상 명령·허용 형태의 경계를 한 곳에서 본다. findings는 `<line>: <token>`을
-# `|`로 이은 값으로 비교하고, 빈 값은 통과를 뜻한다.
+# `|`로 이은 값으로 비교하고, 빈 값은 통과를 뜻한다. hook은 PATH에 따라 macOS 기본 awk·mawk로도 돌 수
+# 있으므로 표를 PATH의 awk, /usr/bin/awk, mawk(있으면)에서 모두 돌린다.
 _pinning_mention_test_tokens() {
   local scan_file="$1" mode="$2" text="$3"
   printf '%s' "$text" > "$scan_file"
@@ -993,14 +994,8 @@ _pinning_mention_test_tokens() {
     | awk 'NR > 2' | sed 's/^ *//' | paste -sd'|' -
 }
 
-test_pinning_codex_mention_behavioral() {
-  local sandbox scan_file cmd i
-  sandbox=$(new_hook_sandbox)
-  scan_file="$sandbox/pinning-codex-mention-scan.txt"
-
-  # shellcheck source=../modules/shared/programs/claude/files/lib/pinning-patterns.sh
-  . "$PINNING_LIB_REPO_FILE"
-
+_pinning_codex_mention_table() {
+  local scan_file="$1" flavor="$2" cmd i
   local -a api_writes=(
     "gh api repos/o/r/issues/12/comments -f body='hi'"
     "gh api repos/o/r/issues/12/comments -F body=@/tmp/body.md"
@@ -1012,15 +1007,35 @@ test_pinning_codex_mention_behavioral() {
     "gh api -X PATCH repos/o/r/pulls/12 -f body=x"
     "gh api -X post repos/o/r/issues/12/comments -f body=x"
     "gh api --method 'PUT' repos/o/r/contents/a -f message=x"
+    "gh api -X=POST repos/o/r/issues/1/comments -f body=x"
+    "gh api -iX POST repos/o/r/issues/1/comments"
+    "gh api -X GET -iXPOST repos/o/r/issues/1/comments"
+    "gh -X POST api repos/o/r/issues/1/comments"
+    "gh api repos/o/r/issues/1 -X OPTIONS"
+    "M=POST; gh api -X \"\$M\" repos/o/r/issues/1/comments"
+    "gh api --method=\"\$M\" repos/o/r/issues/1"
+    "gh api repos/o/r/issues/1/comments --\$OPT x"
+    "gh api repos/o/r/issues/1/comments \"\$@\""
+    "gh api repos/o/r/issues/12/comments --jq '.id | tostring' -f body=x"
+    "gh api -H 'Accept: application/vnd.github+json; charset=utf-8' repos/o/r/issues/12/comments -f body=x"
     "gh api -X DELETE repos/o/r/issues/comments/1; gh api repos/o/r/issues/1/comments -f body=x"
     "gh api -X GET search/issues -f q=x && gh api repos/o/r/issues/1/comments -f body=x"
     "gh api graphql -f query='mutation { addComment(input: {subjectId: \"X\", body: \"hi\"}) { clientMutationId } }'"
     $'gh api graphql -f query=\'\n  mutation($id: ID!) {\n    resolveReviewThread(input: {threadId: $id}) { thread { id } }\n  }\' -f id=X'
+    "gh api graphql -f query='fragment F on X { y } mutation { a }'"
+    $'gh api graphql -f query=\'# c\nmutation { a }\''
     "gh api graphql -F query=@/tmp/q.graphql"
+    "gh api graphql -F query=@-"
+    "gh api graphql -F body=@\"\$BODY_FILE\" -f query='query { a }'"
     "gh api graphql --input /tmp/q.json"
+    "gh api graphql -f query=\"\$(cat /tmp/q.graphql)\""
+    "gh api graphql -f \"\$K=mutation x\""
+    "gh api /graphql -f query='query { a }'"
+    "gh api \"\$EP\" -f query=x"
     "x=\$(gh api repos/o/r/issues/1/comments -f body=x)"
     "/opt/homebrew/bin/gh api repos/o/r/issues/1/comments -f body=x"
     $'gh api repos/o/r/issues/1/comments \\\n  -f body=x'
+    $'gh api repos/o/r/issues/12/comments --jq \'\n  .html_url\' -f body=x'
   )
   local -a api_reads=(
     "gh api repos/o/r/issues/12/comments --jq '.[] | select(.body | startswith(\"@codex review\")) | .id'"
@@ -1028,80 +1043,219 @@ test_pinning_codex_mention_behavioral() {
     "gh api --method GET search/issues -f q=x"
     "gh api --method=GET search/issues -f q=x"
     "gh api -XGET search/issues -f q=x"
+    "gh api -X=GET search/issues -f q=x"
     "gh api -X DELETE repos/o/r/issues/comments/1"
+    "gh api -X HEAD repos/o/r"
     "gh api --paginate repos/o/r/pulls/1/comments"
+    "gh api \"repos/\$OWNER/\$REPO/pulls/\$PR/comments\" --paginate"
     "gh api graphql -f query='query { viewer { login } }'"
     "gh api graphql -f query='query { mutationCount }'"
+    "gh api graphql -f query='query { x(arg: \"mutation\") }'"
+    "gh api graphql -f query='query { x(arg: \"\"\"mutation\"\"\") }'"
+    "gh api graphql -f query='{ __type(name: \"Mutation\") { fields { name } } }'"
+    $'gh api graphql -f query=\'\n  # read only, no mutation here\n  query { viewer { login } }\''
+    "gh api graphql -F owner=o -f query='query { a }'"
+    "gh api --jq '.x' graphql -f query='query { a }'"
+    "gh api --paginate graphql -f query='query { a }'"
+    "gh api graphql --hostname github.com -f query='query { a }'"
     "gh apiary -f x"
     "echo gh api"
+    "gh pr view 1 --json title; echo \"unterminated"
   )
   for cmd in "${api_writes[@]}"; do
     assert_eq "$(if pinning_gh_api_posts_content "$cmd"; then printf write; else printf read; fi)" "write" \
-      "[7/lib] gh api write must be detected: $cmd"
+      "[7/lib $flavor] gh api write must be detected: $cmd"
   done
   for cmd in "${api_reads[@]}"; do
     assert_eq "$(if pinning_gh_api_posts_content "$cmd"; then printf write; else printf read; fi)" "read" \
-      "[7/lib] gh api read must stay out of scope: $cmd"
+      "[7/lib $flavor] gh api read must stay out of scope: $cmd"
   done
 
   local -a scope_in=(
     "gh pr comment 12 --body x"
     "gh pr create --title t --body x"
+    "gh pr new --title t --body x"
     "gh pr edit 12 --body x"
     "gh pr review 12 --comment -b x"
+    "gh pr close 12 --comment x"
+    "gh pr reopen 12 -c x"
     "gh issue create --title t --body x"
+    "gh issue new --title t --body x"
     "gh issue edit 5 --body x"
     "gh issue comment 5 --body x"
+    "gh issue close 5 -c x"
+    "gh issue reopen 5 -c x"
+    "gh -R o/r pr comment 12 --body x"
+    "gh --repo o/r issue comment 5 --body x"
+    "gh pr -R o/r comment 12 --body x"
+    "env gh pr comment 12 --body x"
+    "command gh pr comment 12 --body x"
+    "(gh pr comment 12 --body x)"
+    "gh-auth pr comment 12 --body x"
+    "GH pr comment 12 --body x"
+    "gh \"\$SUB\" 12 --body x"
+    "echo x | xargs -I{} gh api repos/o/r/issues/{}/comments -f body=x"
     "gh api repos/o/r/issues/12/comments -f body=x"
+    "ssh minipc 'gh pr view 12'"
+    "bash -c 'gh issue comment 5 --body x'"
+    "timeout 60 bash -lc 'cd x && gh pr comment 12 --body x'"
+    "eval \"gh pr comment 12 --body x\""
+    $'ssh minipc bash -s <<\'EOF\'\ngh pr comment 12 --body x\nEOF'
+    $'cat <<EOF\n$(gh pr comment 12 --body x)\nEOF'
+    $'x=$(( 1 << 2 ))\ngh pr comment 12 --body x'
+    $'case "$x" in\n  a) gh pr comment 12 --body x ;;\nesac'
+    "diff <(gh pr comment 12 --body x) /dev/null"
+    $'cat <<\'EOF\' | ssh minipc bash -s\ngh pr comment 12 --body x\nEOF'
+    "echo 'gh pr comment 12 --body x' | sed s/a/b/ | bash"
+    "bash <<< 'gh pr comment 12 --body x'"
+    "G=gh; \$G pr comment 12 --body x"
+    "GH=gh; \"\$GH\" pr comment 12 --body x"
+    "\"\${GH_BIN:-gh}\" api repos/o/r/issues/1/comments -f body=x"
+    "\$SHELL -c 'gh pr comment 12 --body x'"
+    "g\\h pr comment 12 --body x"
+    "gh pr revert 12 --body x"
+    "gh pr revert 12 -t x"
+    $'bash -c "$(cat <<\'EOF\'\ngh pr comment 12 --body x\nEOF\n)"'
+    $'ssh minipc "$(cat <<\'EOF\'\ncd ~/x && gh pr comment 12 --body x\nEOF\n)"'
+    $'eval "$(cat <<\'EOF\'\ngh issue comment 5 --body x\nEOF\n)"'
+    "eval \"\$(printf '%s' 'gh pr comment 12 --body x')\""
+    $'bash -c $\'cd /tmp\\ngh pr comment 12 --body x\''
+    $'ssh minipc $\'cd ~/x\\ngh issue comment 5 --body x\''
+    $'bash -c $\'cd /tmp;\\tgh pr comment 12 --body x\''
+    "bash -c \"'gh' pr comment 12 --body x\""
+    "bash -c '\"gh\" pr comment 12 --body x'"
+    $'x=`echo # `; gh pr comment 12 --body x\nz=`echo # `'
+    # 실행기 인자가 동적이면 무엇이 실행될지 모르므로 명령 문자열 어디든 gh가 보이면 대상이다.
+    "bash -c \"echo \$(date)\"; gh pr view 1"
+    "echo \"it's\"; gh pr comment 12 --body x"
+    "gh pr comment 12 --body 'x"
   )
   local -a scope_out=(
     "gh pr merge 12 --squash --body x"
     "git commit -m 'docs: x'"
     "gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "gh pr list --search comment --json body"
+    "gh search issues '@codex review' --repo o/r --json number"
     "gh api repos/o/r/issues/12/comments --jq '.[].body'"
+    "git commit -m \"feat(hooks): 재리뷰 요청은 gh pr comment <PR> --body '@codex review' 한 형태만 허용\""
+    $'git commit -F - <<\'EOF\'\ndocs: 재리뷰는 gh pr comment <PR> --body \'@codex review\'로 요청한다\nEOF'
+    $'cat > /tmp/notes.md <<\'EOF\'\ngh pr comment 12 --body \'@codex fix\'\nEOF'
+    $'cat <<\'EOF\'\n$(gh pr comment 12 --body x)\nEOF'
+    "printf '%s' 'gh pr comment 1 --body x' > /tmp/x"
+    "rg -n 'gh pr comment' modules/"
+    "ssh minipc 'systemctl status foo'"
+    "echo 'gh pr view 1' | cat"
+    "echo hello | bash"
+    "\"\$EDITOR\" notes.md"
+    "gh pr view 1 || bash -c 'echo done'"
+    "bash -c \"echo \$(date)\""
+    "eval \"\$(direnv export bash)\""
+    "ssh minipc \"ls \$HOME\""
+    "git commit -m x && git rev-parse --abbrev-ref HEAD | awk -F/ '{print \$NF}'"
+    $'cat <<EOF\nfoo\\\nEOF\ngh pr comment 12 --body x\nEOF'
+    "echo gh"
+    "ls -la"
   )
   for cmd in "${scope_in[@]}"; do
     assert_eq "$(if pinning_codex_mention_scope "$cmd"; then printf in; else printf out; fi)" "in" \
-      "[7/lib] mention scope must include posting command: $cmd"
+      "[7/lib $flavor] mention scope must include posting command: $cmd"
   done
   for cmd in "${scope_out[@]}"; do
     assert_eq "$(if pinning_codex_mention_scope "$cmd"; then printf in; else printf out; fi)" "out" \
-      "[7/lib] mention scope must exclude non-posting command: $cmd"
+      "[7/lib $flavor] mention scope must exclude non-posting command: $cmd"
   done
 
-  # (기대 findings, 명령) 쌍. 허용 형태는 gh pr comment의 --body/-b/--body= 값이 정확히 소문자
-  # 재리뷰 요청일 때뿐이다.
+  # (기대 findings, 명령) 쌍. 허용 형태는 명령 위치의 gh pr comment에서 --body/-b/--body= 값이
+  # 정확히 소문자 재리뷰 요청일 때뿐이고, heredoc이 있는 명령에서는 인정하지 않는다.
   local -a command_cases=(
     "" "gh pr comment 12 --body '@codex review'"
     "" "gh pr comment 12 --body \"@codex review\""
     "" "gh pr comment 12 -b '@codex review'"
     "" "gh pr comment 12 --body='@codex review'"
     "" "gh pr comment 12 -R owner-x/repo.name_1 --body '@codex review'"
+    "" "gh pr comment 12 --body '@codex review' -R o/r"
     "" "gh pr comment https://github.com/o/r/pull/12 --body '@codex review'"
+    "" "gh pr comment feat/1477-x --body '@codex review'"
     "" "gh pr comment --body '@codex review' 12"
+    "" "gh pr comment --body '@codex review'"
     "" "gh pr comment 12 --repo=o/r --body '@codex review'; echo done"
+    "" "gh pr comment 12 --repo \"\$REPO\" --body '@codex review' 2>&1 >/dev/null"
+    "" "gh pr comment 12 --body '@codex review'>/dev/null"
+    "" "PR=12; gh pr comment \"\$PR\" -R \"\$OWNER/\$REPO\" --body '@codex review'"
+    "" "gh pr comment \"\$(gh pr view --json number -q .number)\" --body '@codex review'"
+    "" "gh pr comment \$(gh issue comment 5 --body 'x') --body '@codex review'"
+    "" "GH_REPO=o/r gh pr comment 12 --body '@codex review'"
+    "" "/etc/profiles/per-user/u/bin/gh pr comment 12 --body '@codex review'"
+    "" "gh -R o/r pr comment 12 --body '@codex review'"
     "" "out=\$(gh pr comment 12 --body '@codex review')"
+    "" "x=\`gh pr comment 12 --body '@codex review'\`"
+    "" "(gh pr comment 12 --body '@codex review')"
+    "" "cd /x && gh pr comment 12 -R o/r --body '@codex review' && codex-review-status 12 -R o/r --wait 540"
+    "" "gh pr comment 12 --body '@codex review' | cat"
+    "" "gh pr comment 12 --body '@codex review' # 재리뷰 요청"
     "" $'gh pr comment 12 \\\n  -R o/r \\\n  --body \'@codex review\''
     "" "gh pr comment 1 -b '@codex review';gh pr comment 2 -b '@codex review'"
+    "" "gh pr create --fill --base main"
     "1: @codex review" "gh pr comment 12 --body '@codex review please'"
     "1: @Codex review" "gh pr comment 12 --body '@Codex review'"
+    "1: @codex review" "gh pr comment 12 --body \$'@codex review'"
+    "1: @codex review" "gh pr comment 12 --body \"@codex review\$X\""
     "1: @codex review" "gh issue comment 5 --body '@codex review'"
+    "1: @codex review" "gh pr review 12 --comment -b '@codex review'"
     "1: @codex review" "gh api repos/o/r/issues/12/comments -f body='@codex review'"
+    "1: @codex review" "gh pr comment 12 --edit-last --body '@codex review'"
+    "1: @codex review" "gh pr comment 12 --body-file x --body '@codex review'"
+    "1: @codex review" "gh pr comment 12 13 --body '@codex review'"
+    "1: @codex review" "env gh pr comment 12 --body '@codex review'"
+    "1: @codex review" "if true; then gh pr comment 12 --body '@codex review'; fi"
+    "1: @codex review|1: @codex fix" "gh pr comment 12 --body '@codex review' --body '@codex fix'"
     "1: @codex fix" "gh pr comment 12 --body '@codex review' && gh pr comment 12 --body '@codex fix it'"
+    "1: @codex fix" "gh pr comment 12 --body '@codex review' & gh pr comment 13 --body '@codex fix'"
+    "1: @codex" "gh pr comment 12 --body '@codex review' > '@codex'"
+    "" "gh pr comment 12 --body '@codex review' <<< x"
     "1: @codex" "gh pr comment 12 --body \"봇 확인: \\\`@codex\\\` 참고\""
     "1: @CODEX" "gh pr comment 12 --body 'ping @CODEX!'"
     "1: @codex review" "gh pr comment 12 --body @codex review"
     "1: @codex review" "gh pr comment 12 -b'@codex review'"
     "1: @codex review" "gh pr comment 12 --body '@codex review'' extra'"
-    "1: @codex review" "gh pr comment \$(gh issue comment 5 --body 'x') --body '@codex review'"
-    "2: @codex fix" $'gh pr comment 12 --body-file - <<\'MSG\'\n@codex fix this\nMSG'
-    "1: @codex review|1: @codex review" "gh issue comment 5 -b '@codex review' && gh issue comment 6 -b '@codex review'"
+    "1: @codex review" "gh issue comment 5 --body \"재리뷰는 gh pr comment 12 --body '@codex review' 로 요청했다\""
+    "1: @codex fix" "gh pr comment 12 --body \$'확인\\n@codex fix'"
+    "1: @codex" "gh -R o/r pr close 99 --comment '\`@codex\` 멘션으로 잘못 열린 PR이라 닫는다'"
+    "1: @codex fix" "gh api -X=POST repos/o/r/issues/1/comments -f body='@codex fix'"
+    "1: @codex fix" "gh api repos/o/r/issues/12/comments --jq '.id | tostring' -f body='@codex fix'"
+    "1: @codex fix" "echo '@codex fix' | gh pr comment 12 --body-file -"
+    "1: @codex fix" "ssh minipc 'gh pr comment 12 --body \"@codex fix\"'"
+    "1: @codex review" "ssh minipc 'gh pr comment 12 --body \"@codex review\"'"
+    "1: @chatgpt-codex-connector" "gh pr comment 12 --body 'cc @chatgpt-codex-connector[bot]'"
     "1: @codexbot hi" "gh pr comment 12 --body 'hey @codexbot hi'"
     "1: @codex" "gh pr comment 12 --body '한글@codex한글'"
+    "1: @codex" "rg -n '@codex' docs/; gh pr comment 12 --body '@codex review'"
+    "2: @codex fix" $'gh pr comment 12 \\\n  --body \'@codex fix\''
+    "2: @codex fix" $'gh pr com\\\nment 12 --body \'@codex fix\''
+    "2: @codex fix" $'gh pr comment 12 --body-file - <<\'MSG\'\n@codex fix this\nMSG'
+    "2: @codex fix" $'gh pr comment 12 --body "$(cat <<\'EOF\'\n@codex fix\nEOF\n)"'
+    "3: @codex review" $'gh issue comment 5 --body-file - <<\'EOF\'\n재리뷰 요청 명령:\ngh pr comment 12 --body \'@codex review\'\nEOF'
+    "4: @codex review" $'gh pr create --title t --body "$(cat <<\'EOF\'\n## 재리뷰\n```bash\ngh pr comment 12 --body \'@codex review\'\n```\nEOF\n)"'
+    "1: @codex review|3: @codex fix" $'gh pr comment 12 --body \'@codex review\'\ncat <<\'EOF\'\n@codex fix\nEOF'
+    "1: @codex review|1: @codex review" "gh issue comment 5 -b '@codex review' && gh issue comment 6 -b '@codex review'"
+    "1: @codex review" "gh pr comment 12 --body '@codex review'; echo 'x"
+    "2: @codex fix" $'cat <<\'EOF\' | bash\ngh pr comment 12 --body \'@codex fix\'\nEOF'
+    "1: @codex fix" "bash <<< 'gh pr comment 12 --body \"@codex fix\"'"
+    # heredoc이 아닌 << (따옴표 안, 산술 시프트, here-string)는 허용 형태를 막지 않는다.
+    "" "echo \"a<<b\" && gh pr comment 12 --body '@codex review'"
+    "" "echo \$((1<<2)) && gh pr comment 12 --body '@codex review'"
+    "" "cat <<< \"x\" && gh pr comment 12 --body '@codex review'"
+    # bash는 큰따옴표 안 \${ }의 작은따옴표를 인용으로 읽어 세 명령을 하나로 합친다. 셸마다 갈리는
+    # 문법이라 허용 형태를 인정하지 않는다.
+    "1: @codex review" "gh issue comment 5 --body \"\${X:-'}\" ; gh pr comment 12 --body \"@codex review\" ; echo \"'}\""
+    "1: @codex fix" $'x=`echo # `; gh pr comment 12 --body \'@codex fix\'\nz=`echo # `'
+    "2: @codex fix" $'bash -c "$(cat <<\'EOF\'\ngh pr comment 12 --body \'@codex fix\'\nEOF\n)"'
+    "1: @codex fix" $'bash -c $\'cd /tmp\\ngh pr comment 12 --body "@codex fix"\''
+    "1: @codex fix" "gh pr revert 12 --body '@codex fix the regression'"
   )
   for ((i = 0; i < ${#command_cases[@]}; i += 2)); do
     assert_eq "$(_pinning_mention_test_tokens "$scan_file" command "${command_cases[i + 1]}")" "${command_cases[i]}" \
-      "[7/lib] command mention findings: ${command_cases[i + 1]}"
+      "[7/lib $flavor] command mention findings: ${command_cases[i + 1]}"
   done
 
   # 본문 파일에는 허용 형태가 없다.
@@ -1110,10 +1264,75 @@ test_pinning_codex_mention_behavioral() {
     "" "Codex 봇 리뷰를 기다린다"
     "2: @codex|3: @Codex fix" $'# t\n`@codex`\n@Codex fix it'
     "1: @codex review" $'@codex review \\'
+    "1: @chatgpt-codex-connector" "@chatgpt-codex-connector[bot] 확인"
+    "" "chatgpt-codex-connector[bot] 작성 코멘트"
   )
   for ((i = 0; i < ${#body_cases[@]}; i += 2)); do
     assert_eq "$(_pinning_mention_test_tokens "$scan_file" body "${body_cases[i + 1]}")" "${body_cases[i]}" \
-      "[7/lib] body mention findings: ${body_cases[i + 1]}"
+      "[7/lib $flavor] body mention findings: ${body_cases[i + 1]}"
+  done
+
+  # 잘못된 UTF-8 바이트가 있어도 awk가 멈추지 않고 멘션을 찾는다 (macOS awk는 UTF-8 로캘에서 멈춘다).
+  local stderr_file="$scan_file.stderr" out
+  printf 'gh pr comment 12 --body \x27\xff\xfe @codex fix \xc3\x27\n' > "$scan_file"
+  out="$(pinning_codex_mention_findings_text "$scan_file" command 2>"$stderr_file" | awk 'NR > 2' | sed 's/^ *//')"
+  assert_eq "$out" "1: @codex fix" "[7/lib $flavor] invalid UTF-8 command must still report the mention"
+  assert_eq "$(cat "$stderr_file")" "" "[7/lib $flavor] invalid UTF-8 command must not write stderr"
+  printf '\xff\xfe \xc3( 본문\n' > "$scan_file"
+  out="$(pinning_codex_mention_findings_text "$scan_file" body 2>"$stderr_file")"
+  assert_eq "$out" "" "[7/lib $flavor] invalid UTF-8 body without mention must pass"
+  assert_eq "$(cat "$stderr_file")" "" "[7/lib $flavor] invalid UTF-8 body must not write stderr"
+  assert_eq "$(if pinning_codex_mention_scope $'gh pr comment 12 --body \'\xff\xc3\''; then printf in; else printf out; fi)" "in" \
+    "[7/lib $flavor] invalid UTF-8 command must stay in scope"
+
+  # macOS awk는 NUL에서 줄을 끊으므로 본문의 NUL은 지우고 본다.
+  printf 'line1 \000 @codex fix\n\377\376\000\001 @Codex review\n' > "$scan_file"
+  out="$(pinning_codex_mention_findings_text "$scan_file" body 2>"$stderr_file" | awk 'NR > 2' | sed 's/^ *//' | paste -sd'|' -)"
+  assert_eq "$out" "1: @codex fix|2: @Codex review" "[7/lib $flavor] body mentions after NUL bytes must be reported"
+  assert_eq "$(cat "$stderr_file")" "" "[7/lib $flavor] NUL body must not write stderr"
+
+  # lexer가 4096자에서 자른 셸 실행기 인자도 명령 문자열 전체로 판정한다.
+  cmd="bash -c 'echo hi;$(head -c 5000 /dev/zero | tr '\0' ' ') gh pr comment 12 --body x'"
+  assert_eq "$(if pinning_codex_mention_scope "$cmd"; then printf in; else printf out; fi)" "in" \
+    "[7/lib $flavor] runner argument longer than the word cap must stay in scope"
+
+  # PINNING_LEXER_MAX_BYTES보다 긴 명령은 lexer 없이 판정 불확실로 보고 허용 형태를 인정하지 않는다.
+  cmd="$(head -c "$((PINNING_LEXER_MAX_BYTES + 1))" /dev/zero | tr '\0' ':'); gh pr comment 12 --body '@codex review'"
+  assert_eq "$(if pinning_codex_mention_scope "$cmd"; then printf in; else printf out; fi)" "in" \
+    "[7/lib $flavor] over-long posting command must stay in scope"
+  assert_eq "$(_pinning_mention_test_tokens "$scan_file" command "$cmd")" "1: @codex review" \
+    "[7/lib $flavor] over-long command must not get the re-request exemption"
+}
+
+test_pinning_codex_mention_behavioral() {
+  local sandbox scan_file default_awk extra_awk awk_dir
+  local -a seen=()
+  sandbox=$(new_hook_sandbox)
+  scan_file="$sandbox/pinning-codex-mention-scan.txt"
+
+  # shellcheck source=../modules/shared/programs/claude/files/lib/pinning-patterns.sh
+  . "$PINNING_LIB_REPO_FILE"
+
+  # lexer awk 프로그램은 셸 작은따옴표 문자열이다. 안에 작은따옴표를 쓰면 문자열이 끊긴다.
+  assert_eq "$(awk -v sq="'" '
+      $0 == "_PINNING_SH_LEXER_AWK=" sq { f = 1; next }
+      f && $0 == "  " sq { exit }
+      f && index($0, sq) { print NR }
+    ' "$PINNING_LIB_REPO_FILE")" "" \
+    "[7/lib] lexer awk program must not contain single quotes"
+
+  default_awk="$(command -v awk)"
+  _pinning_codex_mention_table "$scan_file" "$default_awk"
+  seen+=("$(realpath "$default_awk")")
+  # 시스템 awk(macOS는 BWK awk, Ubuntu는 mawk)와 PATH의 mawk가 있으면 그것으로도 돌린다.
+  for extra_awk in /usr/bin/awk "$(command -v mawk 2>/dev/null || true)"; do
+    [ -n "$extra_awk" ] && [ -x "$extra_awk" ] || continue
+    case " ${seen[*]} " in *" $(realpath "$extra_awk") "*) continue ;; esac
+    seen+=("$(realpath "$extra_awk")")
+    awk_dir="$sandbox/awk-${#seen[@]}"
+    mkdir -p "$awk_dir"
+    ln -s "$extra_awk" "$awk_dir/awk"
+    PATH="$awk_dir:$PATH" _pinning_codex_mention_table "$scan_file" "$extra_awk"
   done
 }
 

@@ -90,11 +90,21 @@ path 추출). 파일이 없으면 fail-open(clean)이다 — guard가 존재하�
 Issue #1477 Codex 봇 멘션 fixture:
 
 Codex GitHub 앱은 PR·이슈 코멘트의 봇 멘션을 백틱 안에서도 작업 요청으로 읽는다. guard는 PR·이슈 본문과
-코멘트를 게시하는 gh 명령(gh api 쓰기와 GraphQL mutation 포함)에서 멘션을 막고, 명령 문자열의
-`gh pr comment <PR> --body '@codex review'` 한 형태만 허용한다. 본문 파일에는 허용 형태가 없다.
-박제 범주 검사가 먼저 돌므로 둘 다 걸리면 박제 deny가 나온다. 같은 변경으로 박제 범주의 검사 대상도
-gh api 쓰기 전반(GraphQL mutation 포함)과 `--input` 파일로 넓어졌다. 판정 경계 표는 lib 단위 테스트
-`test_pinning_codex_mention_behavioral`에 있다.
+코멘트를 게시하는 gh 명령(close·reopen 코멘트, gh api 쓰기와 GraphQL mutation 포함)에서 멘션을 막는다.
+게시 여부는 셸 lexer가 따옴표를 푼 단어와 세그먼트(구분자 사이 단순 명령)로 판정하므로, 커밋 메시지나
+따옴표 있는 구분자의 heredoc 본문에 적힌 명령 이름은 게시로 보지 않는다. 셸 실행기(`bash -c`, `ssh`,
+`eval` 등)의 인자·here-string·heredoc 본문에 gh 호출이 있거나, 실행기가 파이프 입력이나 명령 치환·변수
+인자를 받으면서 명령 문자열에 gh 호출이 있으면 게시로 본다. 명령어 자리가 변수(`$GH pr comment`)면 뒤따르는
+하위 명령으로 판정한다. 허용 형태는 heredoc이 없는 명령에서 명령 위치의
+`gh pr comment <PR> [-R OWNER/REPO] --body '@codex review'` 하나다. `-b`·`--body=`, `-R`·`--repo`의 위치,
+환경 변수 접두(`GH_REPO=o/r gh ...`), 경로를 붙인 gh는 같은 형태로 보고, PR·저장소 값은 변수여도 된다.
+here-string(`<<<`)·산술 시프트·따옴표 안의 `<<`는 heredoc이 아니다. 셸마다 해석이 갈리는 문법(큰따옴표 안
+`${ }`의 작은따옴표), 짝이 맞지 않는 따옴표·괄호·heredoc, 256KB를 넘는 명령은 판정 불확실로 보고 허용
+형태를 인정하지 않는다. 본문 파일에는 허용 형태가 없고, gh가 본문으로 읽을 수 있는 정규 파일만 읽는다
+(`awk -F/`의 `/` 같은 디렉터리와 장치는 건너뛴다). 변수나 `~`로 적은 경로는 셸이 풀기 전의 문자열이라
+찾지 못한다. 박제 범주 검사가 먼저 돌므로 둘 다 걸리면 박제 deny가 나온다. 같은 변경으로 박제 범주의 검사 대상도 gh 게시 명령 전반(`gh -R o/r pr ...`, close·reopen·revert,
+gh api 쓰기)과 `--input` 파일로 넓어졌다. 판정 경계 표는 lib 단위 테스트
+`test_pinning_codex_mention_behavioral`에 있고, PATH의 awk, `/usr/bin/awk`, mawk(있으면)에서 모두 돈다.
 
 | 파일 | 입력 의도 | expected |
 |------|----------|----------|
@@ -115,6 +125,18 @@ gh api 쓰기 전반(GraphQL mutation 포함)과 `--input` 파일로 넓어졌�
 | `pretooluse-pinning-guard-codex-bash-gh-api-input-deny.*` | `gh api --input <file>` 본문의 박제 토큰 | deny reason |
 | `pretooluse-pinning-guard-codex-bash-git-commit-codex-mention-clean.*` | 커밋 메시지의 멘션 (검사 대상 아님) | 빈 파일 |
 | `pretooluse-pinning-guard-codex-bash-codex-mention-and-round-deny.*` | 박제 토큰과 멘션이 함께 있음 | 박제 deny reason |
+| `pretooluse-pinning-guard-{claude,codex}-bash-codex-review-request-variables-clean.*` | PR·저장소를 변수로 준 재리뷰 요청 뒤 상태 조회 | 빈 파일 |
+| `pretooluse-pinning-guard-{claude,codex}-bash-codex-review-request-heredoc-deny.*` | PR 본문 heredoc에 적은 허용 형태 | deny reason |
+| `pretooluse-pinning-guard-{claude,codex}-bash-pr-close-repo-first-mention-deny.*` | `gh -R o/r pr close --comment`의 멘션 | deny reason |
+| `pretooluse-pinning-guard-{claude,codex}-bash-gh-api-quoted-separator-deny.*` | jq 필터 따옴표 속 `\|` 뒤에 둔 필드의 멘션 | deny reason |
+| `pretooluse-pinning-guard-{claude,codex}-bash-gh-api-method-equals-deny.*` | `gh api -X=POST` 필드의 멘션 | deny reason |
+| `pretooluse-pinning-guard-{claude,codex}-bash-gh-api-dynamic-query-deny.*` | 파일에서 읽은 GraphQL query와 함께 보낸 멘션 | deny reason |
+| `pretooluse-pinning-guard-{claude,codex}-bash-codex-mention-quoted-bodyfile-deny.*` | 따옴표 친 `-F body=@"<file>"` 본문의 멘션 | deny reason |
+| `pretooluse-pinning-guard-{claude,codex}-bash-ssh-gh-mention-deny.*` | `ssh` 원격 명령 문자열 속 gh 게시의 멘션 | deny reason |
+| `pretooluse-pinning-guard-{claude,codex}-bash-commit-message-review-form-clean.*` | 허용 형태를 설명하는 커밋 메시지 (검사 대상 아님) | 빈 파일 |
+| `pretooluse-pinning-guard-{claude,codex}-bash-awk-field-separator-clean.*` | 게시 명령과 함께 쓴 `awk -F.`·`awk -F/` (본문 파일 아님) | 빈 파일 |
+| `pretooluse-pinning-guard-{claude,codex}-bash-codex-mention-bodyfile-after-stdin-deny.*` | `-F x=@/dev/stdin` 뒤에 둔 본문 파일의 멘션 | deny reason |
+| `pretooluse-pinning-guard-{claude,codex}-bash-codex-mention-runner-substitution-deny.*` | `bash -c "$(cat <<'EOF' ...)"`로 만든 스크립트 속 gh 게시의 멘션 | deny reason |
 
 Issue #686 path-aware PATTERN_A guard fixtures add the explicit matrix:
 

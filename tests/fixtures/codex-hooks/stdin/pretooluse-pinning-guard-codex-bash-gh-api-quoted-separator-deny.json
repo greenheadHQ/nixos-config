@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh api repos/o/r/issues/12/comments --jq '.id | tostring' -f body='@codex fix'"
+  }
+}

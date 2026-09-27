@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh -R o/r pr close 99 --comment '`@codex` 멘션으로 잘못 열린 PR이라 닫는다'"
+  }
+}
