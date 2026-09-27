@@ -395,6 +395,13 @@ run_test "upload-immich missing credential branch is quiet" test_upload_immich_m
 run_test "folder-actions tool jobs keep input when required tool is missing" test_folder_actions_tool_jobs_keep_input_when_required_tool_missing
 run_test "folder-actions compress-rar runs with launchd minimal PATH" test_folder_actions_compress_rar_runs_with_launchd_minimal_path
 run_test "folder-actions video jobs run with launchd minimal PATH" test_folder_actions_video_jobs_run_with_launchd_minimal_path
+run_test "upload-immich keeps originals the CLI did not upload" test_upload_immich_keeps_originals_the_cli_did_not_upload
+run_test "upload-immich notification counts remaining originals" test_upload_immich_notification_counts_remaining_originals
+run_test "upload-immich deletes only live server duplicates" test_upload_immich_deletes_only_live_server_duplicates
+run_test "upload-immich keeps originals when server check fails" test_upload_immich_keeps_originals_when_server_check_fails
+run_test "upload-immich CLI major matches server image" test_upload_immich_cli_major_matches_server_image
+run_test "upload-immich rejects malformed check ids" test_upload_immich_rejects_malformed_check_ids
+run_test "upload-immich rechecks before deleting duplicates" test_upload_immich_rechecks_before_deleting_duplicates
 run_test "karakeep fallback-sync success removes only matched queue URL" test_karakeep_fallback_sync_success_removes_only_matched_queue_url
 run_test "karakeep fallback-sync upload failure preserves queue" test_karakeep_fallback_sync_upload_failure_preserves_queue_and_records_notify_state
 run_test "karakeep fallback-sync GC removes expired state" test_karakeep_fallback_sync_gc_removes_only_expired_state_entries
@@ -609,6 +616,13 @@ run_test "add-host secret guide checks recipients per target" test_add_host_secr
 run_test "managing-secrets inventory matches age files and rules" test_managing_secrets_inventory_matches_age_files_and_rules
 run_test "managing-secrets host add workflow checks recipients per target" test_managing_secrets_host_add_workflow_checks_recipients_per_target
 run_test "managing-secrets group parser accepts inline key lists" test_managing_secrets_group_parser_accepts_inline_key_lists
+
+# ═══════════════════════════════════════════════════════════════════
+# neovim-clipboard suite (tests/suites/neovim-clipboard.sh) — tmux 밖 SSH의 OSC 52 복사 (#1453)
+# ═══════════════════════════════════════════════════════════════════
+run_test "neovim clipboard uses OSC 52 only for Linux SSH outside tmux" test_neovim_clipboard_osc52_only_for_linux_ssh_outside_tmux
+run_test "neovim SSH clipboard paste returns last copy without query" test_neovim_ssh_clipboard_paste_returns_last_copy_without_query
+run_test "neovim SSH clipboard paste before copy uses register 0" test_neovim_ssh_clipboard_paste_before_copy_uses_register_zero
 
 # 퇴역 키 로더는 tomlkit 없이도 도는 순수 셸 계약이라 아래 게이트 밖에 둔다.
 run_test "codex-config retired keys loader" test_codex_config_retired_keys_loader
