@@ -408,6 +408,16 @@ run_test "folder-actions quarantine_or_abort branches" test_folder_actions_quara
 run_test "upload-immich missing credential branch is quiet" test_upload_immich_missing_credential_branch_is_quiet_or_skipped
 run_test "folder-actions tool jobs keep input when required tool is missing" test_folder_actions_tool_jobs_keep_input_when_required_tool_missing
 run_test "folder-actions compress-rar runs with launchd minimal PATH" test_folder_actions_compress_rar_runs_with_launchd_minimal_path
+run_test "folder-actions compress-rar keeps earlier archive for same name" test_folder_actions_compress_rar_keeps_earlier_archive_for_same_name
+run_test "folder-actions compress-rar separates same-stem inputs" test_folder_actions_compress_rar_separates_same_stem_inputs
+run_test "folder-actions compress-rar skips existing output entries" test_folder_actions_compress_rar_skips_existing_output_entries
+run_test "folder-actions compress-rar reserves output name atomically" test_folder_actions_compress_rar_reserves_output_name_atomically
+run_test "folder-actions compress-rar creates missing Downloads" test_folder_actions_compress_rar_creates_missing_downloads
+run_test "folder-actions compress-rar stops run when Downloads is unusable" test_folder_actions_compress_rar_stops_run_when_downloads_unusable
+run_test "folder-actions compress-rar quarantines input when name cannot be reserved" test_folder_actions_compress_rar_quarantines_input_when_name_cannot_be_reserved
+run_test "folder-actions compress-rar keeps input when rar fails" test_folder_actions_compress_rar_keeps_input_when_rar_fails
+run_test "folder-actions compress-rar keeps reserved dir with other entries after rar failure" test_folder_actions_compress_rar_keeps_reserved_dir_with_other_entries_after_rar_failure
+run_test "folder-actions compress-rar signal removes only empty reserved dir" test_folder_actions_compress_rar_signal_removes_only_empty_reserved_dir
 run_test "folder-actions video jobs run with launchd minimal PATH" test_folder_actions_video_jobs_run_with_launchd_minimal_path
 run_test "upload-immich keeps originals the CLI did not upload" test_upload_immich_keeps_originals_the_cli_did_not_upload
 run_test "upload-immich notification counts remaining originals" test_upload_immich_notification_counts_remaining_originals
