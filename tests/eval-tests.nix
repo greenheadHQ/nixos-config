@@ -1822,6 +1822,33 @@ let
       name = "Test MG5: fileSystems.\${mediaData}.options에 nofail이 있어야 함(부팅 정책 유지)";
       cond = builtins.elem "nofail" nixosCfg.fileSystems.${constants.paths.mediaData}.options;
     }
+    {
+      # #1387: 스모크 검사 본체를 files/로 추출하면서 백업 신선도 검사의 활성 조건과 대상이 유닛 환경
+      # 변수로 옮겨졌다. 활성 여부는 추출 전과 같은 옵션(immichBackup·karakeepBackup·backup.enable
+      # 인스턴스)을 따르고, 백업 유닛이 있으면 그 유닛이 실제로 쓰는 BACKUP_DIR·INSTANCES를 봐야 한다.
+      name = "Test SM1: homeserver-smoke-test 백업 검사 환경이 백업 옵션과 백업 유닛의 BACKUP_DIR·INSTANCES를 따라야 함";
+      cond =
+        let
+          hs = nixosCfg.homeserver;
+          services = nixosCfg.systemd.services;
+          smokeEnv = services.homeserver-smoke-test.environment;
+          dirMatches =
+            enable: dir: unit:
+            (dir != "") == enable && (!(services ? ${unit}) || dir == services.${unit}.environment.BACKUP_DIR);
+          ankiUnit = services.anki-host-backup or null;
+          ankiNames =
+            if ankiUnit == null then
+              [ ]
+            else
+              map (entry: builtins.head (nixpkgsLib.splitString ":" entry)) (
+                nixpkgsLib.splitString " " ankiUnit.environment.INSTANCES
+              );
+        in
+        dirMatches hs.immichBackup.enable smokeEnv.IMMICH_BACKUP_DIR "immich-db-backup"
+        && dirMatches hs.karakeepBackup.enable smokeEnv.KARAKEEP_BACKUP_DIR "karakeep-backup"
+        && smokeEnv.ANKI_BACKUP_INSTANCES == builtins.concatStringsSep " " ankiNames
+        && (ankiUnit == null || smokeEnv.ANKI_BACKUP_ROOT == ankiUnit.environment.BACKUP_DIR);
+    }
   ]
   ++ tmuxVanillaTests "greenhead-minipc" true nixosHm
   ++ darwinIntentTests

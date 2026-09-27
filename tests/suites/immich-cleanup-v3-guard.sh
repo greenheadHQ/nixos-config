@@ -11,9 +11,13 @@ setup_immich_cleanup_fixture() {
   mkdir -p "$bin"
   printf 'IMMICH_API_KEY=test-key\n' > "$sandbox/api-key"
   printf 'PUSHOVER_TOKEN=x\nPUSHOVER_USER=x\n' > "$sandbox/pushover"
+  # 알림 대역: notify-fail 표식이 있으면 실패를 돌려준다 (알림 실패가 정리 결과를 바꾸는지 검사용).
   cat > "$sandbox/service-lib" <<'EOF'
 send_notification() {
   printf '%s\n' "$2" >> "$NOTIFICATION_LOG"
+  if [ -e "$NOTIFY_FAIL_MARKER" ]; then
+    return 7
+  fi
 }
 EOF
   printf '%s\n' "$scenario" > "$sandbox/scenario"
@@ -86,6 +90,11 @@ case "$url" in
   */api/assets)
     [ "$method" = "DELETE" ] || exit 1
     jq -r '.ids[]' <<<"$body" >> "$DELETE_LOG"
+    jq -c . <<<"$body" >> "$DELETE_BODY_LOG"
+    # delete-fail-ids에 적힌 자산은 HTTP 오류로 응답한다 (curl -f의 22)
+    if [ -f "$DELETE_FAIL_FILE" ] && grep -Fqx "$(jq -r '.ids[0]' <<<"$body")" "$DELETE_FAIL_FILE"; then
+      exit 22
+    fi
     ;;
   *)
     printf 'unexpected curl url: %s\n' "$url" >&2
@@ -109,6 +118,9 @@ run_immich_cleanup_fixture() {
     NOTIFICATION_LOG="$sandbox/notifications.log" \
     REQUEST_LOG="$sandbox/requests.log" \
     DELETE_LOG="$sandbox/deletes.log" \
+    DELETE_BODY_LOG="$sandbox/delete-bodies.log" \
+    DELETE_FAIL_FILE="$sandbox/delete-fail-ids" \
+    NOTIFY_FAIL_MARKER="$sandbox/notify-fail" \
     SCENARIO_FILE="$sandbox/scenario" \
     bash "$script"
 }
@@ -167,4 +179,110 @@ test_immich_cleanup_v3_rejects_invalid_next_page() {
   assert_contains "$output" "Unexpected search response: .assets.nextPage is not a positive integer string"
   assert_file_contains "$sandbox/notifications.log" "앨범 asset 페이지 응답 형식 오류"
   [[ ! -e "$sandbox/deletes.log" ]] || fail "invalid nextPage must not call asset delete"
+}
+
+# ─── 종료 코드 계약 (#1387): 전부 성공·빈 앨범은 0, 삭제 실패가 하나라도 있으면 1 ───
+# 요약 알림은 결과마다 한 번이고, 알림 실패가 정리 결과(종료 코드)를 바꾸지 않는다.
+
+# paginated 시나리오의 요청 계약: 페이지마다 조회 1회, 자산마다 DELETE 1회(force=true, 실패 자산 재시도 없음)
+assert_immich_cleanup_paginated_requests() {
+  local sandbox="$1" id forced
+  assert_line_count "$sandbox/requests.log" "page=1" 1
+  assert_line_count "$sandbox/requests.log" "page=2" 1
+  [[ "$(wc -l < "$sandbox/requests.log")" -eq 2 ]] || fail "expected exactly 2 page requests"
+  for id in 11111111-1111-1111-8111-111111111111 \
+    22222222-2222-2222-8222-222222222222 \
+    33333333-3333-3333-8333-333333333333; do
+    assert_line_count "$sandbox/deletes.log" "$id" 1
+    forced="$(grep -Fxc "{\"ids\":[\"$id\"],\"force\":true}" "$sandbox/delete-bodies.log" || true)"
+    [[ "$forced" == 1 ]] || fail "expected one DELETE with force=true for $id (actual: $forced)"
+  done
+  [[ "$(wc -l < "$sandbox/deletes.log")" -eq 3 ]] || fail "expected exactly 3 delete requests"
+}
+
+# 알림 로그가 기대한 메시지 한 줄뿐인지 본다 — ERR trap의 "오류 발생" 알림이 끼면 실패한다.
+assert_immich_cleanup_only_notification() {
+  local sandbox="$1" label="$2" expected="$3" actual
+  actual="$(cat "$sandbox/notifications.log" 2>/dev/null || true)"
+  [[ "$actual" == "$expected" ]] \
+    || fail "$label: expected only notification '$expected', got: $actual"
+}
+
+test_immich_cleanup_all_success_exits_zero_with_single_summary() {
+  local mode sandbox output rc
+  for mode in notify-ok notify-fail; do
+    sandbox="$(new_sandbox)"
+    setup_immich_cleanup_fixture "$sandbox" paginated
+    [[ "$mode" == notify-ok ]] || : > "$sandbox/notify-fail"
+
+    if output=$(run_immich_cleanup_fixture "$sandbox" 2>&1); then rc=0; else rc=$?; fi
+
+    [[ "$rc" == 0 ]] || fail "all success ($mode): expected exit 0, got $rc"
+    assert_contains "$output" "Cleanup completed. Success: 3, Failed: 0"
+    assert_immich_cleanup_only_notification "$sandbox" "all success ($mode)" "3개 이미지 삭제됨"
+    assert_immich_cleanup_paginated_requests "$sandbox"
+  done
+}
+
+test_immich_cleanup_empty_album_exits_zero() {
+  local mode sandbox output rc
+  for mode in notify-ok notify-fail; do
+    sandbox="$(new_sandbox)"
+    setup_immich_cleanup_fixture "$sandbox" empty
+    [[ "$mode" == notify-ok ]] || : > "$sandbox/notify-fail"
+
+    if output=$(run_immich_cleanup_fixture "$sandbox" 2>&1); then rc=0; else rc=$?; fi
+
+    [[ "$rc" == 0 ]] || fail "empty album ($mode): expected exit 0, got $rc"
+    assert_immich_cleanup_only_notification "$sandbox" "empty album ($mode)" "삭제할 이미지가 없습니다"
+    assert_line_count "$sandbox/requests.log" "page=1" 1
+    [[ ! -e "$sandbox/deletes.log" ]] || fail "empty album ($mode) must not call asset delete"
+  done
+}
+
+test_immich_cleanup_partial_delete_failure_exits_nonzero() {
+  local sandbox output rc
+  sandbox="$(new_sandbox)"
+  setup_immich_cleanup_fixture "$sandbox" paginated
+  printf '%s\n' 22222222-2222-2222-8222-222222222222 > "$sandbox/delete-fail-ids"
+
+  if output=$(run_immich_cleanup_fixture "$sandbox" 2>&1); then rc=0; else rc=$?; fi
+
+  [[ "$rc" == 1 ]] || fail "partial failure: expected exit 1, got $rc"
+  assert_contains "$output" "Failed to delete asset: 22222222-2222-2222-8222-222222222222"
+  assert_contains "$output" "Cleanup completed. Success: 2, Failed: 1"
+  assert_immich_cleanup_only_notification "$sandbox" "partial failure" "2개 삭제, 1개 실패"
+  assert_immich_cleanup_paginated_requests "$sandbox"
+}
+
+test_immich_cleanup_all_delete_failure_exits_nonzero() {
+  local sandbox output rc
+  sandbox="$(new_sandbox)"
+  setup_immich_cleanup_fixture "$sandbox" paginated
+  printf '%s\n' 11111111-1111-1111-8111-111111111111 \
+    22222222-2222-2222-8222-222222222222 \
+    33333333-3333-3333-8333-333333333333 > "$sandbox/delete-fail-ids"
+
+  if output=$(run_immich_cleanup_fixture "$sandbox" 2>&1); then rc=0; else rc=$?; fi
+
+  [[ "$rc" == 1 ]] || fail "all failure: expected exit 1, got $rc"
+  assert_contains "$output" "Cleanup completed. Success: 0, Failed: 3"
+  assert_immich_cleanup_only_notification "$sandbox" "all failure" "0개 삭제, 3개 실패"
+  assert_immich_cleanup_paginated_requests "$sandbox"
+}
+
+test_immich_cleanup_notification_failure_keeps_delete_failure() {
+  local sandbox output rc
+  sandbox="$(new_sandbox)"
+  setup_immich_cleanup_fixture "$sandbox" paginated
+  printf '%s\n' 22222222-2222-2222-8222-222222222222 > "$sandbox/delete-fail-ids"
+  : > "$sandbox/notify-fail"
+
+  if output=$(run_immich_cleanup_fixture "$sandbox" 2>&1); then rc=0; else rc=$?; fi
+
+  # 알림 실패 코드(7)가 삭제 실패 종료(1)를 덮지 않고, ERR trap 알림으로 중복되지 않는다.
+  [[ "$rc" == 1 ]] || fail "partial failure + notify failure: expected exit 1, got $rc"
+  assert_contains "$output" "Cleanup completed. Success: 2, Failed: 1"
+  assert_immich_cleanup_only_notification "$sandbox" "partial failure + notify failure" "2개 삭제, 1개 실패"
+  assert_immich_cleanup_paginated_requests "$sandbox"
 }
