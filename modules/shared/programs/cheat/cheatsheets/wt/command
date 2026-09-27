@@ -61,12 +61,15 @@ wt — Git worktree 관리 (fzf TUI)
   안전 가드 (두 경로 공통, 삭제 전에 봄):
     활성 작업 — 대상 worktree(하위 포함)를 cwd로 둔 프로세스가 있으면 스킵 + PID·명령 표시
       유휴 셸도 막음 (wt는 창을 닫지 않으므로 사라진 cwd를 붙잡은 셸이 남지 않게)
-      탐지(lsof, wt 래퍼가 WT_LSOF로 Nix store 경로 주입)에 실패해도 스킵
+      탐지(lsof, wt 래퍼가 WT_LSOF로 Nix store 경로 주입)에 실패하면 원인을 알리고 스킵
       제외: wt를 부른 셸·세션(조상)과 wt의 자손. 같은 세션이 따로 띄운 셸은 잡힘
-      현재 사용자 프로세스만 봄 — 다른 사용자·root 프로세스, cwd가 밖인 프로세스
-        (폴더를 연 GUI 편집기 등)는 못 막음
-      우회: wt cleanup <name> --yes, wt --yes --if-exists=recreate <branch>
-        (--auto --yes는 우회하지 않고 건너뜀. 우회하면 남은 프로세스는 사라진 cwd를 붙잡음)
+      우회(--yes): 이름 지정·대화형 선택 정리(wt cleanup <name> --yes)와
+        재생성(wt --yes --if-exists=recreate <branch>, 대화형 선택 포함)
+        --auto --yes는 우회하지 않고 건너뜀. 우회하면 남은 프로세스는 사라진 cwd를 붙잡음
+      못 막는 것:
+        다른 사용자·root 프로세스 (현재 사용자 프로세스만 봄)
+        cwd가 worktree 밖인 프로세스 (폴더를 연 GUI 편집기 등)
+        샌드박스가 다른 프로세스 정보만 가린 환경 (lsof가 정상 종료하면서 일부만 내어 탐지가 통과)
     잠금 — git worktree lock된 worktree는 --yes로도 지우지 않음
     현재 위치한 worktree는 제외 (저장소 루트에서 재실행)
 
