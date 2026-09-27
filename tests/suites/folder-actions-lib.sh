@@ -28,7 +28,8 @@
 #   still covered by overriding those callback boundaries after sourcing.
 # - upload-immich.sh missing-credential e2e is skipped when those macOS absolute
 #   commands are absent before the credential branch.
-# - The rar/ffmpeg job e2e fixtures (#1402) are Darwin-only for the same reason.
+# - The rar/ffmpeg job e2e fixtures (#1402) and the upload-immich result
+#   fixtures (#1401) are Darwin-only for the same reason.
 #
 # This suite is definition-only; tests/shell-script-tests.sh owns run_test registration.
 
@@ -492,4 +493,155 @@ test_folder_actions_video_jobs_run_with_launchd_minimal_path() (
     [[ "$(_folder_actions_count_calls_on "$sandbox" mv "$input")" == 0 ]] \
       || fail "$name must not quarantine a successful input"
   done
+)
+
+# ── upload-immich 결과 처리 fixture (#1401) ───────────────────────────────────
+# Immich CLI는 대역이다. 대역 bun은 `bun x @immich/cli@3 upload ...` 호출 인자를 기록하고,
+# 사례가 지정한 파일만 지운 뒤(CLI가 저장을 확인한 원본을 지우는 동작) 지정한 종료 코드로
+# 끝난다. 끝나기 직전 감시 폴더 목록을 남겨 CLI 처리 직후와 스크립트 종료 뒤를 나눠 본다.
+# 락과 스크립트 자신의 삭제는 위 배포 레이아웃 사본으로 격리해 calls.log에 기록한다.
+
+_upload_immich_fixture_runnable() {
+  local path
+
+  if [ "$(uname -s)" != "Darwin" ]; then
+    echo "N/A: upload-immich result fixture uses a macOS absolute command contract (runner=$(uname -s))" >&2
+    return 1
+  fi
+
+  for path in /usr/bin/env /usr/bin/id /usr/bin/stat /usr/bin/sed /usr/bin/grep /usr/bin/tr \
+    /usr/bin/hexdump /usr/bin/wc /usr/bin/tail /usr/bin/basename \
+    /bin/date /bin/ps /bin/kill /bin/ls /bin/mkdir /bin/mv /bin/rm /bin/cat /bin/sleep; do
+    if [ ! -x "$path" ]; then
+      echo "SKIP: upload-immich result fixture requires $path" >&2
+      return 1
+    fi
+  done
+}
+
+# <sandbox> <CLI 종료 코드> [CLI가 지울 파일 이름...]
+_upload_immich_prepare() {
+  local sandbox="$1" cli_rc="$2"
+  shift 2
+  local home="$sandbox/home"
+  local name
+
+  _folder_actions_install_tool_script "$sandbox" upload-immich
+  mkdir -p "$home/.config/immich" "$home/.config/pushover" "$home/.local/lib"
+  printf '%s\n' "IMMICH_API_KEY=synthetic-key" > "$home/.config/immich/api-key"
+  : > "$home/.config/pushover/immich"
+  cat > "$home/.local/lib/pushover.sh" <<EOF_HELPER
+pushover_send() {
+  { printf 'title=%s\n' "\$2"; printf 'priority=%s\n' "\$4"; printf 'message=%s\n' "\$3"; } >> '$sandbox/pushover.log'
+}
+EOF_HELPER
+
+  # 서버 ping만 받는다. 알림은 위 helper 대역이 받으므로 curl로 나가지 않는다.
+  cat > "$sandbox/tools/curl" <<EOF_CURL
+#!/bin/sh
+printf '%s\n' "\$*" >> '$sandbox/curl.log'
+EOF_CURL
+
+  : > "$sandbox/cli-removes"
+  for name in "$@"; do
+    printf '%s\n' "$name" >> "$sandbox/cli-removes"
+  done
+  cat > "$sandbox/tools/bun" <<EOF_BUN
+#!/bin/sh
+for arg in "\$@"; do printf 'ARG=%s\n' "\$arg"; done >> '$sandbox/bun.log'
+watch=""
+for arg in "\$@"; do watch=\$arg; done
+while IFS= read -r name; do
+  /bin/rm -f "\$watch/\$name"
+done < '$sandbox/cli-removes'
+/bin/ls -A "\$watch" > '$sandbox/after-cli.txt'
+echo "synthetic CLI output"
+exit $cli_rc
+EOF_BUN
+  chmod 755 "$sandbox/tools/curl" "$sandbox/tools/bun"
+}
+
+# launchd PATH의 ~/.bun/bin 자리에 대역 디렉터리를 둔다.
+_upload_immich_run_script() {
+  local sandbox="$1"
+  env -i HOME="$sandbox/home" PATH="$sandbox/tools:/usr/bin:/bin" \
+    WATCH_DIR="$sandbox/home/FolderActions/upload-immich" \
+    IMMICH_INSTANCE_URL="http://127.0.0.1:9" \
+    "$sandbox/home/.local/bin/upload-immich.sh"
+}
+
+test_upload_immich_keeps_originals_the_cli_did_not_upload() (
+  local sandbox watch out expected actual
+  _upload_immich_fixture_runnable || return 0
+
+  sandbox=$(new_sandbox)
+  watch="$sandbox/home/FolderActions/upload-immich"
+  # 성공 1개 + 실패 1개인데 CLI 종료 코드는 0이다.
+  _upload_immich_prepare "$sandbox" 0 uploaded.jpg
+  printf '%s\n' "synthetic uploaded" > "$watch/uploaded.jpg"
+  printf '%s\n' "synthetic failed" > "$watch/failed.jpg"
+
+  out=$(_upload_immich_run_script "$sandbox" 2>&1) || fail "upload-immich must exit 0: $out"
+
+  assert_file_contains "$sandbox/after-cli.txt" "failed.jpg"
+  [[ "$(cat "$watch/failed.jpg" 2>/dev/null)" == "synthetic failed" ]] \
+    || fail "an original the CLI did not upload must survive post-processing: $out"
+  [[ ! -e "$watch/uploaded.jpg" ]] || fail "the fixture CLI must have removed uploaded.jpg"
+  ! grep -Fq "$watch" "$sandbox/calls.log" \
+    || fail "the script must leave deleting originals to the CLI: $(cat "$sandbox/calls.log")"
+
+  assert_line_count "$sandbox/pushover.log" "title=Immich [⚠️ 일부 미업로드]" 1
+  assert_file_contains "$sandbox/pushover.log" "priority=0"
+  assert_file_contains "$sandbox/pushover.log" "message=📸 1/2개 업로드 → Desktop Upload"
+  assert_file_contains "$sandbox/pushover.log" "⚠️ 업로드 안 된 1개 원본 보존"
+  assert_not_contains "$(cat "$sandbox/pushover.log")" "업로드 완료"
+
+  expected=$(printf 'ARG=%s\n' x @immich/cli@3 upload --album-name "Desktop Upload" \
+    --delete --delete-duplicates --concurrency 2 "$watch")
+  actual=$(cat "$sandbox/bun.log")
+  [[ "$actual" == "$expected" ]] || fail "Immich CLI invocation changed: $actual"
+)
+
+test_upload_immich_notification_counts_remaining_originals() (
+  local sandbox watch out
+  _upload_immich_fixture_runnable || return 0
+
+  # 전체 업로드: 남은 원본이 없을 때만 완료로 알린다. 비미디어는 CLI 대상이 아니다.
+  sandbox=$(new_sandbox)
+  watch="$sandbox/home/FolderActions/upload-immich"
+  _upload_immich_prepare "$sandbox" 0 a.jpg b.mov
+  printf '%s\n' a > "$watch/a.jpg"
+  printf '%s\n' b > "$watch/b.mov"
+  printf '%s\n' note > "$watch/note.txt"
+  out=$(_upload_immich_run_script "$sandbox" 2>&1) || fail "all-uploaded run must exit 0: $out"
+  assert_line_count "$sandbox/pushover.log" "title=Immich [✅ 업로드 완료]" 1
+  assert_file_contains "$sandbox/pushover.log" "message=📸 2개 파일 (4B) → Desktop Upload"
+  assert_file_contains "$sandbox/pushover.log" "⚠️ 비미디어 1개 무시됨"
+  [[ -e "$watch/note.txt" ]] || fail "non-media files must stay"
+
+  # 전체 실패인데 종료 코드 0: 완료로 알리지 않고 두 원본을 남긴다.
+  sandbox=$(new_sandbox)
+  watch="$sandbox/home/FolderActions/upload-immich"
+  _upload_immich_prepare "$sandbox" 0
+  printf '%s\n' a > "$watch/a.jpg"
+  printf '%s\n' b > "$watch/b.mov"
+  out=$(_upload_immich_run_script "$sandbox" 2>&1) || fail "all-failed run must exit 0: $out"
+  [[ -e "$watch/a.jpg" && -e "$watch/b.mov" ]] || fail "all originals must stay when nothing was uploaded: $out"
+  ! grep -Fq "$watch" "$sandbox/calls.log" || fail "all-failed run must not delete: $(cat "$sandbox/calls.log")"
+  assert_line_count "$sandbox/pushover.log" "title=Immich [⚠️ 일부 미업로드]" 1
+  assert_file_contains "$sandbox/pushover.log" "message=📸 0/2개 업로드 → Desktop Upload"
+  assert_file_contains "$sandbox/pushover.log" "⚠️ 업로드 안 된 2개 원본 보존"
+
+  # 명령 비정상 종료: CLI가 한 개를 지운 뒤 실패해도 실제로 남은 수를 알린다.
+  sandbox=$(new_sandbox)
+  watch="$sandbox/home/FolderActions/upload-immich"
+  _upload_immich_prepare "$sandbox" 1 a.jpg
+  printf '%s\n' a > "$watch/a.jpg"
+  printf '%s\n' b > "$watch/b.mov"
+  out=$(_upload_immich_run_script "$sandbox" 2>&1) || fail "cli-error run must exit 0: $out"
+  [[ "$(cat "$watch/b.mov" 2>/dev/null)" == "b" ]] || fail "the original left by a failed CLI must stay: $out"
+  ! grep -Fq "$watch" "$sandbox/calls.log" || fail "cli-error run must not delete: $(cat "$sandbox/calls.log")"
+  assert_line_count "$sandbox/pushover.log" "title=Immich [❌ 업로드 실패]" 1
+  assert_file_contains "$sandbox/pushover.log" "message=CLI 오류: synthetic CLI output"
+  assert_file_contains "$sandbox/pushover.log" "⚠️ 남은 파일 1/2개 원본 보존"
 )

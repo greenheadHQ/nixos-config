@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Folder Action: Immich 자동 업로드
 # 감시 폴더: $WATCH_DIR (기본값: ~/FolderActions/upload-immich/)
-# 미디어 파일 → Immich 서버 업로드 → Pushover 알림 → 원본 삭제
+# 미디어 파일 → Immich 서버 업로드 (CLI가 저장을 확인한 원본만 삭제) → Pushover 알림
 # shellcheck disable=SC1090
 
 WATCH_DIR="${WATCH_DIR:-$HOME/FolderActions/upload-immich}"
@@ -690,9 +690,14 @@ fi
 
 log "업로드 시작: ${media_count}개 (${readable_size})"
 
-upload_output=$(bun x @immich/cli upload \
+# 원본 삭제는 CLI만 한다: --delete는 업로드 응답을 받은 파일, --delete-duplicates는
+# 서버에 이미 있다고 확인된 파일만 지운다. 업로드 실패·서버 미지원 형식·확인 실패로
+# 남은 파일은 지우지 않는다. 메이저 버전은 modules/nixos/programs/docker/immich.nix의
+# immich-server 이미지와 맞춘다.
+upload_output=$(bun x @immich/cli@3 upload \
     --album-name "Desktop Upload" \
     --delete \
+    --delete-duplicates \
     --concurrency 2 \
     "$WATCH_DIR" 2>&1) && upload_exit=0 || upload_exit=$?
 
@@ -701,30 +706,37 @@ log "CLI 출력: ${upload_output}"
 
 # ─── 결과 처리 ────────────────────────────────────────────────
 
-if [ "$upload_exit" -eq 0 ]; then
-    # 성공: 사전 기록된 미디어 파일만 삭제 (--delete 버그 대응: 중복 파일도 삭제)
-    deleted=0
-    for f in "${media_files[@]}"; do
-        if [ -f "$f" ]; then
-            /bin/rm -f "$f"
-            deleted=$((deleted + 1))
-        fi
-    done
-    log "삭제 완료: ${deleted}/${media_count}개"
+# 종료 코드 0은 개별 파일의 업로드 성공을 뜻하지 않는다 (CLI는 일부 업로드가 실패해도
+# 0으로 끝난다). 결과는 사전 목록 중 CLI 실행 뒤에도 남은 원본 수로 판단한다.
+remaining=0
+for f in "${media_files[@]}"; do
+    if [ -e "$f" ]; then
+        remaining=$((remaining + 1))
+    fi
+done
+uploaded_count=$((media_count - remaining))
+log "업로드 확인 ${uploaded_count}/${media_count}개, 남은 원본 ${remaining}개"
 
+if [ "$upload_exit" -eq 0 ] && [ "$remaining" -eq 0 ]; then
+    title="Immich [✅ 업로드 완료]"
     message="📸 ${media_count}개 파일 (${readable_size}) → Desktop Upload"
-    if [ "$non_media_count" -gt 0 ]; then
-        message="${message}\n⚠️ 비미디어 ${non_media_count}개 무시됨"
-    fi
-    send_notification "Immich [✅ 업로드 완료]" "$message" -1 "none"
+    priority=-1
+    sound="none"
+elif [ "$upload_exit" -eq 0 ]; then
+    title="Immich [⚠️ 일부 미업로드]"
+    message="📸 ${uploaded_count}/${media_count}개 업로드 → Desktop Upload"$'\n'"⚠️ 업로드 안 된 ${remaining}개 원본 보존"
+    priority=0
+    sound="falling"
 else
-    # 실패: 모든 파일 보존
     error_tail=$(echo "$upload_output" | tail -c 200)
-    message="CLI 오류: ${error_tail}"
-    if [ "$non_media_count" -gt 0 ]; then
-        message="${message}\n⚠️ 비미디어 ${non_media_count}개 무시됨"
-    fi
-    send_notification "Immich [❌ 업로드 실패]" "$message" 0 "falling"
+    title="Immich [❌ 업로드 실패]"
+    message="CLI 오류: ${error_tail}"$'\n'"⚠️ 남은 파일 ${remaining}/${media_count}개 원본 보존"
+    priority=0
+    sound="falling"
 fi
+if [ "$non_media_count" -gt 0 ]; then
+    message="${message}"$'\n'"⚠️ 비미디어 ${non_media_count}개 무시됨"
+fi
+send_notification "$title" "$message" "$priority" "$sound"
 
 log "완료"
