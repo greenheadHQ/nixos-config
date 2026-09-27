@@ -22,6 +22,9 @@
 #   - _add_host_write_expected_default_nix HOST OUT : 기대 템플릿을 OUT에 씀
 #   - _add_host_install_failing_stub STUB_DIR NAME : 이름이 NAME인 실행 파일을 호출하면
 #     항상 실패(로그 남김)하는 대역으로 설치
+#   - _add_host_install_failing_printf_bash_env OUT : printf를 항상 실패시키는 BASH_ENV
+#     파일을 OUT에 써서, _add_host_run 호출 앞에 `BASH_ENV="$out" _add_host_run …`으로
+#     주입할 수 있게 한다
 
 _add_host_prepare_sandbox() {
   local sandbox="$1"
@@ -51,8 +54,21 @@ EOF
   chmod +x "$stub_dir/$name"
 }
 
-# 실행. 결과는 전역 _add_host_stdout/_add_host_stderr(파일 경로)·_add_host_rc·
-# _add_host_host_dir에 채운다. extra_path가 있으면 PATH 맨 앞에 둔다(대역 주입용).
+# printf를 항상 실패시키는 BASH_ENV 파일을 $1에 쓴다. add-host.sh는 `bash script.sh`로
+# 새 비대화형 bash 프로세스에서 실행되므로, 호출 쪽에서 BASH_ENV="$1"을 export해 두면
+# bash가 스크립트를 읽기 전에 이 파일을 source해 여기서 정의한 printf 함수가 builtin보다
+# 우선한다(printf가 실제로 파일을 못 쓰는 상황을 흉내내는 스텁 실행 파일과 달리, printf는
+# 셸 builtin이라 PATH 대역으로는 가로챌 수 없다).
+_add_host_install_failing_printf_bash_env() {
+  local out="$1"
+  cat > "$out" <<'EOF'
+printf() { return 1; }
+EOF
+}
+
+# 실행. 결과는 전역 _add_host_stdout/_add_host_stderr(파일 경로)·_add_host_rc에 채운다.
+# extra_path가 있으면 PATH 맨 앞에 둔다(대역 주입용). 호출 쪽 환경의 BASH_ENV 같은 변수는
+# 이 함수를 통해 그대로 add-host.sh 프로세스에 전달된다(bash의 임시 환경 규칙).
 _add_host_run() {
   local sandbox="$1" stdin_data="$2" extra_path="${3:-}"
   local run_path="$PATH"
@@ -104,8 +120,9 @@ NIXEOF
   } > "$out"
 }
 
-# ── 정상 생성: sed가 아예 없어도(호출하면 실패하는 대역) 동일 결과 — BSD/GNU sed 구현
-# 차이에 좌우되지 않는 방식으로 이식성을 고정한다(팀 지침의 "sed 실패 대역" 대안 채택).
+# ── 정상 생성: sed가 아예 없어도(호출하면 실패하는 대역) 동일 결과가 나오는지 고정한다.
+# BSD sed(macOS)와 GNU sed는 in-place 인자 규칙이 달라 어느 한쪽만 흉내내면 다른 쪽
+# 회귀를 놓친다 — 항상 실패하는 대역으로 "sed를 아예 안 부른다"를 구현체 무관하게 고정한다.
 test_add_host_nixos_generates_default_nix_without_calling_sed() {
   local sandbox stub_dir hostname="test-host-1" username="testuser" expected
   sandbox="$(new_sandbox)"
@@ -137,16 +154,21 @@ test_add_host_nixos_generates_default_nix_without_calling_sed() {
   assert_contains "$(cat "$_add_host_stdout")" "4️⃣"
 
   # mktemp가 만든 임시 파일은 0600이다 — mv로 그대로 옮기면 나머지 호스트 파일과 달리
-  # default.nix만 0600이 되므로, 최종 파일은 0644로 맞춰야 한다.
-  [[ "$(_portable_file_mode "$default_nix")" == "644" ]] \
-    || fail "default.nix 모드가 644가 아님: $(_portable_file_mode "$default_nix")"
+  # default.nix만 0600이 된다. 스크립트는 umask 기반(0666 & ~umask)으로 되돌리므로,
+  # 여기서도 같은 공식으로 기대값을 계산해 이 sandbox 프로세스의 실제 umask에 맞춘다
+  # (umask 077처럼 0644가 원래 의미와 다른 환경에서 고정값 단정이 거짓 통과하지 않도록).
+  local expected_mode
+  expected_mode="$(printf '%03o' $(( 0666 & ~0$(umask) )))"
+  [[ "$(_portable_file_mode "$default_nix")" == "$expected_mode" ]] \
+    || fail "default.nix 모드가 $expected_mode(umask 기준)가 아님: $(_portable_file_mode "$default_nix")"
 }
 
 # ── 실제 시스템 sed(현재 PATH 그대로, 스텁 없음)로도 같은 결과가 나오는지 확인.
 # 이 devShell PATH에서는 nix가 제공하는 GNU sed(gnused)가 /usr/bin보다 먼저 잡혀,
 # PATH를 건드리지 않는 이 실행은 GNU sed 경로를 검증한다(스크립트가 sed를 전혀 호출하지
-# 않으므로 사실 어느 sed든 결과는 같아야 한다). BSD sed 경로는 아래에서 /usr/bin을 PATH
-# 앞에 둬 별도로 검증한다 — macOS에서만 /usr/bin/sed가 BSD sed이기 때문이다.
+# 않으므로 사실 어느 sed든 결과는 같아야 한다). BSD 경로는 아래에서 PATH 맨 앞을
+# /usr/bin:/bin으로 바꿔 별도로 검증한다 — sed뿐 아니라 bash 자체(macOS 시스템은 3.2)와
+# cat/mv/chmod/mkdir/rmdir까지 시스템 도구로 실행되는, devShell 밖 macOS 경로를 흉내낸다.
 test_add_host_nixos_matches_expected_template_with_system_tools() {
   local sandbox hostname="test-host-2" username="anotheruser" expected
   sandbox="$(new_sandbox)"
@@ -163,27 +185,27 @@ test_add_host_nixos_matches_expected_template_with_system_tools() {
   diff -u "$expected" "$default_nix" || fail "default.nix가 기대 템플릿과 다름"
   assert_contains "$(cat "$_add_host_stdout")" "완료!"
 
-  # BSD sed 실행 변형: /usr/bin/sed가 BSD sed일 때(--version을 모르는 옵션으로 거부)만
-  # PATH 맨 앞에 /usr/bin을 둬 그 경로가 먼저 잡히게 하고 같은 결과를 다시 확인한다.
-  # /usr/bin/sed가 GNU sed인 환경(대부분의 Linux)에서는 이 구분이 성립하지 않아 건너뛴다.
-  if /usr/bin/sed --version >/dev/null 2>&1; then
-    echo "N/A: /usr/bin/sed가 GNU sed라 BSD 경로 변형은 이 실행 환경에 적용되지 않는다 (runner=$(uname -s))" >&2
-    return 0
+  # BSD 실행 변형: /usr/bin/sed가 실제로 존재하고 BSD sed일 때만(--version을 모르는
+  # 옵션으로 거부) 돈다. `/usr/bin/sed --version`이 명령을 찾지 못해 실패하는 환경
+  # (예: /usr/bin에 sed 없이 env만 있는 NixOS)도 이 조건이면 걸러져 N/A로 빠진다 —
+  # "sed 파일이 없다"와 "BSD sed다"를 구분하지 않으면 그런 환경을 BSD로 오판한다.
+  if [[ -x /usr/bin/sed ]] && ! /usr/bin/sed --version >/dev/null 2>&1; then
+    local sandbox_bsd hostname_bsd="test-host-2-bsd" default_nix_bsd expected_bsd
+    sandbox_bsd="$(new_sandbox)"
+    _add_host_prepare_sandbox "$sandbox_bsd"
+    _add_host_run "$sandbox_bsd" \
+      "$(_add_host_nixos_stdin "$hostname_bsd" "$username" 2 "ssh-ed25519 AAAAtest2bsd" y)" \
+      "/usr/bin:/bin"
+
+    [[ "$_add_host_rc" -eq 0 ]] || fail "BSD 경로에서 add-host.sh 실패 (rc=$_add_host_rc): $(cat "$_add_host_stderr")"
+    default_nix_bsd="$(_add_host_default_nix_path "$sandbox_bsd" "$hostname_bsd")"
+    expected_bsd="$sandbox_bsd/expected-default.nix"
+    _add_host_write_expected_default_nix "$hostname_bsd" "$expected_bsd"
+    diff -u "$expected_bsd" "$default_nix_bsd" || fail "BSD 경로의 default.nix가 기대 템플릿과 다름"
+    assert_contains "$(cat "$_add_host_stdout")" "완료!"
+  else
+    echo "N/A: /usr/bin/sed가 없거나 GNU sed라 BSD 경로 변형은 이 실행 환경에 적용되지 않는다 (runner=$(uname -s))" >&2
   fi
-
-  local sandbox_bsd hostname_bsd="test-host-2-bsd" default_nix_bsd expected_bsd
-  sandbox_bsd="$(new_sandbox)"
-  _add_host_prepare_sandbox "$sandbox_bsd"
-  _add_host_run "$sandbox_bsd" \
-    "$(_add_host_nixos_stdin "$hostname_bsd" "$username" 2 "ssh-ed25519 AAAAtest2bsd" y)" \
-    "/usr/bin"
-
-  [[ "$_add_host_rc" -eq 0 ]] || fail "BSD sed 경로에서 add-host.sh 실패 (rc=$_add_host_rc): $(cat "$_add_host_stderr")"
-  default_nix_bsd="$(_add_host_default_nix_path "$sandbox_bsd" "$hostname_bsd")"
-  expected_bsd="$sandbox_bsd/expected-default.nix"
-  _add_host_write_expected_default_nix "$hostname_bsd" "$expected_bsd"
-  diff -u "$expected_bsd" "$default_nix_bsd" || fail "BSD sed 경로의 default.nix가 기대 템플릿과 다름"
-  assert_contains "$(cat "$_add_host_stdout")" "완료!"
 }
 
 # ── 기존 파일 보존: 같은 호스트명으로 재실행해도 기존 default.nix가 바이트 단위로 보존.
@@ -239,8 +261,9 @@ test_add_host_nixos_mv_failure_leaves_no_partial_file_and_removes_created_dir() 
 # host_dir까지 지워져 재실행으로 다시 시도할 수 있어야 한다. `if ! ( … )` 조건 문맥에서는
 # bash가 서브셸 내부 errexit를 무시해(bash 3.2·5.x 동일) cat 실패가 조용히 넘어가고
 # 마지막 mv의 성공 여부만 rc에 반영되는 회귀가 있었다(#1382 리뷰) — 이 테스트는 그 경로를
-# 고정한다. mv 실패(위 테스트)와 달리 이 실패는 조건 문맥 문제가 없어도 `{ } > tmp` 그룹의
-# exit status가 마지막 명령(cat)만 반영한다는 별도 함정도 함께 잡는다.
+# 고정한다. cat은 `{ printf; cat; } > tmp` 그룹의 마지막 명령이라 그룹 exit status에 이미
+# 반영되므로, 그 그룹의 exit status가 마지막 명령만 반영한다는 별도 함정은 printf 실패
+# 테스트(아래)가 잡는다.
 test_add_host_nixos_write_failure_leaves_no_partial_file_and_removes_created_dir() {
   local sandbox stub_dir hostname="test-host-5" host_dir default_nix
   sandbox="$(new_sandbox)"
@@ -263,6 +286,37 @@ test_add_host_nixos_write_failure_leaves_no_partial_file_and_removes_created_dir
   # 재실행하면 (대역 없이) 정상적으로 이어서 생성할 수 있어야 한다.
   _add_host_run "$sandbox" \
     "$(_add_host_nixos_stdin "$hostname" "user5" 2 "ssh-ed25519 AAAAtest5" y)" ""
+  [[ "$_add_host_rc" -eq 0 ]] || fail "정리 후 재실행이 실패함 (rc=$_add_host_rc): $(cat "$_add_host_stderr")"
+  [[ -f "$default_nix" ]] || fail "정리 후 재실행에서도 default.nix가 생성되지 않음"
+}
+
+# ── 쓰기 실패 주입(printf 실패): `{ printf; cat; } > tmp` 그룹의 첫 명령인 printf가
+# 실패해도(cat은 정상 실행돼 그룹 자체는 무언가를 계속 쓴다) 완료 메시지가 나오지 않고,
+# default.nix가 최종 위치에 남지 않으며, 이번 실행이 만든 host_dir까지 지워져야 한다.
+# printf는 셸 builtin이라 PATH 대역(위 cat 테스트 방식)으로는 가로챌 수 없으므로, BASH_ENV로
+# printf를 덮어쓰는 함수를 주입한다. 이 테스트는 그룹의 exit status가 마지막 명령(cat,
+# 성공)만 반영해 앞선 printf 실패를 가린다는 별도 함정을 잡는다 — cat 실패 테스트(위)는
+# cat이 그룹의 마지막 명령이라 이 함정을 검증하지 못한다.
+test_add_host_nixos_printf_failure_leaves_no_partial_file_and_removes_created_dir() {
+  local sandbox hostname="test-host-6" host_dir default_nix bash_env
+  sandbox="$(new_sandbox)"
+  _add_host_prepare_sandbox "$sandbox"
+  bash_env="$sandbox/failing-printf-bash-env.sh"
+  _add_host_install_failing_printf_bash_env "$bash_env"
+  host_dir="$sandbox/repo/hosts/$hostname"
+  default_nix="$host_dir/default.nix"
+
+  BASH_ENV="$bash_env" _add_host_run "$sandbox" \
+    "$(_add_host_nixos_stdin "$hostname" "user6" 2 "ssh-ed25519 AAAAtest6" y)" ""
+
+  [[ "$_add_host_rc" -ne 0 ]] || fail "printf 실패에도 add-host.sh가 rc 0으로 종료됨"
+  assert_not_contains "$(cat "$_add_host_stdout")" "완료!"
+  [[ ! -e "$default_nix" ]] || fail "printf 실패에도 default.nix가 최종 위치에 남음"
+  [[ ! -d "$host_dir" ]] || fail "이번 실행이 만든 host_dir가 실패 후 남음 — 재실행이 디렉토리 존재로 계속 스킵된다"
+
+  # 재실행하면 (BASH_ENV 없이) 정상적으로 이어서 생성할 수 있어야 한다.
+  _add_host_run "$sandbox" \
+    "$(_add_host_nixos_stdin "$hostname" "user6" 2 "ssh-ed25519 AAAAtest6" y)" ""
   [[ "$_add_host_rc" -eq 0 ]] || fail "정리 후 재실행이 실패함 (rc=$_add_host_rc): $(cat "$_add_host_stderr")"
   [[ -f "$default_nix" ]] || fail "정리 후 재실행에서도 default.nix가 생성되지 않음"
 }

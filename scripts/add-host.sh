@@ -121,9 +121,15 @@ if [[ "$platform" == "nixos" ]]; then
 }
 NIXEOF
       } > "$default_nix_tmp"
-      # mktemp는 파일을 0600으로 만들고 mv는 이 모드를 그대로 옮긴다. 나머지 호스트
-      # 파일과 같은 0644로 맞춘다(대부분의 umask에서 일반 파일이 갖는 값).
-      chmod 0644 "$default_nix_tmp"
+      # mktemp는 파일을 0600으로 만들고 mv는 이 모드를 그대로 옮긴다. heredoc 리다이렉트로
+      # 직접 썼을 때 umask가 만들었을 일반 파일 모드(0666 & ~umask)로 맞춰, 고정된 0644가
+      # umask 077(이전 0600)이나 umask 002(이전 0664) 환경의 기존 동작을 바꾸지 않게 한다.
+      # printf가 아니라 정수 나눗셈으로 8진수 세 자리를 뽑는다 — printf는 위 heredoc의
+      # 호스트명 주석에도 쓰이므로, printf 실패를 재현하는 테스트가 이 chmod 계산까지
+      # 함께 실패시켜 원인을 가리지 않도록 여기서는 산술만 쓴다.
+      default_nix_mode=$(( 0666 & ~0$(umask) ))
+      chmod "$(( default_nix_mode / 64 ))$(( default_nix_mode / 8 % 8 ))$(( default_nix_mode % 8 ))" \
+        "$default_nix_tmp"
       mv "$default_nix_tmp" "$host_dir/default.nix"
     )
     default_nix_write_rc=$?
