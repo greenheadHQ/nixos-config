@@ -121,6 +121,8 @@ run_test "claude remote-control stop path removes stale registration" test_claud
 run_test "claude remote-control slug separates same basenames" test_claude_remote_control_slug_uses_hash_for_same_basename
 run_test "claude remote-control cleanup removes only orphan worktrees" test_claude_remote_control_cleanup_removes_only_orphan_worktrees
 run_test "claude remote-control cleanup preserves special-character worktrees" test_claude_remote_control_cleanup_preserves_special_character_worktrees
+run_test "claude remote-control cleanup preserves nested worktrees" test_claude_remote_control_cleanup_preserves_nested_worktrees
+run_test "claude remote-control cleanup resolves nested worktree paths" test_claude_remote_control_cleanup_resolves_nested_worktree_paths
 run_test "claude remote-control cleanup skips sweep when worktree list fails" test_claude_remote_control_cleanup_skips_sweep_when_worktree_list_fails
 run_test "claude remote-control cleanup skips sweep on unparseable worktree list" test_claude_remote_control_cleanup_skips_sweep_on_unparseable_worktree_list
 run_test "claude remote-control maint reconciles declarations" test_claude_remote_control_maint_reconciles_declared_instances

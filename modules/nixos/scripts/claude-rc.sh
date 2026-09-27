@@ -413,6 +413,16 @@ load_live_worktrees_z() {
     [ -z "$field" ] && [ "$in_record" = false ] && [ "${#LIVE_WORKTREES[@]}" -gt 0 ]
 }
 
+CANONICAL_PATH=""
+
+# 기존 경로의 canonical 경로를 CANONICAL_PATH에 담는다. 명령 치환은 끝 개행을 버리므로
+# 표지를 붙여 받은 뒤 뗀다 — 개행으로 끝나는 이름이 잘리면 조상 판정에서 다른
+# 디렉터리로 읽힌다.
+resolve_canonical_path() {
+    CANONICAL_PATH=$(cd "$1" 2>/dev/null && pwd -P && echo .) || return 1
+    CANONICAL_PATH=${CANONICAL_PATH%$'\n.'}
+}
+
 do_cleanup() {
     require_common_cmds
     local instance_path wt_dir prune_output list_file list_error dir canonical
@@ -452,18 +462,21 @@ do_cleanup() {
         exit 1
     fi
 
+    # 첫 단계 디렉터리만 판정한다. 등록 worktree 자신이거나 그 조상이면 통째로 남기므로,
+    # 조상 안의 미등록 잔재도 함께 남는다.
     for dir in "$wt_dir"/*/; do
         [ -d "$dir" ] || continue
-        canonical=$(canonical_existing_path "$dir") || continue
-        local is_live=false live canonical_live
+        resolve_canonical_path "$dir" || continue
+        canonical=$CANONICAL_PATH
+        local keep=false live
         for live in "${LIVE_WORKTREES[@]}"; do
-            canonical_live=$(canonical_existing_path "$live" 2>/dev/null || true)
-            if [ -n "$canonical_live" ] && [ "$canonical_live" = "$canonical" ]; then
-                is_live=true
+            resolve_canonical_path "$live" || continue
+            if [ "$CANONICAL_PATH" = "$canonical" ] || [[ "$CANONICAL_PATH" == "$canonical"/* ]]; then
+                keep=true
                 break
             fi
         done
-        if [ "$is_live" = false ]; then
+        if [ "$keep" = false ]; then
             log_info "orphan 디렉토리 삭제: $(basename "$dir")"
             rm -rf "$dir"
         fi
