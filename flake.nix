@@ -110,6 +110,9 @@
             # Claude snapshot routing fixture는 production parser와 같은 zsh로
             # .zshenv -> .zshrc -> snapshot source 순서를 재현한다.
             pkgs.zsh
+            # neovim-clipboard fixture는 배포와 같은 nvim runtime의 clipboard provider
+            # 선택 순서로 options.lua를 headless 실행한다(#1453).
+            pkgs.neovim-unwrapped
           ];
         };
 

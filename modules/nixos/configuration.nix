@@ -118,7 +118,6 @@
   imports = [
     ./programs/tailscale.nix
     ./programs/ssh.nix
-    ./programs/mosh.nix
     ./programs/smartd.nix # S.M.A.R.T. 디스크 건강 모니터링 (Pushover 알림)
     ./programs/temp-monitor # lm-sensors 온도 모니터링 (5분마다, Pushover 알림)
     ./programs/pushover-purge-reminder.nix # Backup archive 6개월 보관 만료 reminder (2026-12-01 1회성)

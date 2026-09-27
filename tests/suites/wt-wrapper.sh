@@ -15,6 +15,13 @@ test_wt_help_from_deployed_layout() {
 
   assert_contains "$output" "사용법: wt"
   assert_contains "$output" "wt cleanup [--auto]"
+  # 활성 작업 가드와 그 --yes 우회 범위는 help가 알린다 (--auto --yes는 우회하지 않음).
+  assert_contains "$output" "활성 작업 가드"
+  assert_contains "$output" "wt cleanup --auto --yes는 우회하지 않고"
+  # 대화형 선택도 --yes 우회 범위에 든다(코드가 같은 경로를 탄다). 남는 제약 중 실측된 것도 알린다.
+  assert_contains "$output" "이름을 지정하거나 대화형으로 고른 정리"
+  assert_contains "$output" "샌드박스가 다른 프로세스 정보만 가린 환경"
+  assert_contains "$output" "조상이 띄운 caffeinate"
   # 퇴역한 presentation 플래그는 help에 남으면 안 된다 — 문서에만 남은 플래그는
   # 실행하면 unknown option으로 죽는다.
   local flag

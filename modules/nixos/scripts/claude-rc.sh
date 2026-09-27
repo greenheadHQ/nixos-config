@@ -413,6 +413,21 @@ load_live_worktrees_z() {
     [ -z "$field" ] && [ "$in_record" = false ] && [ "${#LIVE_WORKTREES[@]}" -gt 0 ]
 }
 
+CANONICAL_PATH=""
+
+# 기존 경로의 canonical 경로를 CANONICAL_PATH에 담는다. canonical_existing_path와 달리
+# 끝 개행을 보존한다: 명령 치환은 끝 개행을 버리므로 표지를 붙여 받은 뒤 뗀다 —
+# 개행으로 끝나는 이름이 잘리면 조상 판정에서 다른 디렉터리로 읽힌다.
+resolve_canonical_path() {
+    CANONICAL_PATH=$(cd "$1" 2>/dev/null && pwd -P && echo .) || return 1
+    CANONICAL_PATH=${CANONICAL_PATH%$'\n.'}
+}
+
+# $1이 $2 자신이거나 그 아래 경로인지 본다. `/` 경계를 붙여 `feat`와 `feat2`를 구분한다.
+path_is_within() {
+    [ "$1" = "$2" ] || [[ "$1" == "$2"/* ]]
+}
+
 do_cleanup() {
     require_common_cmds
     local instance_path wt_dir prune_output list_file list_error dir canonical
@@ -452,20 +467,28 @@ do_cleanup() {
         exit 1
     fi
 
+    # 첫 단계 디렉터리만 판정한다. 등록 worktree 자신이거나 그 조상이면 통째로 남기므로,
+    # 조상 안의 미등록 잔재도 함께 남는다.
     for dir in "$wt_dir"/*/; do
         [ -d "$dir" ] || continue
-        canonical=$(canonical_existing_path "$dir") || continue
-        local is_live=false live canonical_live
+        resolve_canonical_path "$dir" || continue
+        canonical=$CANONICAL_PATH
+        local keep=false live
         for live in "${LIVE_WORKTREES[@]}"; do
-            canonical_live=$(canonical_existing_path "$live" 2>/dev/null || true)
-            if [ -n "$canonical_live" ] && [ "$canonical_live" = "$canonical" ]; then
-                is_live=true
-                break
+            if resolve_canonical_path "$live"; then
+                path_is_within "$CANONICAL_PATH" "$canonical" || continue
+            else
+                # 실제 위치로 풀 수 없는 등록(잠긴 채 옮겨진 worktree 등)은 적힌 경로 그대로
+                # 비교한다. 판정에서 빼면 그 조상 안의 잔재가 지워진다.
+                path_is_within "$live" "${dir%/}" || continue
             fi
+            keep=true
+            break
         done
-        if [ "$is_live" = false ]; then
+        if [ "$keep" = false ]; then
             log_info "orphan 디렉토리 삭제: $(basename "$dir")"
-            rm -rf "$dir"
+            # 끝 `/`를 떼야 심링크 항목에서 링크 대상이 아니라 링크 자체를 지운다.
+            rm -rf "${dir%/}"
         fi
     done
     log_info "정리 완료"

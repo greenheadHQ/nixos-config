@@ -1059,10 +1059,11 @@ let
   ];
 
   # ── #1369: 백업 대상 HDD(mediaData)가 nofail이라 미마운트여도 부팅은 계속되므로,
-  # 세 백업/미러 유닛이 RequiresMountsFor로 실제 마운트를 실행 전제로 요구하는지 확인한다
+  # 백업/미러 유닛이 RequiresMountsFor로 실제 마운트를 실행 전제로 요구하는지 확인한다
   # (미마운트 시 목적지가 루트 파일시스템의 일반 디렉터리가 되어 백업이 SSD에 오기록·성공 오인될 위험).
   immichDbBackup = nixosCfg.systemd.services."immich-db-backup";
   immichOriginalsMirror = nixosCfg.systemd.services."immich-originals-mirror";
+  karakeepBackup = nixosCfg.systemd.services."karakeep-backup";
 
   # ── #1391: 브리지가 SIGTERM을 받으면 실행 중 요청을 최대
   # SHUTDOWN_DRAIN_TIMEOUT_SEC(소스 기본값)까지 drain한 뒤 스스로 종료한다.
@@ -1323,7 +1324,6 @@ let
     }
     {
       # openssh는 LAN 노출 시 brute-force 표면이 되므로, 다른 openFirewall 서비스보다 중요
-      # (mosh의 openFirewall은 Test 6b/6e가 이미 잡으므로 별도 테스트 불필요)
       name = "Test 5a: openssh.openFirewall이 false이어야 함 (true이면 LAN에서 SSH 접근 가능)";
       cond = nixosCfg.services.openssh.openFirewall == false;
     }
@@ -1422,6 +1422,12 @@ let
         && nixpkgsLib.hasInfix "no-port-forwarding" (builtins.head hl)
         && nixpkgsLib.hasInfix "no-agent-forwarding" (builtins.head hl)
         && nixpkgsLib.hasInfix "no-X11-forwarding" (builtins.head hl);
+    }
+    {
+      # setgid utmp wrapper는 이를 켜던 원격 셸 모듈을 퇴역하며 없앴다 (#1454).
+      # 다시 생기면 어느 모듈이 켰는지 확인하고, 의도한 것이면 이 테스트와 함께 재결정한다.
+      name = "Test 5f: security.wrappers에 utempter(setgid utmp)가 없어야 함";
+      cond = !(nixosCfg.security.wrappers ? utempter);
     }
     {
       name = "Test 6a: networking.firewall.enable이 true이어야 함";
@@ -1964,6 +1970,10 @@ let
     {
       name = "Test MG3: anki-host-backup은 대상 HDD(mediaData) 마운트를 RequiresMountsFor로 요구해야 함";
       cond = builtins.elem constants.paths.mediaData (ankiHostBackup.unitConfig.RequiresMountsFor or [ ]);
+    }
+    {
+      name = "Test MG3b: karakeep-backup은 대상 HDD(mediaData) 마운트를 RequiresMountsFor로 요구해야 함";
+      cond = builtins.elem constants.paths.mediaData (karakeepBackup.unitConfig.RequiresMountsFor or [ ]);
     }
     {
       # 리뷰: MOUNT_ROOT가 실제 mediaData와 다른 값으로 새거나(오타 등) mediaData 자체가
