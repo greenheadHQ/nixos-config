@@ -48,7 +48,7 @@ cat > "$BODY_FILE" <<'REPLY'
 REPLY
 
 # pinning-guard는 변수로 넘긴 본문 파일을 읽지 못하므로 게시 전에 봇 멘션을 직접 확인한다.
-if rg -q -i '@(codex|chatgpt-codex-connector)' "$BODY_FILE"; then
+if grep -Eiq '@(codex|chatgpt-codex-connector)' "$BODY_FILE"; then
   echo 'Codex 봇 멘션이 있다. "Codex 봇"으로 고친 뒤 게시한다.' >&2; exit 1
 fi
 
@@ -125,7 +125,7 @@ trap 'rm -f "$BODY_FILE"' EXIT
 #   > @<author> <원 코멘트 URL>
 #   > 요약 인용: ...
 # pinning-guard는 변수로 넘긴 본문 파일을 읽지 못하므로 게시 전에 봇 멘션을 직접 확인한다.
-if rg -q -i '@(codex|chatgpt-codex-connector)' "$BODY_FILE"; then
+if grep -Eiq '@(codex|chatgpt-codex-connector)' "$BODY_FILE"; then
   echo 'Codex 봇 멘션이 있다. "Codex 봇"으로 고친 뒤 게시한다.' >&2; exit 1
 fi
 jq -Rs '{body: .}' < "$BODY_FILE" \

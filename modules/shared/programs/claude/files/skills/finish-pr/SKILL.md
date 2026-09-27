@@ -39,7 +39,7 @@ Skip 조건:
 
 ### 2. squash merge
 
-1. 머지 직전에 `gh pr view --json headRefOid,statusCheckRollup,reviewDecision,mergeStateStatus`와 `codex-review-status <PR> -R OWNER/REPO --json`(대기 없이)을 재조회하고 현재 head의 CI·리뷰 상태를 확인한다. 검증한 head가 바뀌었거나 게이트 뒤에 봇 결과가 도착했으면(대기 한도를 넘겨 온 리뷰 등) Codex 리뷰 게이트를 포함해 변경 범위에 필요한 확인을 다시 수행한다. 확인한 SHA를 `HEAD_OID`로 고정해 `gh pr merge <pr> --squash --match-head-commit "$HEAD_OID"`로 squash merge한다 (확인~merge 사이에 새 push가 끼어들면 merge가 실패하도록).
+1. 머지 직전에 `gh pr view --json headRefOid,statusCheckRollup,reviewDecision,mergeStateStatus`와 `codex-review-status <PR> -R OWNER/REPO --json`(대기 없이)을 재조회하고 현재 head의 CI·리뷰 상태를 확인한다. 검증한 head가 바뀌었으면 변경 범위에 필요한 확인을 다시 수행한다. 재조회한 `status`나 `unhandled_threads`가 1단계 Codex 리뷰 게이트를 통과할 때와 다르면(대기 한도를 넘겨 도착한 리뷰, 새로 시작된 리뷰 포함) 그 게이트부터 다시 수행한다. 확인한 SHA를 `HEAD_OID`로 고정해 `gh pr merge <pr> --squash --match-head-commit "$HEAD_OID"`로 squash merge한다 (확인~merge 사이에 새 push가 끼어들면 merge가 실패하도록).
 2. merge 실패, 충돌, 미승인, 권한 오류가 나면 STOP하고 원문 오류를 요약해 보고한다.
 3. merge 성공 후 PR 번호, URL, merge 결과 메시지, squash commit SHA를 가능한 범위에서 기록해 둔다.
 
