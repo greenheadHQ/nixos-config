@@ -23,7 +23,7 @@ ls -la /var/lib/docker-data/copyparty/config/copyparty.conf  # 설정 파일 존
 
 진단 (원문은 출력하지 않음 — 존재/계정 유무/값 일치/이스케이프·공백·제어문자 포함 여부만 확인):
 
-`<(...)` 프로세스 치환의 `< file` 리디렉션은 `sudo`가 아니라 부모 셸이 직접 파일을 여는 것이라, root 전용 파일에는 항상 permission denied가 나 판정이 뒤집힌다(정상 상태를 불일치로, 계정 줄이 없는 고장 상태를 일치로 잘못 판정). 두 값을 모두 하나의 `sudo sh -c` 안에서 읽고 비교한다.
+root 전용 파일은 `sudo` 컨텍스트 안에서만 읽는다 — `<(...)` 프로세스 치환의 `< file`은 부모 셸이 직접 여는 것이라 여기서는 쓰지 않는다.
 
 ```bash
 CONF=/var/lib/docker-data/copyparty/config/copyparty.conf
@@ -35,18 +35,21 @@ sudo grep -q '^[[:space:]]*greenhead:' "$CONF" \
   && echo "설정 파일 계정: 있음" || echo "설정 파일 계정: 없음"
 
 # agenix 파일 값과 설정 파일 값 일치 여부. 값은 sh -c 내부 로컬 변수로만 존재하고
-# 인자·출력에는 나오지 않는다. 종료 코드로 일치/불일치/읽기 실패/빈 값을 구분한다.
+# 인자·출력에는 나오지 않는다. 종료 코드를 10~13으로 둬 sudo 자체의 실패(1·126·127 등)와
+# 겹치지 않게 하고, 예기치 못한 코드는 별도 분기로 잡는다.
 sudo sh -c '
-  p=$(cat "$1") || exit 2
-  v=$(sed -nE "s/^[[:space:]]*greenhead:[[:space:]]*//p" "$2") || exit 2
-  [ -n "$p" ] && [ -n "$v" ] || exit 3
-  [ "$p" = "$v" ]
+  p=$(cat "$1") || exit 12
+  v=$(sed -nE "s/^[[:space:]]*greenhead:[[:space:]]*//p" "$2") || exit 12
+  [ -n "$p" ] && [ -n "$v" ] || exit 13
+  [ "$p" = "$v" ] && exit 10 || exit 11
 ' _ /run/agenix/copyparty-password "$CONF"
-case $? in
-  0) echo "값 비교: 일치" ;;
-  1) echo "값 비교: 불일치" ;;
-  2) echo "값 비교: 읽기 실패" ;;
-  3) echo "값 비교: 빈 값" ;;
+rc=$?
+case $rc in
+  10) echo "값 비교: 일치" ;;
+  11) echo "값 비교: 불일치" ;;
+  12) echo "값 비교: 읽기 실패" ;;
+  13) echo "값 비교: 빈 값" ;;
+  *) echo "값 비교: 판정 불가(rc=$rc)" ;;
 esac
 
 # 이스케이프 문자(\)·공백·제어문자 포함 여부, 실질 줄 수 (원래 xxd가 보여주던 바이트 레벨 이상 신호를 대체)
@@ -69,9 +72,10 @@ echo "줄 수: $(sudo grep -c '' /run/agenix/copyparty-password)"
 ```bash
 sudo podman logs --tail 20 copyparty         # CORS 에러 로그 확인
 
-# 설정 확인 — [global] 섹션만 발췌 ([accounts]에 평문 비밀번호가 있어 전체를 보지 않음)
+# 설정 확인 — [global] 섹션만 발췌 ([accounts]에 평문 비밀번호가 있어 전체를 보지 않음).
+# 헤더 패턴은 들여쓴 `[global]`도 잡도록 넓혀 둔다.
 sudo podman exec copyparty cat /cfg/config.conf \
-  | awk '/^\[global\]/{f=1} /^\[/&&!/^\[global\]/{f=0} f'
+  | awk '/^[[:space:]]*\[global\]/{f=1} /^[[:space:]]*\[/&&!/^[[:space:]]*\[global\]/{f=0} f'
 
 curl -I http://127.0.0.1:3923                # localhost 직접 확인
 curl -sI -H 'Origin: https://copyparty.greenhead.dev' https://copyparty.greenhead.dev/  # CORS 헤더 확인
@@ -102,20 +106,22 @@ sudo systemctl restart podman-copyparty
 
 진단: 설정 파일이 올바르게 생성되었는지 확인 (`[accounts]` 섹션의 비밀번호 값은 마스킹)
 
-콜론 뒤를 줄 끝까지 가려야 한다 — 값에 공백이 있으면 첫 토큰까지만 가리는 패턴은 나머지를 그대로 노출한다. 값 중간에 개행이 들어가 생긴, 콜론 없는 라인도 [accounts] 섹션 안에서는 통째로 가린다.
+[accounts] 섹션에서는 예상 계정 이름(`configScript`가 쓰는 이름, 예 `greenhead`)으로 시작하는 줄만 `이름: ***`로 콜론 뒤 줄 끝까지 가리고, 그 외 비어 있지 않은 줄(값 중간 개행으로 생긴 이어짐 줄, 예상 밖 계정 등)은 콜론 여부와 관계없이 통째로 가린다. 빈 줄은 그대로 둔다 — `configScript`가 계정 줄 뒤에 빈 줄을 쓰므로, 빈 줄까지 가리면 정상 설정도 이상하게 보인다. 이 절은 NixOS 호스트 전용이다(GNU sed·`cat -A` 문법 — macOS `/usr/bin/sed`는 이 구문에서 실패한다). 섹션 헤더 패턴은 들여쓴 헤더도 잡도록 `^[[:space:]]*\[`로 넓혀 둔다.
 
 ```bash
 CONF=/var/lib/docker-data/copyparty/config/copyparty.conf
-MASK='/^\[accounts\]/,/^\[/{ /^\[/!{ s/^([[:space:]]*[^:[:space:]]+:).*/\1 ***/; t; s/.*/***/ } }'
+ACCOUNT=greenhead   # configScript(copyparty.nix)가 쓰는 계정 이름
+MASK="/^[[:space:]]*\[accounts\]/,/^[[:space:]]*\[/{ /^[[:space:]]*\[/!{ /^[[:space:]]*\$/!{ s/^([[:space:]]*${ACCOUNT}:).*/\1 ***/; t; s/.*/***/ } } }"
 
-# 설정 파일 구조 확인 (accounts 값은 마스킹)
+# 설정 파일 구조 확인 (accounts 값은 마스킹, 빈 줄은 유지)
 sudo sed -E "$MASK" "$CONF"
 
 # 공백/탭 등 whitespace 문제 확인 (구조 라인 대상, 마스킹 유지)
 sudo sed -E "$MASK" "$CONF" | cat -A
 
-# accounts 값 자체의 공백/제어문자 포함 여부 (마스킹 때문에 안 보이는 정보를 별도 판정으로 보존, 값은 출력 안 함)
-sudo sed -nE '/^\[accounts\]/,/^\[/{ /^\[/!{ s/^[[:space:]]*[^:[:space:]]+:[[:space:]]*//; p } }' "$CONF" \
+# accounts 값 자체의 공백/제어문자 포함 여부 (마스킹 때문에 안 보이는 정보를 별도 판정으로 보존, 값은 출력 안 함).
+# 구분자(`이름: `, 콜론+공백 1개)만 제거해야 값의 선행 공백이 판정에서 사라지지 않는다.
+sudo sed -nE "/^[[:space:]]*\[accounts\]/,/^[[:space:]]*\[/{ /^[[:space:]]*\[/!{ /^[[:space:]]*\$/!{ s/^[[:space:]]*${ACCOUNT}: //; p } } }" "$CONF" \
   | grep -qE '[[:space:][:cntrl:]]' \
   && echo "accounts 값 공백/제어문자: 포함" || echo "accounts 값 공백/제어문자: 없음"
 ```

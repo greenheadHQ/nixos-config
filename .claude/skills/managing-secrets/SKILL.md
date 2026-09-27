@@ -14,8 +14,8 @@ agenix를 사용한 `.age` 파일 기반 secret 암호화/배포 가이드.
 
 Claude Code에서 `agenix -e` 실패 (`/dev/stdin` 에러)
 - `agenix -e`는 interactive 에디터를 사용하므로 non-interactive 환경에서 실패
-- 해결: `age` CLI pipe 패턴 사용 (아래 "Secret 추가/수정" 참조)
-- 상세: [references/troubleshooting.md](references/troubleshooting.md)
+- 우회 절차(age CLI + 임시 파일)도 값 입력 자체는 사람이 대화형 터미널에서 해야 한다 — 에이전트가 대신 값을 입력하면 표준입력이 즉시 EOF가 되어 기존 `.age` 파일을 빈 값으로 덮어쓸 위험이 있다
+- 상세: [references/troubleshooting.md](references/troubleshooting.md) "agenix -e의 /dev/stdin 에러" 절
 
 ## 빠른 참조
 
