@@ -395,6 +395,14 @@ run_test "karakeep fallback-sync success removes only matched queue URL" test_ka
 run_test "karakeep fallback-sync upload failure preserves queue" test_karakeep_fallback_sync_upload_failure_preserves_queue_and_records_notify_state
 run_test "karakeep fallback-sync GC removes expired state" test_karakeep_fallback_sync_gc_removes_only_expired_state_entries
 run_test "karakeep fallback-sync unmatched notification is deduplicated" test_karakeep_fallback_sync_unmatched_notification_is_deduplicated
+run_test "karakeep fallback-sync canonical beats body link in either queue order" test_karakeep_fallback_sync_canonical_beats_body_link_in_either_queue_order
+run_test "karakeep fallback-sync body link without identifier is held" test_karakeep_fallback_sync_body_link_without_identifier_is_held
+run_test "karakeep fallback-sync conflicting queued identifiers are held" test_karakeep_fallback_sync_conflicting_queued_identifiers_are_held
+run_test "karakeep fallback-sync selects the only queued identifier" test_karakeep_fallback_sync_selects_the_only_queued_identifier
+run_test "karakeep fallback-sync duplicate identifier sources count once" test_karakeep_fallback_sync_duplicate_identifier_sources_count_once
+run_test "karakeep fallback-sync strict match beats query variants" test_karakeep_fallback_sync_strict_match_beats_query_variants
+run_test "karakeep fallback-sync multiple loose matches are held" test_karakeep_fallback_sync_multiple_loose_matches_are_held
+run_test "karakeep fallback-sync ignores url text outside SingleFile comment" test_karakeep_fallback_sync_ignores_url_text_outside_singlefile_comment
 run_test "immich backup happy path creates dump atomically" test_immich_backup_happy_path_creates_dump_atomically
 run_test "immich backup integrity failure exits nonzero" test_immich_backup_integrity_failure_exits_nonzero
 run_test "immich backup retention deletes only old dumps in dir" test_immich_backup_retention_deletes_only_old_dumps_in_dir

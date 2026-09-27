@@ -119,8 +119,12 @@ Caddy가 `/api/v1/bookmarks/singlefile`만 `karakeep-singlefile-bridge`로 우�
 ### Fallback Auto Relink
 
 `karakeep-log-monitor`가 실패 URL을 큐(`failed-urls.queue`)에 적재하면
-`karakeep-fallback-sync` 타이머가 `/mnt/data/archive-fallback`의 HTML을 검사해
-원본 URL을 추출하고 Karakeep SingleFile API로 자동 재연결한다.
+`karakeep-fallback-sync` 타이머가 `/mnt/data/archive-fallback`의 HTML에서 원문 식별자를 읽어
+큐와 대조하고, 고른 큐 URL로 Karakeep SingleFile API에 덮어쓴다(`ifexists=overwrite`).
+
+- 원문 식별자: SingleFile 저장 주석(`Page saved with SingleFile` 블록)의 `url:` 줄, canonical, `og:url`, `twitter:url`. 본문 링크는 판정에 쓰지 않는다.
+- 판정: 엄격 정규화로 일치하는 큐 URL이 정확히 하나면 그 URL을 쓴다. 엄격 일치가 없으면 쿼리를 무시한 일치가 정확히 하나일 때 그 URL을 쓴다. 식별자 출처 사이에 우선순위는 없다.
+- 보류: 식별자 없음·일치 없음·후보 여럿이면 업로드·큐 제거·처리 기록 없이 파일과 큐를 그대로 두고, 원인을 담은 "자동 재연결 보류" 알림을 파일당 한 번 보낸다. 판정 근거(식별자·후보 URL)는 `journalctl -u karakeep-fallback-sync`의 `Auto relink held` 줄 아래에 남는다.
 
 ### AI Tagging (OpenAI)
 
