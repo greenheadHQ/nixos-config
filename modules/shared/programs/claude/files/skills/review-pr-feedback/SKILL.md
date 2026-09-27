@@ -1,7 +1,7 @@
 ---
 name: review-pr-feedback
 description: |
-  Evaluate and address feedback on a pull request, including CodeRabbit reviews, replies, and thread resolution.
+  Evaluate and address feedback on a pull request, including CodeRabbit and Codex bot reviews, reactions, replies, and thread resolution.
   Use for PR feedback handling; PR body editing uses create-pr, and new reviews use the runtime’s built-in review.
 ---
 
@@ -16,14 +16,15 @@ PR에 달린 모든 리뷰 코멘트를 수집하고, 각 피드백을 다각도
 |------|------|
 | 입력 | 현재 브랜치의 PR 또는 PR 번호/URL |
 | 출력 | 유효 피드백 반영 커밋 + 전체 피드백 답글 + resolve 재확인 |
-| 대상 | CodeRabbit, AI 리뷰어, 인간 팀원의 모든 코멘트 |
-| 핵심 도구 | gh CLI, GraphQL reviewThreads, 코드베이스 검색 |
+| 대상 | CodeRabbit, Codex 리뷰 봇, AI 리뷰어, 인간 팀원의 모든 코멘트 |
+| 핵심 도구 | gh CLI, GraphQL reviewThreads, `codex-review-status`, 코드베이스 검색 |
 
 | 참고 레퍼런스 | 위치 |
 |---------------|------|
 | 수집 쿼리/pagination/REST 보조 정본 | [references/comment-collection.md](references/comment-collection.md) |
 | 기각 7개 분류 + 오분류 방지 사례 | [references/rejection-taxonomy.md](references/rejection-taxonomy.md) |
 | 답글/resolve mutation + multiline 전송 + retry 정책 | [references/reply-and-resolve.md](references/reply-and-resolve.md) |
+| Codex 리뷰 봇 대기·반응·재리뷰 요청·멘션 금지 | [references/codex-review.md](references/codex-review.md) |
 
 ## 용어 정책
 
@@ -40,6 +41,7 @@ PR에 달린 모든 리뷰 코멘트를 수집하고, 각 피드백을 다각도
 ### Step 1: PR 코멘트 수집 (GraphQL-first)
 
 현재 브랜치의 PR을 찾고, review thread와 PR 일반 코멘트를 모두 수집한다.
+수집 전에 `codex-review-status`로 Codex 리뷰 봇 상태를 확인하고, `pending`이면 기다린 뒤 수집해 봇 지적을 빠뜨리지 않는다. 대기와 상태별 처리는 [codex-review.md](references/codex-review.md)를 따른다.
 
 ```bash
 # 현재 브랜치의 PR 번호 확인
@@ -84,6 +86,7 @@ actionable summary-only 리뷰의 응답 경로는 Step 6의 PR top-level follow
 | nitpick | 스타일/취향 수준의 사소한 지적 | 합리적이면 반영, 아니면 기각 |
 
 분류가 애매한 코멘트는 actionable로 분류하여 Step 3에서 면밀히 검증한다.
+Codex 봇의 고정 문구(리뷰 객체 본문, 요약 코멘트, 한도·계정·오류 안내)는 상태 신호라 분류 대상에서 뺀다. 봇의 인라인 지적은 `P1`·`P2` 구분 없이 같은 기준으로 다룬다.
 기각 사유를 구분할 때는 [references/rejection-taxonomy.md](references/rejection-taxonomy.md)를 참고한다.
 
 ### Step 3: 다각도 검증
@@ -108,10 +111,12 @@ actionable summary-only 리뷰의 응답 경로는 Step 6의 PR top-level follow
 - 커밋 메시지에 어떤 피드백을 반영했는지 명시한다.
 - conventional commit 형식을 따른다 (예: `fix(module): address PR feedback`).
 - 반영할 피드백이 여러 영역에 걸쳐 있으면 논리적으로 분리하여 복수 커밋으로 나눈다.
+- 푸시한 변경이 [재리뷰 요청](references/codex-review.md#재리뷰-요청) 기준에 해당하면 Codex 봇에 재리뷰를 한 번 요청한다.
 
 ### Step 6: 답글 + resolve
 
 모든 피드백(반영 여부 무관)에 대해 사유를 담은 답글/follow-up을 남기고 review thread는 resolve한다.
+Codex 봇 스레드는 답글 전에 판정에 맞는 👍/👎 반응을 먼저 단다([반응 기준](references/codex-review.md#반응)). 답글·코멘트에는 봇 멘션을 쓰지 않는다.
 분기 요약만 여기 둔다. 구체 mutation, multiline body 전송 규칙, `mktemp` 처리,
 반례는 [references/reply-and-resolve.md](references/reply-and-resolve.md)가 정본이다.
 
@@ -143,6 +148,7 @@ actionable summary-only 리뷰의 응답 경로는 Step 6의 PR top-level follow
 쿼리 스니펫과 retry/실패 정책은 [references/reply-and-resolve.md](references/reply-and-resolve.md)의 "Retry policy"가 정본이다.
 `thread.id`가 null/empty인 thread는 이 단계를 건너뛰고 사용자 보고 대상으로 남긴다.
 PR 일반 코멘트는 resolve가 없으므로 이 단계를 건너뛴다.
+Codex 봇 스레드는 마지막에 `codex-review-status`의 `unhandled_threads`가 비었는지로 답글·반응·resolve를 한 번에 확인한다.
 
 ## 검증 의무
 
@@ -155,8 +161,9 @@ PR 일반 코멘트는 resolve가 없으므로 이 단계를 건너뛴다.
 
 - 모든 피드백에 답글 필수: 반영하든 기각하든 사유를 명시한 답글을 남긴다. 무응답 금지.
 - resolve 완료는 mutation 응답의 `thread.isResolved=true`로 확인한다. false 또는 필드 누락일 때만 Step 7 재조회·필요한 1회 retry를 적용한다.
-- AI 리뷰어 맹신 금지: CodeRabbit 등 AI 리뷰어 피드백도 동일한 검증 기준을 적용한다.
+- AI 리뷰어 맹신 금지: CodeRabbit·Codex 봇 등 AI 리뷰어 피드백도 동일한 검증 기준을 적용한다.
   stale diff 기반 지적을 `HALLUCINATION`으로 오분류하지 말고 `STALE_REVIEW`를 쓴다.
+- 봇 멘션 금지: GitHub에 게시하는 어떤 글에도 Codex 봇 멘션을 쓰지 않는다. 백틱 안이어도 봇이 작업 요청으로 읽는다. 예외는 [재리뷰 요청](references/codex-review.md#재리뷰-요청) 한 줄 명령뿐이다.
 - outside-diff 처리: PR 범위 밖 지적은 유효해도 이번 PR에서 처리하지 않는다.
   남은 문제와 이관 이유를 답글로 남기고, 별도 이슈 게시가 승인된 경우에만 생성한다.
 - 반영 전 회귀 확인: 피드백 반영 시 변경이 다른 기능을 깨뜨리지 않는지 확인한다.

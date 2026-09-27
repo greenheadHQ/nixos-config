@@ -100,6 +100,7 @@ gh api --paginate "/repos/$OWNER/$REPO/pulls/$PR_NUMBER/reviews" \
 ```
 
 - Issue comment에는 `id`, `user.login`, `body`만 본다.
+- 작성자가 Codex 봇(`chatgpt-codex-connector[bot]`, `user.id` 199175422)인 일반 코멘트와 review body는 요약 표·한도·오류 같은 상태 신호다. 아래 state 분기보다 앞서 답글 대상에서 뺀다. 봇의 지적은 review thread로 온다 ([codex-review.md](codex-review.md#지적-처리)).
 - Review summary는 `state`와 `body`를 함께 본다. body가 비어 있지 않으면 state를 primary로 분기한다.
 
   - `state == CHANGES_REQUESTED` 또는 `COMMENTED` + `body != empty` → actionable summary (길이 무관). `"Breaks CI."` / `"Revert this."` 같은 짧지만 명확한 reject/comment 사유도 length heuristic 없이 여기서 보존한다. Step 6 PR top-level follow-up으로 응답. `html_url`(또는 `pull/<n>#pullrequestreview-<id>` 형태)을 원 review 링크로 보관.
