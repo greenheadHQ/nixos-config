@@ -53,10 +53,11 @@ vim.fn.setreg("*", "star", "v")
 emit("paste_plus", vim.fn.json_encode({ vim.fn.getreg("+", 1, 1), vim.fn.getregtype("+") }))
 emit("paste_star", vim.fn.json_encode({ vim.fn.getreg("*", 1, 1), vim.fn.getregtype("*") }))
 -- 'clipboard'가 비면 provider 자체 캐시로 regtype을 되살리지 않는다(LazyVim은 VeryLazy 전까지 비운다).
+local configured = vim.o.clipboard
 vim.o.clipboard = ""
 vim.fn.setreg("+", { "ab", "cd" }, "\022")
 emit("paste_block", vim.fn.json_encode({ vim.fn.getreg("+", 1, 1), vim.fn.getregtype("+") }))
-vim.o.clipboard = "unnamedplus"
+vim.o.clipboard = configured
 vim.api.nvim_buf_set_lines(0, 0, -1, false, { "line" })
 vim.cmd("normal! yyp")
 emit("buffer", vim.fn.json_encode(vim.api.nvim_buf_get_lines(0, 0, -1, false)))
