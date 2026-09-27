@@ -22,10 +22,11 @@ KARAKEEP_BASE_URL = os.environ.get("KARAKEEP_BASE_URL", "http://127.0.0.1:3000")
 LISTEN_HOST = os.environ.get("SINGLEFILE_BRIDGE_LISTEN", "127.0.0.1")
 LISTEN_PORT = int(os.environ.get("SINGLEFILE_BRIDGE_PORT", "3010"))
 REQUEST_TIMEOUT_SEC = int(os.environ.get("SINGLEFILE_BRIDGE_TIMEOUT_SEC", "240"))
-# Ceiling for waiting on in-flight do_GET/do_POST calls during shutdown. Kept
-# well under systemd's default TimeoutStopSec (90s) so a future regression
-# here shows up as a slow-but-bounded stop, not a silent return to the
-# same-thread deadlock this module was fixed for.
+# Ceiling for waiting on in-flight do_GET/do_POST calls during shutdown.
+# Bounds how long a leaked tracker count or an unexpectedly slow handler can
+# hold up stop, independent of REQUEST_TIMEOUT_SEC; kept well under
+# systemd's default TimeoutStopSec (90s) so exceeding it shows up as a
+# logged, bounded stop rather than the hard SIGKILL that default triggers.
 SHUTDOWN_DRAIN_TIMEOUT_SEC = int(os.environ.get("SINGLEFILE_BRIDGE_SHUTDOWN_DRAIN_SEC", "30"))
 KARAKEEP_DB_PATH = os.environ.get("KARAKEEP_DB_PATH", "/mnt/data/karakeep/db.db")
 KARAKEEP_QUEUE_DB_PATH = os.environ.get("KARAKEEP_QUEUE_DB_PATH", "/mnt/data/karakeep/queue.db")
@@ -374,10 +375,11 @@ def cleanup_stale_crawler_tasks(bookmark_id: str) -> int:
 class ShutdownTracker:
     """Counts do_GET/do_POST calls currently executing.
 
-    Shutdown waits (bounded) for this count to reach zero so an in-flight
-    request gets a chance to finish and respond. Connections that are open
-    but haven't sent a full request yet are never counted here, so they
-    can't hold up shutdown the way the pre-fix same-thread deadlock did.
+    Shutdown waits (bounded, see SHUTDOWN_DRAIN_TIMEOUT_SEC) for this count
+    to reach zero so an in-flight request gets a chance to finish and
+    respond. Connections that are open but haven't sent a full request yet
+    are never counted here, so an idle connection alone can never hold up
+    shutdown at all, let alone up to the drain deadline.
     """
 
     def __init__(self) -> None:
@@ -736,29 +738,50 @@ class SingleFileBridgeHandler(BaseHTTPRequestHandler):
 
 def main() -> None:
     server = ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), SingleFileBridgeHandler)
-    shutdown_requested = threading.Event()
+    shutdown_started = False
 
     def _shutdown(signum, _frame) -> None:
+        nonlocal shutdown_started
         # server.shutdown() blocks until serve_forever()'s loop notices the
         # request and exits. serve_forever() runs on this same (main) thread,
         # so calling shutdown() directly from here deadlocks: the loop can't
         # notice anything while this handler hasn't returned. Hand the
         # request off to a throwaway thread instead.
         #
-        # shutdown_requested is set only after the thread has actually
-        # started, and guards repeat signals (two SIGTERMs, or
-        # SIGTERM+SIGINT) into a no-op so at most one shutdown ever starts.
-        # If starting the thread fails, the flag stays clear so a later
-        # signal can retry instead of every future signal silently doing
-        # nothing.
-        if shutdown_requested.is_set():
+        # CPython signal handlers are reentrant: while this handler is
+        # running, another signal can interrupt it and start a second,
+        # nested call on the same (main) thread — confirmed here with a
+        # tight-loop SIGTERM stress harness (see PR discussion), which hit
+        # multiple concurrent shutdown starts in most runs. That rules out
+        # any lock-based guard (threading.Event/Lock/Condition): if the
+        # first call is suspended mid-way through acquiring a non-reentrant
+        # lock (as Event.set() does internally) when the second call tries
+        # to acquire that same lock, the main thread deadlocks with itself —
+        # exactly the kind of hang this module exists to fix, just moved to
+        # a new spot.
+        #
+        # nonlocal shutdown_started is a plain bool instead: the check and
+        # the set happen back to back with no function call or backward
+        # jump between them, so there is no point where CPython re-checks
+        # for a pending signal between "read the flag" and "write the
+        # flag" — a reentrant call arriving here always sees the flag
+        # already written by whichever call got here first, so at most one
+        # shutdown ever starts. Only code AFTER the flag is set may call
+        # into anything lock-based (thread.start(), log()); a reentrant
+        # call arriving during that window returns immediately at the
+        # check above instead of running any of it.
+        if shutdown_started:
             return
+        shutdown_started = True
         thread = threading.Thread(target=server.shutdown, daemon=True)
         try:
             thread.start()
-        except RuntimeError:
+        except RuntimeError as exc:
+            # Leave the flag set to False so a later signal can retry,
+            # instead of every future signal silently doing nothing.
+            shutdown_started = False
+            log(f"received signal {signum} but failed to start shutdown thread: {exc}; will retry on next signal")
             return
-        shutdown_requested.set()
         log(f"received signal {signum}, shutting down...")
 
     signal.signal(signal.SIGTERM, _shutdown)
@@ -777,8 +800,9 @@ def main() -> None:
         # instant this process exits. Give them up to
         # SHUTDOWN_DRAIN_TIMEOUT_SEC to finish and respond. Idle connections
         # that haven't sent a full request are never counted by
-        # SHUTDOWN_TRACKER, so they can't extend shutdown the way the
-        # pre-fix deadlock did.
+        # SHUTDOWN_TRACKER, so they never extend shutdown at all — this
+        # ceiling only bounds how long an actually-running handler call (or
+        # a leaked tracker count) gets to finish.
         if SHUTDOWN_TRACKER.wait_for_drain(SHUTDOWN_DRAIN_TIMEOUT_SEC):
             log("in-flight requests drained before shutdown")
         else:

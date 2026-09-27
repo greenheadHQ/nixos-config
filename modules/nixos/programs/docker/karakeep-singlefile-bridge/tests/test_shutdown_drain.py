@@ -14,19 +14,7 @@ a real Karakeep instance.
 import http.client
 import signal
 import socket
-import subprocess
 import time
-
-import pytest
-
-
-def _wait_or_fail(proc: subprocess.Popen, timeout: float, reason: str) -> int:
-    try:
-        return proc.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait(timeout=5)
-        pytest.fail(reason)
 
 
 def _build_singlefile_multipart_body(url: str, filename: str, html: bytes) -> tuple[bytes, str]:
@@ -96,8 +84,10 @@ def test_normal_post_round_trip_against_stub_upstream(spawn_bridge, fake_karakee
         conn.close()
 
 
-def test_shutdown_waits_for_in_flight_request_to_finish(spawn_bridge, fake_karakeep_upstream):
-    """An in-flight do_POST gets to finish and respond within the drain window."""
+def test_shutdown_waits_for_in_flight_request_to_finish(spawn_bridge, fake_karakeep_upstream, wait_or_fail):
+    """An in-flight do_POST gets to finish and respond within the drain window,
+    and shutdown proceeds promptly once it does — not just eventually.
+    """
     fake_karakeep_upstream.RequestHandlerClass.delay_seconds = 1.0
     drain_timeout_sec = 5
     bridge = spawn_bridge(
@@ -114,6 +104,7 @@ def test_shutdown_waits_for_in_flight_request_to_finish(spawn_bridge, fake_karak
         # in-flight and not still sitting in the idle "waiting for a full
         # request" state that shutdown must NOT wait on.
         time.sleep(0.3)
+        signal_sent_at = time.monotonic()
         bridge.proc.send_signal(signal.SIGTERM)
 
         resp = conn.getresponse()
@@ -122,18 +113,32 @@ def test_shutdown_waits_for_in_flight_request_to_finish(spawn_bridge, fake_karak
     finally:
         conn.close()
 
-    rc = _wait_or_fail(
+    rc = wait_or_fail(
         bridge.proc,
         drain_timeout_sec + 5,
         "bridge did not exit after its in-flight request finished within the drain window",
     )
+    elapsed = time.monotonic() - signal_sent_at
     assert rc == 0
 
     out = bridge.proc.stdout.read() if bridge.proc.stdout else ""
     assert "in-flight requests drained before shutdown" in out
 
+    # The stub only holds do_POST busy for ~1s; ShutdownTracker.wait_for_drain
+    # must wake up as soon as that finishes (via _exit()'s notify_all()), not
+    # merely by falling through to the (much larger) drain_timeout_sec once
+    # its own internal polling happens to time out. 3s sits comfortably
+    # between "the ~1s this should actually take" and "the 5s deadline it
+    # would take without notify_all()" — a mutant that drops notify_all()
+    # still eventually reports "drained" (Condition.wait_for's own timeout
+    # elapsing re-checks the predicate), just ~5s later than it should.
+    assert elapsed < 3.0, (
+        f"took {elapsed:.2f}s to exit after signaling; ShutdownTracker._exit()'s notify_all() "
+        "may be missing (fell through to the drain deadline instead of waking up promptly)"
+    )
 
-def test_shutdown_exits_after_drain_deadline_with_a_slow_request(spawn_bridge, fake_karakeep_upstream):
+
+def test_shutdown_exits_after_drain_deadline_with_a_slow_request(spawn_bridge, fake_karakeep_upstream, wait_or_fail):
     """A request slower than the drain deadline does not extend shutdown past it.
 
     This is the guard against re-introducing the original problem by a
@@ -154,7 +159,7 @@ def test_shutdown_exits_after_drain_deadline_with_a_slow_request(spawn_bridge, f
         time.sleep(0.3)
         bridge.proc.send_signal(signal.SIGTERM)
 
-        rc = _wait_or_fail(
+        rc = wait_or_fail(
             bridge.proc,
             drain_timeout_sec + 5,
             "bridge did not exit within the drain deadline despite a slower-than-deadline request",
@@ -168,13 +173,18 @@ def test_shutdown_exits_after_drain_deadline_with_a_slow_request(spawn_bridge, f
     assert "exiting anyway" in out
 
 
-def test_shutdown_still_ignores_idle_connections_without_a_full_request(spawn_bridge, fake_karakeep_upstream):
+def test_shutdown_still_ignores_idle_connections_without_a_full_request(
+    spawn_bridge, fake_karakeep_upstream, wait_or_fail
+):
     """An open-but-idle connection (no full request sent) is never drained.
 
     This pins the boundary of the fix: only handler calls that are actually
     running are waited on. A connection that merely opened a socket and sent
-    a partial request line must not be able to extend shutdown at all,
-    let alone up to the drain deadline.
+    a partial request line must not be able to extend shutdown at all, let
+    alone up to the drain deadline. (This subsumes what used to be a
+    separate, more narrowly-named test in test_shutdown_signal_handling.py;
+    that one is gone now that this covers the same scenario plus the drain
+    log assertion below.)
     """
     drain_timeout_sec = 10  # deliberately generous; the assertion is on speed
     bridge = spawn_bridge(
@@ -189,7 +199,7 @@ def test_shutdown_still_ignores_idle_connections_without_a_full_request(spawn_br
         lingering.sendall(b"GET /healthz HTTP/1.1\r\nHost: x\r\n")  # headers incomplete on purpose
 
         bridge.proc.send_signal(signal.SIGTERM)
-        rc = _wait_or_fail(
+        rc = wait_or_fail(
             bridge.proc,
             3,  # far below drain_timeout_sec: an idle connection must not eat into it
             "bridge waited on an idle connection instead of ignoring it",

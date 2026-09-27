@@ -1,6 +1,7 @@
 """pytest loader for karakeep-singlefile-bridge tests."""
 import importlib.util
 import os
+import signal
 import socket
 import subprocess
 import sys
@@ -55,7 +56,7 @@ def _wait_for_health(port: int, timeout: float) -> bool:
 
 
 @pytest.fixture
-def spawn_bridge():
+def spawn_bridge(tmp_path):
     """Factory fixture: spawn_bridge(env_overrides=None) -> BridgeProcess.
 
     Starts singlefile-bridge.py as a real subprocess on a free loopback port
@@ -63,11 +64,19 @@ def spawn_bridge():
     at fixture teardown by pid (never by name/pattern), even if a test
     forgets to clean up or fails early.
 
-    PUSHOVER_* is always blanked and KARAKEEP_* defaults to unroutable
-    addresses so a test run from a shell with real production env vars
-    still can't reach real external services by accident. Pass
-    env_overrides to point KARAKEEP_BASE_URL at a local stub, tighten
+    PUSHOVER_* and KARAKEEP_* are always pinned to blank/unroutable values
+    (direct assignment, not setdefault) so a shell with real production env
+    vars can't leak in and reach real external services. Pass
+    env_overrides — applied last, after these fixed defaults — to point
+    KARAKEEP_BASE_URL at a local stub, tighten
     SINGLEFILE_BRIDGE_SHUTDOWN_DRAIN_SEC for a faster test, etc.
+
+    TMPDIR is pinned to this test's own tmp_path so run_curl's temp files
+    (karakeep-bridge-body-*, karakeep-bridge-header-*) and do_POST's
+    karakeep-singlefile-*.html land there instead of the real $TMPDIR —
+    including for a test that kills the bridge mid-request and orphans
+    curl, which would otherwise leave files behind in the shared tmp dir on
+    every run.
     """
     spawned: list[subprocess.Popen] = []
 
@@ -78,14 +87,16 @@ def spawn_bridge():
         env["SINGLEFILE_BRIDGE_PORT"] = str(port)
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         # A timed-out test's SIGKILL beats SIGABRT to the punch most of the
-        # time, but on the rare hang this still gets a stack trace on
-        # stderr before that happens.
+        # time, but on the rare hang wait_or_fail sends SIGABRT first, and
+        # this makes that dump a stack trace to stdout before the process
+        # dies.
         env["PYTHONFAULTHANDLER"] = "1"
+        env["TMPDIR"] = str(tmp_path)
         env["PUSHOVER_TOKEN"] = ""
         env["PUSHOVER_USER"] = ""
-        env.setdefault("KARAKEEP_BASE_URL", "http://127.0.0.1:1")
-        env.setdefault("KARAKEEP_DB_PATH", "/nonexistent/karakeep-bridge-test-fixture/db.db")
-        env.setdefault("KARAKEEP_QUEUE_DB_PATH", "/nonexistent/karakeep-bridge-test-fixture/queue.db")
+        env["KARAKEEP_BASE_URL"] = "http://127.0.0.1:1"
+        env["KARAKEEP_DB_PATH"] = "/nonexistent/karakeep-bridge-test-fixture/db.db"
+        env["KARAKEEP_QUEUE_DB_PATH"] = "/nonexistent/karakeep-bridge-test-fixture/queue.db"
         if env_overrides:
             env.update(env_overrides)
         proc = subprocess.Popen(
@@ -123,6 +134,38 @@ def bridge_server(spawn_bridge):
     handled by the underlying spawn_bridge factory.
     """
     return spawn_bridge()
+
+
+@pytest.fixture
+def wait_or_fail():
+    """Factory: wait_or_fail(proc, timeout, reason) -> exit code.
+
+    Shared by every shutdown test that waits on a bridge subprocess. On
+    timeout, sends SIGABRT first — PYTHONFAULTHANDLER=1 (set by
+    spawn_bridge) makes that dump each thread's stack to stdout — and gives
+    it a couple of seconds before falling back to SIGKILL, so a genuine
+    hang leaves a diagnosable trace instead of just disappearing. Always
+    fails the test with `reason` and the process's captured output
+    attached.
+    """
+
+    def _wait(proc: subprocess.Popen, timeout: float, reason: str) -> int:
+        try:
+            return proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.send_signal(signal.SIGABRT)
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+            out = proc.stdout.read() if proc.stdout else ""
+            pytest.fail(f"{reason}\n--- process output ---\n{out}")
+
+    return _wait
 
 
 class _FakeKarakeepHandler(BaseHTTPRequestHandler):
