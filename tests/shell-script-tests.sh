@@ -395,6 +395,13 @@ run_test "upload-immich missing credential branch is quiet" test_upload_immich_m
 run_test "folder-actions tool jobs keep input when required tool is missing" test_folder_actions_tool_jobs_keep_input_when_required_tool_missing
 run_test "folder-actions compress-rar runs with launchd minimal PATH" test_folder_actions_compress_rar_runs_with_launchd_minimal_path
 run_test "folder-actions video jobs run with launchd minimal PATH" test_folder_actions_video_jobs_run_with_launchd_minimal_path
+run_test "upload-immich keeps originals the CLI did not upload" test_upload_immich_keeps_originals_the_cli_did_not_upload
+run_test "upload-immich notification counts remaining originals" test_upload_immich_notification_counts_remaining_originals
+run_test "upload-immich deletes only live server duplicates" test_upload_immich_deletes_only_live_server_duplicates
+run_test "upload-immich keeps originals when server check fails" test_upload_immich_keeps_originals_when_server_check_fails
+run_test "upload-immich CLI major matches server image" test_upload_immich_cli_major_matches_server_image
+run_test "upload-immich rejects malformed check ids" test_upload_immich_rejects_malformed_check_ids
+run_test "upload-immich rechecks before deleting duplicates" test_upload_immich_rechecks_before_deleting_duplicates
 run_test "karakeep fallback-sync success removes only matched queue URL" test_karakeep_fallback_sync_success_removes_only_matched_queue_url
 run_test "karakeep fallback-sync upload failure preserves queue" test_karakeep_fallback_sync_upload_failure_preserves_queue_and_records_notify_state
 run_test "karakeep fallback-sync GC removes expired state" test_karakeep_fallback_sync_gc_removes_only_expired_state_entries
