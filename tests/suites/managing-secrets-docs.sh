@@ -111,33 +111,67 @@ _secrets_docs_assert_rekey_all_conditional() {
 }
 
 # 재암호화 안내의 확인 명령 검사(add-host.sh 출력과 workflows.md 호스트 추가 절이 함께 쓴다). 입력은 표준입력.
-#   - 재암호화 전 바이트 수 기록과 재암호화 뒤 비교: 사용자 키·호스트 키(sudo) 명령이 재암호화 명령의
-#     앞뒤에 모두 있어야 한다. 빈 값 placeholder는 정상 재암호화 뒤에도 0바이트라, "0이면 되돌린다"는
-#     안내는 새 recipient가 빠진 옛 암호문으로 되돌리게 한다 — 전후가 같은지로만 판정한다.
+#   - 재암호화 전 바이트 수 기록과 재암호화 뒤 비교: 사용자 키·호스트 키(sudo) 명령이 재암호화 명령 앞과,
+#     재암호화 명령과 새 호스트 확인 단계 사이에 모두 있어야 한다. 빈 값 placeholder는 정상 재암호화 뒤에도
+#     0바이트라, "0이면 되돌린다"는 안내는 새 recipient가 빠진 옛 암호문으로 되돌리게 한다 — 전후가
+#     같은지로만 판정한다.
 #   - 복호화 확인도 호스트 키 sudo 변형을 함께 낸다. 사용자 키 명령은 권한 상승 없이 둔다.
 _secrets_docs_assert_value_check_steps() {
-  local where="$1" text enc_line bytes_cmd compare_line first last
+  local where="$1" text enc_line verify_line bytes_cmd compare_line first between
   local user_bytes_cmd='nix run github:ryantm/agenix -- -d <name>.age -i <identity> | wc -c'
   local host_bytes_cmd='sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c'
   local host_dec_cmd='test -f <name>.age && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key >/dev/null'
   text="$(cat)"
   enc_line="$(grep -nF -m1 -- '-e <name>.age -i <identity>' <<< "$text" | cut -d: -f1 || true)"
   [[ -n "$enc_line" ]] || fail "$where: 대상별 재암호화 명령이 없음"
+  verify_line="$(_secrets_docs_new_host_step_line <<< "$text")"
+  [[ -n "$verify_line" && "$verify_line" -gt "$enc_line" ]] || fail "$where: 재암호화 뒤 새 호스트 확인 단계가 없음"
+  between="$(sed -n "$((enc_line + 1)),$((verify_line - 1))p" <<< "$text")"
 
   grep -qF -- "$host_dec_cmd" <<< "$text" || fail "$where: 복호화 확인에 호스트 키 sudo 변형이 없음"
   for bytes_cmd in "$user_bytes_cmd" "$host_bytes_cmd"; do
     first="$(grep -nF -m1 -- "$bytes_cmd" <<< "$text" | cut -d: -f1 || true)"
-    last="$(grep -nF -- "$bytes_cmd" <<< "$text" | cut -d: -f1 | tail -1 || true)"
     [[ -n "$first" && "$first" -lt "$enc_line" ]] || fail "$where: 재암호화 전 바이트 수 기록 명령이 없음: $bytes_cmd"
-    [[ -n "$last" && "$last" -gt "$enc_line" ]] || fail "$where: 재암호화 뒤 바이트 수 비교 명령이 없음: $bytes_cmd"
+    grep -qF -- "$bytes_cmd" <<< "$between" || fail "$where: 재암호화 뒤 바이트 수 비교 명령이 없음: $bytes_cmd"
   done
-  compare_line="$(sed -n "$enc_line,\$p" <<< "$text" | grep -F '재암호화 전과 같은지' || true)"
+  compare_line="$(grep -F '재암호화 전과 같은지' <<< "$between" || true)"
   [[ "$compare_line" == *'git restore <name>.age'* ]] \
     || fail "$where: 재암호화 뒤 바이트 수가 재암호화 전과 같은지 보고 다르면 되돌리는 안내가 없음"
   ! grep -F '0이면' <<< "$text" | grep -qF 'git restore' \
     || fail "$where: 바이트 수 0을 되돌림 기준으로 안내함 — 빈 값 placeholder가 옛 암호문으로 되돌려진다"
   ! grep -F -- '-i <identity>' <<< "$text" | grep -qF 'sudo' \
     || fail "$where: 사용자 키(-i <identity>) 명령에 sudo가 붙음"
+}
+
+# 새 호스트 확인 단계의 시작 줄 번호("새 호스트에서 pull"이 처음 나오는 줄). 없으면 빈 값.
+_secrets_docs_new_host_step_line() {
+  grep -nF -m1 '새 호스트에서 pull' | cut -d: -f1 || true
+}
+
+# 새 호스트 확인 단계: 재암호화 전후 비교는 재암호화에 쓴 기존 identity로만 복호화하므로, 형식은 맞지만
+# 틀린 공개키를 등록해도 통과한다. 그래서 마지막에 새 호스트의 identity(사용자 키 ~/.ssh/id_ed25519,
+# 호스트 키 sudo)로 복호화해 바이트 수를 보고, 실패하면 등록 공개키를 실제 키와 대조하게 해야 한다.
+# 이 단계에서 기존 identity(`-i <identity>`)를 쓰면 같은 맹점이 남으므로 실패한다.
+_secrets_docs_assert_new_host_check_step() {
+  local where="$1" text verify_line step
+  text="$(cat)"
+  verify_line="$(_secrets_docs_new_host_step_line <<< "$text")"
+  [[ -n "$verify_line" ]] || fail "$where: 새 호스트에서 pull한 뒤 복호화를 확인하는 단계가 없음"
+  step="$(sed -n "$verify_line,\$p" <<< "$text")"
+
+  # shellcheck disable=SC2088  # 안내 문구에 그대로 나오는 리터럴 경로다(확장하지 않음).
+  grep -qF -- 'test -f <name>.age && nix run github:ryantm/agenix -- -d <name>.age -i ~/.ssh/id_ed25519 | wc -c' <<< "$step" \
+    || fail "$where: 새 호스트 확인에 새 호스트 사용자 키(~/.ssh/id_ed25519) 복호화 명령이 없음"
+  grep -qF -- 'test -f <name>.age && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c' <<< "$step" \
+    || fail "$where: 새 호스트 확인에 호스트 키(sudo) 복호화 명령이 없음"
+  ! grep -qF -- '-i <identity>' <<< "$step" \
+    || fail "$where: 새 호스트 확인이 새 호스트 identity 대신 재암호화에 쓴 기존 identity(-i <identity>)를 씀"
+  grep -F 'ssh-keygen -y -f' <<< "$step" | grep -qF '/etc/ssh/ssh_host_ed25519_key.pub' \
+    || fail "$where: 실패 시 새 호스트의 실제 공개키(ssh-keygen -y -f, 호스트 키 .pub)와 대조하는 안내가 없음"
+  grep -qF 'libraries/constants.nix' <<< "$step" \
+    || fail "$where: 실패 시 대조할 등록 공개키 위치(libraries/constants.nix) 안내가 없음"
+  grep -qF '완료로 보지 않는다' <<< "$step" \
+    || fail "$where: 새 호스트 확인 전에는 recipient 갱신을 완료로 보지 않는다는 안내가 없음"
 }
 
 # SKILL.md 통합 Secret Inventory 표의 `.age` 행을 "이름<TAB>recipient 열의 첫 단어"로 낸다.
@@ -319,6 +353,7 @@ test_managing_secrets_host_add_workflow_checks_recipients_per_target() {
   grep -F 'EDITOR=:' <<< "$section" | grep -qF '비워진다' \
     || fail "EDITOR=:가 전달되지 않으면 시크릿이 비워진다는 경고가 없음"
   _secrets_docs_assert_value_check_steps "workflows.md 호스트 추가 절" <<< "$section"
+  _secrets_docs_assert_new_host_check_step "workflows.md 호스트 추가 절" <<< "$section"
 
   assert_not_contains "$(cat "$wf")" '`allHosts`에 추가'
   assert_not_contains "$(cat "$wf")" '`allHosts` 목록에 있는 모든 공개키'

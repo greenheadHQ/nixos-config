@@ -114,7 +114,7 @@ agenix `.age` 22개(디스크 실측 — 재검증: `ls secrets/*.age | wc -l`) 
 1. 기존 값 확인 (복호화 방법은 [references/workflows.md](references/workflows.md) 참조)
 2. 새 내용으로 재암호화하여 `.age` 파일 덮어쓰기
 
-호스트 추가: 새 호스트가 복호화해야 하는 항목의 recipient만 갱신한다. 그룹별 identity와 재암호화 조건은 [references/workflows.md](references/workflows.md) "호스트 추가" 참조.
+호스트 추가: 새 호스트가 복호화해야 하는 항목의 recipient만 갱신하고, 새 호스트에서 복호화를 확인한 뒤에 완료로 본다. 그룹별 identity와 재암호화 조건은 [references/workflows.md](references/workflows.md) "호스트 추가" 참조.
 
 ### Shottr 라이센스 pre-fill (agenix)
 

@@ -134,7 +134,7 @@ nix-shell -p age --run 'age -d -i ~/.ssh/id_ed25519 secrets/<name>.age' >/dev/nu
 
 원인: publicKeys를 바꾼 항목을 재암호화하지 않았다. `.age` 파일은 변경 시점의 recipient 목록으로 암호화되어 있으므로, publicKeys를 변경한 후 반드시 재암호화해야 한다.
 
-해결: 바꾼 항목을 [workflows.md](workflows.md) "호스트 추가"의 identity 확인 → 대상별 재암호화 순서로 재암호화한다. 전체 재암호화(`-r`)는 넘긴 identity로 `secrets.nix`의 모든 항목을 복호화할 수 있을 때만 쓴다.
+해결: 바꾼 항목을 [workflows.md](workflows.md) "호스트 추가"의 identity 확인 → 대상별 재암호화 → 새 호스트에서 복호화 확인 순서로 진행한다. 새 호스트에서만 실패하면 등록한 공개키가 그 호스트의 실제 키와 다른지 같은 절 8단계로 확인한다. 전체 재암호화(`-r`)는 넘긴 identity로 `secrets.nix`의 모든 항목을 복호화할 수 있을 때만 쓴다.
 
 호스트 키 변경 시: 해당 호스트의 SSH 키가 재생성된 경우, 공개키 정본인 `libraries/constants.nix`(`sshKeys`·`hostKeys`)에서 공개키를 갱신한 후 재암호화.
 

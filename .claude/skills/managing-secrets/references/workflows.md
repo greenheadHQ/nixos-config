@@ -40,7 +40,7 @@ recipient 그룹마다 복호화에 필요한 identity가 다르다. 그룹 선�
 |------|-------------|-----------------|
 | `allHosts` | Mac·MiniPC 사용자 키 (`sshKeys`) | Mac 또는 MiniPC 사용자의 `~/.ssh/id_ed25519` |
 | `minipcOnly` | MiniPC 사용자 키 (`sshKeys.minipc`) | MiniPC 사용자의 `~/.ssh/id_ed25519` |
-| `minipcHostOnly` | MiniPC 호스트 키 (`hostKeys.minipc`) | MiniPC의 `/etc/ssh/ssh_host_ed25519_key` (root만 읽을 수 있어 5~7단계를 sudo로 실행한다) |
+| `minipcHostOnly` | MiniPC 호스트 키 (`hostKeys.minipc`) | MiniPC의 `/etc/ssh/ssh_host_ed25519_key` (root만 읽을 수 있어 5~8단계를 sudo로 실행한다) |
 | `[ constants.sshKeys.macbook ]` (인라인) | Mac 사용자 키 | Mac 사용자의 `~/.ssh/id_ed25519` |
 
 1. 호스트 등록: `scripts/add-host.sh`의 안내대로 새 호스트의 사용자 공개키를 `libraries/constants.nix`의 `sshKeys`에 등록한다. 호스트 키 전용 항목이 필요하면 그 호스트의 `/etc/ssh/ssh_host_ed25519_key.pub`를 `hostKeys`에 따로 등록한다. NixOS 호스트 한정이다 — darwin은 Home Manager agenix가 사용자 키로만 복호화한다.
@@ -77,5 +77,15 @@ recipient 그룹마다 복호화에 필요한 identity가 다르다. 그룹 선�
    nix run github:ryantm/agenix -- -d <name>.age -i <identity> | wc -c
    sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c  # 호스트 키
    ```
+
+8. 새 호스트 확인: 변경을 커밋·push하고 새 호스트에서 pull한 뒤, 새 호스트의 identity로 재암호화한 항목을 복호화해 바이트 수가 5단계에서 적어 둔 값과 같은지 본다. 5~7단계는 기존 identity로만 복호화하므로, 형식은 맞지만 다른 공개키를 등록해도 모두 통과한다. 이 확인이 끝나기 전에는 recipient 갱신을 완료로 보지 않는다.
+
+   ```bash
+   # 새 호스트의 저장소 checkout에서 (secrets/)
+   test -f <name>.age && nix run github:ryantm/agenix -- -d <name>.age -i ~/.ssh/id_ed25519 | wc -c
+   test -f <name>.age && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c  # 호스트 키
+   ```
+
+   복호화에 실패하거나 바이트 수가 다르면 등록한 공개키가 그 호스트의 실제 키와 다르다. 새 호스트에서 `ssh-keygen -y -f ~/.ssh/id_ed25519` 출력(호스트 키는 `/etc/ssh/ssh_host_ed25519_key.pub`)을 `libraries/constants.nix` 값과 비교해 고친 뒤 5~8단계를 다시 한다.
 
 전체 재암호화(`nix run github:ryantm/agenix -- -r`)는 넘긴 identity로 `secrets.nix`의 모든 항목을 복호화할 수 있을 때만 쓴다. `-r`은 항목을 차례로 처리하다 복호화하지 못하는 항목에서 멈추고, 그 앞 항목만 새 recipient로 바뀐 채 남는다. 현재 선언에는 Mac 사용자 키 전용 항목과 MiniPC 호스트 키 전용 항목이 함께 있어, 한 호스트의 identity만으로는 이 조건을 채우지 못한다. identity가 없는 항목은 그 identity가 있는 호스트에서 대상별로 재암호화한다. 원본 값에서 새로 암호화해야 하면 [troubleshooting.md](troubleshooting.md)의 "agenix -e의 /dev/stdin 에러" 절차를 쓴다.
