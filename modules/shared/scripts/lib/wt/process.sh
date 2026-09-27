@@ -72,7 +72,10 @@ _wt_cwd_holders() {
   # -a: 선택 조건을 AND로 묶는다(기본은 OR라 -u만으로 cwd 아닌 fd까지 섞인다).
   # -F pn: 필드 출력(PID·이름). f 필드는 lsof 빌드에 따라 함께 나오기도 해서 p·n만 해석한다.
   # -w: 경고(읽지 못한 파일 시스템 등)는 판정과 무관하므로 끈다. 오류는 stderr로 그대로 낸다.
-  scan=$(LC_ALL=C "$lsof_bin" -w -n -a -u "$uid" -d cwd -F pn) || rc=$?
+  # -b: 응답 없는 마운트에서 막힐 수 있는 커널 호출(stat·readlink 등)을 피한다. cwd 이름은
+  #   macOS는 libproc, Linux는 /proc/<pid>/cwd 링크에서 읽어 이 옵션과 무관하다 — 실제
+  #   프로세스 테스트(tests/suites/wt-active-process.sh)가 두 플랫폼에서 이를 지킨다.
+  scan=$(LC_ALL=C "$lsof_bin" -w -n -b -a -u "$uid" -d cwd -F pn) || rc=$?
   if (( rc != 0 )); then
     printf 'lsof 실행 실패 (종료 코드 %s)\n' "$rc"
     return 1

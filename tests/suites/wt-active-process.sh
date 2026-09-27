@@ -94,6 +94,9 @@ test_wt_cwd_holders_process_table_unit() {
   assert_contains "$(cat "$bin/lsof.args")" "-a"
   assert_contains "$(cat "$bin/lsof.args")" "-u $uid"
   assert_contains "$(cat "$bin/lsof.args")" "-d cwd"
+  # 막힐 수 있는 커널 호출(stat·readlink)을 피한다. 이 옵션이 cwd 이름 해석을 바꾸면
+  # fail-open이 되므로, 아래 실제 프로세스 테스트들이 두 플랫폼에서 그것을 지킨다.
+  assert_contains "$(cat "$bin/lsof.args")" "-b"
 }
 
 test_wt_cwd_holders_fails_closed_unit() {
