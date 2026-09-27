@@ -1156,18 +1156,52 @@ _pinning_codex_mention_table() {
     "bash <<< \"\$(echo 'gh pr comment 12 --body x')\""
     "bash < <(echo 'gh pr comment 12 --body x')"
     "\$SHELL -c \"\$(echo 'gh pr comment 12 --body x')\""
-    # 변수 명령어 뒤가 pr·issue·api여도 인자에 gh 글자가 보이면 대상이다(호스트 이름이 api인 ssh).
+    # 이름에 gh가 없는 변수 명령어는 뒤가 pr·issue·api여도 셸 실행기로 본다(호스트 이름이 api인 ssh,
+    # \$0 자리의 pr). 이름에 gh가 든 변수도 인자에 gh 글자가 보이면 대상이다.
     "\$SSH api 'gh pr comment 12 --body x'"
+    "CMD='gh pr comment 12 --body x'; \$SSH api \"\$CMD\""
+    "CMD='gh pr comment 12 --body x'; \$SHELL -c \"\$CMD\" pr"
+    $'$SSH api "$(cat <<\'EOF\'\ngh pr comment 12 --body x\nEOF\n)"'
+    "CMD='gh pr comment 12 --body x'; \$GH_SH -c \"\$CMD\""
+    "\$GH_RUN api 'gh pr comment 12 --body x'"
+    "\$GH_RUN api \"gh pr comment \$N --body x\""
     # macOS 파일시스템은 대소문자를 가리지 않아 GH도 gh를 실행한다. 변수 기본값과 줄 이음 앞의 gh도 본다.
     "bash -c 'GH pr comment 12 --body x'"
     "echo 'GH pr comment 12 --body x' | bash"
     "bash -c \"\${GH:-gh} pr comment 12 --body x\""
     "X=\"\${GH:-gh}\"; bash -c \"\$X pr comment 12 --body x\""
+    "bash -c \"\${GH-gh} pr comment 12 --body x\""
+    "bash -c '\${GH-gh} pr comment 12 --body x'"
+    "bash -c \"\${a[0]-gh} pr comment 12 --body x\""
+    "X=\"\${1-gh}\"; bash -c \"\$X pr comment 12 --body x\""
     $'bash -c \'gh\\\n pr comment 12 --body x\''
+    # 셸 실행기에 들어가는 heredoc 본문의 $는 실행기가 확장하므로 동적 입력이다.
+    $'CMD=\'gh pr comment 12 --body x\'\nbash <<EOF\n$CMD\nEOF'
+    $'export CMD=\'gh pr comment 12 --body x\'\nbash <<\'EOF\'\n$CMD\nEOF'
+    $'echo \'gh pr comment 12 --body x\' > /tmp/c\nbash <<EOF\n`cat /tmp/c`\nEOF'
+    $'echo \'gh pr comment 12 --body x\' > /tmp/c\nbash <<\'EOF\'\n`cat /tmp/c`\nEOF'
     # 판정 불확실(구분자가 동적인 heredoc, 명령 치환 안의 EOF) 종결 줄)이면 gh 글자만 보여도 대상이다.
     $'cat <<$\'EOF\'\nx\nEOF\n"gh" pr comment 12 --body x\n: <<EOF\n$EOF'
     $'x=$(cat <<EOF\nhi\nEOF); "gh" pr comment 12 --body x\n: <<EOF\nEOF\n)'
     $'x=$(cat <<EOF\nhi\nEOF)\ng\\h pr comment 12 --body x\n: <<EOF\nEOF\n)'
+    # 판정 불확실이면 따옴표·역슬래시·줄 이음으로 끊은 gh도 센다. zsh는 치환 안 EOF) 줄을 본문으로 읽고
+    # 뒤 명령을 실행한다. 종결 줄의 나머지와 동적 구분자 뒤 줄도 그렇다.
+    $'x=$(cat <<EOF\nEOF)\nit\'s body\nEOF\n)\ng\\h pr comment 12 --body x'
+    $'x=$(cat <<EOF\nhi\nEOF); g\\h pr comment 12 --body x'
+    $'x=$(cat <<EOF\nhi\nEOF); g""h pr comment 12 --body x'
+    $'cat <<$\'EOF\'\nx\nEOF\ng\'\'h pr comment 12 --body x'
+    $'x=$(cat <<EOF\nEOF)\nit\'s body\nEOF\n)\ng\\\nh pr comment 12 --body x'
+    $'cat <<$\'EOF\'\nx\nEOF\ng\\\n\\\n\'\'h pr comment 12 --body x'
+    $'cat <<$\'EOF\'\nx\nEOF\n: aaaaaaaaaaaaaaaaaaaaaaaa; g\\\nh pr comment 12 --body x'
+    # bash 5.3은 치환 안 heredoc에서 구분자로 시작하고 ) 가 든 줄에서 끝내고 나머지를 명령으로 읽는다.
+    $'x=$(cat <<\'EOF\'\nhi\nEOF gh pr comment 12 --body x)\n: <<\'EOF\'\nEOF\n)'
+    $'x=$(cat <<-EOF\n\thi\n\tEOF) gh pr comment 12 --body x\n\tEOF\n)'
+    # 백틱 치환은 heredoc 본문의 백틱에서 끝난다.
+    $'x=`cat <<\'EOF\'\na`; gh pr comment 12 --body x; `\nEOF\n`'
+    # bash 5.3의 함수 치환 \${ cmd; } 는 명령을 실행한다.
+    "x=\${ gh pr comment 12 --body x; }"
+    "x=\${| gh pr comment 12 --body x; }"
+    $'x=${\ngh pr comment 12 --body x; }'
     # $[ ] 는 산술 확장이라 << 뒤 줄은 heredoc 본문이 아니다.
     $'x=$[a[1]<<2]\ngh pr comment 12 --body x\n2]'
   )
@@ -1215,16 +1249,38 @@ _pinning_codex_mention_table() {
     "eval \"\$X\"; ! gh pr view 1"
     "eval \"\$X\"; command gh pr view 1"
     "eval \"\$X\"; { gh pr view 1; }"
-    # 변수 명령어 뒤 하위 명령이 pr·issue·api면 셸 실행기로 보지 않는다.
+    "eval \"\$X\"; if :; then gh pr view 1; fi"
+    "eval \"\$X\"; if false; then :; elif gh pr view 1; then :; fi"
+    "eval \"\$X\"; if false; then :; else gh pr view 1; fi"
+    "eval \"\$X\"; while gh pr view 1; do :; done"
+    "eval \"\$X\"; until gh pr view 1; do :; done"
+    "eval \"\$X\"; for i in 1; do gh pr view 1; done"
+    "eval \"\$X\"; time gh pr view 1"
+    "eval \"\$X\"; nohup gh pr view 1"
+    "eval \"\$X\"; exec gh pr view 1"
+    "eval \"\$X\"; nice gh pr view 1"
+    "eval \"\$X\"; caffeinate -i gh pr view 1"
+    "eval \"\$X\"; env time gh pr view 1"
+    # 이름에 gh가 든 변수 명령어 뒤 하위 명령이 pr·issue·api면 셸 실행기로 보지 않는다. 하위 명령 앞의
+    # 옵션과 그 값은 건너뛴다.
     "GH=/opt/homebrew/bin/gh; \$GH api \"repos/\$R/pulls/1/comments\" --jq '.[].body'"
+    "\$GH -R \"\$REPO\" pr view 1"
+    # 하이픈이 든 기본값(\${X-foo-gh})은 gh가 아니다.
+    "eval \"\$X\"; echo \"\${X-foo-gh}\"; gh pr view 1"
     # 출력 리다이렉트는 셸 실행기의 입력이 아니다.
     "bash x.sh > \"\$LOG\"; echo 'gh pr comment 12 --body x'"
     # \$[ ] 의 << 는 시프트다.
     "echo \$[1<<2]; gh pr view 1"
-    # 명령 치환 안 heredoc의 본문 줄은 종결자로 시작해도 ) 나 백틱이 붙어야 종결 줄로 본다. 치환 밖에서는
-    # 붙어도 본문이다.
+    # 명령 치환 안 heredoc의 본문 줄은 구분자로 시작해도 ) 가 없으면 본문이다. 치환 밖에서는 ) 가 있어도
+    # 본문이다.
     $'x=$(cat <<EOF\nEOFX\nEOF\n)\ngh pr view 1'
     $'cat <<EOF\nEOF)\nEOF\ngh pr view 1'
+    # 명령 치환 안 heredoc 본문의 인라인 코드 백틱은 본문이다(백틱 치환 안에서만 치환을 끝낸다).
+    $'x=$(cat <<\'EOF\'\nuse `ls` here\nEOF\n); gh pr view 1'
+    # 판정 불확실이어도 줄 이음으로 이은 글자가 gh가 아니면 대상이 아니다. 긴 줄을 잘라 이은 글자를 줄
+    # 시작으로 읽지 않는다.
+    $'cat <<$\'EOF\'\nx\nEOF\necho g\\\nhx'
+    $'cat <<$\'EOF\'\nx\nEOF\necho aaaaaagh; zzzzzzzzzzzz\\\nyy'
   )
   for cmd in "${scope_in[@]}"; do
     assert_eq "$(if pinning_codex_mention_scope "$cmd"; then printf in; else printf out; fi)" "in" \
