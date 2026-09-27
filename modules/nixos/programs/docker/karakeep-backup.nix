@@ -46,6 +46,9 @@ in
 
       unitConfig = {
         ConditionPathExists = pushoverCredPath;
+        # 원본(srcDir)과 백업 목적지가 모두 nofail HDD(mediaData) 아래에 있으므로, 실제로
+        # 마운트된 뒤에만 시작한다 (#1369, immich-db-backup과 같은 선언).
+        RequiresMountsFor = [ mediaData ];
       };
 
       serviceConfig = {

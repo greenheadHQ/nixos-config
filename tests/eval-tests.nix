@@ -1059,10 +1059,11 @@ let
   ];
 
   # ── #1369: 백업 대상 HDD(mediaData)가 nofail이라 미마운트여도 부팅은 계속되므로,
-  # 세 백업/미러 유닛이 RequiresMountsFor로 실제 마운트를 실행 전제로 요구하는지 확인한다
+  # 백업/미러 유닛이 RequiresMountsFor로 실제 마운트를 실행 전제로 요구하는지 확인한다
   # (미마운트 시 목적지가 루트 파일시스템의 일반 디렉터리가 되어 백업이 SSD에 오기록·성공 오인될 위험).
   immichDbBackup = nixosCfg.systemd.services."immich-db-backup";
   immichOriginalsMirror = nixosCfg.systemd.services."immich-originals-mirror";
+  karakeepBackup = nixosCfg.systemd.services."karakeep-backup";
 
   # ── #1391: 브리지가 SIGTERM을 받으면 실행 중 요청을 최대
   # SHUTDOWN_DRAIN_TIMEOUT_SEC(소스 기본값)까지 drain한 뒤 스스로 종료한다.
@@ -1964,6 +1965,10 @@ let
     {
       name = "Test MG3: anki-host-backup은 대상 HDD(mediaData) 마운트를 RequiresMountsFor로 요구해야 함";
       cond = builtins.elem constants.paths.mediaData (ankiHostBackup.unitConfig.RequiresMountsFor or [ ]);
+    }
+    {
+      name = "Test MG3b: karakeep-backup은 대상 HDD(mediaData) 마운트를 RequiresMountsFor로 요구해야 함";
+      cond = builtins.elem constants.paths.mediaData (karakeepBackup.unitConfig.RequiresMountsFor or [ ]);
     }
     {
       # 리뷰: MOUNT_ROOT가 실제 mediaData와 다른 값으로 새거나(오타 등) mediaData 자체가
