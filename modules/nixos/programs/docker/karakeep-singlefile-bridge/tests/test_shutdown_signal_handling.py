@@ -200,3 +200,51 @@ def test_health_endpoint_still_responds_before_shutdown(bridge_server):
 
     assert b" 200 " in data
     assert b'"status": "ok"' in data
+
+
+def test_shutdown_thread_start_failure_falls_through_to_system_exit(spawn_bridge, wait_or_fail, tmp_path):
+    """If starting the shutdown thread itself fails, _shutdown raises
+    SystemExit instead of just returning, so serve_forever() unwinds and
+    main()'s finally (drain, then server_close) still runs — the process
+    exits promptly instead of running until systemd's TimeoutStopSec forces
+    an undrained SIGKILL.
+
+    Simulated via a test-only sitecustomize.py injected through PYTHONPATH.
+    It patches threading.Thread.start only when the thread's target is
+    specifically BaseServer.shutdown, so the server's own per-connection
+    handler threads are unaffected. The shipped bridge code has no test
+    hook for this.
+    """
+    (tmp_path / "sitecustomize.py").write_text(
+        "import socketserver\n"
+        "import threading\n"
+        "\n"
+        "_original_start = threading.Thread.start\n"
+        "\n"
+        "\n"
+        "def _patched_start(self):\n"
+        "    target = getattr(self, '_target', None)\n"
+        "    is_server_shutdown = (\n"
+        "        target is not None\n"
+        "        and getattr(target, '__func__', None) is socketserver.BaseServer.shutdown\n"
+        "    )\n"
+        "    if is_server_shutdown:\n"
+        "        raise RuntimeError('simulated thread resource exhaustion (test fixture)')\n"
+        "    return _original_start(self)\n"
+        "\n"
+        "\n"
+        "threading.Thread.start = _patched_start\n"
+    )
+    bridge = spawn_bridge({"PYTHONPATH": str(tmp_path)})
+
+    bridge.proc.send_signal(signal.SIGTERM)
+    rc = wait_or_fail(
+        bridge.proc,
+        SHUTDOWN_TIMEOUT_SEC,
+        "bridge did not exit within the timeout after its shutdown thread failed to start",
+    )
+    assert rc == 1
+
+    out = bridge.proc.stdout.read() if bridge.proc.stdout else ""
+    assert "failed to start shutdown thread" in out
+    assert "karakeep-singlefile-bridge stopped" in out

@@ -762,15 +762,15 @@ def main() -> None:
         try:
             thread.start()
         except RuntimeError as exc:
-            # log() first, while the flag is still True: a reentrant signal
-            # arriving during this log() call must still see it set. Only
-            # after logging do we clear it, so a later signal isn't
-            # silently ignored (this isn't a systemd retry — nothing here
-            # asks it to resend SIGTERM — it just leaves the door open if
-            # something else does).
+            # Can't hand shutdown off to a thread, and calling
+            # server.shutdown() directly here would deadlock (see above).
+            # Raising unwinds serve_forever() on this same thread instead:
+            # main()'s try/finally still runs (drain, server_close), and the
+            # process exits instead of running until systemd's
+            # TimeoutStopSec forces a SIGKILL with no drain at all. The flag
+            # stays True — this thread is on its way out regardless.
             log(f"received signal {signum} but failed to start shutdown thread: {exc}")
-            shutdown_started = False
-            return
+            raise SystemExit(1) from exc
         log(f"received signal {signum}, shutting down...")
 
     signal.signal(signal.SIGTERM, _shutdown)

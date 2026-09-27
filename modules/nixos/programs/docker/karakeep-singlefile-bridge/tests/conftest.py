@@ -104,6 +104,14 @@ def spawn_bridge(tmp_path):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            # New session == new process group, with proc.pid as its pgid
+            # (setsid() makes the caller both). Isolates the bridge (and
+            # any curl child it spawns, which inherits this group) from
+            # signals aimed at this test process's own group, and lets
+            # os.killpg(proc.pid, ...) simulate systemd KillMode=control-group
+            # for tests that need that contrast against a plain
+            # proc.send_signal(...) (KillMode=mixed).
+            start_new_session=True,
         )
         spawned.append(proc)
         if not _wait_for_health(port, 10.0):

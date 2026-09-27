@@ -12,6 +12,7 @@ All external calls stay on loopback; no request reaches api.pushover.net or
 a real Karakeep instance.
 """
 import http.client
+import os
 import signal
 import socket
 import time
@@ -209,6 +210,57 @@ def test_shutdown_still_ignores_idle_connections_without_a_full_request(
         assert rc == 0
     finally:
         lingering.close()
+
+    out = bridge.proc.stdout.read() if bridge.proc.stdout else ""
+    assert "in-flight requests drained before shutdown" in out
+
+
+def test_group_wide_sigterm_kills_the_in_flight_curl_child_drain_relies_on(
+    spawn_bridge, fake_karakeep_upstream, wait_or_fail
+):
+    """Pins the reasoning behind KillMode=mixed in karakeep-singlefile-bridge.nix.
+
+    _do_post's drain window is meant to let an in-flight request finish and
+    respond, but that only works if the curl child it spawns to talk to
+    Karakeep survives the signal. A group-wide SIGTERM — what systemd's
+    default KillMode=control-group sends on stop — reaches that curl child
+    too (it inherits the bridge's process group), killing it mid-request.
+    The client then gets curl's failure instead of the response the drain
+    was supposed to let it wait for.
+
+    Simulated here with os.killpg(bridge.proc.pid, ...), using the process
+    group spawn_bridge's subprocess already gets from start_new_session=True
+    — not by actually setting KillMode, which needs systemd and is out of
+    reach for a subprocess test. Contrast with
+    test_shutdown_waits_for_in_flight_request_to_finish above, which sends
+    the signal with plain proc.send_signal (main process only, the shape
+    KillMode=mixed keeps) and gets a normal 201 back. This test does not
+    verify the KillMode setting itself — Test KB2 in tests/eval-tests.nix
+    pins that — it only pins the behavioral gap between the two signal
+    shapes that setting decides between.
+    """
+    fake_karakeep_upstream.RequestHandlerClass.delay_seconds = 2.0
+    bridge = spawn_bridge({"KARAKEEP_BASE_URL": _fake_upstream_base_url(fake_karakeep_upstream)})
+
+    conn = _post_singlefile(bridge.port, timeout=10)
+    try:
+        # Same margin as the other drain tests: give the request time to
+        # reach _do_post and spawn its curl child before signaling.
+        time.sleep(0.3)
+        os.killpg(bridge.proc.pid, signal.SIGTERM)
+
+        resp = conn.getresponse()
+        assert resp.status == 502
+        assert resp.read() == b'{"error": "curl failed: "}'
+    finally:
+        conn.close()
+
+    rc = wait_or_fail(
+        bridge.proc,
+        5,
+        "bridge did not exit after a group-wide SIGTERM killed its in-flight curl child",
+    )
+    assert rc == 0
 
     out = bridge.proc.stdout.read() if bridge.proc.stdout else ""
     assert "in-flight requests drained before shutdown" in out

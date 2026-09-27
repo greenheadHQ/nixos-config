@@ -2008,6 +2008,12 @@ let
         &&
           karakeepSinglefileBridgeSvc.serviceConfig.TimeoutStopSec > karakeepSinglefileBridgeDrainDefaultSec;
     }
+    {
+      # 기본값 control-group에서는 stop 시 SIGTERM이 cgroup 전체로 가서, drain 중인
+      # curl 자식(run_curl/send_pushover)까지 죽는다 — drain이 없는 것과 같아진다.
+      name = "Test KB2: karakeep-singlefile-bridge의 KillMode가 mixed여야 함(SIGTERM이 메인에만 가야 drain 중 curl 자식이 살아남는다)";
+      cond = karakeepSinglefileBridgeSvc.serviceConfig.KillMode == "mixed";
+    }
   ]
   ++ tmuxVanillaTests "greenhead-minipc" true nixosHm
   ++ darwinIntentTests

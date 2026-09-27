@@ -57,6 +57,11 @@ in
         # 기다린 뒤 스스로 종료한다. 그 상한보다 이 값이 짧아지면 systemd가 브리지의 정상
         # drain을 못 기다리고 SIGKILL로 끊어버리므로, 항상 drain 상한보다 여유 있게 크게 둔다.
         TimeoutStopSec = 90;
+        # 기본값 control-group에서는 stop 시 SIGTERM이 cgroup의 모든 프로세스로 간다 —
+        # drain 중인 요청이 run_curl/send_pushover로 띄운 curl 자식도 함께 죽어, drain이
+        # 업로드 완료를 기다린다는 의도가 무너진다. mixed는 SIGTERM을 메인에만 보내고,
+        # 남은 프로세스는 메인 종료 후 또는 위 TimeoutStopSec을 넘긴 뒤에만 SIGKILL로 정리한다.
+        KillMode = "mixed";
         PrivateTmp = true;
         NoNewPrivileges = true;
       };
