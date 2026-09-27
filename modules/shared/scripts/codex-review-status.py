@@ -4,6 +4,7 @@
 봇은 check run이나 status를 만들지 않아 statusCheckRollup에 나타나지 않는다. 그래서 PR 본문
 반응(👀/👍), 요약 코멘트, 리뷰 객체, limit·실패 코멘트를 조합해 상태를 정한다. 판정에는
 트리거(PR 생성, draft→ready 전환, 재리뷰 요청 코멘트) 가운데 마지막 시각 이후의 신호만 쓴다.
+트리거 뒤에 봇이 새 리뷰를 시작했고(push 리뷰 등) 그 뒤로 결과가 없으면, 그 시작부터 센다.
 
 GitHub에는 조회(GraphQL query)만 보낸다. 쓰기는 하지 않는다.
 
@@ -14,7 +15,7 @@ GitHub에는 조회(GraphQL query)만 보낸다. 쓰기는 하지 않는다.
   lgtm      봇이 지적 없이 리뷰를 마쳤다
   limited   Codex 사용 한도 초과로 리뷰하지 않았다
   failed    봇이 리뷰를 수행하지 못했다 (오류, 계정 연결 안내, 알 수 없는 요약 상태)
-  timeout   리뷰가 트리거 뒤 PENDING_TIMEOUT_SECONDS 안에 끝나지 않았다
+  timeout   리뷰가 시작(트리거) 뒤 PENDING_TIMEOUT_SECONDS 안에 끝나지 않았다
   absent    트리거 뒤 ABSENT_AFTER_SECONDS가 지나도 봇 흔적이 없다
 
 봇 신호의 근거(#1477 실측)
@@ -22,10 +23,13 @@ GitHub에는 조회(GraphQL query)만 보낸다. 쓰기는 하지 않는다.
     Completed인데 트리거 뒤 리뷰 객체가 없으면 지적 없음(lgtm)으로 본다.
   - 봇 계정은 표면마다 login이 다르다 (작성자 chatgpt-codex-connector, 반응 사용자
     chatgpt-codex-connector[bot]). databaseId는 모든 표면에서 같으므로 둘을 함께 확인한다.
+  - 사용 한도 코멘트는 리뷰 종류별로 온다. 보안 리뷰 한도 안내는 코드 리뷰가 도는 중에도
+    달리므로 코드 리뷰 한도 문구만 limited로 본다.
 """
 
 import argparse
 import json
+import math
 import os
 import re
 import shutil
@@ -39,9 +43,11 @@ BOT_LOGINS = frozenset({"chatgpt-codex-connector", "chatgpt-codex-connector[bot]
 
 PENDING_TIMEOUT_SECONDS = 15 * 60
 ABSENT_AFTER_SECONDS = 2 * 60
-# 에이전트 셸의 명령 타임아웃(10분) 안에서 끝나도록 한 번의 대기를 제한한다.
+# 에이전트 셸 명령의 최대 제한 시간(10분) 안에서 끝나도록 한 번의 대기를 제한한다.
 MAX_WAIT_SECONDS = 540
 DEFAULT_POLL_SECONDS = 15
+# 대기 중 진행 상황을 stderr에 알리는 간격. 제한 시간에 걸려 중단돼도 마지막 상태가 남는다.
+PROGRESS_EVERY_SECONDS = 60
 GH_CALL_TIMEOUT_SECONDS = 60
 PAGE_SIZE = 100
 # 스레드 안의 코멘트는 루트와 답글 존재만 보면 되므로 첫 페이지만 읽는다.
@@ -50,7 +56,7 @@ MAX_PAGES_PER_CONNECTION = 50
 
 SUMMARY_MARKER = "<!-- codex-pull-request-review-summary -->"
 REVIEW_REQUEST_RE = re.compile(r"\A\s*@codex\s+review\b", re.IGNORECASE)
-LIMIT_RE = re.compile(r"reached your Codex usage limits", re.IGNORECASE)
+LIMIT_RE = re.compile(r"reached your Codex usage limits for code reviews", re.IGNORECASE)
 FAILURE_RE = re.compile(r"something went wrong", re.IGNORECASE)
 ACCOUNT_RE = re.compile(r"\bTo use Codex here\b", re.IGNORECASE)
 LEGACY_LGTM_RE = re.compile(r"\A\s*Codex Review: Didn't find any major issues", re.IGNORECASE)
@@ -87,16 +93,17 @@ CONNECTIONS = {
     ),
     "comments": (
         "comments(first: %d{after})" % PAGE_SIZE,
-        "databaseId createdAt body url author { %s }" % ACTOR_FIELDS,
+        "createdAt body url author { %s }" % ACTOR_FIELDS,
     ),
     "reviews": (
         "reviews(first: %d{after})" % PAGE_SIZE,
-        "databaseId state submittedAt createdAt url commit { oid } author { %s }" % ACTOR_FIELDS,
+        "state submittedAt createdAt url commit { oid } author { %s }" % ACTOR_FIELDS,
     ),
+    # 리뷰 코멘트의 databaseId는 64비트 id를 담지 못해 폐기 예정이라 fullDatabaseId(문자열)를 쓴다.
     "reviewThreads": (
         "reviewThreads(first: %d{after})" % PAGE_SIZE,
         "id isResolved isOutdated path line originalLine "
-        "comments(first: %d) { nodes { databaseId createdAt url body author { %s } "
+        "comments(first: %d) { nodes { fullDatabaseId createdAt url body author { %s } "
         "reactionGroups { content viewerHasReacted } } }" % (THREAD_COMMENTS_PAGE_SIZE, ACTOR_FIELDS),
     ),
 }
@@ -128,7 +135,10 @@ def parse_ts(value):
     if zone != "Z":
         # 오프셋이 붙은 시각은 그만큼 빼서 UTC로 맞춘다 (+09:00이면 9시간 전).
         sign = 1 if zone[0] == "+" else -1
-        parsed -= sign * timedelta(hours=int(zone[1:3]), minutes=int(zone[4:6]))
+        try:
+            parsed -= sign * timedelta(hours=int(zone[1:3]), minutes=int(zone[4:6]))
+        except OverflowError:
+            return None
     return parsed
 
 
@@ -190,6 +200,16 @@ def gh_command():
     return shutil.which("gh-auth") or "gh"
 
 
+def gh_environment():
+    """gh 출력이 JSON 그대로 오도록 TTY·색 강제 설정을 뺀다."""
+    env = dict(os.environ)
+    for key in ("GH_FORCE_TTY", "CLICOLOR_FORCE"):
+        env.pop(key, None)
+    env["NO_COLOR"] = "1"
+    env["GH_PROMPT_DISABLED"] = "1"
+    return env
+
+
 def run_gh(args):
     command = [gh_command()] + list(args)
     try:
@@ -199,9 +219,12 @@ def run_gh(args):
             text=True,
             timeout=GH_CALL_TIMEOUT_SECONDS,
             check=False,
+            env=gh_environment(),
         )
     except FileNotFoundError:
         raise ToolError("gh 실행 파일을 찾지 못했다: %s" % command[0]) from None
+    except OSError as err:
+        raise ToolError("gh 실행 파일을 실행하지 못했다: %s (%s)" % (command[0], err.strerror or err)) from None
     except subprocess.TimeoutExpired:
         raise ToolError("gh %s 호출이 %d초 안에 끝나지 않았다" % (" ".join(args[:2]), GH_CALL_TIMEOUT_SECONDS)) from None
     if proc.returncode != 0:
@@ -326,20 +349,18 @@ def parse_summary_rows(body):
     return rows
 
 
-def code_review_row(comments):
-    """가장 최근에 갱신된 봇 요약 코멘트의 Code Review 행을 돌려준다."""
-    summaries = [
-        c for c in comments
-        if is_bot_actor(c.get("author")) and SUMMARY_MARKER in (c.get("body") or "")
-    ]
-    if not summaries:
-        return None
-    summaries.sort(key=lambda c: parse_ts(c.get("createdAt")) or datetime.min.replace(tzinfo=timezone.utc))
-    for summary in reversed(summaries):
-        for row in parse_summary_rows(summary.get("body") or ""):
-            if row["kind"].lower() == "code review":
-                return row
-    return None
+def code_review_rows(comments):
+    """봇 요약 코멘트 전부에서 Code Review 행을 모은다.
+
+    트리거가 몰리면 요약 코멘트가 둘 이상 생기고, 한쪽에 지난 주기의 행이 그대로 남기도 한다.
+    그래서 한 코멘트만 고르지 않고 모든 행을 모아 판정에서 함께 본다.
+    """
+    rows = []
+    for c in comments:
+        if not is_bot_actor(c.get("author")) or SUMMARY_MARKER not in (c.get("body") or ""):
+            continue
+        rows.extend(row for row in parse_summary_rows(c.get("body") or "") if row["kind"].lower() == "code review")
+    return rows
 
 
 def compute_trigger(pr):
@@ -367,6 +388,16 @@ def compute_trigger(pr):
 
 def _after(at, trigger_at):
     return at is not None and at >= trigger_at
+
+
+def _comment_id(node):
+    """리뷰 코멘트의 REST id. fullDatabaseId는 GraphQL BigInt라 문자열로 온다."""
+    value = node.get("fullDatabaseId")
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return None
 
 
 def _thread_title(body):
@@ -399,7 +430,7 @@ def collect_threads(pr):
         threads.append(
             {
                 "thread_id": thread.get("id"),
-                "comment_id": root.get("databaseId"),
+                "comment_id": _comment_id(root),
                 "url": root.get("url"),
                 "path": thread.get("path"),
                 "line": thread.get("line") if thread.get("line") is not None else thread.get("originalLine"),
@@ -420,73 +451,118 @@ def _stale(head, commit):
     return not head.lower().startswith(commit.lower())
 
 
+def _latest(times):
+    times = [t for t in times if t is not None]
+    return max(times) if times else None
+
+
 def evaluate(snapshot, now):
     pr = snapshot["pr"]
     head = pr.get("headRefOid") or ""
     kind, trigger_at, request_count = compute_trigger(pr)
-    elapsed = (now - trigger_at).total_seconds()
     comments = pr.get("comments") or []
     bot_comments = [c for c in comments if is_bot_actor(c.get("author"))]
     reactions = [r for r in pr.get("reactions") or [] if is_bot_actor(r.get("user"))]
+    rows = code_review_rows(comments)
+    running_rows = [row for row in rows if row["status"].lower() == "running"]
+    eyes = [r for r in reactions if r.get("content") == "EYES"]
 
     def review_time(review):
         return parse_ts(review.get("submittedAt")) or parse_ts(review.get("createdAt"))
 
-    reviews_after = sorted(
-        (r for r in pr.get("reviews") or [] if is_bot_actor(r.get("author")) and _after(review_time(r), trigger_at)),
-        key=review_time,
+    bot_reviews = [r for r in pr.get("reviews") or [] if is_bot_actor(r.get("author"))]
+    thumbs = [r for r in reactions if r.get("content") == "THUMBS_UP"]
+    completed_rows = [row for row in rows if row["status"].lower() == "completed"]
+    legacy_comments = [c for c in bot_comments if LEGACY_LGTM_RE.search(c.get("body") or "")]
+
+    # 리뷰 주기의 시작. 보통은 트리거지만, 트리거 뒤에 봇이 새 리뷰를 시작했고(👀·Running) 그 뒤로
+    # 결과 신호가 없으면 그 시작부터 센다. push로 다시 도는 리뷰에서 지난 주기의 결과를 이번 결과로
+    # 읽거나, PR 생성 시각부터 재서 곧바로 timeout을 내지 않기 위해서다.
+    result_times = (
+        [review_time(r) for r in bot_reviews]
+        + [parse_ts(r.get("createdAt")) for r in thumbs]
+        + [row["at"] for row in completed_rows]
+        + [parse_ts(c.get("createdAt")) for c in legacy_comments]
     )
-    thumbs_after = any(r.get("content") == "THUMBS_UP" and _after(parse_ts(r.get("createdAt")), trigger_at) for r in reactions)
-    eyes = any(r.get("content") == "EYES" for r in reactions)
-    row = code_review_row(comments)
-    row_after = row is not None and _after(row["at"], trigger_at)
+    newest_start = _latest([row["at"] for row in running_rows] + [parse_ts(r.get("createdAt")) for r in eyes])
+    cycle_start = trigger_at
+    if newest_start is not None and newest_start > trigger_at and not any(_after(t, newest_start) for t in result_times):
+        cycle_start = newest_start
+    since_label = "트리거" if cycle_start == trigger_at else "봇의 리뷰 시작"
+    elapsed = (now - cycle_start).total_seconds()
 
-    def comments_after(pattern):
-        return [c for c in bot_comments if pattern.search(c.get("body") or "") and _after(parse_ts(c.get("createdAt")), trigger_at)]
+    reviews_after = sorted((r for r in bot_reviews if _after(review_time(r), cycle_start)), key=review_time)
+    thumbs_after = any(_after(parse_ts(r.get("createdAt")), cycle_start) for r in thumbs)
+    completed_after = sorted((row for row in completed_rows if _after(row["at"], cycle_start)), key=lambda row: row["at"])
+    unknown_after = sorted(
+        (row for row in rows if row["status"].lower() not in ("running", "completed") and _after(row["at"], cycle_start)),
+        key=lambda row: row["at"],
+    )
+    # 트리거 뒤에 시작한 Running 행은 이번 리뷰가 도는 중이라는 뜻이다. 트리거 전부터 멈춰 있는 행과
+    # 👀는 지난 주기의 흔적일 수 있어 한도·오류 코멘트보다 뒤에서 본다.
+    fresh_running = any(_after(row["at"], trigger_at) for row in running_rows)
 
-    legacy_lgtm = comments_after(LEGACY_LGTM_RE)
-    limit = comments_after(LIMIT_RE)
-    failure = comments_after(FAILURE_RE)
-    account = comments_after(ACCOUNT_RE)
+    def comments_after(items, pattern=None):
+        return [
+            c for c in items
+            if (pattern is None or pattern.search(c.get("body") or "")) and _after(parse_ts(c.get("createdAt")), cycle_start)
+        ]
+
+    legacy_lgtm = comments_after(legacy_comments)
+    limit = comments_after(bot_comments, LIMIT_RE)
+    failure = comments_after(bot_comments, FAILURE_RE)
+    account = comments_after(bot_comments, ACCOUNT_RE)
 
     threads = collect_threads(pr)
     status = None
     reason = None
     reviewed_commit = None
 
+    def waiting():
+        if elapsed > PENDING_TIMEOUT_SECONDS:
+            return "timeout", "%s부터 %s 지나도 리뷰가 끝나지 않았다" % (since_label, human_duration(elapsed))
+        return "pending", "봇 리뷰 진행 중 (%s부터 %s 지남, %s까지 기다린다)" % (
+            since_label, human_duration(elapsed), human_duration(PENDING_TIMEOUT_SECONDS))
+
     if pr.get("isDraft"):
         status, reason = "draft", "draft PR이라 봇이 리뷰하지 않는다. ready로 바꾸면 리뷰가 시작된다"
     elif reviews_after:
         latest = reviews_after[-1]
         reviewed_commit = ((latest.get("commit") or {}).get("oid") or "").lower() or None
-        new_threads = [t for t in threads if _after(parse_ts(t.get("created_at")), trigger_at)]
-        status, reason = "reviewed", "봇이 리뷰를 남겼다 (이번 트리거 뒤 인라인 지적 %d개)" % len(new_threads)
-    elif thumbs_after or (row_after and row["status"].lower() == "completed") or legacy_lgtm:
-        if row_after and row["status"].lower() == "completed" and row["commit"]:
-            reviewed_commit = row["commit"]
+        # 마지막 리뷰의 지적만 센다. 그 전 리뷰 뒤에 생긴 스레드가 마지막 리뷰의 것이다.
+        previous = [t for t in (review_time(r) for r in bot_reviews) if t is not None and t < review_time(latest)]
+        floor = max(previous) if previous else None
+        new_threads = [
+            t for t in threads
+            if _after(parse_ts(t.get("created_at")), cycle_start)
+            and (floor is None or parse_ts(t.get("created_at")) > floor)
+        ]
+        status, reason = "reviewed", "봇이 리뷰를 남겼다 (마지막 리뷰의 인라인 지적 %d개)" % len(new_threads)
+    elif thumbs_after or completed_after or legacy_lgtm:
+        with_commit = [row for row in completed_after if row["commit"]]
+        if with_commit:
+            reviewed_commit = with_commit[-1]["commit"]
         elif legacy_lgtm:
             match = REVIEWED_COMMIT_RE.search(legacy_lgtm[-1].get("body") or "")
             reviewed_commit = match.group(1).lower() if match else None
         status, reason = "lgtm", "봇이 지적 없이 리뷰를 마쳤다"
+    elif fresh_running:
+        status, reason = waiting()
     elif limit:
-        status, reason = "limited", "Codex 사용 한도 초과로 리뷰하지 않았다"
+        status, reason = "limited", "Codex 코드 리뷰 사용 한도 초과로 리뷰하지 않았다"
     elif failure:
         status, reason = "failed", "봇이 오류로 리뷰를 수행하지 못했다"
     elif account:
         status, reason = "failed", "봇이 계정 연결 안내를 남기고 리뷰하지 않았다"
-    elif row_after and row["status"].lower() not in ("running", "completed"):
-        status, reason = "failed", "요약 코멘트의 리뷰 상태를 알 수 없다: %s" % row["status"]
-    elif eyes or (row is not None and row["status"].lower() == "running"):
-        if elapsed > PENDING_TIMEOUT_SECONDS:
-            status, reason = "timeout", "트리거 뒤 %s가 지나도 리뷰가 끝나지 않았다" % human_duration(elapsed)
-        else:
-            status, reason = "pending", "봇 리뷰 진행 중 (트리거 뒤 %s, 최대 %s까지 기다린다)" % (
-                human_duration(elapsed), human_duration(PENDING_TIMEOUT_SECONDS))
+    elif unknown_after:
+        status, reason = "failed", "요약 코멘트의 리뷰 상태를 알 수 없다: %s" % unknown_after[-1]["status"]
+    elif running_rows or eyes:
+        status, reason = waiting()
     elif elapsed <= ABSENT_AFTER_SECONDS:
-        status, reason = "pending", "트리거 직후라 봇의 첫 신호를 기다린다 (트리거 뒤 %s, %s 안에 흔적이 없으면 absent)" % (
+        status, reason = "pending", "트리거 직후라 봇의 첫 신호를 기다린다 (트리거부터 %s 지남, %s 안에 흔적이 없으면 absent)" % (
             human_duration(elapsed), human_duration(ABSENT_AFTER_SECONDS))
     else:
-        status, reason = "absent", "트리거 뒤 %s가 지나도 봇 흔적이 없다" % human_duration(elapsed)
+        status, reason = "absent", "트리거부터 %s 지나도 봇 흔적이 없다" % human_duration(elapsed)
 
     settings_warning = None
     if status == "absent":
@@ -566,7 +642,7 @@ def parse_args(argv):
         description="Codex GitHub 앱(chatgpt-codex-connector)의 PR 리뷰 상태를 조회만으로 판정한다.",
         epilog=(
             "상태: draft, pending, reviewed, lgtm, limited, failed, timeout, absent. "
-            "pending은 트리거 뒤 %d초까지, 흔적 없음(absent)은 %d초 뒤에 판정한다."
+            "pending은 리뷰 시작(보통 트리거) 뒤 %d초까지 기다리고, 흔적 없음(absent)은 트리거 %d초 뒤에 판정한다."
             % (PENDING_TIMEOUT_SECONDS, ABSENT_AFTER_SECONDS)
         ),
         **parser_options,
@@ -631,23 +707,31 @@ def poll_seconds():
         value = float(raw)
     except ValueError:
         raise ToolError("CODEX_REVIEW_STATUS_POLL_SECONDS는 양수여야 한다: %s" % raw) from None
-    if value <= 0:
+    if not math.isfinite(value) or value <= 0:
         raise ToolError("CODEX_REVIEW_STATUS_POLL_SECONDS는 양수여야 한다: %s" % raw)
     return value
 
 
 def main(argv=None):
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    # 대기 한도는 PR 확인에 쓴 시간까지 포함한다. 조회 한 번이 남은 시간보다 길면 더 조회하지 않아
+    # 전체 실행 시간이 --wait를 크게 넘지 않게 한다.
+    deadline = time.monotonic() + args.wait
+    last_progress = None
     try:
         owner, name, number = resolve_target(args)
         interval = poll_seconds()
-        deadline = time.monotonic() + args.wait
         while True:
+            started = time.monotonic()
             result = evaluate(fetch_snapshot(owner, name, number), current_time())
+            fetch_seconds = time.monotonic() - started
             remaining = deadline - time.monotonic()
-            if result["status"] != "pending" or remaining <= 0:
+            if result["status"] != "pending" or remaining <= fetch_seconds:
                 break
-            time.sleep(min(interval, remaining))
+            if last_progress is None or time.monotonic() - last_progress >= PROGRESS_EVERY_SECONDS:
+                print("codex-review-status: 대기 중 — %s" % result["reason"], file=sys.stderr, flush=True)
+                last_progress = time.monotonic()
+            time.sleep(min(interval, remaining - fetch_seconds))
     except ToolError as err:
         print("codex-review-status: %s" % err, file=sys.stderr)
         return 1

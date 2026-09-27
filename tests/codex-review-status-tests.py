@@ -50,6 +50,10 @@ ACCOUNT_BODY = (
 )
 FAILURE_BODY = "Something went wrong. Try again later by commenting \u201c@codex review\u201d."
 LEGACY_LGTM_BODY = "Codex Review: Didn't find any major issues. Chef's kiss.\n\n**Reviewed commit:** `%s`\n" % HEAD[:10]
+SECURITY_LIMIT_BODY = (
+    "You have reached your Codex usage limits for security reviews. You can see your limits in the "
+    "[Codex usage dashboard](https://chatgpt.com/codex/cloud/settings/usage)."
+)
 REVIEW_BODY = "\n### \U0001F4A1 Codex Review\n\n**Reviewed commit:** `%s`\n" % HEAD[:10]
 
 
@@ -99,7 +103,7 @@ def thread(at_s=100, priority="P1", title="Fix the race", replies=(), reaction_g
         "**<sub><sub>![%s Badge](https://img.shields.io/badge/%s-red?style=flat)</sub></sub>  %s**\n\nDetails.\n\n"
         "Useful? React with \U0001F44D / \U0001F44E." % (priority, priority, title)
     )
-    root = {"databaseId": 9000 + at_s, "createdAt": ts(at_s), "url": "https://example.test/t/%d" % at_s,
+    root = {"fullDatabaseId": str(4113266958 + at_s), "createdAt": ts(at_s), "url": "https://example.test/t/%d" % at_s,
             "body": root_body, "author": root_author, "reactionGroups": list(reaction_groups)}
     reply_nodes = [
         {"databaseId": 9500 + at_s + i, "createdAt": ts(at_s + 10 + i), "url": "u", "body": "reply",
@@ -169,12 +173,19 @@ class SummaryParsingTests(unittest.TestCase):
         security = '| \U0001F512 **Security Review** | \U0001F504 **Running** since <relative-time datetime="%s">x</relative-time> | `%s` | Comment |' % (
             ts(30, True), HEAD[:7])
         body = summary_body("Completed", 90, extra_rows=(security,))
-        row = M.code_review_row([comment(body, 10)])
-        self.assertEqual(row["kind"], "Code Review")
-        self.assertEqual(row["status"], "Completed")
+        rows = M.code_review_rows([comment(body, 10)])
+        self.assertEqual([(row["kind"], row["status"]) for row in rows], [("Code Review", "Completed")])
+
+    def test_rows_from_every_summary_comment_are_collected(self):
+        rows = M.code_review_rows([
+            comment(summary_body("Running", 2001, trigger="Manual request"), 1999),
+            comment(summary_body("Failed", 2002), 2000),
+            comment("noise", 2003),
+        ])
+        self.assertEqual(sorted(row["status"] for row in rows), ["Failed", "Running"])
 
     def test_summary_from_non_bot_author_is_ignored(self):
-        self.assertIsNone(M.code_review_row([comment(summary_body("Completed", 90), 10, author=IMPOSTOR)]))
+        self.assertEqual(M.code_review_rows([comment(summary_body("Completed", 90), 10, author=IMPOSTOR)]), [])
 
 
 class StateTests(unittest.TestCase):
@@ -203,10 +214,14 @@ class StateTests(unittest.TestCase):
         self.assertIsNone(org_repo["settings_warning"])
 
     def test_eyes_reaction_means_pending_until_timeout(self):
+        # 대기 한도는 봇이 이번 리뷰를 시작한 시각(Running 21초)부터 잰다.
         pull = pr(reactions=[reaction("EYES", 20)], comments=[comment(summary_body("Running", 21), 21)])
         self.assertEqual(judge(pull, 300)["status"], "pending")
-        self.assertEqual(judge(pull, M.PENDING_TIMEOUT_SECONDS)["status"], "pending")
-        self.assertEqual(judge(pull, M.PENDING_TIMEOUT_SECONDS + 1)["status"], "timeout")
+        self.assertEqual(judge(pull, 21 + M.PENDING_TIMEOUT_SECONDS)["status"], "pending")
+        timed_out = judge(pull, 22 + M.PENDING_TIMEOUT_SECONDS)
+        self.assertEqual(timed_out["status"], "timeout")
+        self.assertIn("봇의 리뷰 시작부터", timed_out["reason"])
+        self.assertNotIn("분가", timed_out["reason"])
 
     def test_running_summary_without_eyes_is_pending(self):
         pull = pr(comments=[comment(summary_body("Running", 21), 21)])
@@ -340,6 +355,66 @@ class StateTests(unittest.TestCase):
         pull = pr(comments=[comment(LIMIT_BODY, 5), comment("@codex review", 2000, author=ME)])
         self.assertEqual(judge(pull, 2030)["status"], "pending")
 
+    def test_signal_at_exact_trigger_time_counts(self):
+        self.assertEqual(judge(pr(reactions=[reaction("THUMBS_UP", 0)]), 600)["status"], "lgtm")
+
+    def test_security_review_limit_is_not_a_code_review_limit(self):
+        running = pr(comments=[comment(summary_body("Running", 3), 1), comment(SECURITY_LIMIT_BODY, 5)],
+                     reactions=[reaction("EYES", 2)])
+        self.assertEqual(judge(running, 60)["status"], "pending")
+        self.assertEqual(judge(pr(comments=[comment(SECURITY_LIMIT_BODY, 5)]), 60)["status"], "pending")
+        self.assertEqual(judge(pr(comments=[comment(SECURITY_LIMIT_BODY, 5)]), 600)["status"], "absent")
+
+    def test_notice_during_fresh_running_review_keeps_waiting(self):
+        pull = pr(comments=[comment(summary_body("Running", 3), 1), comment(ACCOUNT_BODY, 40), comment(FAILURE_BODY, 41)])
+        self.assertEqual(judge(pull, 120)["status"], "pending")
+
+    def test_limit_after_new_trigger_beats_stuck_running_row_from_old_cycle(self):
+        pull = pr(comments=[comment(summary_body("Running", 3), 1), comment("@codex review", 2000, author=ME),
+                            comment(LIMIT_BODY, 2005)],
+                  reactions=[reaction("EYES", 2)])
+        self.assertEqual(judge(pull, 2060)["status"], "limited")
+
+    def test_new_review_cycle_after_lgtm_is_pending_from_its_start(self):
+        # push로 다시 도는 리뷰: 지난 👍는 이번 결과가 아니고, 대기 한도는 새 리뷰 시작부터 잰다.
+        pull = pr(reactions=[reaction("THUMBS_UP", 183), reaction("EYES", 5000)],
+                  comments=[comment(summary_body("Running", 5001, trigger="New commits"), 21)])
+        waiting = judge(pull, 5100)
+        self.assertEqual(waiting["status"], "pending")
+        self.assertIn("봇의 리뷰 시작부터", waiting["reason"])
+        self.assertEqual(judge(pull, 5001 + M.PENDING_TIMEOUT_SECONDS)["status"], "pending")
+        self.assertEqual(judge(pull, 5002 + M.PENDING_TIMEOUT_SECONDS)["status"], "timeout")
+
+    def test_new_review_cycle_after_findings_ignores_old_review(self):
+        pull = pr(reviews=[review(115, oid=OLD)], reviewThreads=[thread(at_s=115)],
+                  comments=[comment(summary_body("Running", 4000, trigger="New commits"), 21)])
+        self.assertEqual(judge(pull, 4100)["status"], "pending")
+        finished = pr(reviews=[review(115, oid=OLD), review(4200)], reviewThreads=[thread(at_s=115), thread(at_s=4200)],
+                      comments=[comment(summary_body("Completed", 4203, trigger="New commits"), 21)])
+        result = judge(finished, 4300)
+        self.assertEqual(result["status"], "reviewed")
+        self.assertEqual(result["reviewed_commit"], HEAD)
+        self.assertIn("1개", result["reason"])
+
+    def test_running_indicator_older_than_result_does_not_hide_result(self):
+        # 👀가 남아 있어도 그 뒤에 리뷰 객체가 왔으면 리뷰는 끝났다.
+        pull = pr(reactions=[reaction("EYES", 3)], reviews=[review(180)])
+        self.assertEqual(judge(pull, 185)["status"], "reviewed")
+
+    def test_duplicate_summaries_prefer_the_live_running_row(self):
+        comments = [
+            comment("@codex review", 2000, author=ME),
+            comment(summary_body("Running", 2001, trigger="Manual request"), 1999),
+            comment(summary_body("Failed", 2001), 2000),
+        ]
+        self.assertEqual(judge(pr(comments=comments), 2100)["status"], "pending")
+        done = comments[:1] + [comment(summary_body("Completed", 2200, trigger="Manual request"), 1999), comments[2]]
+        self.assertEqual(judge(pr(comments=done), 2300)["status"], "lgtm")
+
+    def test_legacy_phrase_must_open_the_comment(self):
+        quoted = "Earlier note: Codex Review: Didn't find any major issues.\n"
+        self.assertEqual(judge(pr(comments=[comment(quoted, 90)]), 600)["status"], "absent")
+
     def test_closed_pr_is_still_judged(self):
         result = judge(pr(state="MERGED", comments=[comment(LIMIT_BODY, 5)]), 600)
         self.assertEqual(result["status"], "limited")
@@ -372,6 +447,19 @@ class ThreadTests(unittest.TestCase):
         self.assertEqual(by_title["Needs all"]["path"], "modules/x.sh")
         self.assertEqual(by_title["Needs all"]["line"], 42)
         self.assertEqual(by_title["Needs all"]["thread_id"], "PRRT_100")
+
+    def test_others_reactions_do_not_count_as_mine(self):
+        groups = [{"content": content, "viewerHasReacted": False}
+                  for content in ("THUMBS_UP", "THUMBS_DOWN", "LAUGH", "HOORAY", "CONFUSED", "HEART", "ROCKET", "EYES")]
+        result = judge(pr(reviewThreads=[thread(replies=[ME], resolved=True, reaction_groups=groups)]), 1000)
+        self.assertEqual(result["unhandled_threads"][0]["missing"], ["reaction"])
+
+    def test_comment_id_comes_from_full_database_id(self):
+        result = judge(pr(reviewThreads=[thread(at_s=100)]), 1000)
+        self.assertEqual(result["unhandled_threads"][0]["comment_id"], 4113267058)
+        legacy = thread(at_s=100)
+        legacy["comments"]["nodes"][0].pop("fullDatabaseId")
+        self.assertIsNone(judge(pr(reviewThreads=[legacy]), 1000)["unhandled_threads"][0]["comment_id"])
 
     def test_outdated_thread_falls_back_to_original_line(self):
         result = judge(pr(reviewThreads=[thread(line=None, outdated=True)]), 1000)
@@ -410,8 +498,11 @@ FAKE_GH = r'''#!{python}
 import json, os, re, sys
 scenario = json.load(open(os.environ["FAKE_GH_SCENARIO"], encoding="utf-8"))
 args = sys.argv[1:]
+import time
+time.sleep(float(os.environ.get("FAKE_GH_DELAY", "0")))
+env = {{key: os.environ.get(key) for key in ("GH_FORCE_TTY", "CLICOLOR_FORCE", "NO_COLOR", "GH_PROMPT_DISABLED")}}
 with open(os.environ["FAKE_GH_LOG"], "a", encoding="utf-8") as log:
-    log.write(json.dumps({{"bin": os.path.basename(sys.argv[0]), "args": args}}) + "\n")
+    log.write(json.dumps({{"bin": os.path.basename(sys.argv[0]), "args": args, "env": env}}) + "\n")
 def reply(value):
     if isinstance(value, dict) and "__exit__" in value:
         sys.stderr.write(value.get("stderr", ""))
@@ -556,6 +647,66 @@ class CliTests(unittest.TestCase):
         self.assertEqual(json.loads(proc.stdout)["status"], "pending")
         self.assertLess(elapsed, 20)
         self.assertGreaterEqual(len(self.calls()), 2)
+
+    def test_wait_does_not_start_a_fetch_it_cannot_finish(self):
+        scenario = {"main": [graphql_response(pr(reactions=[reaction("EYES", 20)]))]}
+        started = time.monotonic()
+        proc = self.run_cli("7", "-R", "owner-user/repo", "--wait", "1", "--json", scenario=scenario,
+                            env_extra={"FAKE_GH_DELAY": "0.6"})
+        elapsed = time.monotonic() - started
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["status"], "pending")
+        # --wait 1에 조회 한 번 0.6초: 두 번째 조회는 한도 안에 끝나지 않으므로 시작하지 않는다.
+        self.assertEqual(len(self.calls()), 1)
+        self.assertLess(elapsed, 5)
+
+    def test_wait_reports_progress_on_stderr(self):
+        scenario = {"main": [graphql_response(pr(reactions=[reaction("EYES", 20)]))]}
+        proc = self.run_cli("7", "-R", "owner-user/repo", "--wait", "1", scenario=scenario)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stderr.count("대기 중"), 1, proc.stderr)
+        self.assertIn("봇 리뷰 진행 중", proc.stderr)
+
+    def test_page_cap_and_missing_cursor_fail_cleanly(self):
+        endless = {
+            "main": [graphql_response(pr(), pages={"comments": True})],
+            "pages": {"comments": {"c1": page_response("comments", [], True, "c1")}},
+        }
+        proc = self.run_cli("7", "-R", "owner-user/repo", scenario=endless)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("페이지가 %d개를 넘는다" % M.MAX_PAGES_PER_CONNECTION, proc.stderr)
+        self.assertNotIn("Traceback", proc.stderr)
+        no_cursor = graphql_response(pr())
+        no_cursor["data"]["repository"]["pullRequest"]["reviews"]["pageInfo"] = {"hasNextPage": True, "endCursor": None}
+        proc = self.run_cli("7", "-R", "owner-user/repo", scenario={"main": [no_cursor]})
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("커서가 없다", proc.stderr)
+
+    def test_gh_runs_without_forced_tty_or_color(self):
+        proc = self.run_cli("7", "-R", "owner-user/repo", scenario={"main": [graphql_response(pr())]},
+                            env_extra={"GH_FORCE_TTY": "1", "CLICOLOR_FORCE": "1"})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        env = self.calls()[0]["env"]
+        self.assertIsNone(env["GH_FORCE_TTY"])
+        self.assertIsNone(env["CLICOLOR_FORCE"])
+        self.assertEqual(env["NO_COLOR"], "1")
+        self.assertEqual(env["GH_PROMPT_DISABLED"], "1")
+
+    def test_unusable_inputs_fail_without_traceback(self):
+        not_executable = self.bin / "not-executable"
+        not_executable.write_text("#!/bin/sh\n", encoding="utf-8")
+        not_executable.chmod(0o644)
+        cases = [
+            {"CODEX_REVIEW_STATUS_GH": str(not_executable)},
+            {"CODEX_REVIEW_STATUS_POLL_SECONDS": "nan"},
+            {"CODEX_REVIEW_STATUS_NOW": "0001-01-01T00:00:00+09:00"},
+        ]
+        for env_extra in cases:
+            proc = self.run_cli("7", "-R", "owner-user/repo", "--wait", "1", scenario={"main": [graphql_response(pr())]},
+                                env_extra=env_extra)
+            self.assertEqual(proc.returncode, 1, (env_extra, proc.stderr))
+            self.assertNotIn("Traceback", proc.stderr, env_extra)
+            self.assertTrue(proc.stderr.startswith("codex-review-status: "), (env_extra, proc.stderr))
 
     def test_no_wait_queries_once_even_when_pending(self):
         scenario = {"main": [graphql_response(pr(reactions=[reaction("EYES", 20)]))]}
