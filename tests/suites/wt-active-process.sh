@@ -718,6 +718,7 @@ test_wt_cwd_holders_ancestor_caffeinate_unit() {
       row 971 900 "$target" "sleep 300"                           # 조상의 자식이지만 caffeinate 아님
       row 972 900 "$target" "caffeinate-x -i"                     # 이름만 비슷함
       row 973 900 "$target" "/tmp/caffeinate2 -i"                 # 이름만 비슷함
+      row 974 1 "$target" "caffeinate -i -t 300"                  # PID 1로 재부모화된 고아 → 뺀다
       source "$repo/modules/shared/scripts/lib/wt/ui.sh"
       source "$repo/modules/shared/scripts/lib/wt/process.sh"
       _wt_cwd_holders "$target"
