@@ -126,9 +126,12 @@ Karakeep 이벤트 알림: `karakeep-notify`가 웹훅→Pushover 브리지(soca
 
 ### 런타임 스모크 테스트
 
-`homeserver.smokeTest.enable = true` (`modules/nixos/programs/smoke-test.nix`). 매일 06:00에
-활성 서비스의 HTTPS 엔드포인트 헬스체크 + 백업 신선도(기본 상한 초과 여부)를 검사하고,
-실패 시 Pushover 알림 (`pushover-system-monitor` 공유). 수동 실행:
+`homeserver.smokeTest.enable = true` (`modules/nixos/programs/smoke-test.nix`, 본체
+`modules/nixos/programs/smoke-test/files/smoke-test.sh`). 매일 06:00에 활성 서비스의 HTTPS
+엔드포인트 헬스체크 + 백업 신선도(기본 상한 초과 여부) + 실패한 systemd 유닛을 검사하고,
+실패 시 Pushover 요약 알림(`pushover-system-monitor` 공유) 뒤 유닛도 failed로 끝난다 — 수동
+`systemctl start`도 0이 아닌 코드를 낸다. `immich-cleanup`의 삭제 실패도 유닛 failed로 남아
+다음 날 이 검사가 한 번 더 알린다(실패를 숨기지 않기 위한 의도된 동작). 수동 실행:
 
 ```bash
 sudo systemctl start homeserver-smoke-test
