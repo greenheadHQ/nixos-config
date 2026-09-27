@@ -132,15 +132,26 @@ zsh: no matches found: /Users/green/FolderActions/[FA]Get
 ```
 
 원인: `[`, `]` 등의 특수문자가 zsh glob 패턴으로 해석됨. 공백도 문제 발생.
+큰따옴표로만 감싸면 `$`, `` ` ``, `"` 는 여전히 셸이 확장·명령 실행으로 해석하므로
+막지 못한다 (#1405).
 
-해결: 경로를 큰따옴표로 감싸기
+해결: 작은따옴표로 감싸고 `cd --`로 옵션과 경로의 경계를 분명히 하기
 
 ```lua
 -- ❌ 특수문자/공백 문제
 hs.eventtap.keyStrokes('cd ' .. path .. ' && clear')
 
--- ✅ 따옴표로 감싸기
+-- ❌ 큰따옴표는 $, `, " 를 막지 못함
 hs.eventtap.keyStrokes('cd "' .. path .. '" && clear')
+
+-- ✅ 작은따옴표 인용 (내부 작은따옴표는 '\''로 치환) + cd --
+local function shellQuotePath(path)
+    if path:find("[\r\n]") then
+        return nil  -- 개행이 있으면 여러 줄로 쪼개져 위험하므로 인용하지 않음
+    end
+    return "'" .. path:gsub("'", "'\\''") .. "'"
+end
+hs.eventtap.keyStrokes('cd -- ' .. shellQuotePath(path) .. ' && clear')
 ```
 
 ---
@@ -198,13 +209,15 @@ hsr  # alias 사용 (IPC가 작동할 때만)
 
 해결: 클립보드를 활용한 방식으로 변경
 
+`shellQuotePath`는 위 [경로에 특수문자가 있으면 zsh 에러 발생](#경로에-특수문자가-있으면-zsh-에러-발생) 절 참고.
+
 ```lua
 -- ❌ keyStrokes 방식 (한글 경로 문제)
-hs.eventtap.keyStrokes('cd "' .. path .. '" && clear')
+hs.eventtap.keyStrokes('cd -- ' .. shellQuotePath(path) .. ' && clear')
 
 -- ✅ 클립보드 방식 (한글 경로 안전)
 local prevClipboard = hs.pasteboard.getContents()
-hs.pasteboard.setContents('cd "' .. path .. '" && clear')
+hs.pasteboard.setContents('cd -- ' .. shellQuotePath(path) .. ' && clear')
 hs.eventtap.keyStroke({"cmd"}, "v")
 hs.eventtap.keyStroke({}, "return")
 -- 클립보드 복원
