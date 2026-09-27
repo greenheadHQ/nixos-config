@@ -69,7 +69,7 @@ gh api -X POST "repos/$OWNER/$REPO/pulls/comments/$COMMENT_ID/reactions" -f cont
 
 PR·이슈 제목과 본문, 코멘트, 스레드 답글 어디에도 봇 멘션(`@codex`)을 쓰지 않는다. 백틱이나 인용 안에 있어도 봇이 작업 요청으로 읽어 클라우드 작업(새 PR 생성 등)을 시작한다. 봇 계정 이름(`@chatgpt-codex-connector`)으로도 멘션하지 않는다. 봇을 가리킬 때는 "Codex 봇"처럼 멘션 없이 쓰고, 봇 작성 코멘트에 연결할 때는 코멘트 URL을 쓴다. 예외는 아래 재리뷰 요청 한 가지다.
 
-pinning-guard는 GitHub 게시 명령의 명령 문자열과, 경로가 그대로 적힌 본문 파일에서 봇 멘션을 막는다. 게시 명령이 있으면 명령 문자열 전체를 보므로, 멘션을 찾는 조회(jq 필터, `rg` 등)는 게시 명령과 따로 실행한다. GraphQL query를 파일이나 변수로 넘긴 `gh api graphql`은 mutation인지 알 수 없어 조회여도 게시로 본다. 그런 조회의 멘션 필터는 결과를 받은 뒤 별도 명령으로 적용한다. 변수로 넘긴 본문 파일(`-F body=@"$BODY_FILE"`), `~`로 시작하는 경로(`--body-file ~/body.md`), 명령 치환으로 만든 본문(`--body "$(cat body.md)"`), stdin 본문은 읽지 못한다. 그런 본문은 게시 전에 `rg -n -i '@(codex|chatgpt-codex-connector)' <본문 파일>`을 따로 실행해 봇 멘션이 없는지 확인한다.
+pinning-guard는 GitHub 게시 명령의 명령 문자열과, 경로가 그대로 적힌 본문 파일에서 봇 멘션을 막는다. 게시 명령이 있으면 명령 문자열 전체를 보므로, 멘션을 찾는 조회(jq 필터, `rg` 등)는 게시 명령과 따로 실행한다. 셸 실행기(`bash -c`, `ssh`, `watch` 등)의 인자에 든 gh 호출은 조회여도 게시로 보므로, 멘션 필터가 있는 조회는 실행기 밖에서 실행한다. GraphQL query를 파일이나 변수로 넘긴 `gh api graphql`은 mutation인지 알 수 없어 조회여도 게시로 본다. 그런 조회의 멘션 필터는 결과를 받은 뒤 별도 명령으로 적용한다. 변수로 넘긴 본문 파일(`-F body=@"$BODY_FILE"`), `~`로 시작하는 경로(`--body-file ~/body.md`), 명령 치환으로 만든 본문(`--body "$(cat body.md)"`), stdin 본문은 읽지 못한다. 그런 본문은 게시 전에 `rg -n -i '@(codex|chatgpt-codex-connector)' <본문 파일>`을 따로 실행해 봇 멘션이 없는지 확인한다.
 
 ## 재리뷰 요청
 
