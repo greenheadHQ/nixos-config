@@ -27,12 +27,21 @@ GitHub에는 조회(GraphQL query)만 보낸다. 쓰기는 하지 않는다.
     달릴 수 있으므로 코드 리뷰 한도 문구만 limited로 본다.
   - (봇 안내문) 👀는 보안 리뷰를 포함한 모든 리뷰의 진행 표시다. 끝난 코드 리뷰를 대기 한도까지
     pending으로 보는 쪽이 새로 시작한 리뷰를 끝난 것으로 보는 쪽보다 안전해서, 👀도 리뷰 시작
-    신호로 센다.
-  - 공개 저장소에서는 누구나 코멘트를 달 수 있다. 재리뷰 요청과 스레드 답글은 저장소 권한자
-    (OWNER·MEMBER·COLLABORATOR)나 조회 계정·PR 작성자가 쓴 것만 센다.
+    신호로 센다. 그래서 실패 표시 뒤에 달린 👀도 새 리뷰로 보고 기다린다.
+  - 공개 저장소에서는 누구나 코멘트를 달 수 있다. 재리뷰 요청은 저장소 소유자·조직 멤버·협업자
+    (OWNER·MEMBER·COLLABORATOR)나 조회 계정이 쓴 것만 센다. 스레드 답글은 PR 작성자가 쓴 것도
+    센다. 외부 기여 PR의 작성자는 자기 PR의 봇 지적에 답할 수 있지만 트리거와 재리뷰 횟수는
+    바꾸지 못한다.
+
+한계
+  - 트리거 뒤 리뷰 주기가 둘이고 뒤 주기가 👍 없이 요약 코멘트의 Completed 행만 남기면 앞 주기의
+    리뷰 객체로 판정한다. Completed 시각은 리뷰 객체보다 늦게 찍혀 지적 없음 표시로 쓸 수 없다.
+    봇은 지적 없이 끝나면 Completed 몇 초 뒤에 👍를 달므로, 👍가 빠졌거나 그 몇 초 사이에 조회한
+    경우에만 생긴다. finish-pr는 머지 직전에 다시 조회해 상태가 바뀌었으면 게이트부터 다시 본다.
 """
 
 import argparse
+import codecs
 import json
 import math
 import os
@@ -55,7 +64,8 @@ DEFAULT_POLL_SECONDS = 15
 PROGRESS_EVERY_SECONDS = 60
 GH_CALL_TIMEOUT_SECONDS = 60
 PAGE_SIZE = 100
-# 스레드 안의 코멘트는 루트와 답글 존재만 보면 되므로 첫 페이지만 읽는다.
+# 스레드 안의 코멘트는 루트와 인정할 답글이 있는지만 보면 되므로 첫 페이지만 읽는다. 인정하지 않는
+# 답글이 첫 페이지를 채우면 답글이 빠진 것으로 남아, 머지를 막는 쪽으로 틀린다.
 THREAD_COMMENTS_PAGE_SIZE = 100
 MAX_PAGES_PER_CONNECTION = 50
 
@@ -195,7 +205,7 @@ def is_human_actor(actor):
 
 
 def is_trusted_comment(node, trusted_logins):
-    """재리뷰 요청·스레드 답글로 인정하는 코멘트: 저장소 권한자나 조회 계정·PR 작성자가 썼다."""
+    """재리뷰 요청·스레드 답글로 인정하는 코멘트: 저장소 권한자나 trusted_logins의 계정이 썼다."""
     author = node.get("author")
     if not is_human_actor(author):
         return False
@@ -374,8 +384,8 @@ def parse_summary_rows(body):
 def code_review_rows(comments):
     """봇 요약 코멘트 전부에서 Code Review 행을 모은다.
 
-    트리거가 몰리면 요약 코멘트가 둘 이상 생기고, 한쪽에 지난 주기의 행이 그대로 남기도 한다.
-    그래서 한 코멘트만 고르지 않고 모든 행을 모아 판정에서 함께 본다.
+    실측(#1477, 요약 코멘트가 있는 PR 68개)에서는 요약 코멘트가 PR마다 하나였다. 둘 이상 생기거나
+    한쪽에 지난 주기의 행이 남는 경우에 대비해, 한 코멘트만 고르지 않고 모든 행을 모아 판정에서 함께 본다.
     """
     rows = []
     for c in comments:
@@ -481,8 +491,11 @@ def _latest(times):
 def evaluate(snapshot, now):
     pr = snapshot["pr"]
     head = pr.get("headRefOid") or ""
-    trusted_logins = {login for login in (snapshot.get("viewer"), (pr.get("author") or {}).get("login")) if login}
-    kind, trigger_at, request_count = compute_trigger(pr, trusted_logins)
+    viewer = snapshot.get("viewer")
+    # 재리뷰 요청은 저장소 권한자와 조회 계정의 것만 센다. PR 작성자 예외는 스레드 답글에만 둔다.
+    request_logins = {viewer} if viewer else set()
+    reply_logins = {login for login in (viewer, (pr.get("author") or {}).get("login")) if login}
+    kind, trigger_at, request_count = compute_trigger(pr, request_logins)
     comments = pr.get("comments") or []
     bot_comments = [c for c in comments if is_bot_actor(c.get("author"))]
     reactions = [r for r in pr.get("reactions") or [] if is_bot_actor(r.get("user"))]
@@ -547,7 +560,7 @@ def evaluate(snapshot, now):
     if reviews_after and latest_lgtm is not None and latest_lgtm > review_time(reviews_after[-1]):
         reviews_after = []
 
-    threads = collect_threads(pr, trusted_logins)
+    threads = collect_threads(pr, reply_logins)
     status = None
     reason = None
     reviewed_commit = None
@@ -603,7 +616,6 @@ def evaluate(snapshot, now):
     settings_warning = None
     if status == "absent":
         author = (pr.get("author") or {}).get("login")
-        viewer = snapshot.get("viewer")
         if kind == "review_request":
             settings_warning = "재리뷰 요청 코멘트에 봇이 반응하지 않았다. 요청 문구가 정확히 한 줄인지 확인한다"
         elif viewer and snapshot.get("owner") == viewer and author == viewer:
@@ -748,6 +760,13 @@ def poll_seconds():
     return value
 
 
+def stdout_is_utf8():
+    try:
+        return codecs.lookup(getattr(sys.stdout, "encoding", None) or "ascii").name == "utf-8"
+    except LookupError:
+        return False
+
+
 def main(argv=None):
     if hasattr(sys.stdout, "reconfigure"):
         # 비 UTF-8 로케일에서도 한국어 출력이 인코딩 오류로 끝나지 않게 한다.
@@ -792,7 +811,9 @@ def main(argv=None):
     except KeyboardInterrupt:
         return 130
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        # stdout이 UTF-8이 아니면 문자를 \u로 이스케이프한다. backslashreplace는 BMP 밖 문자를 JSON에
+        # 없는 \U 이스케이프로 바꿔 출력을 JSON으로 읽지 못하게 만든다.
+        print(json.dumps(result, ensure_ascii=not stdout_is_utf8(), indent=2))
     else:
         print(render_text(result))
     return 0

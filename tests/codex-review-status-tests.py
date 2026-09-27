@@ -286,9 +286,10 @@ class StateTests(unittest.TestCase):
         self.assertIn("계정", account["reason"])
 
     def test_failed_summary_status_is_failed_with_raw_status(self):
-        result = judge(pr(comments=[comment(summary_body("Failed", 60), 21)]), 600)
-        self.assertEqual(result["status"], "failed")
-        self.assertIn("Failed", result["reason"])
+        for status in ("Failed", "Error"):
+            result = judge(pr(comments=[comment(summary_body(status, 60), 21)]), 600)
+            self.assertEqual(result["status"], "failed", status)
+            self.assertIn(status, result["reason"])
 
     def test_unrecognized_summary_status_waits_until_timeout(self):
         # 처음 보는 상태는 실패로 단정하지 않는다(실패로 보면 봇 리뷰 없이 머지로 이어진다).
@@ -373,6 +374,42 @@ class StateTests(unittest.TestCase):
         self.assertEqual(member["trigger"]["kind"], "review_request")
         self.assertEqual(member["rereview_requests"], 1)
 
+    def test_request_trust_by_association_and_viewer(self):
+        # 조회 계정도 PR 작성자도 아닌 OWNER(조직 저장소의 소유자 등)의 요청도 센다.
+        owner = judge(pr(author={"login": "pr-author"},
+                         comments=[comment("@codex review", 2000, author=OTHER_USER, association="OWNER")]),
+                      2030, viewer="agent")
+        self.assertEqual(owner["trigger"]["kind"], "review_request")
+        # 저장소 권한이 없는 등급의 요청은 세지 않는다.
+        for association in ("CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER", "MANNEQUIN"):
+            result = judge(pr(comments=[comment("@codex review", 2000, author=OTHER_USER, association=association)]), 2030)
+            self.assertEqual(result["rereview_requests"], 0, association)
+        # 조회 계정의 요청은 권한 표시가 없어도 센다.
+        agent = {"__typename": "User", "login": "agent", "databaseId": 1010}
+        mine = judge(pr(author={"login": "pr-author"},
+                        comments=[comment("@codex review", 2000, author=agent, association="NONE")]),
+                     2030, viewer="agent")
+        self.assertEqual(mine["rereview_requests"], 1)
+        # 봇 계정의 요청은 권한 표시가 무엇이든 세지 않는다.
+        bot = judge(pr(comments=[comment("@codex review", 2000, author=OTHER_BOT, association="COLLABORATOR")]), 2030)
+        self.assertEqual(bot["rereview_requests"], 0)
+
+    def test_external_pr_author_request_does_not_move_trigger_or_budget(self):
+        # 외부 기여 PR의 작성자는 스레드 답글은 인정받지만, 요청 한 줄로 트리거와 재리뷰 횟수를 바꾸지 못한다.
+        contributor = {"__typename": "User", "login": "contributor", "databaseId": 1003}
+        request = comment("@codex review", 2000, author=contributor, association="CONTRIBUTOR")
+        base = dict(author={"login": "contributor"}, reviewThreads=[thread(at_s=115)], comments=[request])
+        quiet = judge(pr(reviews=[review(115, oid=OLD)], **base), 2200, viewer="maintainer")
+        self.assertEqual(quiet["status"], "reviewed")
+        self.assertEqual(quiet["trigger"]["kind"], "pr_opened")
+        self.assertEqual(quiet["rereview_requests"], 0)
+        self.assertIs(quiet["stale"], True)
+        # 봇이 그 요청으로 실제로 다시 리뷰했으면 새 리뷰로 판정한다.
+        rereviewed = judge(pr(reviews=[review(115, oid=OLD), review(2200)], reactions=[reaction("EYES", 2010)], **base),
+                           2300, viewer="maintainer")
+        self.assertEqual(rereviewed["status"], "reviewed")
+        self.assertIs(rereviewed["stale"], False)
+
     def test_latest_result_wins_when_two_cycles_follow_the_trigger(self):
         # 요청 뒤 옛 커밋 리뷰 객체가 오고, 그 뒤 head를 지적 없이 리뷰했다.
         comments = [comment("@codex review", 2000, author=ME), comment(LEGACY_LGTM_BODY, 2399),
@@ -383,6 +420,18 @@ class StateTests(unittest.TestCase):
         newer_review = judge(pr(reviews=[review(2400)], comments=[comment("@codex review", 2000, author=ME),
                                                                   comment(LEGACY_LGTM_BODY, 2100)]), 2500)
         self.assertEqual(newer_review["status"], "reviewed")
+
+    def test_late_thumbs_alone_wins_over_older_review(self):
+        # 지적 없음 코멘트 없이 👍만 마지막 리뷰 객체보다 늦게 와도 마지막 주기는 지적 없이 끝났다.
+        pull = pr(reviews=[review(2100, oid=OLD)], reactions=[reaction("THUMBS_UP", 2400)],
+                  comments=[comment("@codex review", 2000, author=ME)])
+        self.assertEqual(judge(pull, 2500)["status"], "lgtm")
+
+    def test_review_wins_over_thumbs_in_the_same_second(self):
+        # 같은 초에 찍힌 👍와 리뷰 객체는 리뷰 객체를 우선한다 (지적을 놓치지 않는 쪽).
+        pull = pr(reviews=[review(2100)], reactions=[reaction("THUMBS_UP", 2100)],
+                  comments=[comment("@codex review", 2000, author=ME)])
+        self.assertEqual(judge(pull, 2500)["status"], "reviewed")
 
     def test_stale_eyes_from_older_cycle_still_waits_until_timeout(self):
         pull = pr(reactions=[reaction("EYES", 20)], comments=[comment("@codex review", 2000, author=ME)])
@@ -491,10 +540,18 @@ class ThreadTests(unittest.TestCase):
     def test_outsider_reply_does_not_count_but_pr_author_does(self):
         outsider = judge(pr(reviewThreads=[thread(replies=[(OTHER_USER, "NONE")])]), 1000)
         self.assertIn("reply", outsider["unhandled_threads"][0]["missing"])
+        # 봇 계정의 답글은 권한 표시가 무엇이든 세지 않는다.
+        bot = judge(pr(reviewThreads=[thread(replies=[(OTHER_BOT, "COLLABORATOR")])]), 1000)
+        self.assertIn("reply", bot["unhandled_threads"][0]["missing"])
         # 외부 기여 PR의 작성자는 저장소 권한이 없어도 자기 PR의 봇 스레드에 답할 수 있다.
+        # 조회 계정(maintainer)과 다른 작성자로 두어 PR 작성자 예외만 확인한다.
         contributor = {"__typename": "User", "login": "contributor", "databaseId": 1003}
         own = pr(author={"login": "contributor"}, reviewThreads=[thread(replies=[(contributor, "CONTRIBUTOR")])])
-        self.assertNotIn("reply", judge(own, 1000, viewer="contributor")["unhandled_threads"][0]["missing"])
+        self.assertNotIn("reply", judge(own, 1000, viewer="maintainer")["unhandled_threads"][0]["missing"])
+        # 조회 계정의 답글은 권한 표시가 없어도 센다 (PR 작성자와 다른 계정으로 처리할 때).
+        agent = {"__typename": "User", "login": "agent", "databaseId": 1010}
+        handled = pr(author={"login": "contributor"}, reviewThreads=[thread(replies=[(agent, "NONE")])])
+        self.assertNotIn("reply", judge(handled, 1000, viewer="agent")["unhandled_threads"][0]["missing"])
 
     def test_others_reactions_do_not_count_as_mine(self):
         groups = [{"content": content, "viewerHasReacted": False}
@@ -641,6 +698,7 @@ class CliTests(unittest.TestCase):
         result = json.loads(proc.stdout)
         self.assertEqual(result["status"], "reviewed")
         self.assertEqual(result["repo"], "owner-user/repo")
+        self.assertIn("봇이 리뷰를 남겼다", proc.stdout)
         self.assertEqual(len(result["unhandled_threads"]), 1)
         graphql_calls = [c for c in self.calls() if c["args"][:2] == ["api", "graphql"]]
         self.assertEqual(len(graphql_calls), 1)
@@ -732,6 +790,29 @@ class CliTests(unittest.TestCase):
         self.assertIn("조회 실패 3/3", proc.stderr)
         self.assertEqual(len(self.calls()), 4)
 
+    def test_wait_failure_count_resets_after_a_success(self):
+        # 사이에 성공한 조회가 있으면 실패 횟수는 다시 센다.
+        pending = graphql_response(pr(reactions=[reaction("EYES", 20)]))
+        done = graphql_response(pr(reactions=[reaction("THUMBS_UP", 120)]))
+        failure = {"__exit__": 1, "stderr": "HTTP 502: Bad Gateway"}
+        proc = self.run_cli("7", "-R", "owner-user/repo", "--wait", "30", "--json",
+                            scenario={"main": [pending, failure, pending, failure, pending, failure, done]})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["status"], "lgtm")
+        self.assertNotIn("조회 실패 2/3", proc.stderr)
+
+    def test_page_fetch_during_wait_is_bounded(self):
+        # 대기 중 조회가 다음 페이지를 읽을 때도 --wait 남은 시간 안에서 끊는다.
+        plain = graphql_response(pr(reactions=[reaction("EYES", 20)]))
+        paged = graphql_response(pr(reactions=[reaction("EYES", 20)]), pages={"comments": True})
+        slow_page = {"__delay__": 20, "payload": page_response("comments", [])}
+        started = time.monotonic()
+        proc = self.run_cli("7", "-R", "owner-user/repo", "--wait", "3", "--json",
+                            scenario={"main": [plain, paged], "pages": {"comments": {"c1": slow_page}}})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["status"], "pending")
+        self.assertLess(time.monotonic() - started, 10)
+
     def test_wait_fetch_is_bounded_by_the_remaining_budget(self):
         # 두 번째 조회가 느려도 --wait 한도에서 끊고 마지막 결과를 낸다.
         pending = graphql_response(pr(reactions=[reaction("EYES", 20)]))
@@ -745,13 +826,17 @@ class CliTests(unittest.TestCase):
         self.assertIn("조회 실패 1/3", proc.stderr)
 
     def test_output_survives_a_non_utf8_stdout(self):
-        pull = pr(reviews=[review(115)], reviewThreads=[thread(at_s=115)])
+        # 출력이 인코딩 오류로 끝나지 않고, --json은 BMP 밖 문자(🔥)가 있어도 JSON으로 읽힌다.
+        title = "Fix the \U0001F525 race"
+        pull = pr(reviews=[review(115)], reviewThreads=[thread(at_s=115, title=title)])
         for extra in ([], ["--json"]):
             proc = self.run_cli("7", "-R", "owner-user/repo", *extra, scenario={"main": [graphql_response(pull)]},
                                 env_extra={"PYTHONIOENCODING": "ascii"})
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertNotIn("Traceback", proc.stderr)
             self.assertIn("reviewed", proc.stdout)
+            if extra:
+                self.assertEqual(json.loads(proc.stdout)["unhandled_threads"][0]["title"], title)
 
     def test_wait_reports_progress_on_stderr(self):
         scenario = {"main": [graphql_response(pr(reactions=[reaction("EYES", 20)]))]}
@@ -806,6 +891,14 @@ class CliTests(unittest.TestCase):
         proc = self.run_cli("7", "-R", "owner-user/repo", scenario=scenario)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(len(self.calls()), 1)
+
+    def test_first_fetch_is_not_bounded_by_zero_wait(self):
+        # 기본 호출(--wait 0)의 첫 조회는 --wait 마감이 아니라 gh 호출 한도까지 기다린다.
+        done = graphql_response(pr(reactions=[reaction("THUMBS_UP", 120)]))
+        proc = self.run_cli("7", "-R", "owner-user/repo", "--json", scenario={"main": [done]},
+                            env_extra={"FAKE_GH_DELAY": "1.5"})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["status"], "lgtm")
 
     def test_wait_above_cap_is_clamped_with_notice(self):
         scenario = {"main": [graphql_response(pr(reactions=[reaction("THUMBS_UP", 120)]))]}
