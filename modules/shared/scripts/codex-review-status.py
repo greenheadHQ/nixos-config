@@ -14,17 +14,22 @@ GitHub에는 조회(GraphQL query)만 보낸다. 쓰기는 하지 않는다.
   reviewed  봇이 리뷰 객체와 인라인 지적을 남겼다
   lgtm      봇이 지적 없이 리뷰를 마쳤다
   limited   Codex 사용 한도 초과로 리뷰하지 않았다
-  failed    봇이 리뷰를 수행하지 못했다 (오류, 계정 연결 안내, 알 수 없는 요약 상태)
+  failed    봇이 리뷰를 수행하지 못했다 (오류, 계정 연결 안내, 요약 코멘트의 실패 상태)
   timeout   리뷰가 시작(트리거) 뒤 PENDING_TIMEOUT_SECONDS 안에 끝나지 않았다
   absent    트리거 뒤 ABSENT_AFTER_SECONDS가 지나도 봇 흔적이 없다
 
-봇 신호의 근거(#1477 실측)
-  - 요약 코멘트의 Completed 시각은 리뷰 객체보다 2~4초 늦고 👍보다 2~5초 이르다. 그래서
-    Completed인데 트리거 뒤 리뷰 객체가 없으면 지적 없음(lgtm)으로 본다.
-  - 봇 계정은 표면마다 login이 다르다 (작성자 chatgpt-codex-connector, 반응 사용자
+봇 신호의 근거
+  - (#1477 실측) 요약 코멘트의 Completed 시각은 리뷰 객체보다 2~4초 늦고 👍보다 2~5초 이르다.
+    그래서 Completed인데 트리거 뒤 리뷰 객체가 없으면 지적 없음(lgtm)으로 본다.
+  - (#1477 실측) 봇 계정은 표면마다 login이 다르다 (작성자 chatgpt-codex-connector, 반응 사용자
     chatgpt-codex-connector[bot]). databaseId는 모든 표면에서 같으므로 둘을 함께 확인한다.
-  - 사용 한도 코멘트는 리뷰 종류별로 온다. 보안 리뷰 한도 안내는 코드 리뷰가 도는 중에도
-    달리므로 코드 리뷰 한도 문구만 limited로 본다.
+  - (봇 안내문) 사용 한도 코멘트는 리뷰 종류별로 온다. 보안 리뷰 한도 안내는 코드 리뷰와 따로
+    달릴 수 있으므로 코드 리뷰 한도 문구만 limited로 본다.
+  - (봇 안내문) 👀는 보안 리뷰를 포함한 모든 리뷰의 진행 표시다. 끝난 코드 리뷰를 대기 한도까지
+    pending으로 보는 쪽이 새로 시작한 리뷰를 끝난 것으로 보는 쪽보다 안전해서, 👀도 리뷰 시작
+    신호로 센다.
+  - 공개 저장소에서는 누구나 코멘트를 달 수 있다. 재리뷰 요청과 스레드 답글은 저장소 권한자
+    (OWNER·MEMBER·COLLABORATOR)나 조회 계정·PR 작성자가 쓴 것만 센다.
 """
 
 import argparse
@@ -79,6 +84,11 @@ TRIGGER_LABELS = {
     "review_request": "재리뷰 요청 코멘트",
 }
 MISSING_LABELS = {"reply": "답글", "reaction": "반응", "resolve": "resolve"}
+TRUSTED_ASSOCIATIONS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
+# 요약 코멘트 행 상태 가운데 리뷰 실패를 뜻하는 것. 그 밖의 모르는 상태는 진행 중으로 본다.
+FAILED_ROW_RE = re.compile(r"\A(?:fail|error)", re.IGNORECASE)
+# --wait 중 조회가 연속으로 이만큼 실패하면 멈춘다. 그 전의 일시 오류는 다음 조회로 넘어간다.
+MAX_CONSECUTIVE_FETCH_FAILURES = 3
 
 ACTOR_FIELDS = "__typename login ... on Bot { databaseId } ... on User { databaseId }"
 # alias → (필드 호출 형식, 노드 선택). {after}에는 페이지 조회 때만 커서 인자가 들어간다.
@@ -93,7 +103,7 @@ CONNECTIONS = {
     ),
     "comments": (
         "comments(first: %d{after})" % PAGE_SIZE,
-        "createdAt body url author { %s }" % ACTOR_FIELDS,
+        "createdAt body url authorAssociation author { %s }" % ACTOR_FIELDS,
     ),
     "reviews": (
         "reviews(first: %d{after})" % PAGE_SIZE,
@@ -103,7 +113,7 @@ CONNECTIONS = {
     "reviewThreads": (
         "reviewThreads(first: %d{after})" % PAGE_SIZE,
         "id isResolved isOutdated path line originalLine "
-        "comments(first: %d) { nodes { fullDatabaseId createdAt url body author { %s } "
+        "comments(first: %d) { nodes { fullDatabaseId createdAt url body authorAssociation author { %s } "
         "reactionGroups { content viewerHasReacted } } }" % (THREAD_COMMENTS_PAGE_SIZE, ACTOR_FIELDS),
     ),
 }
@@ -184,6 +194,14 @@ def is_human_actor(actor):
     return isinstance(actor, dict) and actor.get("__typename") == "User" and not is_bot_actor(actor)
 
 
+def is_trusted_comment(node, trusted_logins):
+    """재리뷰 요청·스레드 답글로 인정하는 코멘트: 저장소 권한자나 조회 계정·PR 작성자가 썼다."""
+    author = node.get("author")
+    if not is_human_actor(author):
+        return False
+    return node.get("authorAssociation") in TRUSTED_ASSOCIATIONS or author.get("login") in trusted_logins
+
+
 # ─── gh 호출 ───
 
 
@@ -210,14 +228,18 @@ def gh_environment():
     return env
 
 
-def run_gh(args):
+def run_gh(args, deadline=None):
+    """gh를 실행한다. deadline(time.monotonic 기준)이 있으면 호출 한도를 남은 시간으로 줄인다."""
     command = [gh_command()] + list(args)
+    timeout = GH_CALL_TIMEOUT_SECONDS
+    if deadline is not None:
+        timeout = min(timeout, max(1.0, deadline - time.monotonic()))
     try:
         proc = subprocess.run(
             command,
             capture_output=True,
             text=True,
-            timeout=GH_CALL_TIMEOUT_SECONDS,
+            timeout=timeout,
             check=False,
             env=gh_environment(),
         )
@@ -226,14 +248,14 @@ def run_gh(args):
     except OSError as err:
         raise ToolError("gh 실행 파일을 실행하지 못했다: %s (%s)" % (command[0], err.strerror or err)) from None
     except subprocess.TimeoutExpired:
-        raise ToolError("gh %s 호출이 %d초 안에 끝나지 않았다" % (" ".join(args[:2]), GH_CALL_TIMEOUT_SECONDS)) from None
+        raise ToolError("gh %s 호출이 %d초 안에 끝나지 않았다" % (" ".join(args[:2]), math.ceil(timeout))) from None
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "").strip()
         raise ToolError("gh %s 실패 (exit %d): %s" % (" ".join(args[:2]), proc.returncode, detail))
     return proc.stdout
 
 
-def graphql(query, variables):
+def graphql(query, variables, deadline=None):
     args = ["api", "graphql", "-f", "query=" + query]
     for key, value in variables.items():
         if value is None:
@@ -242,7 +264,7 @@ def graphql(query, variables):
             raise ToolError("GraphQL 변수 형식을 지원하지 않는다: %s" % key)
         # 정수는 -F로 타입을 살리고, 문자열은 -f로 넘겨 '@'로 시작하는 값이 파일로 해석되지 않게 한다.
         args += ["-F" if isinstance(value, int) else "-f", "%s=%s" % (key, value)]
-    output = run_gh(args)
+    output = run_gh(args, deadline)
     try:
         payload = json.loads(output)
     except json.JSONDecodeError:
@@ -284,9 +306,9 @@ def build_page_query(alias):
     )
 
 
-def fetch_snapshot(owner, name, number):
+def fetch_snapshot(owner, name, number, deadline=None):
     variables = {"owner": owner, "name": name, "number": number}
-    data = graphql(build_main_query(), variables)
+    data = graphql(build_main_query(), variables, deadline)
     repo = data.get("repository")
     if not isinstance(repo, dict):
         raise ToolError("저장소를 찾지 못했다: %s/%s" % (owner, name))
@@ -305,7 +327,7 @@ def fetch_snapshot(owner, name, number):
             pages += 1
             if pages > MAX_PAGES_PER_CONNECTION:
                 raise ToolError("%s 페이지가 %d개를 넘는다" % (alias, MAX_PAGES_PER_CONNECTION))
-            more = graphql(build_page_query(alias), dict(variables, after=cursor))
+            more = graphql(build_page_query(alias), dict(variables, after=cursor), deadline)
             next_connection = (((more.get("repository") or {}).get("pullRequest") or {}).get(alias)) or {}
             nodes.extend(next_connection.get("nodes") or [])
             page_info = next_connection.get("pageInfo") or {}
@@ -363,7 +385,7 @@ def code_review_rows(comments):
     return rows
 
 
-def compute_trigger(pr):
+def compute_trigger(pr, trusted_logins):
     candidates = []
     created = parse_ts(pr.get("createdAt"))
     if created:
@@ -374,7 +396,7 @@ def compute_trigger(pr):
             candidates.append((at, "ready_for_review"))
     requests = [
         c for c in pr.get("comments") or []
-        if is_human_actor(c.get("author")) and REVIEW_REQUEST_RE.search(c.get("body") or "")
+        if is_trusted_comment(c, trusted_logins) and REVIEW_REQUEST_RE.search(c.get("body") or "")
     ]
     for comment in requests:
         at = parse_ts(comment.get("createdAt"))
@@ -407,14 +429,14 @@ def _thread_title(body):
     return title[:120]
 
 
-def collect_threads(pr):
+def collect_threads(pr, trusted_logins):
     threads = []
     for thread in pr.get("reviewThreads") or []:
         comments = [c for c in ((thread.get("comments") or {}).get("nodes") or []) if isinstance(c, dict)]
         if not comments or not is_bot_actor(comments[0].get("author")):
             continue
         root = comments[0]
-        replied = any(is_human_actor(c.get("author")) for c in comments[1:])
+        replied = any(is_trusted_comment(c, trusted_logins) for c in comments[1:])
         reacted = any(
             group.get("viewerHasReacted") and group.get("content") in ("THUMBS_UP", "THUMBS_DOWN")
             for group in root.get("reactionGroups") or []
@@ -459,7 +481,8 @@ def _latest(times):
 def evaluate(snapshot, now):
     pr = snapshot["pr"]
     head = pr.get("headRefOid") or ""
-    kind, trigger_at, request_count = compute_trigger(pr)
+    trusted_logins = {login for login in (snapshot.get("viewer"), (pr.get("author") or {}).get("login")) if login}
+    kind, trigger_at, request_count = compute_trigger(pr, trusted_logins)
     comments = pr.get("comments") or []
     bot_comments = [c for c in comments if is_bot_actor(c.get("author"))]
     reactions = [r for r in pr.get("reactions") or [] if is_bot_actor(r.get("user"))]
@@ -477,7 +500,8 @@ def evaluate(snapshot, now):
 
     # 리뷰 주기의 시작. 보통은 트리거지만, 트리거 뒤에 봇이 새 리뷰를 시작했고(👀·Running) 그 뒤로
     # 결과 신호가 없으면 그 시작부터 센다. push로 다시 도는 리뷰에서 지난 주기의 결과를 이번 결과로
-    # 읽거나, PR 생성 시각부터 재서 곧바로 timeout을 내지 않기 위해서다.
+    # 읽거나, PR 생성 시각부터 재서 곧바로 timeout을 내지 않기 위해서다. 👀는 보안 리뷰에도 달려
+    # 끝난 코드 리뷰를 대기 한도까지 pending으로 둘 수 있지만, 그쪽이 새 리뷰를 놓치는 것보다 안전하다.
     result_times = (
         [review_time(r) for r in bot_reviews]
         + [parse_ts(r.get("createdAt")) for r in thumbs]
@@ -498,6 +522,9 @@ def evaluate(snapshot, now):
         (row for row in rows if row["status"].lower() not in ("running", "completed") and _after(row["at"], cycle_start)),
         key=lambda row: row["at"],
     )
+    failed_rows = [row for row in unknown_after if FAILED_ROW_RE.match(row["status"])]
+    # 처음 보는 요약 상태는 리뷰가 아직 도는 중일 수 있어 실패로 치지 않고 대기 한도까지 기다린다.
+    unrecognized_rows = [row for row in unknown_after if not FAILED_ROW_RE.match(row["status"])]
     # 트리거 뒤에 시작한 Running 행은 이번 리뷰가 도는 중이라는 뜻이다. 트리거 전부터 멈춰 있는 행과
     # 👀는 지난 주기의 흔적일 수 있어 한도·오류 코멘트보다 뒤에서 본다.
     fresh_running = any(_after(row["at"], trigger_at) for row in running_rows)
@@ -513,7 +540,14 @@ def evaluate(snapshot, now):
     failure = comments_after(bot_comments, FAILURE_RE)
     account = comments_after(bot_comments, ACCOUNT_RE)
 
-    threads = collect_threads(pr)
+    # 트리거 뒤 리뷰 주기가 둘 이상이면 가장 늦은 결과로 판정한다. 지적 없음 표시(👍, 지적 없음
+    # 코멘트)가 마지막 리뷰 객체보다 늦으면 마지막 주기는 지적 없이 끝났다.
+    lgtm_marks = [parse_ts(r.get("createdAt")) for r in thumbs] + [parse_ts(c.get("createdAt")) for c in legacy_lgtm]
+    latest_lgtm = _latest([t for t in lgtm_marks if _after(t, cycle_start)])
+    if reviews_after and latest_lgtm is not None and latest_lgtm > review_time(reviews_after[-1]):
+        reviews_after = []
+
+    threads = collect_threads(pr, trusted_logins)
     status = None
     reason = None
     reviewed_commit = None
@@ -554,10 +588,12 @@ def evaluate(snapshot, now):
         status, reason = "failed", "봇이 오류로 리뷰를 수행하지 못했다"
     elif account:
         status, reason = "failed", "봇이 계정 연결 안내를 남기고 리뷰하지 않았다"
-    elif unknown_after:
-        status, reason = "failed", "요약 코멘트의 리뷰 상태를 알 수 없다: %s" % unknown_after[-1]["status"]
-    elif running_rows or eyes:
+    elif failed_rows:
+        status, reason = "failed", "요약 코멘트가 리뷰 실패를 알렸다: %s" % failed_rows[-1]["status"]
+    elif unrecognized_rows or running_rows or eyes:
         status, reason = waiting()
+        if unrecognized_rows and status == "pending":
+            reason = "요약 코멘트의 리뷰 상태(%s)를 알 수 없어 진행 중으로 본다. %s" % (unrecognized_rows[-1]["status"], reason)
     elif elapsed <= ABSENT_AFTER_SECONDS:
         status, reason = "pending", "트리거 직후라 봇의 첫 신호를 기다린다 (트리거부터 %s 지남, %s 안에 흔적이 없으면 absent)" % (
             human_duration(elapsed), human_duration(ABSENT_AFTER_SECONDS))
@@ -584,7 +620,7 @@ def evaluate(snapshot, now):
         "viewer": snapshot.get("viewer"),
         "status": status,
         "reason": reason,
-        "trigger": {"kind": kind, "at": iso(trigger_at), "elapsed_seconds": int(max(0, elapsed))},
+        "trigger": {"kind": kind, "at": iso(trigger_at), "elapsed_seconds": int(max(0, (now - trigger_at).total_seconds()))},
         "reviewed_commit": reviewed_commit,
         "stale": _stale(head, reviewed_commit),
         "rereview_requests": request_count,
@@ -642,7 +678,7 @@ def parse_args(argv):
         description="Codex GitHub 앱(chatgpt-codex-connector)의 PR 리뷰 상태를 조회만으로 판정한다.",
         epilog=(
             "상태: draft, pending, reviewed, lgtm, limited, failed, timeout, absent. "
-            "pending은 리뷰 시작(보통 트리거) 뒤 %d초까지 기다리고, 흔적 없음(absent)은 트리거 %d초 뒤에 판정한다."
+            "리뷰 시작(보통 트리거) 뒤 %d초가 지나도 진행 중이면 timeout, 트리거 뒤 %d초가 지나도 봇 흔적이 없으면 absent다."
             % (PENDING_TIMEOUT_SECONDS, ABSENT_AFTER_SECONDS)
         ),
         **parser_options,
@@ -713,17 +749,35 @@ def poll_seconds():
 
 
 def main(argv=None):
+    if hasattr(sys.stdout, "reconfigure"):
+        # 비 UTF-8 로케일에서도 한국어 출력이 인코딩 오류로 끝나지 않게 한다.
+        sys.stdout.reconfigure(errors="backslashreplace")
     args = parse_args(sys.argv[1:] if argv is None else argv)
-    # 대기 한도는 PR 확인에 쓴 시간까지 포함한다. 조회 한 번이 남은 시간보다 길면 더 조회하지 않아
-    # 전체 실행 시간이 --wait를 크게 넘지 않게 한다.
+    # 대기 한도는 PR 확인에 쓴 시간까지 포함한다. 조회 한 번이 남은 시간보다 길면 더 조회하지 않고,
+    # 대기 중 조회는 남은 시간 안에서만 기다려 전체 실행 시간이 --wait를 크게 넘지 않게 한다.
     deadline = time.monotonic() + args.wait
     last_progress = None
+    result = None
+    failures = 0
     try:
         owner, name, number = resolve_target(args)
         interval = poll_seconds()
         while True:
             started = time.monotonic()
-            result = evaluate(fetch_snapshot(owner, name, number), current_time())
+            try:
+                snap = fetch_snapshot(owner, name, number, deadline if result is not None else None)
+            except ToolError as err:
+                # 첫 조회가 실패하면 낼 결과가 없다. 대기 중의 일시 오류는 다음 조회로 넘긴다.
+                if result is None:
+                    raise
+                failures += 1
+                print("codex-review-status: 조회 실패 %d/%d — %s" % (failures, MAX_CONSECUTIVE_FETCH_FAILURES, err),
+                      file=sys.stderr, flush=True)
+                if failures >= MAX_CONSECUTIVE_FETCH_FAILURES:
+                    raise
+            else:
+                result = evaluate(snap, current_time())
+                failures = 0
             fetch_seconds = time.monotonic() - started
             remaining = deadline - time.monotonic()
             if result["status"] != "pending" or remaining <= fetch_seconds:
