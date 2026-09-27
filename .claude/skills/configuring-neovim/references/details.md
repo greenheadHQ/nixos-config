@@ -30,9 +30,17 @@ mini.nvim 0.17.0 (2025-12)에서 `echasnovski` → `nvim-mini` 조직으로 이�
 
 ## 클립보드 전략
 
-`clipboard = "unnamedplus"` 설정:
-- macOS 로컬: 시스템 클립보드 직접 연동
-- SSH + tmux: tmux-yank + OSC 52 (터미널 앱이 지원하는 경우)
+`clipboard = "unnamedplus"`는 SSH에서도 켠다(`y` = 시스템 클립보드). provider는 `lua/config/options.lua`가 환경별로 정한다.
+
+| 환경 | provider | `y` | `p` |
+|------|----------|-----|-----|
+| macOS (SSH로 들어온 세션 포함) | pbcopy | Mac 클립보드 | Mac 클립보드 |
+| SSH + tmux 안 | nvim 내장 tmux | tmux 버퍼와 바깥 터미널 클립보드 (`tmux load-buffer -w`) | tmux 버퍼 |
+| SSH + tmux 밖 (Linux) | `g:clipboard` `OSC 52 (copy only)` | OSC 52로 SSH 클라이언트 터미널의 클립보드 | 이 nvim에서 마지막으로 복사한 내용 |
+
+- SSH 판정은 `SSH_CONNECTION` 또는 `SSH_TTY`, tmux 판정은 `$TMUX`다. tmux 안에서는 tmux 플러그인을 거치지 않는다.
+- tmux 밖 SSH의 `p`는 터미널에 클립보드를 묻지 않는다. 묻게 하면(`g:clipboard = "osc52"`) `p`마다 Ghostty 허용 창이 뜨고, 응답하지 않는 터미널에서는 최대 10초 기다린다. Mac에서 복사한 텍스트는 터미널 붙여넣기(Cmd+V)로 넣는다.
+- 확인: `:checkhealth vim.provider`의 Clipboard 항목
 - Termius: OSC 52 미지원 (알려진 Termius 제한)
 
 ## 주요 키맵
