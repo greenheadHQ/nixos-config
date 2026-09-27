@@ -212,41 +212,48 @@ remove_queue_url() {
 }
 
 # SingleFile 저장 주석(`Page saved with SingleFile` 블록, 보통 <html> 직후)의 `url:` 줄만 읽는다.
-# 주석 밖 본문이나 다른 주석의 `url:` 텍스트는 원문 식별자가 아니다.
+# 주석 밖 본문이나 마커 없는 주석의 `url:` 텍스트는 원문 식별자가 아니다. 마커가 든 첫 블록에서
+# 멈춰 문서 중간의 가짜 저장 주석은 읽지 않는다. 줄을 `<!--`로 한 번에 나누고 블록 본문을 쌓지
+# 않아 주석이 많은 긴 줄에서도 입력 크기에 비례한 시간만 쓰며, 비교 대상이 ASCII라 바이트
+# 단위(LC_ALL=C)로 처리한다.
 extract_singlefile_saved_url() {
-  awk '
-    function emit(block,   n, i, lines, line) {
-      if (index(block, "Page saved with SingleFile") == 0) return
-      n = split(block, lines, "\n")
-      for (i = 1; i <= n; i++) {
-        line = lines[i]
-        if (line !~ /^[ \t]*url:/) continue
-        sub(/^[ \t]*url:[ \t]*/, "", line)
-        sub(/[ \t\r]+$/, "", line)
-        if (line != "") print line
-      }
+  LC_ALL=C awk '
+    # seg는 주석 안 한 줄의 조각이다. 줄 머리 조각만 `url:`로 시작할 수 있다.
+    function scan(seg,   url) {
+      if (index(seg, "Page saved with SingleFile")) has_marker = 1
+      if (seg !~ /^[ \t]*url:/) return
+      url = seg
+      sub(/^[ \t]*url:[ \t]*/, "", url)
+      sub(/[ \t\r]+$/, "", url)
+      if (url != "") urls = urls url "\n"
     }
     {
-      rest = $0
-      while (rest != "") {
-        if (!in_comment) {
-          open_pos = index(rest, "<!--")
-          if (open_pos == 0) break
-          in_comment = 1
-          block = ""
-          rest = substr(rest, open_pos + 4)
-        } else {
-          close_pos = index(rest, "-->")
-          if (close_pos == 0) {
-            block = block rest
-            break
+      n = split($0, parts, "<!--")
+      for (i = 1; i <= n; i++) {
+        seg = parts[i]
+        if (i > 1) {
+          if (in_comment) {
+            # 주석 안의 `<!--`는 여는 표시가 아니라 본문이다.
+            seg = "<!--" seg
+          } else {
+            in_comment = 1
+            has_marker = 0
+            urls = ""
           }
-          emit(block substr(rest, 1, close_pos - 1))
-          in_comment = 0
-          rest = substr(rest, close_pos + 3)
+        }
+        if (!in_comment) continue
+        close_pos = index(seg, "-->")
+        if (close_pos == 0) {
+          scan(seg)
+          continue
+        }
+        scan(substr(seg, 1, close_pos - 1))
+        in_comment = 0
+        if (has_marker) {
+          printf "%s", urls
+          exit
         }
       }
-      if (in_comment) block = block "\n"
     }
   ' "$1"
 }
@@ -255,29 +262,43 @@ tag_identifier_source() {
   awk -v source="$1" '{ print source "\t" $0 }'
 }
 
+# grep의 "일치 없음"(종료 코드 1)은 정상으로 보고, 읽기 오류 같은 2 이상만 실패로 돌려준다.
+grep_optional() {
+  local rc=0
+  grep "$@" || rc=$?
+  [ "$rc" -le 1 ]
+}
+
 # 원문 식별자만 "출처<TAB>URL"로 출력한다. 본문의 일반 링크는 관련 글일 수 있어
-# overwrite 대상 판정 근거에서 뺀다 (#1388).
+# overwrite 대상 판정 근거에서 뺀다 (#1388). 한 단계라도 실패하면 일부 식별자만으로
+# 판정하지 않도록 전체를 실패로 돌려준다.
 extract_url_candidates() {
   local file="$1"
-  local snippet quote_class
-  snippet=$(mktemp)
+  local snippet quote_class candidates rc=0
+  snippet=$(mktemp) || return 1
   quote_class='["'"'"']'
-  head -c 2097152 "$file" > "$snippet"
 
-  {
-    extract_singlefile_saved_url "$snippet" | tag_identifier_source singlefile
-    grep -Eoi "<link[^>]+rel=${quote_class}canonical${quote_class}[^>]*>" "$snippet" \
-      | sed -En "s/.*href=${quote_class}([^\"']+)${quote_class}.*/\\1/ip" \
-      | tag_identifier_source canonical
-    grep -Eoi "<meta[^>]+property=${quote_class}og:url${quote_class}[^>]*>" "$snippet" \
-      | sed -En "s/.*content=${quote_class}([^\"']+)${quote_class}.*/\\1/ip" \
-      | tag_identifier_source og:url
-    grep -Eoi "<meta[^>]+name=${quote_class}twitter:url${quote_class}[^>]*>" "$snippet" \
-      | sed -En "s/.*content=${quote_class}([^\"']+)${quote_class}.*/\\1/ip" \
-      | tag_identifier_source twitter:url
-  } | sed -E 's/&amp;/\&/g' | awk -F '\t' '$2 ~ /^https?:\/\//' | sort -u
+  candidates=$(
+    head -c 2097152 "$file" > "$snippet" &&
+      {
+        extract_singlefile_saved_url "$snippet" | tag_identifier_source singlefile &&
+          grep_optional -Eoi "<link[^>]+rel=${quote_class}canonical${quote_class}[^>]*>" "$snippet" \
+            | sed -En "s/.*href=${quote_class}([^\"']+)${quote_class}.*/\\1/ip" \
+            | tag_identifier_source canonical &&
+          grep_optional -Eoi "<meta[^>]+property=${quote_class}og:url${quote_class}[^>]*>" "$snippet" \
+            | sed -En "s/.*content=${quote_class}([^\"']+)${quote_class}.*/\\1/ip" \
+            | tag_identifier_source og:url &&
+          grep_optional -Eoi "<meta[^>]+name=${quote_class}twitter:url${quote_class}[^>]*>" "$snippet" \
+            | sed -En "s/.*content=${quote_class}([^\"']+)${quote_class}.*/\\1/ip" \
+            | tag_identifier_source twitter:url
+      } | sed -E 's/&amp;/\&/g' | awk -F '\t' '$2 ~ /^https?:\/\//' | sort -u
+  ) || rc=$?
 
   rm -f "$snippet"
+  [ "$rc" -eq 0 ] || return 1
+  if [ -n "$candidates" ]; then
+    printf '%s\n' "$candidates"
+  fi
 }
 
 list_contains() {
@@ -292,56 +313,70 @@ list_contains() {
   return 1
 }
 
-# 원문 식별자와 실패 URL 큐를 대조한다. 첫 줄은 판정(matched/no-identifier/no-match/ambiguous)이고,
-# 이어지는 줄은 선택된 큐 URL(matched) 또는 보류 근거가 된 후보 큐 URL(ambiguous)이다.
-# 엄격 정규화로 일치하는 큐 URL이 있으면 그 집합만, 없으면 느슨한(쿼리 무시) 일치 집합을 보고
-# 정확히 하나일 때만 고른다. 출처 사이에는 우선순위를 두지 않는다.
+# 원문 식별자와 실패 URL 큐를 대조한다. 식별자와 엄격 정규화(normalize_url)로 같은 큐 URL이
+# 정확히 하나일 때만 고른다. 쿼리만 다른 URL은 다른 글일 수 있어 일치로 보지 않고, 식별자
+# 출처 사이에는 우선순위를 두지 않는다 (#1388).
+# 출력 첫 줄은 판정(matched/no-identifier/no-match/ambiguous)이다. 이어서 추출한 식별자를
+# "identifier<TAB>출처<TAB>URL"로, 일치한 큐 URL을 "queue<TAB>URL<TAB>출처들"로 낸다.
+# 식별자 추출이나 큐 읽기가 실패하면 판정 없이 실패로 돌려준다.
 find_matching_failed_url() {
   local file="$1"
-  local identifier_url queue_url queue_norm queue_loose
-  local -a identifier_urls=() identifier_norms=() identifier_looses=() queue_urls=()
-  local -a strict_matches=() loose_matches=() matches=()
+  local candidates identifier_source identifier_url queue_url queue_norm sources i queue_read_rc=0
+  local -a identifier_sources=() identifier_urls=() identifier_norms=() queue_urls=()
+  local -a matches=() match_sources=()
 
-  mapfile -t identifier_urls < <(extract_url_candidates "$file" | cut -f 2 | sort -u)
-  if [ "${#identifier_urls[@]}" -eq 0 ]; then
+  candidates=$(extract_url_candidates "$file") || return 1
+  if [ -z "$candidates" ]; then
     echo "no-identifier"
     return 0
   fi
-  for identifier_url in "${identifier_urls[@]}"; do
+  while IFS=$'\t' read -r identifier_source identifier_url; do
+    identifier_sources+=("$identifier_source")
+    identifier_urls+=("$identifier_url")
     identifier_norms+=("$(normalize_url "$identifier_url")")
-    identifier_looses+=("$(normalize_url_loose "$identifier_url")")
-  done
+  done <<< "$candidates"
 
   if (( QUEUE_LOCK_ENABLED )); then
-    flock -s 10
+    flock -s 10 || return 1
   fi
-  mapfile -t queue_urls < "$FAILED_URL_QUEUE_FILE"
+  mapfile -t queue_urls < "$FAILED_URL_QUEUE_FILE" || queue_read_rc=1
   if (( QUEUE_LOCK_ENABLED )); then
     flock -u 10
   fi
+  [ "$queue_read_rc" -eq 0 ] || return 1
 
   for queue_url in "${queue_urls[@]}"; do
     [ -n "$queue_url" ] || continue
+    # 같은 URL이 큐에 여러 줄 있어도 한 북마크다.
+    if list_contains "$queue_url" "${matches[@]}"; then
+      continue
+    fi
     queue_norm=$(normalize_url "$queue_url")
-    queue_loose=$(normalize_url_loose "$queue_url")
-    if list_contains "$queue_norm" "${identifier_norms[@]}"; then
-      list_contains "$queue_url" "${strict_matches[@]}" || strict_matches+=("$queue_url")
-    elif list_contains "$queue_loose" "${identifier_looses[@]}"; then
-      list_contains "$queue_url" "${loose_matches[@]}" || loose_matches+=("$queue_url")
+    sources=""
+    for i in "${!identifier_norms[@]}"; do
+      [ "${identifier_norms[$i]}" = "$queue_norm" ] || continue
+      case ",${sources}," in
+        *",${identifier_sources[$i]},"*) ;;
+        *) sources="${sources:+${sources},}${identifier_sources[$i]}" ;;
+      esac
+    done
+    if [ -n "$sources" ]; then
+      matches+=("$queue_url")
+      match_sources+=("$sources")
     fi
   done
 
-  if [ "${#strict_matches[@]}" -gt 0 ]; then
-    matches=("${strict_matches[@]}")
-  else
-    matches=("${loose_matches[@]}")
-  fi
-
   case "${#matches[@]}" in
     0) echo "no-match" ;;
-    1) printf 'matched\n%s\n' "${matches[0]}" ;;
-    *) printf 'ambiguous\n'; printf '%s\n' "${matches[@]}" ;;
+    1) echo "matched" ;;
+    *) echo "ambiguous" ;;
   esac
+  for i in "${!identifier_urls[@]}"; do
+    printf 'identifier\t%s\t%s\n' "${identifier_sources[$i]}" "${identifier_urls[$i]}"
+  done
+  for i in "${!matches[@]}"; do
+    printf 'queue\t%s\t%s\n' "${matches[$i]}" "${match_sources[$i]}"
+  done
 }
 
 upload_singlefile_archive() {
@@ -383,21 +418,42 @@ upload_singlefile_archive() {
 
 process_file() {
   local file="$1"
-  local file_hash match_result match_status hold_reason failed_url short_url notify_key message
-  local -a match_lines
+  local file_hash match_result match_status queue_line hold_reason failed_url match_sources
+  local short_url notify_key message
   file_hash=$(sha256sum "$file" | cut -d ' ' -f 1)
 
   if grep -Fq "${file_hash}" "$PROCESSED_FILE"; then
     return 0
   fi
 
-  match_result=$(find_matching_failed_url "$file" || true)
-  mapfile -t match_lines <<< "$match_result"
-  match_status="${match_lines[0]}"
+  match_result=$(find_matching_failed_url "$file") || match_result=""
+  match_status="${match_result%%$'\n'*}"
+  failed_url=""
+  match_sources=""
+  if [ "$match_status" = "matched" ]; then
+    queue_line=$(printf '%s\n' "$match_result" | awk -F '\t' '$1 == "queue" { print; exit }')
+    IFS=$'\t' read -r _ failed_url match_sources <<< "$queue_line"
+  fi
+  case "$match_status" in
+    matched) [ -n "$failed_url" ] || match_status="error" ;;
+    no-identifier | no-match | ambiguous) ;;
+    *) match_status="error" ;;
+  esac
+
+  if [ "$match_status" = "error" ]; then
+    # 판정 실패는 보류 알림 기록에 남기지 않아 다음 실행에서 다시 판정하고, 알림은 시간 창으로만 억제한다.
+    echo "Auto relink match error: $file"
+    if should_notify_key "match-error:${file_hash}"; then
+      message=$(printf "자동 재연결 보류: %s\n원인: 판정 실패\njournalctl -u karakeep-fallback-sync 확인 필요" "$(basename "$file")")
+      send_notification "Karakeep" "$message" 0
+    fi
+    return 1
+  fi
+
   if [ "$match_status" != "matched" ]; then
     # 보류: 업로드·큐 제거·processed 기록 없이 파일과 큐를 그대로 둔다.
     if is_unmatched_notified "$file_hash"; then
-      echo "Unmatched fallback already notified once: $file"
+      echo "Unmatched fallback already notified once (${match_status}): $file"
       return 0
     fi
 
@@ -412,15 +468,13 @@ process_file() {
     else
       echo "Unmatched fallback notification failed; will retry later: $file"
     fi
-    echo "Auto relink held (${match_status:-unknown}): $file"
-    extract_url_candidates "$file" | awk -F '\t' '{ print "  identifier " $1 ": " $2 }' || true
-    if [ "${#match_lines[@]}" -gt 1 ]; then
-      printf '  candidate: %s\n' "${match_lines[@]:1}"
-    fi
+    echo "Auto relink held (${match_status}): $file"
+    printf '%s\n' "$match_result" | awk -F '\t' '
+      $1 == "identifier" { print "  identifier " $2 ": " $3 }
+      $1 == "queue" { print "  candidate: " $2 " (" $3 ")" }
+    ' || true
     return 0
   fi
-
-  failed_url="${match_lines[1]}"
 
   if upload_singlefile_archive "$file" "$failed_url"; then
     remove_queue_url "$failed_url" || true
@@ -428,7 +482,7 @@ process_file() {
     short_url=$(shorten_url "$failed_url")
     message=$(printf "자동 재연결 완료: %s\n파일: %s" "$short_url" "$(basename "$file")")
     send_notification "Karakeep" "$message" 0
-    echo "Auto relink succeeded: $failed_url <- $file"
+    echo "Auto relink succeeded: $failed_url <- $file (via ${match_sources})"
     return 0
   fi
 

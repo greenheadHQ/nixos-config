@@ -392,6 +392,7 @@ run_test "folder-actions tool jobs keep input when required tool is missing" tes
 run_test "folder-actions compress-rar runs with launchd minimal PATH" test_folder_actions_compress_rar_runs_with_launchd_minimal_path
 run_test "folder-actions video jobs run with launchd minimal PATH" test_folder_actions_video_jobs_run_with_launchd_minimal_path
 run_test "karakeep fallback-sync success removes only matched queue URL" test_karakeep_fallback_sync_success_removes_only_matched_queue_url
+run_test "karakeep fallback-sync query-only difference is held" test_karakeep_fallback_sync_query_only_difference_is_held
 run_test "karakeep fallback-sync upload failure preserves queue" test_karakeep_fallback_sync_upload_failure_preserves_queue_and_records_notify_state
 run_test "karakeep fallback-sync GC removes expired state" test_karakeep_fallback_sync_gc_removes_only_expired_state_entries
 run_test "karakeep fallback-sync unmatched notification is deduplicated" test_karakeep_fallback_sync_unmatched_notification_is_deduplicated
@@ -400,9 +401,13 @@ run_test "karakeep fallback-sync body link without identifier is held" test_kara
 run_test "karakeep fallback-sync conflicting queued identifiers are held" test_karakeep_fallback_sync_conflicting_queued_identifiers_are_held
 run_test "karakeep fallback-sync selects the only queued identifier" test_karakeep_fallback_sync_selects_the_only_queued_identifier
 run_test "karakeep fallback-sync duplicate identifier sources count once" test_karakeep_fallback_sync_duplicate_identifier_sources_count_once
-run_test "karakeep fallback-sync strict match beats query variants" test_karakeep_fallback_sync_strict_match_beats_query_variants
-run_test "karakeep fallback-sync multiple loose matches are held" test_karakeep_fallback_sync_multiple_loose_matches_are_held
+run_test "karakeep fallback-sync selects exact query among variants" test_karakeep_fallback_sync_selects_exact_query_among_variants
+run_test "karakeep fallback-sync query variants without exact match are held" test_karakeep_fallback_sync_query_variants_without_exact_match_are_held
 run_test "karakeep fallback-sync ignores url text outside SingleFile comment" test_karakeep_fallback_sync_ignores_url_text_outside_singlefile_comment
+run_test "karakeep fallback-sync video id query is not matched loosely" test_karakeep_fallback_sync_video_id_query_is_not_matched_loosely
+run_test "karakeep fallback-sync ignores saved comment after the first" test_karakeep_fallback_sync_ignores_saved_comment_after_the_first
+run_test "karakeep fallback-sync duplicate queue lines count once" test_karakeep_fallback_sync_duplicate_queue_lines_count_once
+run_test "karakeep fallback-sync identifier extraction error is retried" test_karakeep_fallback_sync_identifier_extraction_error_is_retried
 run_test "immich backup happy path creates dump atomically" test_immich_backup_happy_path_creates_dump_atomically
 run_test "immich backup integrity failure exits nonzero" test_immich_backup_integrity_failure_exits_nonzero
 run_test "immich backup retention deletes only old dumps in dir" test_immich_backup_retention_deletes_only_old_dumps_in_dir

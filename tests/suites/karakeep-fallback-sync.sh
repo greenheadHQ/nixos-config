@@ -133,7 +133,7 @@ test_karakeep_fallback_sync_success_removes_only_matched_queue_url() {
   printf '%s\n%s\n' "$matched_url" "$remaining_url" > "$sandbox/state/failed-urls.txt"
   cat > "$sandbox/fallback/archive.html" <<'HTML'
 <!doctype html>
-<link rel="canonical" href="https://example.com/articles/one?from=singlefile">
+<link rel="canonical" href="https://example.com/articles/one?from=queue">
 HTML
 
   _karakeep_fallback_sync_run "$sandbox" "$stdout_path" "$stderr_path" \
@@ -145,7 +145,26 @@ HTML
   grep -Fq "$matched_url" "$sandbox/state/fallback-processed.tsv" \
     || fail "expected processed state to record matched URL"
   output=$(cat "$stdout_path")
-  assert_contains "$output" "Auto relink succeeded: $matched_url <- $sandbox/fallback/archive.html"
+  assert_contains "$output" "Auto relink succeeded: $matched_url <- $sandbox/fallback/archive.html (via canonical)"
+}
+
+# 쿼리만 다른 URL은 다른 글일 수 있어 자동으로 연결하지 않는다 (#1388 결정 보정).
+test_karakeep_fallback_sync_query_only_difference_is_held() {
+  local sandbox
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  _karakeep_fallback_sync_write_queue "$sandbox" \
+    "https://example.com/articles/one?from=queue" \
+    "https://example.com/articles/two"
+  cat > "$sandbox/fallback/archive.html" <<'HTML'
+<!doctype html>
+<link rel="canonical" href="https://example.com/articles/one?from=singlefile">
+HTML
+
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected held run to exit 0"
+
+  _karakeep_fallback_sync_assert_held "$sandbox" "실패 URL 일치 없음"
 }
 
 test_karakeep_fallback_sync_upload_failure_preserves_queue_and_records_notify_state() {
@@ -287,6 +306,7 @@ HTML
   _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
     || fail "expected second held run to exit 0"
   _karakeep_fallback_sync_assert_held "$sandbox" "원문 식별자 없음"
+  assert_contains "$(cat "$sandbox/stdout")" "Unmatched fallback already notified once (no-identifier): $sandbox/fallback/archive.html"
 }
 
 test_karakeep_fallback_sync_conflicting_queued_identifiers_are_held() {
@@ -309,8 +329,8 @@ test_karakeep_fallback_sync_conflicting_queued_identifiers_are_held() {
   assert_contains "$output" "Auto relink held (ambiguous): $sandbox/fallback/archive.html"
   assert_contains "$output" "identifier singlefile: $singlefile_url"
   assert_contains "$output" "identifier og:url: $og_url"
-  assert_contains "$output" "candidate: $singlefile_url"
-  assert_contains "$output" "candidate: $og_url"
+  assert_contains "$output" "candidate: $singlefile_url (singlefile)"
+  assert_contains "$output" "candidate: $og_url (og:url)"
 }
 
 test_karakeep_fallback_sync_selects_the_only_queued_identifier() {
@@ -351,10 +371,11 @@ test_karakeep_fallback_sync_duplicate_identifier_sources_count_once() {
     || fail "expected relink run to exit 0"
 
   _karakeep_fallback_sync_assert_relinked "$sandbox" "$source_url"
+  assert_contains "$(cat "$sandbox/stdout")" "Auto relink succeeded: $source_url <- $sandbox/fallback/archive.html (via canonical,og:url,singlefile,twitter:url)"
   assert_file_contains "$sandbox/state/failed-urls.txt" "$unrelated_url"
 }
 
-test_karakeep_fallback_sync_strict_match_beats_query_variants() {
+test_karakeep_fallback_sync_selects_exact_query_among_variants() {
   local sandbox exact_url sibling_url
   sandbox=$(new_sandbox)
   _karakeep_fallback_sync_prepare_sandbox "$sandbox"
@@ -373,7 +394,7 @@ HTML
   assert_file_contains "$sandbox/state/failed-urls.txt" "$sibling_url"
 }
 
-test_karakeep_fallback_sync_multiple_loose_matches_are_held() {
+test_karakeep_fallback_sync_query_variants_without_exact_match_are_held() {
   local sandbox
   sandbox=$(new_sandbox)
   _karakeep_fallback_sync_prepare_sandbox "$sandbox"
@@ -388,7 +409,7 @@ HTML
   _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
     || fail "expected held run to exit 0"
 
-  _karakeep_fallback_sync_assert_held "$sandbox" "실패 URL 후보 여럿"
+  _karakeep_fallback_sync_assert_held "$sandbox" "실패 URL 일치 없음"
 }
 
 test_karakeep_fallback_sync_ignores_url_text_outside_singlefile_comment() {
@@ -400,8 +421,10 @@ test_karakeep_fallback_sync_ignores_url_text_outside_singlefile_comment() {
   other_comment_url="https://example.com/articles/other-comment"
   _karakeep_fallback_sync_write_queue "$sandbox" "$body_text_url" "$other_comment_url"
   {
+    # 마커 없는 주석이 저장 주석보다 앞에 있어도 그 url: 줄은 읽지 않는다.
+    printf '%s\n' '<!--' " url: $other_comment_url " '-->'
     _karakeep_fallback_sync_singlefile_header "$singlefile_url"
-    printf '%s\n' '<!--' " url: $other_comment_url " '-->' '<pre>' "url: $body_text_url" '</pre>'
+    printf '%s\n' '<pre>' "url: $body_text_url" '</pre>'
   } > "$sandbox/fallback/archive.html"
 
   _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
@@ -409,4 +432,120 @@ test_karakeep_fallback_sync_ignores_url_text_outside_singlefile_comment() {
 
   _karakeep_fallback_sync_assert_held "$sandbox" "실패 URL 일치 없음"
   assert_contains "$(cat "$sandbox/stdout")" "identifier singlefile: $singlefile_url"
+}
+
+# 쿼리 값으로 글을 구분하는 사이트에서 쿼리를 무시하면 다른 북마크를 덮어쓴다 (#1388 리뷰 재현).
+test_karakeep_fallback_sync_video_id_query_is_not_matched_loosely() {
+  local sandbox
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  _karakeep_fallback_sync_write_queue "$sandbox" \
+    "https://youtu.be/AAA" \
+    "https://www.youtube.com/watch?v=BBB"
+  _karakeep_fallback_sync_singlefile_header "https://www.youtube.com/watch?v=AAA" > "$sandbox/fallback/archive.html"
+
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected held run to exit 0"
+
+  _karakeep_fallback_sync_assert_held "$sandbox" "실패 URL 일치 없음"
+}
+
+test_karakeep_fallback_sync_ignores_saved_comment_after_the_first() {
+  local sandbox source_url victim_url
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  source_url="https://example.com/articles/real"
+  victim_url="https://example.com/articles/victim"
+  _karakeep_fallback_sync_write_queue "$sandbox" "$victim_url"
+  {
+    _karakeep_fallback_sync_singlefile_header "$source_url"
+    printf '%s\n' '<body><p>text</p><!--' ' Page saved with SingleFile ' " url: $victim_url " '--></body>'
+  } > "$sandbox/fallback/archive.html"
+
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected held run to exit 0"
+
+  _karakeep_fallback_sync_assert_held "$sandbox" "실패 URL 일치 없음"
+  assert_not_contains "$(cat "$sandbox/stdout")" "identifier singlefile: $victim_url"
+}
+
+test_karakeep_fallback_sync_duplicate_queue_lines_count_once() {
+  local sandbox source_url other_url
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  source_url="https://example.com/articles/repeated"
+  other_url="https://example.com/articles/other"
+  _karakeep_fallback_sync_write_queue "$sandbox" "$source_url" "$other_url" "$source_url"
+  cat > "$sandbox/fallback/archive.html" <<HTML
+<!doctype html>
+<link rel="canonical" href="$source_url">
+HTML
+
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected relink run to exit 0"
+
+  [ "$(_karakeep_fallback_sync_uploaded_urls "$sandbox")" = "$source_url" ] \
+    || fail "expected duplicate queue lines to be treated as one candidate"
+  grep -Fq "$source_url" "$sandbox/state/fallback-processed.tsv" \
+    || fail "expected processed state to record $source_url"
+}
+
+# 식별자 추출 단계 하나라도 실패하면 일부 식별자만으로 판정하지 않는다. 보류 알림 기록을
+# 남기지 않아 다음 실행에서 다시 판정하고, 알림은 시간 창으로만 억제한다.
+test_karakeep_fallback_sync_identifier_extraction_error_is_retried() {
+  local sandbox source_url real_grep notification_count now
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  source_url="https://example.com/articles/source"
+  _karakeep_fallback_sync_write_queue "$sandbox" "$source_url"
+  cat > "$sandbox/fallback/archive.html" <<HTML
+<!doctype html>
+<link rel="canonical" href="$source_url">
+HTML
+  real_grep=$(command -v grep)
+  cat > "$sandbox/stub-bin/grep" <<STUB
+#!/usr/bin/env bash
+case "\$*" in
+  *canonical*) echo "grep: simulated read error" >&2; exit 2 ;;
+esac
+exec "$real_grep" "\$@"
+STUB
+  chmod +x "$sandbox/stub-bin/grep"
+
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected match error run to keep script-level exit 0"
+  [ ! -s "$sandbox/curl.log" ] || fail "expected no upload after match error"
+  cmp -s "$sandbox/queue-before" "$sandbox/state/failed-urls.txt" \
+    || fail "expected match error to leave the failed URL queue unchanged"
+  [ ! -s "$sandbox/state/fallback-processed.tsv" ] || fail "expected no processed state after match error"
+  [ ! -s "$sandbox/state/fallback-unmatched-notified.tsv" ] \
+    || fail "expected match error not to be recorded as a notified hold"
+  grep -Fq "원인: 판정 실패" "$sandbox/notifications.log" \
+    || fail "expected match error notification reason"
+  assert_contains "$(cat "$sandbox/stdout")" "Auto relink match error: $sandbox/fallback/archive.html"
+  assert_contains "$(cat "$sandbox/stdout")" "Fallback sync failure count: 1/3"
+
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected second match error run to exit 0"
+  notification_count=$(grep -Fc "원인: 판정 실패" "$sandbox/notifications.log")
+  [ "$notification_count" = "1" ] \
+    || fail "expected match error notification to be throttled, got $notification_count"
+  assert_contains "$(cat "$sandbox/stdout")" "Auto relink match error: $sandbox/fallback/archive.html"
+
+  # 억제 시간 창이 지나면 다시 알린다.
+  now=$(date +%s)
+  awk -F '\t' -v ts="$((now - 3600))" 'BEGIN { OFS = "\t" } { $2 = ts; print }' \
+    "$sandbox/state/fallback-notify-state.tsv" > "$sandbox/notify-state.aged"
+  mv "$sandbox/notify-state.aged" "$sandbox/state/fallback-notify-state.tsv"
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected third match error run to exit 0"
+  notification_count=$(grep -Fc "원인: 판정 실패" "$sandbox/notifications.log")
+  [ "$notification_count" = "2" ] \
+    || fail "expected match error notification after the throttle window, got $notification_count"
+
+  # 추출이 회복되면 같은 파일을 정상 판정해 재연결한다.
+  rm -f "$sandbox/stub-bin/grep"
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected recovered run to exit 0"
+  _karakeep_fallback_sync_assert_relinked "$sandbox" "$source_url"
 }
