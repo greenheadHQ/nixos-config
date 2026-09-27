@@ -544,6 +544,63 @@ test_claude_remote_control_cleanup_resolves_nested_worktree_paths() {
   [ ! -e "$wt_root/orphan_one" ] || fail "orphan dir holding no registered worktree should be removed"
 }
 
+# 디렉터리를 가리키는 심링크 항목은 링크만 지우고 링크 대상은 건드리지 않는다.
+test_claude_remote_control_cleanup_removes_symlink_entries_only() {
+  local sandbox repo wt_root link
+  sandbox="$(_claude_rc_new_sandbox)"
+  repo="$sandbox/repo"
+  wt_root="$repo/.claude/worktrees"
+  create_git_fixture_repo "$repo"
+  _claude_rc_setup "$sandbox"
+  mkdir -p "$sandbox/external" "$wt_root/feature_one/src" "$wt_root/orphan_one"
+  printf 'marker:external\n' >"$sandbox/external/keep.txt"
+  printf 'marker:work\n' >"$wt_root/feature_one/src/work.txt"
+  ln -s "$sandbox/external" "$wt_root/link"
+  ln -s "$wt_root/feature_one/src" "$wt_root/current"
+
+  _claude_rc_run "$repo" bash "$(_claude_rc_wrapper_script)" cleanup >/dev/null
+
+  [ "$(cat "$sandbox/external/keep.txt" 2>/dev/null)" = "marker:external" ] \
+    || fail "external symlink target must survive"
+  [ "$(cat "$wt_root/feature_one/src/work.txt" 2>/dev/null)" = "marker:work" ] \
+    || fail "registered worktree content behind a symlink must survive"
+  [ "$(_claude_rc_worktree_registration_state "$repo" "$wt_root/feature_one")" = live ] \
+    || fail "registered worktree should stay live"
+  for link in link current; do
+    if [ -L "$wt_root/$link" ] || [ -e "$wt_root/$link" ]; then
+      fail "orphan symlink should be removed: $link"
+    fi
+  done
+  [ ! -e "$wt_root/orphan_one" ] || fail "plain orphan dir should be removed"
+}
+
+# 잠긴 채 디렉터리가 옮겨진 등록처럼 실제 위치로 풀 수 없는 등록 경로는 적힌 그대로
+# 조상을 판정한다. 그런 등록이 있어도 무관한 고아는 지운다.
+test_claude_remote_control_cleanup_keeps_ancestors_of_unresolvable_worktrees() {
+  local sandbox repo wt_root path
+  sandbox="$(_claude_rc_new_sandbox)"
+  repo="$sandbox/repo"
+  wt_root="$repo/.claude/worktrees"
+  create_git_fixture_repo "$repo"
+  _claude_rc_setup "$sandbox"
+  for path in "$wt_root/stale/x" "$sandbox/elsewhere/y"; do
+    add_fixture_worktree "$repo" "$path" "locked-$(basename "$path")" \
+      || fail "fixture worktree add failed: $path"
+    lock_fixture_worktree "$repo" "$path" "fixture" || fail "fixture worktree lock failed: $path"
+    mv "$path" "$sandbox/moved-$(basename "$path")"
+  done
+  # `stal`은 등록 경로 `stale/x`의 문자열 접두사다.
+  mkdir -p "$wt_root/stale/junk" "$wt_root/stal" "$wt_root/orphan_one"
+  printf 'marker:junk\n' >"$wt_root/stale/junk/marker.txt"
+
+  _claude_rc_run "$repo" bash "$(_claude_rc_wrapper_script)" cleanup >/dev/null
+
+  [ "$(cat "$wt_root/stale/junk/marker.txt" 2>/dev/null)" = "marker:junk" ] \
+    || fail "ancestor of an unresolvable registered worktree should be kept"
+  [ ! -e "$wt_root/stal" ] || fail "orphan sharing a string prefix with an unresolvable worktree should be removed"
+  [ ! -e "$wt_root/orphan_one" ] || fail "unrelated unresolvable worktree must not block orphan removal"
+}
+
 test_claude_remote_control_cleanup_skips_sweep_when_worktree_list_fails() {
   local sandbox repo payload out rc
   sandbox="$(_claude_rc_new_sandbox)"

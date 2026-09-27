@@ -123,6 +123,8 @@ run_test "claude remote-control cleanup removes only orphan worktrees" test_clau
 run_test "claude remote-control cleanup preserves special-character worktrees" test_claude_remote_control_cleanup_preserves_special_character_worktrees
 run_test "claude remote-control cleanup preserves nested worktrees" test_claude_remote_control_cleanup_preserves_nested_worktrees
 run_test "claude remote-control cleanup resolves nested worktree paths" test_claude_remote_control_cleanup_resolves_nested_worktree_paths
+run_test "claude remote-control cleanup removes symlink entries only" test_claude_remote_control_cleanup_removes_symlink_entries_only
+run_test "claude remote-control cleanup keeps ancestors of unresolvable worktrees" test_claude_remote_control_cleanup_keeps_ancestors_of_unresolvable_worktrees
 run_test "claude remote-control cleanup skips sweep when worktree list fails" test_claude_remote_control_cleanup_skips_sweep_when_worktree_list_fails
 run_test "claude remote-control cleanup skips sweep on unparseable worktree list" test_claude_remote_control_cleanup_skips_sweep_on_unparseable_worktree_list
 run_test "claude remote-control maint reconciles declarations" test_claude_remote_control_maint_reconciles_declared_instances
