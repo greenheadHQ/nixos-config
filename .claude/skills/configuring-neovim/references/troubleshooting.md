@@ -101,7 +101,7 @@ nrs                     # Home Manager가 심볼릭 링크 재생성
 |------|------|
 | Esc 키 접근 어려움 | `jk` 매핑 (Insert 모드) |
 | Ctrl 조합 불편 | leader(Space) 기반 키맵 사용 |
-| OSC 52 미지원 | 알려진 Termius 제한 |
+| OSC 52 미지원 | 알려진 Termius 제한. nvim `y`가 기기 클립보드에 닿지 않는다. tmux 밖 nvim의 `p`는 터미널에 묻지 않고 nvim 안의 마지막 복사 내용을 쓰므로 기다리지 않는다 |
 | 한글 입력 깨짐 | 알려진 Termius 제한. 영문으로 입력 후 변환 |
 
 ## 한국어 IME 전환
