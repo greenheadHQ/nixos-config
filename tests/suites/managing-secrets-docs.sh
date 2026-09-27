@@ -134,6 +134,8 @@ _secrets_docs_assert_value_check_steps() {
     [[ -n "$first" && "$first" -lt "$enc_line" ]] || fail "$where: 재암호화 전 바이트 수 기록 명령이 없음: $bytes_cmd"
     grep -qF -- "$bytes_cmd" <<< "$between" || fail "$where: 재암호화 뒤 바이트 수 비교 명령이 없음: $bytes_cmd"
   done
+  grep -qF '바이트 수가 출력되지 않으면' <<< "$between" \
+    || fail "$where: 재암호화 뒤 비교 단계에 '바이트 수가 출력되지 않으면 복호화 실패' 안내가 없음"
   compare_line="$(grep -F '재암호화 전과 같은지' <<< "$between" || true)"
   [[ "$compare_line" == *'git restore <name>.age'* ]] \
     || fail "$where: 재암호화 뒤 바이트 수가 재암호화 전과 같은지 보고 다르면 되돌리는 안내가 없음"
@@ -141,6 +143,25 @@ _secrets_docs_assert_value_check_steps() {
     || fail "$where: 바이트 수 0을 되돌림 기준으로 안내함 — 빈 값 placeholder가 옛 암호문으로 되돌려진다"
   ! grep -F -- '-i <identity>' <<< "$text" | grep -qF 'sudo' \
     || fail "$where: 사용자 키(-i <identity>) 명령에 sudo가 붙음"
+}
+
+# 바이트 수 명령은 복호화 성공을 먼저 확인한 경우에만 숫자를 내야 한다. `agenix -d … | wc -c`만 쓰면
+# 복호화가 실패해도 wc가 `0`과 rc 0을 내, 빈 값 placeholder에서 틀린 identity·recipient가 "바이트 수 같음"으로
+# 통과한다. 또 파일이 없으면 `-d`가 빈 출력과 rc 0으로 끝난다. 그래서 입력(표준입력)의 모든 `| wc -c` 줄은
+# 같은 줄에서 `test -f <name>.age && <복호화> >/dev/null && <복호화> | wc -c` 형태여야 하고(두 복호화의
+# identity와 sudo가 같아야 한다), 그런 줄이 하나 이상 있어야 한다.
+_secrets_docs_assert_byte_counts_need_decrypt_success() {
+  local where="$1" line count=0
+  local re='test -f <name>\.age && (sudo )?nix run github:ryantm/agenix -- -d <name>\.age -i ([^ ]+) >/dev/null && (sudo )?nix run github:ryantm/agenix -- -d <name>\.age -i ([^ ]+) \| wc -c'
+  while IFS= read -r line; do
+    [[ "$line" == *'| wc -c'* ]] || continue
+    count=$((count + 1))
+    [[ "$line" =~ $re ]] \
+      || fail "$where: 바이트 수 명령 앞에 test -f와 복호화 성공 확인(>/dev/null &&)이 없음 — 복호화가 실패해도 0이 나온다: $line"
+    [[ "${BASH_REMATCH[1]}" == "${BASH_REMATCH[3]}" && "${BASH_REMATCH[2]}" == "${BASH_REMATCH[4]}" ]] \
+      || fail "$where: 복호화 성공 확인과 바이트 수 명령의 identity나 sudo가 다름: $line"
+  done
+  [[ "$count" -gt 0 ]] || fail "$where: 바이트 수(| wc -c) 명령이 없음"
 }
 
 # 새 호스트 확인 단계의 시작 줄 번호("새 호스트에서 pull"이 처음 나오는 줄). 없으면 빈 값.
@@ -160,10 +181,12 @@ _secrets_docs_assert_new_host_check_step() {
   step="$(sed -n "$verify_line,\$p" <<< "$text")"
 
   # shellcheck disable=SC2088  # 안내 문구에 그대로 나오는 리터럴 경로다(확장하지 않음).
-  grep -qF -- 'test -f <name>.age && nix run github:ryantm/agenix -- -d <name>.age -i ~/.ssh/id_ed25519 | wc -c' <<< "$step" \
+  grep -qF -- 'test -f <name>.age && nix run github:ryantm/agenix -- -d <name>.age -i ~/.ssh/id_ed25519 >/dev/null && nix run github:ryantm/agenix -- -d <name>.age -i ~/.ssh/id_ed25519 | wc -c' <<< "$step" \
     || fail "$where: 새 호스트 확인에 새 호스트 사용자 키(~/.ssh/id_ed25519) 복호화 명령이 없음"
-  grep -qF -- 'test -f <name>.age && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c' <<< "$step" \
+  grep -qF -- 'test -f <name>.age && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key >/dev/null && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c' <<< "$step" \
     || fail "$where: 새 호스트 확인에 호스트 키(sudo) 복호화 명령이 없음"
+  grep -qF '바이트 수가 출력되지 않으면' <<< "$step" \
+    || fail "$where: 새 호스트 확인에 '바이트 수가 출력되지 않으면 복호화 실패' 안내가 없음"
   ! grep -qF -- '-i <identity>' <<< "$step" \
     || fail "$where: 새 호스트 확인이 새 호스트 identity 대신 재암호화에 쓴 기존 identity(-i <identity>)를 씀"
   grep -F 'ssh-keygen -y -f' <<< "$step" | grep -qF '/etc/ssh/ssh_host_ed25519_key.pub' \
@@ -354,6 +377,7 @@ test_managing_secrets_host_add_workflow_checks_recipients_per_target() {
     || fail "EDITOR=:가 전달되지 않으면 시크릿이 비워진다는 경고가 없음"
   _secrets_docs_assert_value_check_steps "workflows.md 호스트 추가 절" <<< "$section"
   _secrets_docs_assert_new_host_check_step "workflows.md 호스트 추가 절" <<< "$section"
+  _secrets_docs_assert_byte_counts_need_decrypt_success "workflows.md 호스트 추가 절" <<< "$section"
 
   assert_not_contains "$(cat "$wf")" '`allHosts`에 추가'
   assert_not_contains "$(cat "$wf")" '`allHosts` 목록에 있는 모든 공개키'

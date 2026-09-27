@@ -402,9 +402,9 @@ test_add_host_secret_guide_workdir_has_rules_file() {
 # 지워 비대화형 실행에서 시크릿이 비워진다). 전체 재암호화(-r)는 사용 조건과 함께 설명만 한다 —
 # 조건 없는 `agenix -- -r` 명령(identity를 붙인 변형 포함)은 identity가 없는 항목에서 중간에
 # 멈추는 작업을 무조건 권한다. 재암호화 전후 바이트 수 비교, d·f의 호스트 키 sudo 변형, 새 호스트
-# identity로 복호화하는 g 단계도 본다. 이 검사들은 managing-secrets-docs.sh의
-# _secrets_docs_assert_rekey_all_conditional·_secrets_docs_assert_value_check_steps·
-# _secrets_docs_assert_new_host_check_step을 함께 쓴다.
+# identity로 복호화하는 g 단계, 바이트 수 명령마다 앞선 복호화 성공 확인도 본다. 이 검사들은
+# managing-secrets-docs.sh의 _secrets_docs_assert_rekey_all_conditional·_secrets_docs_assert_value_check_steps·
+# _secrets_docs_assert_new_host_check_step·_secrets_docs_assert_byte_counts_need_decrypt_success를 함께 쓴다.
 test_add_host_secret_guide_checks_recipients_per_target() {
   local kind label identity out cd_line pub_line dec_line enc_line check_line
   for kind in common user host; do
@@ -450,5 +450,6 @@ test_add_host_secret_guide_checks_recipients_per_target() {
       || fail "[$kind] EDITOR=:가 전달되지 않으면 시크릿이 비워진다는 경고가 없음"
     _secrets_docs_assert_value_check_steps "[$kind] add-host.sh 안내" < "$out"
     _secrets_docs_assert_new_host_check_step "[$kind] add-host.sh 안내" < "$out"
+    _secrets_docs_assert_byte_counts_need_decrypt_success "[$kind] add-host.sh 안내" < "$out"
   done
 }

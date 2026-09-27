@@ -47,20 +47,15 @@ recipient 그룹마다 복호화에 필요한 identity가 다르다. 그룹 선�
 2. 필요한 시크릿 식별: 새 호스트가 실제로 소비하는 항목만 고른다. 배포 선언은 Home Manager 시크릿이 `modules/shared/programs/secrets/default.nix`에, NixOS 서비스 시크릿이 각 서비스 모듈에 있다.
 3. `publicKeys` 확인: `secrets/secrets.nix`에서 고른 항목마다 어느 그룹이나 인라인 목록을 쓰는지 본다. 그룹을 고치면 그 그룹을 쓰는 모든 항목의 recipient가 함께 바뀐다.
 4. 필요한 recipient만 추가: 고른 항목에 필요한 키만 넣는다. 같은 그룹의 다른 항목까지 열 필요가 없으면 인라인 목록이나 새 그룹을 쓴다. 모든 항목을 공통 그룹으로 모으지 않는다.
-5. identity 확인: 재암호화할 호스트에서, 넘길 identity로 대상 항목을 복호화할 수 있는지 먼저 확인한다. 원문은 버린다. 선언만 있고 파일이 없는 항목은 `-d`가 빈 출력과 rc 0으로 끝나므로 `test -f`를 앞에 둔다.
+5. identity 확인과 바이트 수 기록: 재암호화할 호스트에서, 넘길 identity로 대상 항목을 복호화할 수 있는지 확인하고 재암호화 전 바이트 수를 적어 둔다. 원문은 버린다. 값은 출력하지 않고 해시로도 비교하지 않는다 — 짧은 값은 해시로 역산할 수 있다. 빈 값 placeholder로 둔 항목(`secrets.nix` 주석 참조)은 0일 수 있다.
 
    ```bash
    cd secrets
-   test -f <name>.age && nix run github:ryantm/agenix -- -d <name>.age -i <identity> >/dev/null && echo "복호화 가능"
-   test -f <name>.age && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key >/dev/null && echo "복호화 가능"  # 호스트 키
+   test -f <name>.age && nix run github:ryantm/agenix -- -d <name>.age -i <identity> >/dev/null && nix run github:ryantm/agenix -- -d <name>.age -i <identity> | wc -c
+   test -f <name>.age && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key >/dev/null && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c  # 호스트 키
    ```
 
-   재암호화 전 바이트 수를 적어 둔다. 빈 값 placeholder로 둔 항목(`secrets.nix` 주석 참조)은 0일 수 있다. 값은 출력하지 않고 해시로도 비교하지 않는다 — 짧은 값은 해시로 역산할 수 있다.
-
-   ```bash
-   nix run github:ryantm/agenix -- -d <name>.age -i <identity> | wc -c
-   sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c  # 호스트 키
-   ```
+   바이트 수가 출력되지 않으면 파일이 없거나 복호화에 실패한 것이다. 선언만 있고 파일이 없는 항목은 `-d`가 빈 출력과 rc 0으로 끝나고, `-d` 출력을 `wc -c`로 세는 파이프는 복호화가 실패해도 `0`과 rc 0을 내므로 `test -f`와 복호화 성공 확인(`>/dev/null &&`)을 앞에 둔다.
 
 6. 재암호화: 확인된 항목만 재암호화한다. `EDITOR=:`이면 agenix가 에디터를 열지 않고, 복호화한 내용을 현재 `publicKeys`로 다시 암호화한다. `-r`이 항목마다 쓰는 경로와 같다. `EDITOR=:`가 agenix까지 전달되지 않으면 비대화형 실행에서 표준입력이 값을 대체해 시크릿이 비워진다(rc는 0이다). sudo는 앞에 둔 환경 변수를 명령에 넘기지 않으므로, 호스트 키 항목은 `EDITOR=:`를 sudo 뒤에 둔다.
 
@@ -74,18 +69,20 @@ recipient 그룹마다 복호화에 필요한 identity가 다르다. 그룹 선�
 7. 값 보존 확인: 재암호화한 항목을 복호화해 바이트 수가 재암호화 전과 같은지 본다(5단계에서 적어 둔 값). 다르면 `git restore <name>.age`로 되돌린다.
 
    ```bash
-   nix run github:ryantm/agenix -- -d <name>.age -i <identity> | wc -c
-   sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c  # 호스트 키
+   test -f <name>.age && nix run github:ryantm/agenix -- -d <name>.age -i <identity> >/dev/null && nix run github:ryantm/agenix -- -d <name>.age -i <identity> | wc -c
+   test -f <name>.age && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key >/dev/null && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c  # 호스트 키
    ```
+
+   바이트 수가 출력되지 않으면 복호화에 실패한 것이다(값 비교 전에 멈춘다).
 
 8. 새 호스트 확인: 변경을 커밋·push하고 새 호스트에서 pull한 뒤, 새 호스트의 identity로 재암호화한 항목을 복호화해 바이트 수가 5단계에서 적어 둔 값과 같은지 본다. 5~7단계는 기존 identity로만 복호화하므로, 형식은 맞지만 다른 공개키를 등록해도 모두 통과한다. 이 확인이 끝나기 전에는 recipient 갱신을 완료로 보지 않는다.
 
    ```bash
    # 새 호스트의 저장소 checkout에서 (secrets/)
-   test -f <name>.age && nix run github:ryantm/agenix -- -d <name>.age -i ~/.ssh/id_ed25519 | wc -c
-   test -f <name>.age && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c  # 호스트 키
+   test -f <name>.age && nix run github:ryantm/agenix -- -d <name>.age -i ~/.ssh/id_ed25519 >/dev/null && nix run github:ryantm/agenix -- -d <name>.age -i ~/.ssh/id_ed25519 | wc -c
+   test -f <name>.age && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key >/dev/null && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c  # 호스트 키
    ```
 
-   복호화에 실패하거나 바이트 수가 다르면 등록한 공개키가 그 호스트의 실제 키와 다르다. 새 호스트에서 `ssh-keygen -y -f ~/.ssh/id_ed25519` 출력(호스트 키는 `/etc/ssh/ssh_host_ed25519_key.pub`)을 `libraries/constants.nix` 값과 비교해 고친 뒤 5~8단계를 다시 한다.
+   바이트 수가 출력되지 않으면 복호화에 실패한 것이다(값 비교 전에 멈춘다). 복호화에 실패하거나 바이트 수가 다르면 등록한 공개키가 그 호스트의 실제 키와 다르다. 새 호스트에서 `ssh-keygen -y -f ~/.ssh/id_ed25519` 출력(호스트 키는 `/etc/ssh/ssh_host_ed25519_key.pub`)을 `libraries/constants.nix` 값과 비교해 고친 뒤 5~8단계를 다시 한다.
 
 전체 재암호화(`nix run github:ryantm/agenix -- -r`)는 넘긴 identity로 `secrets.nix`의 모든 항목을 복호화할 수 있을 때만 쓴다. `-r`은 항목을 차례로 처리하다 복호화하지 못하는 항목에서 멈추고, 그 앞 항목만 새 recipient로 바뀐 채 남는다. 현재 선언에는 Mac 사용자 키 전용 항목과 MiniPC 호스트 키 전용 항목이 함께 있어, 한 호스트의 identity만으로는 이 조건을 채우지 못한다. identity가 없는 항목은 그 identity가 있는 호스트에서 대상별로 재암호화한다. 원본 값에서 새로 암호화해야 하면 [troubleshooting.md](troubleshooting.md)의 "agenix -e의 /dev/stdin 에러" 절차를 쓴다.
