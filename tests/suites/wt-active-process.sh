@@ -557,3 +557,89 @@ test_wt_remove_worktree_guarded_failure_hint_names_nested_worktree_unit() {
     [[ -d "$wt_path" ]] || exit 14
   ) || fail "guarded 제거 실패 안내가 중첩 worktree 이름을 쓰지 않음 (exit $?)"
 }
+
+test_wt_lsof_escape_path_unit() {
+  # lsof 필드 출력(LC_ALL=C)의 경로 표기를 그대로 재현해야 비교가 성립한다. 실측 형식:
+  # 0x80 이상 바이트는 소문자 \xNN, 백슬래시는 \\, 나머지 출력 가능 ASCII(공백·%·따옴표
+  # 포함)는 그대로다. 제어문자는 lsof 표기와 맞추지 않고 실패한다.
+  local out rc
+  out=$(bash -c '
+    source "$1/modules/shared/scripts/lib/wt/process.sh"
+    _wt_lsof_escape_path "$2"
+  ' _ "$REPO_ROOT" $'/w/\xed\x95\x9c \\b%\'"~') || fail "출력 가능한 경로의 이스케이프가 실패함"
+  [[ "$out" == '/w/\xed\x95\x9c \\b%'"'"'"~' ]] || fail "lsof 표기와 다름: [$out]"
+
+  local bad
+  for bad in $'/w/a\tb' $'/w/a\nb' $'/w/a\x7fb' $'/w/a\x01b'; do
+    rc=0
+    bash -c '
+      source "$1/modules/shared/scripts/lib/wt/process.sh"
+      _wt_lsof_escape_path "$2"
+    ' _ "$REPO_ROOT" "$bad" >/dev/null || rc=$?
+    [[ "$rc" == "1" ]] || fail "제어문자 경로는 실패(1)해야 함: $(printf '%q' "$bad") rc=$rc"
+  done
+}
+
+test_wt_cwd_holders_fails_closed_on_control_char_path_unit() {
+  # 대상 경로에 제어문자가 있으면 lsof 표기와 맞춰 볼 수 없으므로 판정 실패로 멈춘다 —
+  # "맞는 이름이 없다"로 흘려 통과시키지 않는다. 대역 lsof는 실제 lsof(LC_ALL=C)처럼
+  # 탭·개행을 `\t`·`\n`으로 적어 그 폴더를 cwd로 둔 프로세스를 보고한다(실측 표기). 날 경로와
+  # 비교하면 맞는 이름이 없어 통과하므로, 결과는 "없음"이 아니라 실패여야 한다. 끝에 붙은
+  # 개행도 잃지 않는다.
+  local sandbox base bin table dir lsof_name out rc
+  sandbox=$(new_sandbox)
+  base="$(cd "$sandbox" && pwd -P)"
+  bin="$sandbox/bin"
+  table="$sandbox/proc.tsv"
+  install_wt_fake_process_tools "$bin" "$table"
+
+  for dir in "$base/wts/tab"$'\t'"x" "$base/wts/trailing-newline"$'\n'; do
+    mkdir -p "$dir"
+    lsof_name="${dir//$'\t'/\\t}"
+    lsof_name="${lsof_name//$'\n'/\\n}"
+    printf '%s\t%s\t%s\t%s\n' 970 1 "$lsof_name" "nvim notes.md" > "$table"
+    rc=0
+    out=$(PATH="$bin:$PATH" WT_LSOF="$bin/lsof" bash -c '
+      set -euo pipefail
+      source "$1/modules/shared/scripts/lib/wt/ui.sh"
+      source "$1/modules/shared/scripts/lib/wt/process.sh"
+      _wt_cwd_holders "$2"
+    ' _ "$REPO_ROOT" "$dir") || rc=$?
+    [[ "$rc" == "1" ]] || fail "제어문자 경로는 판정 실패(1)여야 함: $(printf '%q' "$dir") rc=$rc out=$out"
+    assert_contains "$out" "제어문자"
+  done
+}
+
+test_wt_cleanup_active_guard_matches_escaped_path() {
+  # lsof -F는 경로를 이스케이프해 낸다. 이름에 한글·이모지·백슬래시(공백 포함)가 든
+  # worktree를 실제 프로세스가 붙잡고 있을 때, 호출 환경의 locale(C·UTF-8)과 무관하게
+  # 같은 판정을 내야 한다. 날 경로와 비교하면 이 프로세스를 놓쳐 그대로 지운다.
+  local sandbox home_dir repo_root gh_dir name special loc
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  gh_dir="$sandbox/gh-bin"
+  name='한글😀back\slash sp'
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  git -C "$repo_root" remote add origin https://example.invalid/nixos-config.git
+  special="$repo_root/.claude/worktrees/$name"
+  add_fixture_worktree "$repo_root" "$special" "feat-special"
+  mkdir -p "$special/sub"
+  install_merged_pr_mock_for_branch "$gh_dir" "feat-special" "$(git -C "$special" rev-parse HEAD)"
+
+  (
+    wt_holder_pid=""
+    trap stop_wt_cwd_holder EXIT
+    start_wt_cwd_holder "$special/sub"
+    local output
+    for loc in C C.UTF-8; do
+      output=$(LC_ALL="$loc" run_fixture_wt "$home_dir" "$repo_root" "$gh_dir:" cleanup "$name" 2>&1) \
+        || fail "LC_ALL=$loc cleanup 비정상 종료: $output"
+      assert_contains "$output" "PID $wt_holder_pid: sleep 120"
+      [[ -d "$special" ]] || fail "LC_ALL=$loc: 특수 문자 경로의 쓰는 중인 worktree가 지워짐: $output"
+    done
+  )
+}

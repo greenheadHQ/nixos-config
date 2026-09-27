@@ -22,6 +22,25 @@
 # 파서를 쓰도록 lsof는 wt 래퍼가 Nix store 경로로 고정해 WT_LSOF로 넘긴다 — lsof는 NixOS
 # 시스템 PATH에 늘 있지 않다. 없으면 PATH의 lsof를 쓰고, 그것도 없으면 판정 실패다.
 
+# 경로를 lsof 필드 출력(LC_ALL=C)이 이름을 적는 형식으로 바꾼다. lsof는 이름을 날 바이트로
+# 내지 않는다 — 실측(lsof 4.99.7, macOS 시스템 lsof도 같음): 0x80 이상 바이트는 소문자
+# `\xNN`, 백슬래시는 `\\`, 나머지 출력 가능 ASCII(공백 포함)는 그대로다. 백슬래시도
+# 이스케이프되므로 이 변환은 단사다(날 경로의 `\xNN` 글자와 바이트가 섞이지 않는다).
+# 제어문자(0x00-0x1f, 0x7f)는 lsof 표기(`\t`·`\n`·`^X` 등)와 맞추지 않고 1을 반환한다.
+_wt_lsof_escape_path() {
+  local hex byte ch out=""
+  hex=$(printf '%s' "$1" | LC_ALL=C od -An -v -tx1) || return 1
+  for byte in $hex; do
+    case "$byte" in
+      5c)       out+='\\' ;;
+      [01]?|7f) return 1 ;;
+      [89a-f]?) out+="\\x$byte" ;;
+      *)        printf -v ch "\\x$byte"; out+="$ch" ;;
+    esac
+  done
+  printf '%s\n' "$out"
+}
+
 # 대상 worktree(하위 포함)를 cwd로 둔 프로세스 목록.
 # stdout: 판정하면 붙잡은 프로세스마다 "PID<TAB>명령줄" 한 줄(없으면 빈 출력),
 #         판정하지 못하면 원인 한 줄.
@@ -29,11 +48,17 @@
 _wt_cwd_holders() {
   local wt_path="$1"
   local lsof_bin="${WT_LSOF:-lsof}"
-  local target uid scan table rc=0
+  local target target_name uid scan table rc=0
 
   # lsof는 물리 경로를 보고한다(macOS에서 /tmp로 들어간 프로세스도 /private/tmp/...).
-  target=$(cd "$wt_path" 2>/dev/null && pwd -P) || {
+  # 끝의 x는 경로 끝 개행을 명령 치환이 지우지 않게 하는 표식이다.
+  target=$(cd "$wt_path" 2>/dev/null && pwd -P && printf x) || {
     printf 'worktree 경로를 확인하지 못했습니다: %s\n' "$wt_path"
+    return 1
+  }
+  target="${target%$'\n'x}"
+  target_name=$(_wt_lsof_escape_path "$target") || {
+    printf 'worktree 경로에 제어문자가 있어 lsof 출력과 맞춰 볼 수 없습니다: %q\n' "$target"
     return 1
   }
   if ! command -v "$lsof_bin" >/dev/null 2>&1; then
@@ -42,22 +67,25 @@ _wt_cwd_holders() {
   fi
   uid=$(id -u) || { printf '현재 사용자 ID를 읽지 못했습니다\n'; return 1; }
 
+  # LC_ALL=C: 이름 이스케이프가 locale을 따른다(UTF-8이면 한글은 날 바이트, 이모지는
+  #   \xNN처럼 섞인다). C로 고정하면 두 플랫폼 출력이 같고 _wt_lsof_escape_path와 맞는다.
   # -a: 선택 조건을 AND로 묶는다(기본은 OR라 -u만으로 cwd 아닌 fd까지 섞인다).
   # -F pn: 필드 출력(PID·이름). f 필드는 lsof 빌드에 따라 함께 나오기도 해서 p·n만 해석한다.
   # -w: 경고(읽지 못한 파일 시스템 등)는 판정과 무관하므로 끈다. 오류는 stderr로 그대로 낸다.
-  scan=$("$lsof_bin" -w -n -a -u "$uid" -d cwd -F pn) || rc=$?
+  scan=$(LC_ALL=C "$lsof_bin" -w -n -a -u "$uid" -d cwd -F pn) || rc=$?
   if (( rc != 0 )); then
     printf 'lsof 실행 실패 (종료 코드 %s)\n' "$rc"
     return 1
   fi
 
-  # 비교 규칙은 "== 대상 또는 대상/로 시작"이다 — feat_a와 feat_ab를 섞지 않는다.
+  # 비교 규칙은 "== 대상 또는 대상/로 시작"이다 — feat_a와 feat_ab를 섞지 않는다. 대상도
+  # lsof와 같은 표기로 바꿔 비교한다(`/`는 이스케이프되지 않아 경계 규칙이 그대로 선다).
   local line pid="" candidates=""
   while IFS= read -r line; do
     case "$line" in
       p*) pid="${line#p}" ;;
       n*)
-        if [[ -n "$pid" && ( "${line#n}" == "$target" || "${line#n}" == "$target/"* ) ]]; then
+        if [[ -n "$pid" && ( "${line#n}" == "$target_name" || "${line#n}" == "$target_name/"* ) ]]; then
           candidates+="$pid"$'\n'
         fi
         ;;
