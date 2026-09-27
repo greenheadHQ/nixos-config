@@ -7,28 +7,106 @@
 #
 # 시크릿 내용은 읽지 않는다: secrets/*.age는 파일명만, secrets/secrets.nix는 선언 줄만 본다.
 
-# secrets.nix의 `"<name>.age".publicKeys = <식>;` 선언을 "이름<TAB>그룹"으로 낸다. 그룹은 let
-# 바인딩 이름(allHosts 등)이거나, `[ constants.sshKeys.<키> ]` 인라인 목록이면 그 키 이름이다.
-# 다른 형태의 선언은 해석 실패로 멈춰 이 파서를 함께 고치게 한다(조용히 빠뜨리지 않는다).
-_secrets_docs_declared_groups() {
-  local rules="$1" line name expr
-  local re_decl='^[[:space:]]*"([^"]+\.age)"\.publicKeys[[:space:]]*=[[:space:]]*(.*[^[:space:]])[[:space:]]*;[[:space:]]*$'
-  local re_inline='^\[[[:space:]]*constants\.sshKeys\.([A-Za-z0-9_]+)[[:space:]]*\]$'
+# publicKeys 식을 그룹 표기로 바꾼다. 문서(SKILL.md recipient 열의 첫 단어, workflows.md 그룹 표의
+# 첫 열)도 이 표기를 쓴다.
+#   - let 바인딩 이름(allHosts 등): 그 이름
+#   - 인라인 목록 `[ constants.sshKeys.<k> … constants.hostKeys.<h> … ]`: 원소를 `+`로 잇는다. sshKeys
+#     원소는 키 이름만(`[ constants.sshKeys.macbook ]` → macbook), hostKeys 원소는 `hostKeys.<h>`로 쓴다.
+# 그 밖의 식(`++` 결합, 문자열 리터럴, 빈 목록 등)은 해석 실패로 멈춰 이 파서를 함께 고치게 한다.
+_secrets_docs_group_label() {
+  local expr="$1" elem part label=""
+  local -a elems
   local re_group='^[A-Za-z0-9_]+$'
+  local re_list='^\[[[:space:]]*(.*[^[:space:]])[[:space:]]*\]$'
+  local re_elem='^constants\.(sshKeys|hostKeys)\.([A-Za-z0-9_]+)$'
+  if [[ "$expr" =~ $re_group ]]; then
+    printf '%s\n' "$expr"
+    return 0
+  fi
+  [[ "$expr" =~ $re_list ]] || fail "publicKeys 식을 해석하지 못함: $expr"
+  read -r -a elems <<< "${BASH_REMATCH[1]}"
+  for elem in "${elems[@]}"; do
+    [[ "$elem" =~ $re_elem ]] || fail "인라인 publicKeys 원소를 해석하지 못함: $elem"
+    if [[ "${BASH_REMATCH[1]}" == sshKeys ]]; then
+      part="${BASH_REMATCH[2]}"
+    else
+      part="hostKeys.${BASH_REMATCH[2]}"
+    fi
+    label="${label:+$label+}$part"
+  done
+  printf '%s\n' "$label"
+}
+
+# secrets.nix의 `"<name>.age".publicKeys = <식>;` 선언을 "이름<TAB>그룹 표기"로 낸다. 해석할 수 없는
+# 선언은 조용히 빠뜨리지 않고 실패한다.
+_secrets_docs_declared_groups() {
+  local rules="$1" line name label
+  local re_decl='^[[:space:]]*"([^"]+\.age)"\.publicKeys[[:space:]]*=[[:space:]]*(.*[^[:space:]])[[:space:]]*;[[:space:]]*$'
   while IFS= read -r line; do
     [[ "$line" =~ ^[[:space:]]*# ]] && continue
     [[ "$line" == *'.age"'* ]] || continue
     [[ "$line" =~ $re_decl ]] || fail "secrets.nix의 .age 선언 형식을 해석하지 못함: $line"
     name="${BASH_REMATCH[1]}"
-    expr="${BASH_REMATCH[2]}"
-    if [[ "$expr" =~ $re_inline ]]; then
-      printf '%s\t%s\n' "$name" "${BASH_REMATCH[1]}"
-    elif [[ "$expr" =~ $re_group ]]; then
-      printf '%s\t%s\n' "$name" "$expr"
-    else
-      fail "secrets.nix의 $name publicKeys 식을 해석하지 못함: $expr"
-    fi
+    # 명령 치환 안에서는 errexit가 꺼지므로 실패를 명시적으로 잇는다.
+    label="$(_secrets_docs_group_label "${BASH_REMATCH[2]}")" \
+      || fail "secrets.nix의 $name publicKeys를 해석하지 못함"
+    printf '%s\t%s\n' "$name" "$label"
   done < "$rules"
+}
+
+# 그룹 표기가 가리키는 키 참조를 "sshKeys.<k>"/"hostKeys.<h>" 한 줄씩 낸다. let 바인딩이 있으면 그
+# 본문(첫 `;`까지)에서 찾고, 없으면 인라인 표기를 되돌린다. 키를 하나도 찾지 못하면 실패한다.
+_secrets_docs_group_keys() {
+  local rules="$1" group="$2" binding part
+  local -a parts refs=()
+  binding="$(awk -v g="$group" '$1 == g && $2 == "=" { on = 1 } on { print } on && /;/ { exit }' "$rules")"
+  if [[ -n "$binding" ]]; then
+    while IFS= read -r part; do
+      [[ -n "$part" ]] && refs+=("$part")
+    done < <(grep -oE '(sshKeys|hostKeys)\.[A-Za-z0-9_]+' <<< "$binding" || true)
+  else
+    IFS='+' read -r -a parts <<< "$group"
+    for part in "${parts[@]}"; do
+      if [[ "$part" == hostKeys.* ]]; then
+        refs+=("$part")
+      else
+        refs+=("sshKeys.$part")
+      fi
+    done
+  fi
+  [[ "${#refs[@]}" -gt 0 ]] || fail "그룹 ${group}의 키 참조를 찾지 못함"
+  printf '%s\n' "${refs[@]}"
+}
+
+# constants.nix 키 이름의 호스트 표기. 새 호스트 키를 추가하면 이 표와 workflows.md 그룹 표를 함께 갱신한다.
+_secrets_docs_host_label() {
+  case "$1" in
+    macbook) printf 'Mac\n' ;;
+    minipc) printf 'MiniPC\n' ;;
+    *) fail "키 이름 ${1}의 호스트 표기를 모름 — _secrets_docs_host_label을 갱신한다" ;;
+  esac
+}
+
+_secrets_docs_known_hosts() {
+  printf '%s\n' Mac MiniPC
+}
+
+# 표준입력에서 전체 재암호화(agenix의 -r/--rekey) 명령이 나오는 줄을 낸다. identity 같은 인자가 붙거나
+# 순서가 바뀐 변형(`-- -r -i <키>`, `-- -i <키> -r`)과 목록·문장 안의 inline code도 잡는다.
+# tests/suites/add-host.sh도 이 헬퍼로 마법사 출력을 검사한다.
+_secrets_docs_rekey_all_lines() {
+  grep -nE 'agenix --([[:space:]]+[^[:space:]`]+)*[[:space:]]+(-r|--rekey)([[:space:]`]|$)' || true
+}
+
+# 전체 재암호화 명령은 사용 조건("…때만") 문장 한 곳에만 둘 수 있다. 입력은 표준입력으로 받는다.
+_secrets_docs_assert_rekey_all_conditional() {
+  local where="$1" lines count
+  lines="$(_secrets_docs_rekey_all_lines)"
+  [[ -n "$lines" ]] || return 0
+  count="$(wc -l <<< "$lines" | tr -d ' ')"
+  [[ "$count" -le 1 ]] \
+    || fail "$where: 전체 재암호화(-r) 명령이 ${count}곳에 있음 — 조건 문장 한 곳만 허용한다: $lines"
+  [[ "$lines" == *때만* ]] || fail "$where: 전체 재암호화(-r) 명령을 조건 없이 안내함: $lines"
 }
 
 # SKILL.md 통합 Secret Inventory 표의 `.age` 행을 "이름<TAB>recipient 열의 첫 단어"로 낸다.
@@ -78,49 +156,107 @@ test_managing_secrets_inventory_matches_age_files_and_rules() {
     || fail "SKILL.md 서두의 .age 개수($stated)가 파일 수($(wc -l <<< "$files" | tr -d ' '))와 다름"
 }
 
-# 그룹의 복호화 identity: let 바인딩 본문(첫 `;`까지)에 hostKeys가 있으면 호스트 키, 아니면
-# 사용자 키다. 인라인 목록은 _secrets_docs_declared_groups가 sshKeys만 받으므로 사용자 키다.
-_secrets_docs_group_identity() {
-  local rules="$1" group="$2" binding
-  binding="$(awk -v g="$group" '$1 == g && $2 == "=" { on = 1 } on { print } on && /;/ { exit }' "$rules")"
-  if [[ "$binding" == *hostKeys.* ]]; then
-    printf '%s\n' '/etc/ssh/ssh_host_ed25519_key'
-  else
-    # shellcheck disable=SC2088  # 문서에 그대로 나오는 리터럴 경로다(확장하지 않음).
-    printf '%s\n' '~/.ssh/id_ed25519'
-  fi
-}
-
-# workflows.md 그룹 표의 행을 "그룹<TAB>identity 열"로 낸다. 첫 열의 인라인 목록
-# `[ constants.sshKeys.<키> ]`은 선언 파서와 같게 키 이름으로 바꾼다.
+# workflows.md 그룹 표의 행을 "그룹 표기<TAB>identity 열"로 낸다. 첫 열은 선언과 같은 규칙으로 표기한다.
 _secrets_docs_workflow_group_rows() {
-  local line group
+  local line label
   local -a cols
   local re_row='^\|[[:space:]]*`([^`]+)`'
-  local re_inline='^\[[[:space:]]*constants\.sshKeys\.([A-Za-z0-9_]+)[[:space:]]*\]$'
   while IFS= read -r line; do
     [[ "$line" =~ $re_row ]] || continue
-    group="${BASH_REMATCH[1]}"
-    [[ "$group" =~ $re_inline ]] && group="${BASH_REMATCH[1]}"
+    label="$(_secrets_docs_group_label "${BASH_REMATCH[1]}")" \
+      || fail "workflows.md 그룹 표의 첫 열을 해석하지 못함: $line"
     IFS='|' read -r -a cols <<< "$line"
-    printf '%s\t%s\n' "$group" "${cols[${#cols[@]}-1]}"
+    printf '%s\t%s\n' "$label" "${cols[${#cols[@]}-1]}"
   done
 }
 
-# ── 호스트 추가 절차: secrets.nix가 쓰는 recipient 그룹마다 표에 복호화 identity가 맞게 적혀
-# 있고, 규칙 파일이 있는 secrets/에서 publicKeys 확인 → identity로 복호화 확인 → 대상별
-# 재암호화 순서로 안내해야 한다. 전체 재암호화(-r)는 조건과 함께 설명만 하고, 공통 그룹을 모든
-# 항목에 적용하라는 설명은 없어야 한다.
+# 그룹 표 한 행의 identity 열이 그 그룹의 키 종류(사용자 키·호스트 키)와 호스트를 모두, 그리고 그것만
+# 짚는지 본다. 예: minipcOnly 행에 Mac이 나오거나 사용자 키 그룹 행에 호스트 키 경로가 나오면 실패한다.
+_secrets_docs_assert_group_row() {
+  local rules="$1" group="$2" row="$3" keys ref host has_user=0 has_host=0 hosts=" "
+  keys="$(_secrets_docs_group_keys "$rules" "$group")" || fail "그룹 ${group}의 키를 해석하지 못함"
+  while IFS= read -r ref; do
+    case "$ref" in
+      sshKeys.*) has_user=1 ;;
+      hostKeys.*) has_host=1 ;;
+    esac
+    host="$(_secrets_docs_host_label "${ref#*.}")" || fail "그룹 ${group}의 호스트 표기를 정하지 못함"
+    hosts+="$host "
+  done <<< "$keys"
+
+  # shellcheck disable=SC2088  # 문서에 그대로 나오는 리터럴 경로다(확장하지 않음).
+  if (( has_user )); then
+    [[ "$row" == *'`~/.ssh/id_ed25519`'* ]] || fail "그룹 표 $group 행에 사용자 키 identity가 없음: $row"
+  else
+    [[ "$row" != *'~/.ssh/id_ed25519'* ]] || fail "그룹 표 $group 행에 그룹에 없는 사용자 키 identity가 있음: $row"
+  fi
+  if (( has_host )); then
+    [[ "$row" == *'`/etc/ssh/ssh_host_ed25519_key`'* ]] || fail "그룹 표 $group 행에 호스트 키 identity가 없음: $row"
+  else
+    [[ "$row" != *'ssh_host_ed25519_key'* ]] || fail "그룹 표 $group 행에 그룹에 없는 호스트 키 identity가 있음: $row"
+  fi
+  while IFS= read -r host; do
+    if [[ "$hosts" == *" $host "* ]]; then
+      [[ "$row" == *"$host"* ]] || fail "그룹 표 $group 행에 호스트 ${host}가 없음: $row"
+    else
+      [[ "$row" != *"$host"* ]] || fail "그룹 표 $group 행에 그룹에 없는 호스트 ${host}가 있음: $row"
+    fi
+  done < <(_secrets_docs_known_hosts)
+}
+
+# ── 선언 파서: 문서가 권하는 인라인 목록(여러 키, 호스트 키)을 그룹 표기와 키 참조로 해석하고,
+# 해석할 수 없는 식에서는 크게 실패해야 한다. 합성 규칙 파일만 쓴다.
+test_managing_secrets_group_parser_accepts_inline_key_lists() {
+  local sandbox rules expected out bad
+  sandbox="$(new_sandbox)"
+  rules="$sandbox/secrets.nix"
+  cat > "$rules" <<'EOF'
+let
+  users = [
+    constants.sshKeys.macbook
+    constants.sshKeys.minipc
+  ];
+in
+{
+  "a.age".publicKeys = users;
+  "b.age".publicKeys = [ constants.sshKeys.macbook ];
+  "c.age".publicKeys = [ constants.sshKeys.macbook constants.sshKeys.minipc ];
+  "d.age".publicKeys = [ constants.hostKeys.minipc ];
+  "e.age".publicKeys = [ constants.sshKeys.minipc constants.hostKeys.minipc ];
+}
+EOF
+  expected="$(printf '%s\t%s\n' a.age users b.age macbook c.age macbook+minipc d.age hostKeys.minipc e.age minipc+hostKeys.minipc)"
+  out="$(_secrets_docs_declared_groups "$rules")"
+  [[ "$out" == "$expected" ]] || fail "선언 그룹 표기가 기대와 다름: $(diff <(printf '%s\n' "$expected") <(printf '%s\n' "$out") || true)"
+
+  [[ "$(_secrets_docs_group_keys "$rules" users)" == $'sshKeys.macbook\nsshKeys.minipc' ]] \
+    || fail "let 바인딩 users의 키 참조가 기대와 다름"
+  [[ "$(_secrets_docs_group_keys "$rules" macbook+minipc)" == $'sshKeys.macbook\nsshKeys.minipc' ]] \
+    || fail "여러 키 인라인 목록의 키 참조가 기대와 다름"
+  [[ "$(_secrets_docs_group_keys "$rules" minipc+hostKeys.minipc)" == $'sshKeys.minipc\nhostKeys.minipc' ]] \
+    || fail "사용자 키·호스트 키 혼합 인라인 목록의 키 참조가 기대와 다름"
+
+  for bad in 'users ++ [ constants.hostKeys.minipc ]' '[ "ssh-ed25519 AAAAsynthetic" ]' '[ ]'; do
+    printf '{\n  "x.age".publicKeys = %s;\n}\n' "$bad" > "$sandbox/bad.nix"
+    if out="$(_secrets_docs_declared_groups "$sandbox/bad.nix" 2>&1)"; then
+      fail "해석할 수 없는 publicKeys 식을 통과시킴: $bad"
+    fi
+    assert_contains "$out" "해석하지 못함"
+  done
+}
+
+# ── 호스트 추가 절차: secrets.nix가 쓰는 recipient 그룹마다 표에 복호화 identity와 호스트가 맞게 적혀
+# 있고, 규칙 파일이 있는 secrets/에서 publicKeys 확인 → identity로 복호화 확인(test -f 선행) →
+# 대상별 재암호화(root는 sudo 뒤에 EDITOR=:) → 빈 값 확인 순서로 안내해야 한다. 전체 재암호화(-r)는
+# 조건 문장 한 곳에서만 설명하고, 공통 그룹을 모든 항목에 적용하라는 설명은 없어야 한다.
 test_managing_secrets_host_add_workflow_checks_recipients_per_target() {
   local wf="$REPO_ROOT/.claude/skills/managing-secrets/references/workflows.md"
   local rules="$REPO_ROOT/secrets/secrets.nix"
-  local section rows groups group identity row pub_line dec_line enc_line
+  local section rows groups group row pub_line dec_line enc_line check_line
   section="$(awk '/^## 호스트 추가/ { on = 1; print; next } on && /^## / { exit } on' "$wf")"
   [[ -n "$section" ]] || fail "workflows.md에 '## 호스트 추가' 절이 없음"
 
-  if grep -qE '^[[:space:]]*(cd secrets && )?nix run github:ryantm/agenix -- -r[[:space:]]*$' <<< "$section"; then
-    fail "호스트 추가 절이 조건 없는 전체 재암호화(-r) 명령 줄을 안내함"
-  fi
+  _secrets_docs_assert_rekey_all_conditional "workflows.md 호스트 추가 절" <<< "$section"
   grep -F -- '-r`' <<< "$section" | grep -qF '때만' \
     || fail "호스트 추가 절에 전체 재암호화(-r)를 쓸 수 있는 조건이 없음"
 
@@ -128,11 +264,9 @@ test_managing_secrets_host_add_workflow_checks_recipients_per_target() {
   groups="$(_secrets_docs_declared_groups "$rules" | cut -f2 | LC_ALL=C sort -u)"
   [[ -n "$groups" ]] || fail "secrets.nix에서 recipient 그룹을 찾지 못함"
   while IFS= read -r group; do
-    identity="$(_secrets_docs_group_identity "$rules" "$group")"
     row="$(awk -F '\t' -v g="$group" '$1 == g { print $2 }' <<< "$rows")"
     [[ -n "$row" ]] || fail "호스트 추가 절의 그룹 표에 선언 그룹 $group 행이 없음"
-    [[ "$row" == *"\`$identity\`"* ]] \
-      || fail "호스트 추가 절의 그룹 표에서 $group 행의 복호화 identity가 ${identity}가 아님: $row"
+    _secrets_docs_assert_group_row "$rules" "$group" "$row"
   done <<< "$groups"
 
   assert_contains "$section" "cd secrets"
@@ -140,10 +274,18 @@ test_managing_secrets_host_add_workflow_checks_recipients_per_target() {
   pub_line="$(grep -nF -m1 '`publicKeys` 확인' <<< "$section" | cut -d: -f1 || true)"
   dec_line="$(grep -nF -m1 -- '-d <name>.age -i <identity>' <<< "$section" | cut -d: -f1 || true)"
   enc_line="$(grep -nF -m1 -- '-e <name>.age -i <identity>' <<< "$section" | cut -d: -f1 || true)"
-  [[ -n "$pub_line" && -n "$dec_line" && -n "$enc_line" ]] \
-    || fail "호스트 추가 절에 publicKeys 확인·복호화 확인·대상별 재암호화 중 빠진 단계가 있음 (pub=$pub_line dec=$dec_line enc=$enc_line)"
-  [[ "$pub_line" -lt "$dec_line" && "$dec_line" -lt "$enc_line" ]] \
-    || fail "호스트 추가 절의 순서가 publicKeys 확인 → 복호화 확인 → 재암호화가 아님 (pub=$pub_line dec=$dec_line enc=$enc_line)"
+  check_line="$(grep -nF -- '-d <name>.age -i <identity> | wc -c' <<< "$section" | cut -d: -f1 | tail -1 || true)"
+  [[ -n "$pub_line" && -n "$dec_line" && -n "$enc_line" && -n "$check_line" ]] \
+    || fail "호스트 추가 절에 publicKeys 확인·복호화 확인·대상별 재암호화·빈 값 확인 중 빠진 단계가 있음 (pub=$pub_line dec=$dec_line enc=$enc_line check=$check_line)"
+  [[ "$pub_line" -lt "$dec_line" && "$dec_line" -lt "$enc_line" && "$enc_line" -lt "$check_line" ]] \
+    || fail "호스트 추가 절의 순서가 publicKeys 확인 → 복호화 확인 → 재암호화 → 빈 값 확인이 아님 (pub=$pub_line dec=$dec_line enc=$enc_line check=$check_line)"
+  sed -n "${dec_line}p" <<< "$section" | grep -qF 'test -f <name>.age &&' \
+    || fail "복호화 확인 명령 앞에 test -f <name>.age가 없음 — 파일 없는 항목이 복호화 가능으로 보인다"
+
+  assert_contains "$section" 'sudo EDITOR=: nix run github:ryantm/agenix -- -e <name>.age -i /etc/ssh/ssh_host_ed25519_key'
+  assert_not_contains "$section" 'EDITOR=: sudo'
+  grep -F 'EDITOR=:' <<< "$section" | grep -qF '비워진다' \
+    || fail "EDITOR=:가 전달되지 않으면 시크릿이 비워진다는 경고가 없음"
 
   assert_not_contains "$(cat "$wf")" '`allHosts`에 추가'
   assert_not_contains "$(cat "$wf")" '`allHosts` 목록에 있는 모든 공개키'

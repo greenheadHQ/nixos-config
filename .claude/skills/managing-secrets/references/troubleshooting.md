@@ -136,7 +136,7 @@ nix-shell -p age --run 'age -d -i ~/.ssh/id_ed25519 secrets/<name>.age' >/dev/nu
 
 해결: 바꾼 항목을 [workflows.md](workflows.md) "호스트 추가"의 identity 확인 → 대상별 재암호화 순서로 재암호화한다. 전체 재암호화(`-r`)는 넘긴 identity로 `secrets.nix`의 모든 항목을 복호화할 수 있을 때만 쓴다.
 
-호스트 키 변경 시: 해당 호스트의 SSH 키가 재생성된 경우, `secrets/secrets.nix`에서 공개키를 업데이트한 후 재암호화.
+호스트 키 변경 시: 해당 호스트의 SSH 키가 재생성된 경우, 공개키 정본인 `libraries/constants.nix`(`sshKeys`·`hostKeys`)에서 공개키를 갱신한 후 재암호화.
 
 ---
 

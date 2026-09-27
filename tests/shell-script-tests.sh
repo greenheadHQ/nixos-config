@@ -597,6 +597,7 @@ run_test "add-host secret guide checks recipients per target" test_add_host_secr
 # ═══════════════════════════════════════════════════════════════════
 run_test "managing-secrets inventory matches age files and rules" test_managing_secrets_inventory_matches_age_files_and_rules
 run_test "managing-secrets host add workflow checks recipients per target" test_managing_secrets_host_add_workflow_checks_recipients_per_target
+run_test "managing-secrets group parser accepts inline key lists" test_managing_secrets_group_parser_accepts_inline_key_lists
 
 # 퇴역 키 로더는 tomlkit 없이도 도는 순수 셸 계약이라 아래 게이트 밖에 둔다.
 run_test "codex-config retired keys loader" test_codex_config_retired_keys_loader

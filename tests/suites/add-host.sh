@@ -397,10 +397,14 @@ test_add_host_secret_guide_workdir_has_rules_file() {
 
 # ── 대상별 recipient·identity 확인 (#1396): 합성 규칙 종류마다 안내가 그 종류의 복호화
 # identity를 짚어야 한다. 순서는 작업 위치 → 각 항목의 publicKeys 확인 → identity로 복호화
-# 확인 → 대상별 재암호화이고, 전체 재암호화(-r)는 사용 조건과 함께 설명만 한다 — 조건 없는
-# `agenix -- -r` 단독 명령 줄은 identity가 없는 항목에서 중간에 멈추는 작업을 무조건 권한다.
+# 확인(test -f 선행) → 대상별 재암호화 → 빈 값 확인이다. 재암호화는 EDITOR=:가 agenix까지
+# 전달돼야 하므로 root 형태는 `sudo EDITOR=: …`여야 한다(`EDITOR=: sudo …`는 sudo가 변수를
+# 지워 비대화형 실행에서 시크릿이 비워진다). 전체 재암호화(-r)는 사용 조건과 함께 설명만 한다 —
+# 조건 없는 `agenix -- -r` 명령(identity를 붙인 변형 포함)은 identity가 없는 항목에서 중간에
+# 멈추는 작업을 무조건 권한다. 이 검사는 managing-secrets-docs.sh의
+# _secrets_docs_assert_rekey_all_conditional을 함께 쓴다.
 test_add_host_secret_guide_checks_recipients_per_target() {
-  local kind label identity out cd_line pub_line dec_line enc_line
+  local kind label identity out cd_line pub_line dec_line enc_line check_line
   for kind in common user host; do
     # shellcheck disable=SC2088  # 안내 문구에 그대로 나오는 리터럴 경로다(확장하지 않음).
     case "$kind" in
@@ -411,9 +415,7 @@ test_add_host_secret_guide_checks_recipients_per_target() {
     _add_host_run_with_synthetic_rules "$kind"
     out="$_add_host_stdout"
 
-    if grep -qE '^[[:space:]]*(EDITOR=[^[:space:]]*[[:space:]]+)?nix run github:ryantm/agenix -- -r[[:space:]]*$' "$out"; then
-      fail "[$kind] 조건 없는 전체 재암호화(-r) 명령 줄을 안내함"
-    fi
+    _secrets_docs_assert_rekey_all_conditional "[$kind] add-host.sh 안내" < "$out"
     grep -F -- '(-r)' "$out" | grep -qF '때만' \
       || fail "[$kind] 전체 재암호화(-r)를 쓸 수 있는 조건이 안내에 없음"
 
@@ -422,6 +424,7 @@ test_add_host_secret_guide_checks_recipients_per_target() {
     pub_line="$(grep -nF -m1 'publicKeys를 확인' "$out" | cut -d: -f1 || true)"
     dec_line="$(grep -nF -m1 -- '-d <name>.age -i <identity>' "$out" | cut -d: -f1 || true)"
     enc_line="$(grep -nF -m1 -- '-e <name>.age -i <identity>' "$out" | cut -d: -f1 || true)"
+    check_line="$(grep -nF -- '-d <name>.age -i <identity> | wc -c' "$out" | cut -d: -f1 | tail -1 || true)"
     [[ -n "$cd_line" ]] || fail "[$kind] 작업 위치를 안내하는 cd 줄이 없음"
 
     # identity 안내는 작업 위치 뒤(시크릿 단계)에서 찾는다 — 앞선 키 등록 안내의 `.pub` 경로와 섞이지 않게.
@@ -431,7 +434,17 @@ test_add_host_secret_guide_checks_recipients_per_target() {
     [[ -n "$pub_line" ]] || fail "[$kind] 각 항목의 publicKeys 확인 단계가 없음"
     [[ -n "$dec_line" ]] || fail "[$kind] identity로 복호화할 수 있는지 확인하는 단계가 없음"
     [[ -n "$enc_line" ]] || fail "[$kind] 대상별 재암호화 명령이 없음"
-    [[ "$cd_line" -lt "$pub_line" && "$pub_line" -lt "$dec_line" && "$dec_line" -lt "$enc_line" ]] \
-      || fail "[$kind] 안내 순서가 작업 위치 → publicKeys 확인 → 복호화 확인 → 재암호화가 아님 (cd=$cd_line pub=$pub_line dec=$dec_line enc=$enc_line)"
+    [[ -n "$check_line" ]] || fail "[$kind] 재암호화 뒤 빈 값 확인(바이트 수) 단계가 없음"
+    [[ "$cd_line" -lt "$pub_line" && "$pub_line" -lt "$dec_line" && "$dec_line" -lt "$enc_line" && "$enc_line" -lt "$check_line" ]] \
+      || fail "[$kind] 안내 순서가 작업 위치 → publicKeys 확인 → 복호화 확인 → 재암호화 → 빈 값 확인이 아님 (cd=$cd_line pub=$pub_line dec=$dec_line enc=$enc_line check=$check_line)"
+    sed -n "${dec_line}p" "$out" | grep -qF 'test -f <name>.age &&' \
+      || fail "[$kind] 복호화 확인 명령 앞에 test -f <name>.age가 없음 — 파일 없는 항목이 복호화 가능으로 보인다"
+
+    grep -qF 'sudo EDITOR=: nix run github:ryantm/agenix -- -e <name>.age -i /etc/ssh/ssh_host_ed25519_key' "$out" \
+      || fail "[$kind] 호스트 키 재암호화의 root 형태(sudo 뒤에 EDITOR=:)가 없음"
+    ! grep -qF 'EDITOR=: sudo' "$out" \
+      || fail "[$kind] EDITOR=:를 sudo 앞에 둔 형태를 안내함 — sudo가 변수를 지워 시크릿이 비워진다"
+    grep -F 'EDITOR=:' "$out" | grep -qF '비워진다' \
+      || fail "[$kind] EDITOR=:가 전달되지 않으면 시크릿이 비워진다는 경고가 없음"
   done
 }
