@@ -693,3 +693,39 @@ test_karakeep_fallback_sync_upload_failure_notify_key_keeps_query() {
   assert_contains "$notify_state" "upload-failed:example.com/articles/query?x=1"
   assert_contains "$notify_state" "upload-failed:example.com/articles/query?x=2"
 }
+
+# processed 기록은 첫 필드의 파일 해시가 정확히 같을 때만 건너뛴다.
+test_karakeep_fallback_sync_processed_state_matches_exact_hash() {
+  local sandbox source_url other_url file other_file other_hash now
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  source_url="https://example.com/articles/source"
+  other_url="https://example.com/articles/other"
+  _karakeep_fallback_sync_write_queue "$sandbox" "$source_url" "$other_url"
+  file="$sandbox/fallback/archive.html"
+  printf '<link rel="canonical" href="%s">\n' "$source_url" > "$file"
+
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected first relink run to exit 0"
+  _karakeep_fallback_sync_assert_relinked "$sandbox" "$source_url"
+
+  # 해시가 첫 필드와 정확히 같은 파일은 다시 판정하지 않는다.
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected second run to exit 0"
+  [ "$(_karakeep_fallback_sync_uploaded_urls "$sandbox")" = "$source_url" ] \
+    || fail "expected processed file not to be uploaded again"
+  ! grep -Fq "자동 재연결 보류" "$sandbox/notifications.log" \
+    || fail "expected processed file not to be judged again"
+
+  # 해시를 부분 문자열로만 포함하는 기록은 처리 완료로 보지 않는다.
+  other_file="$sandbox/fallback/other.html"
+  printf '<link rel="canonical" href="%s">\n' "$other_url" > "$other_file"
+  other_hash=$(sha256sum "$other_file" | cut -d ' ' -f 1)
+  now=$(date +%s)
+  printf 'x%s\thttps://example.com/articles/unrelated\t%s\t%s\n' "$other_hash" "$file" "$now" \
+    >> "$sandbox/state/fallback-processed.tsv"
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected third run to exit 0"
+  grep -Fq -- "--form-string url=$other_url " "$sandbox/curl.log" \
+    || fail "expected a file whose hash only appears as a substring to be relinked"
+}

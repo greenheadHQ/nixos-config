@@ -413,6 +413,7 @@ run_test "karakeep fallback-sync unreadable queue is a match error" test_karakee
 run_test "karakeep fallback-sync comment open inside saved comment is text" test_karakeep_fallback_sync_comment_open_inside_saved_comment_is_text
 run_test "karakeep fallback-sync skips saved comment without url" test_karakeep_fallback_sync_skips_saved_comment_without_url
 run_test "karakeep fallback-sync upload failure notify key keeps query" test_karakeep_fallback_sync_upload_failure_notify_key_keeps_query
+run_test "karakeep fallback-sync processed state matches exact hash" test_karakeep_fallback_sync_processed_state_matches_exact_hash
 run_test "immich backup happy path creates dump atomically" test_immich_backup_happy_path_creates_dump_atomically
 run_test "immich backup integrity failure exits nonzero" test_immich_backup_integrity_failure_exits_nonzero
 run_test "immich backup retention deletes only old dumps in dir" test_immich_backup_retention_deletes_only_old_dumps_in_dir
