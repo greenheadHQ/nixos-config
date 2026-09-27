@@ -65,7 +65,7 @@ _wt_cwd_holders() {
   }
   target="${target%$'\n'x}"
   target_name=$(_wt_lsof_escape_path "$target") || {
-    printf 'worktree 경로에 제어문자가 있어 lsof 출력과 맞춰 볼 수 없습니다: %q\n' "$target"
+    printf 'worktree 경로를 lsof 표기로 바꾸지 못했습니다(제어문자 등): %q\n' "$target"
     return 1
   }
   if ! command -v "$lsof_bin" >/dev/null 2>&1; then

@@ -620,7 +620,7 @@ test_wt_cwd_holders_fails_closed_on_control_char_path_unit() {
       _wt_cwd_holders "$2"
     ' _ "$REPO_ROOT" "$dir") || rc=$?
     [[ "$rc" == "1" ]] || fail "제어문자 경로는 판정 실패(1)여야 함: $(printf '%q' "$dir") rc=$rc out=$out"
-    assert_contains "$out" "제어문자"
+    assert_contains "$out" "worktree 경로를 lsof 표기로 바꾸지 못했습니다(제어문자 등)"
   done
 }
 

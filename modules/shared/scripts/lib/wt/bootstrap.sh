@@ -285,10 +285,10 @@ _wt_branch_checkout_state() {
 #   _remove_worktree <wt_path> <branch> <git_root> guarded <expected_oid> [active_guard]
 #
 # active_guard는 활성 작업 가드(process.sh)를 볼지 정한다: check(기본) | bypass.
-# bypass는 호출자가 `--yes`로 이름을 지정하거나 대화형으로 고른 정리에만 넘긴다(cleanup.sh). mode로는 `--yes`를
-# 구분할 수 없어 따로 받는다 — forced는 확인 프롬프트 통과와 clean한 비-MERGED 이름 지정에도
-# 쓰인다. 기본값이 안전한 쪽이라 bypass가 아닌 값은 모두 check로 본다. 잠금·cwd 가드는
-# bypass와 무관하게 본다.
+# bypass는 호출자가 `--yes`로 이름을 지정하거나 대화형으로 고른 정리에만 넘긴다(cleanup.sh).
+# mode로는 `--yes`를 구분할 수 없어 따로 받는다 — forced는 확인 프롬프트 통과와 clean한
+# 비-MERGED 이름 지정에도 쓰인다. 기본값이 안전한 쪽이라 bypass가 아닌 값은 모두 check로
+# 본다. 잠금·cwd 가드는 bypass와 무관하게 본다.
 #
 # mode는 제거 전략을 고른다. "승인 여부"를 직접 뜻하지 않는다 — 어떤 전략을 쓸지는
 # 호출자가 정책으로 판단하며, 이 함수는 그 결정을 실행만 한다:
