@@ -115,13 +115,20 @@ gc_state_files() {
   gc_notify_state
 }
 
+# URL 동일성: scheme(http/https), `#` 뒤, 경로 끝 `/` 하나의 차이만 무시한다. 쿼리는 끝 `/`까지
+# 정확히 비교한다. 쿼리 값 끝의 `/`를 지우면 서로 다른 URL이 같아져 다른 북마크를 덮어쓴다 (#1495).
 normalize_url() {
   local url="$1"
+  local path query=""
   url="${url#http://}"
   url="${url#https://}"
   url="${url%%#*}"
-  url="${url%/}"
-  printf "%s" "$url"
+  path="${url%%\?*}"
+  if [ "$path" != "$url" ]; then
+    query="${url:${#path}}"
+  fi
+  path="${path%/}"
+  printf "%s%s" "$path" "$query"
 }
 
 shorten_url() {
@@ -261,43 +268,88 @@ tag_identifier_source() {
   awk -v source="$1" '{ print source "\t" $0 }'
 }
 
-# grep의 "일치 없음"(종료 코드 1)은 정상으로 보고, 읽기 오류 같은 2 이상만 실패로 돌려준다.
-grep_optional() {
-  local rc=0
-  grep "$@" || rc=$?
-  [ "$rc" -le 1 ]
+# 평탄화한 snippet에서 canonical link와 og:url·twitter:url meta의 URL을 "출처<TAB>URL"로 낸다.
+# 태그는 `<link`·`<meta` 뒤가 공백이나 `/`인 곳부터 첫 `>`까지다. 속성은 HTML 문법대로 읽는다:
+# 이름과 키워드의 대소문자 무시, `=` 앞뒤 공백, 큰·작은따옴표와 따옴표 없는 값, 순서 무관,
+# 중복 속성은 첫 값, 값 앞뒤 공백 제거. rel은 공백으로 나눈 토큰 집합이라 canonical 토큰이
+# 있으면 된다. 따옴표 안의 `>`는 지원하지 않는다. 값이 `>`에서 잘려 닫는 따옴표가 없으면
+# 그 속성부터 버리므로 식별자가 빠져 보류 쪽으로 떨어진다.
+extract_identifier_tags() {
+  LC_ALL=C awk -v q="'" '
+    function parse_attrs(s,   name, value, quote, close_pos) {
+      split("", attrs)
+      while (1) {
+        sub(/^[[:space:]\/]+/, "", s)
+        if (!match(s, /^[^[:space:]\/>=]+/)) return
+        name = tolower(substr(s, 1, RLENGTH))
+        s = substr(s, RLENGTH + 1)
+        value = ""
+        if (match(s, /^[[:space:]]*=[[:space:]]*/)) {
+          s = substr(s, RLENGTH + 1)
+          quote = substr(s, 1, 1)
+          if (quote == "\"" || quote == q) {
+            close_pos = index(substr(s, 2), quote)
+            if (close_pos == 0) return
+            value = substr(s, 2, close_pos - 1)
+            s = substr(s, close_pos + 2)
+          } else if (match(s, /^[^[:space:]>]+/)) {
+            value = substr(s, 1, RLENGTH)
+            s = substr(s, RLENGTH + 1)
+          }
+        }
+        if (!(name in attrs)) attrs[name] = value
+      }
+    }
+    function trim(v) {
+      sub(/^[[:space:]]+/, "", v)
+      sub(/[[:space:]]+$/, "", v)
+      return v
+    }
+    {
+      n = split($0, parts, "<")
+      for (i = 2; i <= n; i++) {
+        seg = parts[i]
+        tag = tolower(substr(seg, 1, 4))
+        if (tag != "link" && tag != "meta") continue
+        if (substr(seg, 5, 1) !~ /^[[:space:]\/]$/) continue
+        close_pos = index(seg, ">")
+        if (close_pos == 0) continue
+        parse_attrs(substr(seg, 5, close_pos - 5))
+        if (!(tag == "link" ? ("href" in attrs) : ("content" in attrs))) continue
+        if (tag == "link") {
+          rel = " " tolower(attrs["rel"]) " "
+          gsub(/[[:space:]]+/, " ", rel)
+          if (index(rel, " canonical ")) print "canonical\t" trim(attrs["href"])
+        } else {
+          if (tolower(trim(attrs["property"])) == "og:url") print "og:url\t" trim(attrs["content"])
+          if (tolower(trim(attrs["name"])) == "twitter:url") print "twitter:url\t" trim(attrs["content"])
+        }
+      }
+    }
+  ' "$1"
 }
 
 # 원문 식별자만 "출처<TAB>URL"로 출력한다. 본문의 일반 링크는 관련 글일 수 있어
 # overwrite 대상 판정 근거에서 뺀다 (#1388). 한 단계라도 실패하면 일부 식별자만으로
 # 판정하지 않도록 전체를 실패로 돌려준다.
-# 태그 속성은 여러 줄에 걸칠 수 있어 태그 grep은 CR·LF를 공백으로 바꾼 사본에서 찾는다.
-# 패턴이 `[^>]`로 태그의 첫 `>`에서 끝나므로 평탄화해도 다른 태그와 섞이지 않는다.
-# 저장 주석 파서는 줄 머리의 `url:`을 봐야 하므로 원본을 쓴다.
+# 태그 속성은 여러 줄에 걸칠 수 있어 태그 파서는 CR·LF를 공백으로 바꾼 사본을 읽는다.
+# 태그는 첫 `>`에서 끝나므로 평탄화해도 다른 태그와 섞이지 않는다. 저장 주석 파서는 줄 머리의
+# `url:`을 봐야 하므로 원본을 쓴다.
 extract_url_candidates() {
   local file="$1"
-  local snippet flat_snippet quote_class candidates rc=0
+  local snippet flat_snippet candidates rc=0
   snippet=$(mktemp) || return 1
   if ! flat_snippet=$(mktemp); then
     rm -f "$snippet"
     return 1
   fi
-  quote_class='["'"'"']'
 
   candidates=$(
     head -c 2097152 "$file" > "$snippet" &&
       tr '\r\n' '  ' < "$snippet" > "$flat_snippet" &&
       {
         extract_singlefile_saved_url "$snippet" | tag_identifier_source singlefile &&
-          grep_optional -Eoi "<link[^>]+rel=${quote_class}canonical${quote_class}[^>]*>" "$flat_snippet" \
-            | sed -En "s/.*href=${quote_class}([^\"']+)${quote_class}.*/\\1/ip" \
-            | tag_identifier_source canonical &&
-          grep_optional -Eoi "<meta[^>]+property=${quote_class}og:url${quote_class}[^>]*>" "$flat_snippet" \
-            | sed -En "s/.*content=${quote_class}([^\"']+)${quote_class}.*/\\1/ip" \
-            | tag_identifier_source og:url &&
-          grep_optional -Eoi "<meta[^>]+name=${quote_class}twitter:url${quote_class}[^>]*>" "$flat_snippet" \
-            | sed -En "s/.*content=${quote_class}([^\"']+)${quote_class}.*/\\1/ip" \
-            | tag_identifier_source twitter:url
+          extract_identifier_tags "$flat_snippet"
       } | sed -E 's/&amp;/\&/g' | awk -F '\t' '$2 ~ /^https?:\/\//' | sort -u
   ) || rc=$?
 

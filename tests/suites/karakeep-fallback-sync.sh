@@ -493,7 +493,7 @@ HTML
 # 식별자 추출 단계 하나라도 실패하면 일부 식별자만으로 판정하지 않는다. 보류 알림 기록을
 # 남기지 않아 다음 실행에서 다시 판정하고, 알림은 시간 창으로만 억제한다.
 test_karakeep_fallback_sync_identifier_extraction_error_is_retried() {
-  local sandbox source_url real_grep notification_count now
+  local sandbox source_url real_awk notification_count now
   sandbox=$(new_sandbox)
   _karakeep_fallback_sync_prepare_sandbox "$sandbox"
   source_url="https://example.com/articles/source"
@@ -502,15 +502,16 @@ test_karakeep_fallback_sync_identifier_extraction_error_is_retried() {
 <!doctype html>
 <link rel="canonical" href="$source_url">
 HTML
-  real_grep=$(command -v grep)
-  cat > "$sandbox/stub-bin/grep" <<STUB
+  # 식별자 태그 파서(awk 프로그램에 og:url이 들어 있는 호출)만 실패시킨다.
+  real_awk=$(command -v awk)
+  cat > "$sandbox/stub-bin/awk" <<STUB
 #!/usr/bin/env bash
 case "\$*" in
-  *canonical*) echo "grep: simulated read error" >&2; exit 2 ;;
+  *og:url*) echo "awk: simulated read error" >&2; exit 2 ;;
 esac
-exec "$real_grep" "\$@"
+exec "$real_awk" "\$@"
 STUB
-  chmod +x "$sandbox/stub-bin/grep"
+  chmod +x "$sandbox/stub-bin/awk"
 
   _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
     || fail "expected match error run to keep script-level exit 0"
@@ -544,7 +545,7 @@ STUB
     || fail "expected match error notification after the throttle window, got $notification_count"
 
   # 추출이 회복되면 같은 파일을 정상 판정해 재연결한다.
-  rm -f "$sandbox/stub-bin/grep"
+  rm -f "$sandbox/stub-bin/awk"
   _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
     || fail "expected recovered run to exit 0"
   _karakeep_fallback_sync_assert_relinked "$sandbox" "$source_url"
@@ -800,4 +801,113 @@ STUB
     || fail "expected flatten error run to keep script-level exit 0"
 
   _karakeep_fallback_sync_assert_match_error "$sandbox" "$file"
+}
+
+# URL 동일성은 경로 끝 `/`만 무시하고 쿼리는 끝 `/`까지 정확히 비교한다 (#1495 리뷰 P1).
+test_karakeep_fallback_sync_trailing_slash_is_ignored_only_in_path() {
+  local sandbox uploaded
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  _karakeep_fallback_sync_write_queue "$sandbox" \
+    "https://example.com/p?redirect=/a/" \
+    "https://example.com/p?redirect=/a" \
+    "https://example.com/dir/" \
+    "https://example.com/q/?x=1"
+  printf '<link rel="canonical" href="%s">\n' "https://example.com/p?redirect=/a" > "$sandbox/fallback/query.html"
+  printf '<link rel="canonical" href="%s">\n' "https://example.com/dir" > "$sandbox/fallback/path.html"
+  printf '<link rel="canonical" href="%s">\n' "https://example.com/q?x=1" > "$sandbox/fallback/path-query.html"
+
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected trailing slash run to exit 0"
+
+  uploaded=$(_karakeep_fallback_sync_uploaded_urls "$sandbox" | sort)
+  [ "$uploaded" = "$(printf '%s\n' "https://example.com/dir/" "https://example.com/p?redirect=/a" "https://example.com/q/?x=1" | sort)" ] \
+    || fail "expected only exact-query and path-slash matches to relink, got: $uploaded"
+  [ "$(cat "$sandbox/state/failed-urls.txt")" = "https://example.com/p?redirect=/a/" ] \
+    || fail "expected the query URL ending in / to stay queued"
+}
+
+# 문법 표 한 행의 기대를 적는다. relink는 업로드되고 큐에서 빠지며, held는 업로드 없이 큐에 남는다.
+_karakeep_fallback_sync_syntax_expect() {
+  local sandbox="$1"
+  local expect="$2"
+  local queue_url="$3"
+  printf '%s\n' "$queue_url" >> "$sandbox/state/failed-urls.txt"
+  printf '%s\t%s\n' "$expect" "$queue_url" >> "$sandbox/syntax-expect"
+}
+
+# 식별자 태그(canonical link, og:url·twitter:url meta)의 HTML 속성 문법 변형 (#1495 리뷰 P2).
+test_karakeep_fallback_sync_identifier_tag_attribute_syntax() {
+  local sandbox b tab nl expect url uploaded
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  : > "$sandbox/state/failed-urls.txt"
+  : > "$sandbox/syntax-expect"
+  b="https://example.com/syntax"
+  tab=$'\t'
+  nl=$'\n'
+
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$b/eq-spaces"
+  printf '<link rel = "canonical" href = "%s">\n' "$b/eq-spaces" > "$sandbox/fallback/eq-spaces.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$b/eq-tabs"
+  printf '<link rel%s=%s"canonical"%shref%s=%s"%s">\n' "$tab" "$tab" "$tab" "$tab" "$tab" "$b/eq-tabs" > "$sandbox/fallback/eq-tabs.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$b/eq-newlines"
+  printf '<link rel%s=%s"canonical"%shref%s=%s"%s">\n' "$nl" "$nl" "$nl" "$nl" "$nl" "$b/eq-newlines" > "$sandbox/fallback/eq-newlines.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$b/single-quotes"
+  printf "<link rel='canonical' href='%s'>\n" "$b/single-quotes" > "$sandbox/fallback/single-quotes.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$b/unquoted"
+  printf '<link rel=canonical href=%s>\n' "$b/unquoted" > "$sandbox/fallback/unquoted.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$b/unquoted-self-closing"
+  printf '<link rel=canonical href=%s />\n' "$b/unquoted-self-closing" > "$sandbox/fallback/unquoted-self-closing.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$b/upper-names"
+  printf '<LINK REL="canonical" HREF="%s">\n' "$b/upper-names" > "$sandbox/fallback/upper-names.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$b/rel-keyword-case"
+  printf '<link rel="Canonical" href="%s">\n' "$b/rel-keyword-case" > "$sandbox/fallback/rel-keyword-case.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$b/rel-tokens"
+  printf '<link rel="alternate  canonical" href="%s">\n' "$b/rel-tokens" > "$sandbox/fallback/rel-tokens.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$b/content-first"
+  printf '<meta content="%s" property="og:url">\n' "$b/content-first" > "$sandbox/fallback/content-first.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$b/self-closing"
+  printf '<meta property="og:url" content="%s"/>\n' "$b/self-closing" > "$sandbox/fallback/self-closing.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$b/og-property-case"
+  printf '<meta property="OG:URL" content="%s">\n' "$b/og-property-case" > "$sandbox/fallback/og-property-case.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$b/twitter-mixed"
+  printf "<meta name = 'twitter:url' content = %s >\n" "$b/twitter-mixed" > "$sandbox/fallback/twitter-mixed.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$b/entity?a=1&b=2"
+  printf '<link rel="canonical" href="%s">\n' "$b/entity?a=1&amp;b=2" > "$sandbox/fallback/entity.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$b/value-whitespace"
+  printf '<link rel="canonical" href=" %s ">\n' "$b/value-whitespace" > "$sandbox/fallback/value-whitespace.html"
+  # 중복 속성은 HTML 파서처럼 첫 값을 쓴다.
+  _karakeep_fallback_sync_syntax_expect "$sandbox" relink "$b/duplicate-first"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$b/duplicate-second"
+  printf '<link rel="canonical" href="%s" href="%s">\n' "$b/duplicate-first" "$b/duplicate-second" > "$sandbox/fallback/duplicate.html"
+
+  # 따옴표 안의 `>`는 지원하지 않는다. 값이 잘려 보류로 떨어져야 한다.
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$b/quoted-gt?x=>1"
+  printf '<link rel="canonical" href="%s">\n' "$b/quoted-gt?x=>1" > "$sandbox/fallback/quoted-gt.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$b/rel-not-token"
+  printf '<link rel="canonicalx" href="%s">\n' "$b/rel-not-token" > "$sandbox/fallback/rel-not-token.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$b/rel-other"
+  printf '<link rel="alternate" href="%s">\n' "$b/rel-other" > "$sandbox/fallback/rel-other.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$b/og-as-name"
+  printf '<meta name="og:url" content="%s">\n' "$b/og-as-name" > "$sandbox/fallback/og-as-name.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$b/tag-prefix"
+  printf '<linker rel="canonical" href="%s">\n' "$b/tag-prefix" > "$sandbox/fallback/tag-prefix.html"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$b/unclosed-tag"
+  printf '<link rel="canonical" href="%s"' "$b/unclosed-tag" > "$sandbox/fallback/unclosed-tag.html"
+  cp "$sandbox/state/failed-urls.txt" "$sandbox/queue-before"
+
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected attribute syntax run to exit 0"
+
+  uploaded=$(_karakeep_fallback_sync_uploaded_urls "$sandbox")
+  while IFS=$'\t' read -r expect url; do
+    if [ "$expect" = relink ]; then
+      printf '%s\n' "$uploaded" | grep -Fqx -- "$url" || fail "expected syntax case to relink: $url"
+      ! grep -Fqx -- "$url" "$sandbox/state/failed-urls.txt" || fail "expected relinked syntax case to leave the queue: $url"
+    else
+      ! printf '%s\n' "$uploaded" | grep -Fqx -- "$url" || fail "expected syntax case to be held: $url"
+      grep -Fqx -- "$url" "$sandbox/state/failed-urls.txt" || fail "expected held syntax case to stay queued: $url"
+    fi
+  done < "$sandbox/syntax-expect"
 }
