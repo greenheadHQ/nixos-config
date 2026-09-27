@@ -722,13 +722,32 @@ EOF_STUB
   _folder_actions_assert_rar_output "$sandbox" sample_2 "new input"
 )
 
-# ~/Downloads 자체를 쓸 수 없는 것은 입력 결함이 아니라 환경 오류다. 입력을 격리하지 않고 watch dir에
-# 둔 채 알림 한 번과 함께 run을 멈춘다 (#1402의 도구 부재와 같은 처리).
+# ~/Downloads가 아예 없으면 예약 전에 만든다(예약 도입 전 mkdir -p가 하던 동작).
+test_folder_actions_compress_rar_creates_missing_downloads() (
+  local sandbox watch
+  _folder_actions_tool_scripts_runnable || return 0
+
+  sandbox=$(new_sandbox)
+  _folder_actions_install_tool_script "$sandbox" compress-rar
+  _folder_actions_install_tool_double "$sandbox" rar
+  watch="$sandbox/home/FolderActions/compress-rar"
+  rmdir "$sandbox/home/Downloads"
+  printf '%s\n' "new input" > "$watch/sample.txt"
+
+  _folder_actions_run_tool_script "$sandbox" compress-rar >/dev/null 2>&1 \
+    || fail "compress-rar must recreate a missing Downloads"
+  _folder_actions_assert_rar_output "$sandbox" sample "new input"
+  [[ ! -e "$watch/sample.txt" ]] || fail "input must be removed after success"
+)
+
+# ~/Downloads에 새 폴더를 만들 수 없는 것은 입력 결함이 아니라 환경 오류다. 입력을 격리하지 않고
+# watch dir에 둔 채 알림 한 번과 함께 run을 멈춘다 (#1402의 도구 부재와 같은 처리).
+# rejects는 -w가 참인데도 생성이 거부되는 경우(TCC, 용량 부족 등)를 mkdir 대역으로 흉내 낸다.
 test_folder_actions_compress_rar_stops_run_when_downloads_unusable() (
   local kind sandbox watch downloads earlier out rc input
   _folder_actions_tool_scripts_runnable || return 0
 
-  for kind in unwritable file dangling; do
+  for kind in unwritable file dangling rejects; do
     if [ "$kind" = unwritable ] && [ "$(id -u)" = 0 ]; then
       echo "SKIP: root ignores the read-only Downloads case" >&2
       continue
@@ -752,6 +771,21 @@ test_folder_actions_compress_rar_stops_run_when_downloads_unusable() (
       dangling)
         rmdir "$downloads"
         ln -s "$sandbox/missing-downloads" "$downloads"
+        ;;
+      rejects)
+        mkdir "$downloads/sample"
+        printf '%s\n' "earlier archive" > "$downloads/sample/sample.rar"
+        cat > "$sandbox/stubs/mkdir" <<EOF_STUB
+#!/bin/sh
+for arg in "\$@"; do
+  case "\$arg" in
+    '$downloads'/*) echo "mkdir: \$arg: Operation not permitted" >&2; exit 1 ;;
+  esac
+done
+exec /bin/mkdir "\$@"
+EOF_STUB
+        chmod 755 "$sandbox/stubs/mkdir"
+        _folder_actions_route_mkdir_through_stub "$sandbox"
         ;;
     esac
     earlier=$(_folder_actions_tree_digest "$sandbox/home" | grep -E '^[DFL] \./Downloads([ /]|$)')
@@ -787,51 +821,87 @@ test_folder_actions_compress_rar_stops_run_when_downloads_unusable() (
 )
 
 # 쓸 수 있는 Downloads에서 이 이름만 만들 수 없으면(이름 길이 초과 등) 그 입력만 격리한다.
+# 이름 문제인지는 탐침 폴더를 만들어 보고 가린다. collide는 탐침 이름이 이미 있는 경우,
+# unremovable은 탐침을 지우지 못하는 경우다. 어느 쪽이든 남의 항목을 건드리지 않고 격리로 끝나야 한다.
 test_folder_actions_compress_rar_quarantines_input_when_name_cannot_be_reserved() (
-  local sandbox watch downloads earlier out rc
+  local mode sandbox watch downloads earlier out rc entry
+  local -a probes
   _folder_actions_tool_scripts_runnable || return 0
 
-  sandbox=$(new_sandbox)
-  _folder_actions_install_tool_script "$sandbox" compress-rar
-  _folder_actions_install_tool_double "$sandbox" rar
-  _folder_actions_install_notify_double "$sandbox"
-  watch="$sandbox/home/FolderActions/compress-rar"
-  downloads="$sandbox/home/Downloads"
-  mkdir "$downloads/sample"
-  printf '%s\n' "earlier archive" > "$downloads/sample/sample.rar"
-  printf '%s\n' "earlier guide" > "$downloads/sample/데이터_무결성_검증방법.txt"
-  earlier=$(_folder_actions_tree_digest "$downloads")
-  printf '%s\n' "new input" > "$watch/sample.txt"
+  for mode in plain collide unremovable; do
+    sandbox=$(new_sandbox)
+    _folder_actions_install_tool_script "$sandbox" compress-rar
+    _folder_actions_install_tool_double "$sandbox" rar
+    _folder_actions_install_notify_double "$sandbox"
+    watch="$sandbox/home/FolderActions/compress-rar"
+    downloads="$sandbox/home/Downloads"
+    mkdir "$downloads/sample"
+    printf '%s\n' "earlier archive" > "$downloads/sample/sample.rar"
+    printf '%s\n' "earlier guide" > "$downloads/sample/데이터_무결성_검증방법.txt"
+    earlier=$(_folder_actions_tree_digest "$downloads")
+    printf '%s\n' "new input" > "$watch/sample.txt"
 
-  # 번호 붙은 이름은 모두 ENAMETOOLONG처럼 만들어지지 않는다. 실패를 곧바로 다음 번호로 넘기는
-  # 루프는 끝나지 않으므로 시간 제한으로 실패시킨다.
-  cat > "$sandbox/stubs/mkdir" <<EOF_STUB
+    # 번호 붙은 이름은 모두 ENAMETOOLONG처럼 만들어지지 않는다. 실패를 곧바로 다음 번호로 넘기는
+    # 루프는 끝나지 않으므로 시간 제한으로 실패시킨다.
+    cat > "$sandbox/stubs/mkdir" <<EOF_STUB
 #!/bin/sh
 for arg in "\$@"; do
   case "\$arg" in
     '$downloads'/sample_*) echo "mkdir: \$arg: File name too long" >&2; exit 1 ;;
+    '$downloads'/.compress-rar-probe.*)
+      if [ '$mode' = collide ] && [ ! -e '$sandbox/probe.flag' ]; then
+        : > '$sandbox/probe.flag'
+        /bin/mkdir "\$arg" && printf '%s\n' foreign > "\$arg/owner.txt"
+      elif [ '$mode' = unremovable ]; then
+        /bin/mkdir "\$@" || exit 1
+        printf '%s\n' held > "\$arg/held.txt"
+        exit 0
+      fi
+      ;;
   esac
 done
 exec /bin/mkdir "\$@"
 EOF_STUB
-  chmod 755 "$sandbox/stubs/mkdir"
-  _folder_actions_route_mkdir_through_stub "$sandbox"
+    chmod 755 "$sandbox/stubs/mkdir"
+    _folder_actions_route_mkdir_through_stub "$sandbox"
 
-  rc=$(_folder_actions_run_tool_script_bounded "$sandbox" compress-rar 60 "$sandbox/out.log")
-  out=$(cat "$sandbox/out.log")
+    rc=$(_folder_actions_run_tool_script_bounded "$sandbox" compress-rar 60 "$sandbox/out.log")
+    out=$(cat "$sandbox/out.log")
 
-  [[ "$rc" -ne 124 ]] || fail "reservation must stop at a name it cannot create (timed out)"
-  [[ "$(_folder_actions_tree_digest "$downloads")" == "$earlier" ]] \
-    || fail "existing results must stay untouched: $(_folder_actions_tree_digest "$downloads")"
-  [[ "$(_folder_actions_count_calls_on "$sandbox" rm "$watch/sample.txt")" == 0 ]] \
-    || fail "must not delete the input: $(cat "$sandbox/calls.log")"
-  _folder_actions_assert_quarantined "$sandbox" sample.txt "new input"
-  [[ ! -e "$sandbox/rar.log" ]] || fail "rar must not run without a reserved output: $(cat "$sandbox/rar.log")"
-  [[ "$rc" -eq 0 ]] || fail "a quarantined name failure must not abort the run (rc=$rc): $out"
-  assert_contains "$out" "결과 폴더를 만들 수 없음: $downloads/sample_2"
-  assert_contains "$out" "결과 폴더 예약 실패: sample.txt"
-  assert_contains "$(cat "$sandbox/notify.log")" "FolderActions 실패"
-  assert_not_contains "$(cat "$sandbox/notify.log")" "환경 오류"
+    [[ "$rc" -ne 124 ]] || fail "$mode: reservation must stop at a name it cannot create (timed out)"
+    [[ "$(_folder_actions_tree_digest "$downloads" | grep -v '^[DF] \./\.compress-rar-probe\.')" == "$earlier" ]] \
+      || fail "$mode: existing results must stay untouched: $(_folder_actions_tree_digest "$downloads")"
+    [[ "$(_folder_actions_count_calls_on "$sandbox" rm "$watch/sample.txt")" == 0 ]] \
+      || fail "$mode: must not delete the input: $(cat "$sandbox/calls.log")"
+    _folder_actions_assert_quarantined "$sandbox" sample.txt "new input"
+    [[ ! -e "$sandbox/rar.log" ]] || fail "$mode: rar must not run without a reserved output: $(cat "$sandbox/rar.log")"
+    [[ "$rc" -eq 0 ]] || fail "$mode: a quarantined name failure must not abort the run (rc=$rc): $out"
+    assert_contains "$out" "결과 폴더를 만들 수 없음: $downloads/sample_2"
+    assert_contains "$out" "결과 폴더 예약 실패: sample.txt"
+    assert_contains "$(cat "$sandbox/notify.log")" "FolderActions 실패"
+    assert_not_contains "$(cat "$sandbox/notify.log")" "환경 오류"
+
+    probes=()
+    for entry in "$downloads"/.compress-rar-probe.*; do
+      if [ -e "$entry" ] || [ -L "$entry" ]; then probes+=("$entry"); fi
+    done
+    case "$mode" in
+      plain)
+        [[ "${#probes[@]}" -eq 0 ]] || fail "plain: the probe must be removed: ${probes[*]}"
+        ;;
+      collide)
+        [[ -e "$sandbox/probe.flag" ]] || fail "collide: the probe name collision must have fired"
+        [[ "${#probes[@]}" -eq 1 ]] || fail "collide: only the foreign entry may remain: ${probes[*]:-}"
+        [[ "$(ls -A "${probes[0]}")" == "owner.txt" && "$(cat "${probes[0]}/owner.txt")" == "foreign" ]] \
+          || fail "collide: the foreign entry must stay untouched"
+        ;;
+      unremovable)
+        [[ "${#probes[@]}" -eq 1 ]] || fail "unremovable: the probe that could not be removed must stay: ${probes[*]:-}"
+        [[ "$(cat "${probes[0]}/held.txt")" == "held" ]] || fail "unremovable: probe contents must stay"
+        assert_contains "$out" "탐침 폴더를 지우지 못함: ${probes[0]}"
+        ;;
+    esac
+  done
 )
 
 test_folder_actions_compress_rar_keeps_input_when_rar_fails() (

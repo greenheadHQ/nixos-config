@@ -394,6 +394,7 @@ run_test "folder-actions compress-rar keeps earlier archive for same name" test_
 run_test "folder-actions compress-rar separates same-stem inputs" test_folder_actions_compress_rar_separates_same_stem_inputs
 run_test "folder-actions compress-rar skips existing output entries" test_folder_actions_compress_rar_skips_existing_output_entries
 run_test "folder-actions compress-rar reserves output name atomically" test_folder_actions_compress_rar_reserves_output_name_atomically
+run_test "folder-actions compress-rar creates missing Downloads" test_folder_actions_compress_rar_creates_missing_downloads
 run_test "folder-actions compress-rar stops run when Downloads is unusable" test_folder_actions_compress_rar_stops_run_when_downloads_unusable
 run_test "folder-actions compress-rar quarantines input when name cannot be reserved" test_folder_actions_compress_rar_quarantines_input_when_name_cannot_be_reserved
 run_test "folder-actions compress-rar keeps input when rar fails" test_folder_actions_compress_rar_keeps_input_when_rar_fails

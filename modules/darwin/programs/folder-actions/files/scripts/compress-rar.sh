@@ -547,35 +547,54 @@ find_candidates() {
     find "$WATCH_DIR" -maxdepth 1 -type f ! -name ".*"
 }
 
-# DEST_ROOT가 새 폴더를 만들 수 있는 디렉터리인지 본다. 없으면 만든다.
-dest_root_writable() {
-    [ -d "$DEST_ROOT" ] || /bin/mkdir -p "$DEST_ROOT" 2>/dev/null || return 1
-    [ -d "$DEST_ROOT" ] && [ -w "$DEST_ROOT" ]
+# 결과 폴더 mkdir이 실패했는데 그 경로가 없을 때, DEST_ROOT에 짧은 이름의 탐침 폴더를 만들었다
+# 지워 본다. 파일·끊어진 링크·쓰기 금지뿐 아니라 -w가 참인데 생성이 거부되는 경우(TCC, 용량 부족 등)도
+# 이것으로 가린다.
+# 만들 수 있으면 0(그 이름만의 문제), 만들 수 없으면 1(DEST_ROOT의 문제)이다.
+# 탐침 이름이 이미 있으면 그 항목은 건드리지 않고 다른 이름으로 다시 시도하며, 끝내 판단하지
+# 못하면 입력을 옮기지 않는 쪽인 1로 본다. 탐침을 지우지 못하면 경고만 남긴다.
+dest_root_accepts_new_dir() {
+    local try probe
+    for try in 1 2 3; do
+        probe="${DEST_ROOT}/.compress-rar-probe.$$.${try}.${RANDOM}"
+        if /bin/mkdir "$probe" 2>/dev/null; then
+            /bin/rmdir "$probe" 2>/dev/null || log_warn "탐침 폴더를 지우지 못함: $probe"
+            return 0
+        fi
+        if [ ! -e "$probe" ] && [ ! -L "$probe" ]; then
+            return 1
+        fi
+    done
+    return 1
 }
 
-# 결과 폴더 이름을 예약해 RESERVED_OUTPUT_NAME에 둔다 (#1403).
+# 결과 폴더 이름을 예약해 RESERVED_OUTPUT_NAME에 두고, 확보한 폴더를 곧바로 ACTIVE_OUTPUT_DIR에
+# 올려 신호 처리가 알 수 있게 한다 (#1403).
 # 명령 치환으로 돌려받지 않는다. 끝 개행이 잘리면 예약한 폴더와 실제로 쓰는 폴더가 어긋난다.
 # DEST_ROOT에 <stem>이 없으면 그 이름을, 있으면 <stem>_2, <stem>_3 … 중 아직 없는 첫 이름을 쓴다.
 # 이미 있는 항목은 종류(폴더·파일·심볼릭 링크)와 관계없이 건너뛰어 앞선 결과에 쓰지 않는다.
 # 확보는 mkdir(-p 없이) 한 번으로 한다. 이미 있는 경로면 mkdir이 실패하므로, 없음을 확인한 뒤
 # 다른 실행이 같은 이름을 차지하는 틈이 없다.
-# 반환: 0 예약함, 1 이 이름만 만들 수 없음(이름 길이 초과 등), 2 DEST_ROOT에 쓸 수 없음
+# 반환: 0 예약함, 1 이 이름만 만들 수 없음(이름 길이 초과 등), 2 DEST_ROOT에 새 폴더를 만들 수 없음
 reserve_output_name() {
     local stem="$1"
     local name="$stem"
     local n=1
 
     RESERVED_OUTPUT_NAME=""
-    dest_root_writable || return 2
+    # DEST_ROOT가 아예 없으면 전처럼 만든다. 만들 수 없는 경우는 아래 mkdir과 탐침이 가린다.
+    [ -e "$DEST_ROOT" ] || [ -L "$DEST_ROOT" ] || /bin/mkdir -p "$DEST_ROOT" 2>/dev/null || true
     until /bin/mkdir "${DEST_ROOT}/${name}" 2>/dev/null; do
-        # 경로가 없는데 실패했다면 충돌이 아니라 이 이름을 만들 수 없는 것이다.
+        # 경로가 없는데 실패했다면 충돌이 아니다. 탐침으로 이 이름만의 문제인지 가린다.
         if [ ! -e "${DEST_ROOT}/${name}" ] && [ ! -L "${DEST_ROOT}/${name}" ]; then
+            dest_root_accepts_new_dir || return 2
             log_error "결과 폴더를 만들 수 없음: ${DEST_ROOT}/${name}"
             return 1
         fi
         n=$((n + 1))
         name="${stem}_${n}"
     done
+    ACTIVE_OUTPUT_DIR="${DEST_ROOT}/${name}"
     RESERVED_OUTPUT_NAME="$name"
 }
 
@@ -587,7 +606,7 @@ process_one() {
     filename=$(basename "$f")
     name_no_ext="${filename%.*}"
 
-    # 결과 폴더 예약. DEST_ROOT에 쓸 수 없는 것은 입력 결함이 아니라 환경 오류이므로
+    # 결과 폴더 예약. DEST_ROOT에 새 폴더를 만들 수 없는 것은 입력 결함이 아니라 환경 오류이므로
     # require_commands_or_abort(#1402)처럼 입력을 watch dir에 두고 run을 중단한다.
     # 이 이름만 만들 수 없으면 압축하지 않고 입력을 격리한다.
     reserve_output_name "$name_no_ext" || reserve_rc=$?
@@ -606,7 +625,6 @@ process_one() {
     esac
     output_name="$RESERVED_OUTPUT_NAME"
     target_dir="${DEST_ROOT}/${output_name}"
-    ACTIVE_OUTPUT_DIR="$target_dir"
 
     # RAR 압축
     rar_output_path="${target_dir}/${output_name}.rar"
@@ -652,8 +670,9 @@ EOF_GUIDE
         log_error "압축 실패: $filename"
         # 예약한 폴더는 이 입력만 쓰므로 부분 결과와 함께 치운다. 다른 항목이 남아 있으면 rmdir이 실패해 그대로 둔다.
         /bin/rm -f "$rar_output_path" || true
-        /bin/rmdir "$target_dir" 2>/dev/null || log_warn "예약한 결과 폴더를 비우지 못함: $target_dir"
+        # rmdir 뒤에는 이 이름을 다른 실행이 가질 수 있으므로 신호 처리 대상에서 먼저 뺀다.
         ACTIVE_OUTPUT_DIR=""
+        /bin/rmdir "$target_dir" 2>/dev/null || log_warn "예약한 결과 폴더를 비우지 못함: $target_dir"
         quarantine_or_abort "$f"
     fi
 }
