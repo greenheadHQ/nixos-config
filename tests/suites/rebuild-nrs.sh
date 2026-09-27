@@ -1334,19 +1334,32 @@ _deploy_real_nrs_relink_cli() {
 
 # default.nix에 인라인으로 박힌 _repair_claude_symlinks 함수 본문만 추출한다. BEGIN/END
 # 마커 사이 추출은 tests/suites/headless-ssh-dispatcher.sh의 initContent 하위 블록 추출
-# 선례를 따른다. 이 블록은 Nix antiquotation(${...})을 쓰지 않으므로(오직 $HOME 등
-# 셸 변수만 사용) .nix 소스 텍스트 그대로가 실제 렌더링된 zsh와 동일하다 — nix eval 없이
-# 직접 추출해도 충실하며, nix eval 대비 테스트 실행 시간을 크게 줄인다.
+# 선례를 따른다. 이 블록은 Nix antiquotation(${...})이나 raw string 이스케이프('')를 쓰지
+# 않으므로(오직 $HOME 등 셸 변수만 사용) .nix 소스 텍스트는 Nix가 렌더링한 initContent와
+# 앞쪽 공통 들여쓰기(Nix 들여쓴 문자열이 렌더링 시 제거하는 부분)를 제외하면 동일하다 —
+# 들여쓰기 차이는 셸 파싱에 영향이 없으므로 nix eval 없이 직접 추출해도 충실하며, nix eval
+# 대비 테스트 실행 시간을 크게 줄인다. antiquotation이나 raw string 이스케이프가 이 블록에
+# 섞이면 위 동등성 가정이 깨지므로, 조용히 잘못된 텍스트를 돌려주는 대신 즉시 실패한다.
 _inline_repair_claude_symlinks_src() {
-  awk '
-    /BEGIN nixos-config dangling symlink repair probe/ { emit = 1 }
-    emit { print }
-    /END nixos-config dangling symlink repair probe/ { exit }
-  ' "$REPO_ROOT/modules/shared/programs/shell/default.nix"
+  local src
+  src="$(
+    awk '
+      /BEGIN nixos-config dangling symlink repair probe/ { emit = 1 }
+      emit { print }
+      /END nixos-config dangling symlink repair probe/ { exit }
+    ' "$REPO_ROOT/modules/shared/programs/shell/default.nix"
+  )"
+  if grep -qF '${' <<<"$src" || grep -qF "''" <<<"$src"; then
+    fail "_repair_claude_symlinks 블록에 Nix antiquotation(\${) 또는 raw string 이스케이프('')가 감지됨 — 텍스트 추출이 렌더링과 더 이상 동등하지 않을 수 있음"
+  fi
+  printf '%s\n' "$src"
 }
 
 # 인라인 함수를 hermetic zsh -f로 실행한다. "$HOME/.local/bin/nrs-relink"는 실제
 # 서브프로세스 경계이므로 대역 스크립트를 파일로 심는다(함수 스텁이 아니라 실제 바이너리 경계).
+# 대역은 stdout·stderr에 각각 한 줄을 쓰고 자신의 argv($*)를 호출 로그에 남긴다 —
+# 아무것도 출력하지 않는 대역은 default.nix의 ">/dev/null 2>&1" 리다이렉트를 지우는 변이나
+# restore 대신 relink를 호출하는 변이를 구분해내지 못한다.
 # $1: HOME  $2: 호출 로그 파일  $3: 대역 nrs-relink 종료 코드(기본 0)
 _run_inline_repair_claude_symlinks() {
   local home_dir="$1" call_log="$2" restore_exit="${3:-0}" script
@@ -1354,7 +1367,9 @@ _run_inline_repair_claude_symlinks() {
   mkdir -p "$home_dir/.local/bin"
   cat > "$home_dir/.local/bin/nrs-relink" <<EOF
 #!/usr/bin/env bash
-printf 'called\n' >> "$call_log"
+printf 'called %s\n' "\$*" >> "$call_log"
+printf 'stub nrs-relink stdout\n'
+printf 'stub nrs-relink stderr\n' >&2
 exit $restore_exit
 EOF
   chmod +x "$home_dir/.local/bin/nrs-relink"
@@ -1419,7 +1434,10 @@ test_cmd_fix_dangling_probe_matrix() {
       [[ "$rc" -eq 0 ]] || fail "cmd_fix_dangling exited $rc for settings=$settings_state claude_md=$claude_md_state (restore stub succeeds)"
 
       if [[ "$claude_md_state" == "dangling" || "$settings_state" == "dangling" ]]; then
-        [[ -s "$call_log" ]] || fail "expected cmd_restore call for settings=$settings_state claude_md=$claude_md_state"
+        # 두 probe가 모두 dangling인 조합도 포함되므로, 존재 여부가 아니라 정확히 1회
+        # 호출됐는지를 본다 — cmd_restore 뒤 return을 지워 두 probe 각각에서 다시
+        # 호출되게 하는 변이는 "호출됨" 단정만으로는 잡히지 않는다.
+        assert_line_count "$call_log" "called" 1
       else
         [[ ! -s "$call_log" ]] || fail "expected no cmd_restore call for settings=$settings_state claude_md=$claude_md_state"
       fi
@@ -1435,19 +1453,33 @@ test_cmd_fix_dangling_probe_matrix() {
   done
 }
 
-# 직접 CLI 호출 시 cmd_restore 실패가 성공(exit 0)으로 처리되지 않아야 한다.
+# 직접 CLI 호출 시 cmd_restore 실패가 성공(exit 0)으로 처리되지 않아야 한다. 두 probe 중
+# 어느 쪽이 먼저 dangling으로 걸리든(settings.json이 첫 probe, CLAUDE.md가 두 번째 probe)
+# 동일하게 전파되는지 확인한다 — 한쪽 probe에서만 확인하면 다른 probe의 return 경로가
+# 실패를 삼키는 회귀를 놓칠 수 있다.
 test_cmd_fix_dangling_propagates_restore_failure() {
-  local home_dir call_log rc
-  home_dir="$(new_sandbox)/home"
-  _setup_probe_fixture "$home_dir" file dangling
-  call_log="$(new_sandbox)/call.log"
-  : > "$call_log"
+  local settings_state claude_md_state home_dir call_log rc
 
-  rc=0
-  _run_cmd_fix_dangling_with_stub "$home_dir" "$call_log" 1 || rc=$?
+  for settings_state in dangling file; do
+    if [[ "$settings_state" == "dangling" ]]; then
+      claude_md_state=symlink
+    else
+      claude_md_state=dangling
+    fi
 
-  [[ -s "$call_log" ]] || fail "expected cmd_restore to be attempted before failing"
-  [[ "$rc" -ne 0 ]] || fail "expected cmd_fix_dangling to propagate cmd_restore failure as a nonzero exit code"
+    home_dir="$(new_sandbox)/home"
+    _setup_probe_fixture "$home_dir" "$settings_state" "$claude_md_state"
+    call_log="$(new_sandbox)/call.log"
+    : > "$call_log"
+
+    rc=0
+    _run_cmd_fix_dangling_with_stub "$home_dir" "$call_log" 1 || rc=$?
+
+    [[ -s "$call_log" ]] \
+      || fail "expected cmd_restore to be attempted before failing (settings=$settings_state claude_md=$claude_md_state)"
+    [[ "$rc" -ne 0 ]] \
+      || fail "expected cmd_fix_dangling to propagate cmd_restore failure as a nonzero exit code (settings=$settings_state claude_md=$claude_md_state)"
+  done
 }
 
 # settings.json이 정상 일반 파일이고 CLAUDE.md도 정상 링크면, 실제 배포본 CLI를
@@ -1505,9 +1537,13 @@ test_inline_repair_claude_symlinks_probe_matrix() {
       [[ "$rc" -eq 0 ]] || fail "_repair_claude_symlinks exited $rc for settings=$settings_state claude_md=$claude_md_state (output: $output)"
 
       if [[ "$claude_md_state" == "dangling" || "$settings_state" == "dangling" ]]; then
-        [[ -s "$call_log" ]] || fail "expected inline probe to call nrs-relink restore for settings=$settings_state claude_md=$claude_md_state"
+        # 정확히 "restore"로 호출됐는지, 정확히 1회인지를 본다. 존재 여부만 보면
+        # restore를 relink로 바꾸는 변이(매 프롬프트 cwd worktree로 전환하는 위험한
+        # 회귀)나, return 제거로 두 probe에서 중복 호출되는 변이를 잡지 못한다.
+        assert_line_count "$call_log" "called restore" 1
       else
-        [[ ! -s "$call_log" ]] || fail "expected inline probe NOT to call nrs-relink restore for settings=$settings_state claude_md=$claude_md_state"
+        [[ ! -s "$call_log" ]] \
+          || fail "expected inline probe NOT to call nrs-relink for settings=$settings_state claude_md=$claude_md_state (got: $(cat "$call_log"))"
       fi
 
       if [[ "$settings_state" == "file" ]]; then
@@ -1517,11 +1553,11 @@ test_inline_repair_claude_symlinks_probe_matrix() {
   done
 }
 
-# 프롬프트 경로는 상호작용을 방해하지 않아야 하고, 복구가 실패해도 다음 프롬프트에서
-# 다시 시도할 기회를 잃지 않아야 한다. 현재 설계(#294)는 nrs-relink restore의 출력을
-# ">/dev/null 2>&1"로 삼켜 터미널에 아무것도 보이지 않게 하면서도 재시도는 막지 않는다 —
-# 이 동작을 측정해 고정한다(요구사항이 "현재 동작을 먼저 측정해 적는다"이므로 회귀 시
-# 이 테스트가 그 변화를 알린다).
+# 프롬프트 경로는 상호작용을 방해하지 않으면서 다음 시도 기회를 잃지 않아야 한다(#1381).
+# 현재 설계(#294)는 nrs-relink restore의 출력을 ">/dev/null 2>&1"로 삼켜 터미널에 아무것도
+# 보이지 않게 하면서도 재시도는 막지 않는다 — 이 동작을 측정해 고정한다. 대역이 stdout·
+# stderr에 한 줄씩 쓰므로, 저 리다이렉트를 지우는 변이는 output1/output2가 비지 않게 되어
+# 잡힌다.
 test_inline_repair_claude_symlinks_retries_after_restore_failure() {
   local home_dir call_log output1 output2
 
@@ -1535,8 +1571,7 @@ test_inline_repair_claude_symlinks_retries_after_restore_failure() {
 
   [[ -z "$output1" && -z "$output2" ]] \
     || fail "expected inline probe to stay silent on the terminal even when restore fails (got: '$output1' / '$output2')"
-  [[ "$(wc -l < "$call_log" | tr -d ' ')" -eq 2 ]] \
-    || fail "expected every prompt to retry nrs-relink restore after a prior failure, call log: $(cat "$call_log")"
+  assert_line_count "$call_log" "called restore" 2
 }
 
 # probe 목록은 bash(cmd_fix_dangling)와 Nix가 렌더링하는 zsh 인라인 문자열
@@ -1546,14 +1581,17 @@ test_fix_dangling_probe_lists_match_between_cli_and_inline() {
   local cli_script cli_probes inline_probes
   cli_script="$REPO_ROOT/modules/shared/scripts/nrs-relink.sh"
 
+  # 파이프라인이 매치 없음(grep exit 1)으로 실패하면 pipefail 하에서 대입 자체가
+  # errexit로 죽어 아래 "markers may be stale" 진단에 닿지 못한다 — `|| true`로 대입은
+  # 항상 성공시키고, 빈 값 여부는 곧이어 [[ -n ]]으로 명시적으로 진단한다.
   cli_probes="$(
     awk '/^cmd_fix_dangling\(\) \{/{f=1} f{print} f && /^\}$/{exit}' "$cli_script" \
       | grep -oE '"\$HOME/\.claude/[A-Za-z0-9_.]+"' | sort -u
-  )"
+  )" || true
   inline_probes="$(
     _inline_repair_claude_symlinks_src \
       | grep -oE '"\$HOME/\.claude/[A-Za-z0-9_.]+"' | sort -u
-  )"
+  )" || true
 
   [[ -n "$cli_probes" ]] || fail "failed to extract cmd_fix_dangling probe list — awk boundary markers may be stale"
   [[ -n "$inline_probes" ]] || fail "failed to extract _repair_claude_symlinks probe list — BEGIN/END markers may be stale"
