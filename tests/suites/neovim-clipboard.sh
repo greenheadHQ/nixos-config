@@ -52,6 +52,11 @@ vim.fn.setreg("+", { "plus 1", "plus 2" }, "V")
 vim.fn.setreg("*", "star", "v")
 emit("paste_plus", vim.fn.json_encode({ vim.fn.getreg("+", 1, 1), vim.fn.getregtype("+") }))
 emit("paste_star", vim.fn.json_encode({ vim.fn.getreg("*", 1, 1), vim.fn.getregtype("*") }))
+-- 'clipboard'가 비면 provider 자체 캐시로 regtype을 되살리지 않는다(LazyVim은 VeryLazy 전까지 비운다).
+vim.o.clipboard = ""
+vim.fn.setreg("+", { "ab", "cd" }, "\022")
+emit("paste_block", vim.fn.json_encode({ vim.fn.getreg("+", 1, 1), vim.fn.getregtype("+") }))
+vim.o.clipboard = "unnamedplus"
 vim.api.nvim_buf_set_lines(0, 0, -1, false, { "line" })
 vim.cmd("normal! yyp")
 emit("buffer", vim.fn.json_encode(vim.api.nvim_buf_get_lines(0, 0, -1, false)))
@@ -116,13 +121,16 @@ test_neovim_ssh_clipboard_paste_returns_last_copy_without_query() {
   # 붙여넣기는 레지스터별 마지막 복사 내용과 그 regtype을 돌려준다.
   assert_file_contains "$sandbox/out" 'paste_plus=[["plus 1", "plus 2"], "V"]'
   assert_file_contains "$sandbox/out" 'paste_star=[["star"], "v"]'
+  # blockwise(<C-V> 너비 2)도 regtype째 돌려준다.
+  assert_file_contains "$sandbox/out" 'paste_block=[["ab", "cd"], "\u00162"]'
   # clipboard=unnamedplus에서 yy → p가 provider를 거쳐 같은 줄을 붙여넣는다.
   assert_file_contains "$sandbox/out" 'buffer=["line", "line"]'
-  # 복사 세 번만 OSC 52 쓰기로 나가고, 붙여넣기는 터미널에 읽기 요청(52;c;?)을 보내지 않는다.
-  # base64: "plus 1\nplus 2\n", "star", "line\n". <ST>는 ESC \ 종결 시퀀스다.
+  # 복사 네 번만 OSC 52 쓰기로 나가고, 붙여넣기는 터미널에 읽기 요청(52;c;?)을 보내지 않는다.
+  # base64: "plus 1\nplus 2\n", "star", "ab\ncd\n", "line\n". <ST>는 ESC \ 종결 시퀀스다.
   [[ "$(grep '^sent=' "$sandbox/out")" == "$(printf '%s\n' \
     'sent=<ESC>]52;c;cGx1cyAxCnBsdXMgMgo=<ST>' \
     'sent=<ESC>]52;p;c3Rhcg==<ST>' \
+    'sent=<ESC>]52;c;YWIKY2QK<ST>' \
     'sent=<ESC>]52;c;bGluZQo=<ST>')" ]] ||
     fail "expected only OSC 52 copy sequences: $(grep '^sent=' "$sandbox/out")"
 }
