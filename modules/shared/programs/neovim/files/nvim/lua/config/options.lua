@@ -13,18 +13,21 @@ local opt = vim.opt
 -- 클립보드: yank(복사)/delete(삭제) 시 시스템 클립보드와 자동 동기화
 -- "unnamedplus" = y가 곧 시스템 클립보드 복사. SSH에서도 이 사용감을 유지한다.
 -- NOTE: LazyVim은 SSH에서 이 값을 비워 nvim이 OSC 52를 자동 선택하게 하지만,
--- 여기서 다시 켜므로 SSH용 provider는 아래 g:clipboard가 정한다.
+-- 여기서 다시 켜므로 tmux 밖 SSH용 provider는 아래 g:clipboard가 정한다.
 opt.clipboard = "unnamedplus"
 
 -- 클립보드 provider: 환경마다 어디로 복사되는가
 -- - macOS: pbcopy. SSH로 Mac에 들어온 세션도 같다.
--- - tmux 안: nvim 내장 tmux provider(tmux load-buffer -w)가 tmux 버퍼와 바깥 터미널
---   클립보드를 함께 채운다. tmux 플러그인은 거치지 않는다.
+-- - tmux 안: nvim 내장 tmux provider가 tmux load-buffer -w로 tmux 버퍼를 채우고 바깥
+--   터미널 클립보드에도 보낸다. 바깥 클립보드에 실제로 닿는지는 실제 세션 확인 대상이다.
+--   p는 먼저 tmux refresh-client -l로 바깥 터미널에 클립보드를 요청하므로 Ghostty 허용
+--   창이 뜰 수 있다. tmux 플러그인은 거치지 않는다.
 -- - tmux 밖 SSH(Linux): 복사는 OSC 52로 SSH 클라이언트 터미널(Mac Ghostty)의 클립보드에 보낸다.
 --   'clipboard'가 설정돼 있으면 nvim이 OSC 52를 자동 선택하지 않으므로 g:clipboard로 지정한다.
 --   붙여넣기(p)는 터미널에 클립보드를 묻지 않고 이 nvim에서 마지막으로 복사한 내용을 쓴다.
 --   묻는 방식은 p마다 Ghostty 허용 창이 뜨고, 응답이 없는 터미널에서는 최대 10초 기다린다.
---   Mac에서 복사한 텍스트는 터미널 붙여넣기(Cmd+V)로 넣는다.
+--   복사 내용은 nvim 인스턴스마다 따로라 다른 nvim에서 복사한 것은 p로 받지 못한다.
+--   Mac이나 다른 nvim에서 복사한 텍스트는 터미널 붙여넣기(Cmd+V)로 넣는다.
 -- g:clipboard는 provider 초기화(has('clipboard')) 전에 정해야 한다 (:help g:clipboard).
 local function env_set(name)
   local value = vim.env[name]
@@ -43,9 +46,26 @@ if vim.fn.has("mac") == 0 and (env_set("SSH_CONNECTION") or env_set("SSH_TTY")) 
     end
   end
 
+  -- 이 nvim에서 아직 복사하지 않았으면 레지스터 0(ShaDa가 되살린 마지막 yank)을 쓴다.
+  -- copy가 받는 형식에 맞춰 regtype은 한 글자(v/V/b)로 줄이고, V·b는 끝에 빈 줄을 붙인다.
+  -- 폭이 붙은 blockwise regtype("\0222")을 돌려주면 nvim이 잘못된 값으로 거부한다.
+  local function last_yank()
+    local lines = vim.fn.getreg("0", 1, true)
+    if #lines == 0 then
+      return {}
+    end
+    local regtype = ({ v = "v", V = "V", ["\022"] = "b" })[vim.fn.getregtype("0"):sub(1, 1)] or "v"
+    if regtype ~= "v" then
+      table.insert(lines, "")
+    end
+    return { lines, regtype }
+  end
+
+  -- "+"와 "*"는 각자 복사한 내용이 있으면 각자 쓰고, 한쪽만 있으면 그쪽을 쓴다.
   local function paste(reg)
+    local other = reg == "+" and "*" or "+"
     return function()
-      return last_copy[reg] or {}
+      return last_copy[reg] or last_copy[other] or last_yank()
     end
   end
 

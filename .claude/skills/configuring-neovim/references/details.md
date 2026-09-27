@@ -35,11 +35,12 @@ mini.nvim 0.17.0 (2025-12)에서 `echasnovski` → `nvim-mini` 조직으로 이�
 | 환경 | provider | `y` | `p` |
 |------|----------|-----|-----|
 | macOS (SSH로 들어온 세션 포함) | pbcopy | Mac 클립보드 | Mac 클립보드 |
-| SSH + tmux 안 | nvim 내장 tmux | tmux 버퍼와 바깥 터미널 클립보드 (`tmux load-buffer -w`) | tmux 버퍼 |
+| SSH + tmux 안 | nvim 내장 tmux | tmux 버퍼 (`tmux load-buffer -w`). 바깥 터미널 클립보드에 닿는지는 실제 세션 확인 대상(#1453 L2) | tmux 버퍼. 먼저 `tmux refresh-client -l`로 바깥 터미널에 클립보드를 요청하므로 Ghostty 허용 창이 뜰 수 있다 |
 | SSH + tmux 밖 (Linux) | `g:clipboard` `OSC 52 (copy only)` | OSC 52로 SSH 클라이언트 터미널의 클립보드 | 이 nvim에서 마지막으로 복사한 내용 |
 
-- SSH 판정은 `SSH_CONNECTION` 또는 `SSH_TTY`, tmux 판정은 `$TMUX`다. tmux 안에서는 tmux 플러그인을 거치지 않는다.
+- SSH 판정은 `SSH_CONNECTION` 또는 `SSH_TTY`, tmux 판정은 `$TMUX`다(빈 값은 없는 것으로 본다). tmux 안에서는 tmux 플러그인을 거치지 않는다.
 - tmux 밖 SSH의 `p`는 터미널에 클립보드를 묻지 않는다. 묻게 하면(`g:clipboard = "osc52"`) `p`마다 Ghostty 허용 창이 뜨고, 응답하지 않는 터미널에서는 최대 10초 기다린다. Mac에서 복사한 텍스트는 터미널 붙여넣기(Cmd+V)로 넣는다.
+- tmux 밖 SSH의 레지스터: `+`·`*`는 각자 복사한 내용이 있으면 각자, 한쪽만 있으면 그쪽을 쓴다. 이 nvim에서 복사하기 전에는 레지스터 0(ShaDa가 되살린 마지막 yank)을 쓴다. 복사 내용은 nvim 인스턴스마다 따로라 다른 nvim에서 복사한 것은 `p`로 받지 못하므로 Cmd+V로 넣는다.
 - 확인: `:checkhealth vim.provider`의 Clipboard 항목
 - Termius: OSC 52 미지원 (알려진 Termius 제한)
 
