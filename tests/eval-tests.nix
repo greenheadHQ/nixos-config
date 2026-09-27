@@ -432,6 +432,38 @@ let
       && builtins.isString activation.${name}.data
     ) shottrActivationEntryNames;
 
+  # #1400: postActivation은 root 컨텍스트로 실행되므로, activateSettings가 롤백시키는
+  # 스크롤 방향을 재설정하는 defaults write에도 asUser 전환이 없으면 root의 전역
+  # 환경설정에 기록되고 대상(로그인) 사용자의 값은 복구되지 않는다. symbolic hotkeys와
+  # 동일한 asUser 패턴을 강제해 이 회귀를 evaluation 단계에서 잡는다.
+  postActivationLines =
+    cfg: nixpkgsLib.splitString "\n" cfg.system.activationScripts.postActivation.text;
+  # needle을 포함하는 첫 줄의 인덱스. 없으면 null.
+  firstLineIndexContaining =
+    needle: lines:
+    let
+      idxs = builtins.filter (i: i != null) (
+        nixpkgsLib.imap0 (i: line: if nixpkgsLib.hasInfix needle line then i else null) lines
+      );
+    in
+    if idxs == [ ] then null else builtins.elemAt idxs 0;
+  scrollRestoreIsAsUserAfterActivate =
+    cfg:
+    let
+      lines = postActivationLines cfg;
+      activateIdx = firstLineIndexContaining "activateSettings -u" lines;
+      scrollLines = builtins.filter (
+        line: nixpkgsLib.hasInfix "com.apple.swipescrolldirection" line
+      ) lines;
+      scrollIdx = firstLineIndexContaining "com.apple.swipescrolldirection" lines;
+    in
+    activateIdx != null
+    && scrollIdx != null
+    && scrollIdx > activateIdx
+    && builtins.length scrollLines == 1
+    && nixpkgsLib.hasInfix "launchctl asuser" (builtins.elemAt scrollLines 0)
+    && nixpkgsLib.hasInfix "sudo --user=" (builtins.elemAt scrollLines 0);
+
   # tmux 순정 계약 (#1101): 플러그인·직접 만든 키·pane 노트 스크립트 배선이 없고,
   # 호환 설정·상태줄·pane 테두리의 Git 브랜치 표시는 남는다. darwin 호스트 루프와
   # NixOS 전역 리스트가 같은 판정을 공유한다(guard가 false면 hm을 평가하지 않는다).
@@ -912,6 +944,10 @@ let
               else
                 true
             );
+        }
+        {
+          name = "Test D36 ${hostName}: postActivation의 스크롤 복구 defaults write가 activateSettings 뒤에서 asUser로 실행되어야 함";
+          cond = hasHost && scrollRestoreIsAsUserAfterActivate cfg;
         }
       ]
       ++ tmuxVanillaTests hostName hasHost hm
