@@ -34,7 +34,8 @@ lsof — 열린 파일/소켓/포트를 누가 잡고 있는지 조회. "이 포
 
 [사용자/조합]
   lsof -u greenhead              특정 사용자 소유
-  lsof -u greenhead -i :3000     greenhead이 잡은 3000 포트만
+  lsof -u greenhead -i :3000     사용자 OR 포트 (선택 조건 기본은 OR — 둘 중 하나만 맞아도 나옴)
+  lsof -a -u greenhead -i :3000  -a로 AND 지정 — greenhead이 잡은 3000 포트만
 
 [삭제됐지만 열린 파일] (디스크 차지 누수)
   lsof | grep '(deleted)'    rm 됐지만 process가 fd 잡고 있어 공간 점유
