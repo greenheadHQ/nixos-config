@@ -83,7 +83,15 @@ if [[ "$platform" == "nixos" ]]; then
     # 본문은 quoted heredoc으로 유지해 ${username} 같은 Nix 표현식이 셸에서 조기
     # 치환되지 않게 한다. 완성한 내용은 임시 파일에 쓴 뒤 최종 경로로 원자적 이동(mv)해,
     # 중간 실패로 HOST_NAME이 남은 default.nix가 완성본으로 오인되는 것을 막는다.
-    if ! (
+    #
+    # 아래 서브셸을 `if ! ( … )`처럼 조건 문맥의 피연산자로 두면 안 된다 — bash는 조건
+    # 문맥에 놓인 명령에는 errexit를 적용하지 않고, 서브셸 안에서 set -e를 다시 켜도 이
+    # 예외가 풀리지 않는다(bash 3.2·5.x 양쪽에서 동일하게 재현됨). 그 상태에서는 printf·
+    # cat 실패나 `{ } > tmp` 쓰기 실패가 조용히 무시되고 마지막 mv의 결과만 rc에 반영돼,
+    # 쓰기가 중간에 실패해도 성공으로 보고된다. 그래서 서브셸을 최상위 명령으로 실행해
+    # rc를 따로 받는다.
+    set +e
+    (
       set -euo pipefail
       default_nix_tmp=""
       trap 'rm -f "$default_nix_tmp"' EXIT
@@ -113,10 +121,18 @@ if [[ "$platform" == "nixos" ]]; then
 }
 NIXEOF
       } > "$default_nix_tmp"
+      # mktemp는 파일을 0600으로 만들고 mv는 이 모드를 그대로 옮긴다. 나머지 호스트
+      # 파일과 같은 0644로 맞춘다(대부분의 umask에서 일반 파일이 갖는 값).
+      chmod 0644 "$default_nix_tmp"
       mv "$default_nix_tmp" "$host_dir/default.nix"
-    ); then
-      # 이번 실행이 만든 디렉토리만 정리한다 — 위 -d 체크를 통과해 이 블록에 들어온
-      # 이상 host_dir는 항상 이번 실행이 만든 것이므로, 재시도할 수 있게 지운다.
+    )
+    default_nix_write_rc=$?
+    set -e
+    if [[ "$default_nix_write_rc" -ne 0 ]]; then
+      # 이번 실행이 새로 만든 리프 디렉토리를 지워 재시도할 수 있게 한다(비어 있지
+      # 않으면 rmdir이 그냥 실패하고 넘어간다). 호스트명에 "/"가 있으면 mkdir -p가
+      # 상위 디렉토리도 새로 만들 수 있어 정리가 리프 한 단계에 그칠 수 있는데, 그
+      # 입력 검증은 이 이슈 범위 밖이라 다루지 않는다.
       rmdir "$host_dir" 2>/dev/null || true
       echo "✗ hosts/$hostname/default.nix 생성 실패" >&2
       exit 1
