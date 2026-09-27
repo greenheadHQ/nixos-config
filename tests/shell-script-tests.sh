@@ -343,6 +343,13 @@ run_test "darwin nrs no-change releases worktree lock" test_darwin_nrs_no_change
 run_test "darwin nrs no-change activates when Codex artifact missing" test_darwin_nrs_no_changes_activates_when_codex_artifact_missing
 run_test "darwin nrs no-change skips relink without HM gcroot" test_darwin_nrs_no_changes_skips_relink_without_hm_gcroot
 run_test "darwin nrs no-change restores when HM gcroot present" test_darwin_nrs_no_changes_restores_when_hm_gcroot_present
+run_test "cmd_fix_dangling probe matrix calls restore only on dangling" test_cmd_fix_dangling_probe_matrix
+run_test "cmd_fix_dangling propagates restore failure" test_cmd_fix_dangling_propagates_restore_failure
+run_test "nrs-relink fix-dangling CLI no-ops when probes are healthy" test_nrs_relink_cli_fix_dangling_noop_when_probes_healthy
+run_test "nrs-relink fix-dangling CLI fails closed when restore cannot discover HMF" test_nrs_relink_cli_fix_dangling_fails_closed_when_restore_cannot_discover_hmf
+run_test "inline _repair_claude_symlinks probe matrix calls restore only on dangling" test_inline_repair_claude_symlinks_probe_matrix
+run_test "inline _repair_claude_symlinks retries after restore failure" test_inline_repair_claude_symlinks_retries_after_restore_failure
+run_test "fix-dangling probe lists match between CLI and inline" test_fix_dangling_probe_lists_match_between_cli_and_inline
 run_test "install-lefthook cleans up redundant local core.hooksPath" test_install_lefthook_cleanup_local_redundant
 run_test "install-lefthook preserves custom local core.hooksPath" test_install_lefthook_preserves_custom_local
 run_test "install-lefthook is silent on clean state" test_install_lefthook_silent_on_clean_state
@@ -436,6 +443,22 @@ run_test "immich cleanup paginates v3 nextPage string" test_immich_cleanup_v3_pa
 run_test "immich cleanup preserves empty album notification" test_immich_cleanup_v3_empty_album_preserves_notification
 run_test "immich cleanup rejects invalid asset id" test_immich_cleanup_v3_rejects_invalid_asset_id
 run_test "immich cleanup rejects invalid nextPage" test_immich_cleanup_v3_rejects_invalid_next_page
+# 종료 코드 계약 (#1387) — 삭제 실패는 0이 아닌 종료, 알림 실패는 결과를 바꾸지 않는다
+run_test "immich cleanup all success exits zero with single summary" test_immich_cleanup_all_success_exits_zero_with_single_summary
+run_test "immich cleanup empty album exits zero" test_immich_cleanup_empty_album_exits_zero
+run_test "immich cleanup partial delete failure exits nonzero" test_immich_cleanup_partial_delete_failure_exits_nonzero
+run_test "immich cleanup all delete failure exits nonzero" test_immich_cleanup_all_delete_failure_exits_nonzero
+run_test "immich cleanup notification failure keeps delete failure" test_immich_cleanup_notification_failure_keeps_delete_failure
+run_test "immich cleanup unexpected failure sends single error notification" test_immich_cleanup_unexpected_failure_sends_single_error_notification
+
+# homeserver-smoke-test suite (tests/suites/homeserver-smoke-test.sh) — 종료 코드·알림 계약 (#1387)
+run_test "smoke test all pass exits zero without notification" test_smoke_test_all_pass_exits_zero_without_notification
+run_test "smoke test disabled backups are not checked" test_smoke_test_disabled_backups_are_not_checked
+run_test "smoke test HTTP failure exits nonzero with single summary" test_smoke_test_http_failure_exits_nonzero_with_single_summary
+run_test "smoke test stale backup exits nonzero with single summary" test_smoke_test_stale_backup_exits_nonzero_with_single_summary
+run_test "smoke test systemd failures exit nonzero with single summary" test_smoke_test_systemd_failures_exit_nonzero_with_single_summary
+run_test "smoke test notification failure keeps check failure" test_smoke_test_notification_failure_keeps_check_failure
+run_test "smoke test crash sends single crash notification" test_smoke_test_crash_sends_single_crash_notification
 run_test "hook_init_scan_dir falls back when TMPDIR missing" test_hook_init_scan_dir_falls_back_when_tmpdir_missing
 run_test "hook_init_scan_dir falls back when TMPDIR unwritable" test_hook_init_scan_dir_falls_back_when_tmpdir_unwritable
 run_test "hook_init_scan_dir falls back when system tmp unusable" test_hook_init_scan_dir_falls_back_to_user_cache_when_system_tmp_unusable
