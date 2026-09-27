@@ -6,7 +6,7 @@
 ## agenix -e의 /dev/stdin 에러
 
 > 발생 시점: 2026-01-27
-> 해결: age CLI pipe 우회
+> 해결: age CLI + 임시 파일, 대화형 터미널에서 실행
 
 증상: Claude Code Bash 환경에서 `agenix -e` 실행 시 실패.
 
@@ -24,16 +24,22 @@ pushover-claude-stop.age wasn't created.
 | `agenix -e` | O | X (`/dev/stdin` 없음) |
 | 아래 절차 | O (사람이 값을 입력) | X (값을 다루지 않는다) |
 
-이 절차는 값을 사람이 대화형 터미널에서 입력하는 경로다. 에이전트는 값을 대신 입력하지 않는다 — `cat > file`이 표준입력이 아닌 곳(파이프, `/dev/null`, 에이전트 Bash 도구 등)에서 실행되면 즉시 EOF를 만나 빈 파일이 되고, 그 빈 값이 그대로 암호화되어 기존 `.age` 파일을 빈 값으로 덮어쓸 수 있다. 아래 절차는 첫 줄에서 대화형 터미널 여부를 확인해 이 경로를 막는다. 사람에게 값 입력을 넘기는 방법(예: Claude Code의 `!` 접두 명령이 TTY 표준입력을 주는지)은 확인되지 않았으면 단정하지 말고 "사용자 터미널에서 실행"으로 안내한다.
+이 절차는 값을 사람이 대화형 터미널에서 입력하는 경로다. 에이전트는 값을 대신 입력하지 않는다 — `cat > file`이 표준입력이 아닌 곳(파이프, `/dev/null`, 에이전트 Bash 도구 등)에서 실행되면 즉시 EOF를 만나 빈 파일이 되고, 그 빈 값이 그대로 암호화되어 기존 `.age` 파일을 덮어쓸 위험이 있었으나, 지금은 서브셸 첫 줄의 대화형 터미널 가드가 그 경로를 막는다. 에이전트가 사람에게 넘길 것:
 
-해결: `age` CLI를 직접 호출하되, 임시 파일 경유로 암호화한다. 값은 명령 텍스트에 직접 적지 않는다 — xtrace, 셸 히스토리(Atuin 동기화 대상), 에이전트 대화 기록에 그대로 남기 때문이다. 아래처럼 서브셸로 감싸 임시 디렉터리를 격리하고, 값은 `cat >`으로 붙여넣은 뒤 Ctrl-D(EOF)로 받는다. 최상위(대화형 셸)에 `trap`을 걸면 그 셸이 끝날 때까지 발동하지 않아, 같은 셸에서 두 번 반복하면 첫 임시 디렉터리가 영구히 남는다 — 서브셸 `( … )`로 감싸야 서브셸 종료 시점에 즉시 정리된다. 정리 중에는 EXIT trap 자체를 시그널로 중단당하지 않도록 신호를 무시하고, HUP·QUIT도 함께 잡는다.
+- 코드 블록 전체
+- `<name>`·`<key1>`·`<key2>` 치환값
+- 저장소 루트 cwd
+- 이후 별도 배포 확인 블록
 
-새 암호문은 기존 `secrets/<name>.age`를 바로 덮어쓰지 않고 임시 경로에 먼저 쓴 뒤, 왕복 검증(암호화한 내용을 즉시 복호화해 입력 평문과 비교)을 통과했을 때만 옮긴다. 왕복 복호화가 실패하면 "값 손상"과 "이 호스트가 애초에 이 시크릿의 recipient가 아님"(다른 호스트 전용 시크릿을 여기서 암호화하는 정상적인 경우)을 구분해야 한다 — 후자는 손상 여부를 이 호스트에서 확인할 수 없을 뿐이므로 경고만 하고 교체를 막지 않는다(recipient는 `secrets/secrets.nix`에서 관리). 값 입력이 끝난 뒤 `nrs` 배포와 그 결과 확인은 붙여넣기 경계가 다른 별도 코드 블록이다 — bracketed paste를 지원하지 않는 터미널에서 한 번에 이어 붙이면 뒷부분이 입력값에 섞여 그대로 암호화될 수 있다.
+해결: `age` CLI를 직접 호출하되, 임시 파일 경유로 암호화한다. 값은 명령 텍스트에 직접 적지 않는다 — xtrace, 셸 히스토리(Atuin 동기화 대상), 에이전트 대화 기록에 그대로 남기 때문이다. 서브셸로 감싸 임시 디렉터리를 격리하고, 값은 `cat >`으로 붙여넣은 뒤 Ctrl-D(EOF)로 받는다(입력이 터미널에 그대로 보인다 — `agenix -e`의 에디터 표시와 같은 수준이라 `stty -echo`는 넣지 않는다). 최상위(대화형 셸)에 `trap`을 걸면 그 셸이 끝날 때까지 발동하지 않아 같은 셸에서 두 번 반복하면 첫 임시 디렉터리가 남는다 — 서브셸 `( … )`로 감싸야 즉시 정리된다. 정리 중 시그널로 끊기지 않도록 EXIT trap이 먼저 신호를 무시하고, HUP·QUIT도 잡는다.
+
+새 암호문은 임시 경로에 먼저 쓴 뒤, 왕복 검증(즉시 복호화해 입력 평문과 비교)을 통과했을 때만 `secrets/<name>.age`로 옮긴다. 암호화·mv 각각의 종료 코드를 확인해 실패하면 중단하고, 성공했을 때만 완료 문구를 낸다 — 그렇지 않으면 실패해도 "교체 완료"가 나오고 기존 파일이 조용히 사라질 수 있다. 왕복 복호화 실패는 `decrypt.err`에 `no identity matched any of the recipients`가 있을 때만 "이 호스트가 recipient가 아님"(다른 호스트 전용 시크릿, 정상 — recipient는 `secrets/secrets.nix`에서 관리)으로 분류해 경고 후 교체한다. 그 외 실패는 손상으로 보고 중단한다. 값 입력이 끝난 뒤 `nrs` 배포 확인은 별도 코드 블록이다 — 이어 붙이면 뒷부분이 입력값에 섞여 그대로 암호화될 수 있다.
 
 ```bash
-[ -t 0 ] || { echo "값 입력은 사용자가 대화형 터미널에서 한다 — 이 셸의 표준입력은 대화형이 아니다." >&2; exit 1; }
-
 (
+  [ -t 0 ] || { echo "값 입력은 사용자가 대화형 터미널에서 한다 — 이 셸의 표준입력은 대화형이 아니다." >&2; exit 1; }
+  [ -f secrets/secrets.nix ] || { echo "저장소 루트에서 실행한다." >&2; exit 1; }
+
   umask 077
   d=$(mktemp -d) || exit 1
   trap 'trap "" HUP INT TERM QUIT; rm -rf "$d"' EXIT
@@ -48,25 +54,29 @@ pushover-claude-stop.age wasn't created.
   [ -s "$d/secret" ] || { echo "입력이 비어 있다 — 아무것도 쓰지 않고 중단한다." >&2; exit 1; }
 
   nix-shell -p age --run \
-    "age -r 'ssh-ed25519 <key1>' -r 'ssh-ed25519 <key2>' -o '$d/out.age' '$d/secret'"
+    "age -r 'ssh-ed25519 <key1>' -r 'ssh-ed25519 <key2>' -o '$d/out.age' '$d/secret'" \
+    || { echo "암호화 실패 — 중단한다." >&2; exit 1; }
 
-  # 왕복 검증 (원문은 출력하지 않음). 종료 코드로 "이 호스트 키로 복호화 불가"와
-  # "복호화는 됐지만 값이 다름"을 구분한다.
+  # 왕복 검증 (원문은 출력하지 않음)
   nix-shell -p age --run \
     "age -d -i ~/.ssh/id_ed25519 '$d/out.age'" > "$d/roundtrip" 2>"$d/decrypt.err"
   rc=$?
   if [ "$rc" -ne 0 ]; then
-    echo "왕복 검증: 이 호스트 키로는 복호화할 수 없음 — secrets/secrets.nix의 recipient 목록을 확인한다(다른 호스트 전용 시크릿이면 정상, 이 호스트에서는 손상 여부를 확인할 수 없다)." >&2
-  elif cmp -s "$d/secret" "$d/roundtrip"; then
-    echo "왕복 검증: 일치"
-  else
-    echo "왕복 검증: 불일치 — 값이 손상됐다. 배치를 중단한다."
+    grep -qF 'no identity matched any of the recipients' "$d/decrypt.err" \
+      || { echo "왕복 복호화 실패(recipient 문제가 아님) — 중단한다." >&2; cat "$d/decrypt.err" >&2; exit 1; }
+  elif ! cmp -s "$d/secret" "$d/roundtrip"; then
+    echo "왕복 검증: 불일치 — 값이 손상됐다. 중단한다." >&2
     exit 1
   fi
-  [ "$rc" -eq 0 ] && { grep -qF '\' "$d/roundtrip" && echo "백슬래시 포함: 있음" || echo "백슬래시 포함: 없음"; }
 
-  mv "$d/out.age" secrets/<name>.age
-  echo "secrets/<name>.age 교체 완료"
+  mv "$d/out.age" secrets/<name>.age || exit 1
+
+  if [ "$rc" -ne 0 ]; then
+    echo "secrets/<name>.age 교체됐다. recipient 호스트에서 복호화로 확인한다. 잘못됐으면 git restore secrets/<name>.age로 되돌린다."
+  else
+    grep -qF '\' "$d/roundtrip" && echo "백슬래시 포함: 있음" || echo "백슬래시 포함: 없음"
+    echo "secrets/<name>.age 교체 완료"
+  fi
 )
 ```
 
