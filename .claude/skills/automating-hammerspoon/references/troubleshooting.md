@@ -81,7 +81,10 @@ if ghostty then
   hs.timer.doAfter(0.2, function()
     hs.eventtap.keyStroke({"cmd"}, "n")
     hs.timer.doAfter(0.6, function()
-      hs.eventtap.keyStrokes('cd -- ' .. shellQuotePath(path) .. ' && clear')
+      -- shellQuotePath와 개행 경로(nil) 처리는 아래 특수문자 절 참고
+      local quoted = shellQuotePath(path)
+      if not quoted then return end
+      hs.eventtap.keyStrokes('cd -- ' .. quoted .. ' && clear')
       hs.eventtap.keyStroke({}, "return")
     end)
   end)
@@ -132,8 +135,8 @@ zsh: no matches found: /Users/green/FolderActions/[FA]Get
 ```
 
 원인: `[`, `]` 등의 특수문자가 zsh glob 패턴으로 해석됨. 공백도 문제 발생.
-큰따옴표로만 감싸면 `$`, `` ` ``, `"` 는 여전히 셸이 확장·명령 실행으로 해석하므로
-막지 못한다 (#1405).
+큰따옴표로만 감싸도 `$`·`` ` ``는 확장·명령 치환으로, `\`는 이스케이프로 해석되고
+`"`는 인용을 끝낸다. 대화형 셸에서는 `!`도 히스토리 확장된다 (#1405).
 
 해결: 작은따옴표로 감싸고 `cd --`로 옵션과 경로의 경계를 분명히 하기
 
@@ -141,7 +144,7 @@ zsh: no matches found: /Users/green/FolderActions/[FA]Get
 -- ❌ 특수문자/공백 문제
 hs.eventtap.keyStrokes('cd ' .. path .. ' && clear')
 
--- ❌ 큰따옴표는 $, `, " 를 막지 못함
+-- ❌ 큰따옴표는 $, `, \, ", ! 를 막지 못함
 hs.eventtap.keyStrokes('cd "' .. path .. '" && clear')
 
 -- ✅ 작은따옴표 인용 (내부 작은따옴표는 '\''로 치환) + cd --
@@ -151,7 +154,14 @@ local function shellQuotePath(path)
     end
     return "'" .. path:gsub("'", "'\\''") .. "'"
 end
-hs.eventtap.keyStrokes('cd -- ' .. shellQuotePath(path) .. ' && clear')
+
+local quoted = shellQuotePath(path)
+if not quoted then
+    -- 경로를 바꾸거나 문자를 지우지 않고, 알린 뒤 cd 입력을 중단한다
+    hs.notify.new({title="Ghostty", informativeText="❌ 경로에 개행이 있어 cd 붙여넣기를 중단했습니다"}):send()
+    return
+end
+hs.eventtap.keyStrokes('cd -- ' .. quoted .. ' && clear')
 ```
 
 ---
@@ -216,8 +226,10 @@ hsr  # alias 사용 (IPC가 작동할 때만)
 hs.eventtap.keyStrokes('cd -- ' .. shellQuotePath(path) .. ' && clear')
 
 -- ✅ 클립보드 방식 (한글 경로 안전)
+local quoted = shellQuotePath(path)
+if not quoted then return end  -- 개행 경로: 위 절처럼 알린 뒤 중단
 local prevClipboard = hs.pasteboard.getContents()
-hs.pasteboard.setContents('cd -- ' .. shellQuotePath(path) .. ' && clear')
+hs.pasteboard.setContents('cd -- ' .. quoted .. ' && clear')
 hs.eventtap.keyStroke({"cmd"}, "v")
 hs.eventtap.keyStroke({}, "return")
 -- 클립보드 복원
