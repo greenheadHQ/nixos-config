@@ -981,10 +981,13 @@ let
             hasHost
             && (
               let
+                # 같은 derivation이 여러 모듈에서 중복 선언돼도 bin 경로는 하나로 센다.
                 declaredBins =
                   pname:
-                  map (pkg: "${nixpkgsLib.getBin pkg}/bin") (
-                    builtins.filter (pkg: (pkg.pname or "") == pname) hm.home.packages
+                  nixpkgsLib.unique (
+                    map (pkg: "${nixpkgsLib.getBin pkg}/bin") (
+                      builtins.filter (pkg: (pkg.pname or "") == pname) hm.home.packages
+                    )
                   );
                 pathEntries =
                   agent: nixpkgsLib.splitString ":" hm.launchd.agents.${agent}.config.EnvironmentVariables.PATH;

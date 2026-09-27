@@ -17,6 +17,8 @@
 # - drain_queue: find_candidates/process_one callbacks, wait_file_stable,
 #   basename in the deferred warning path.
 # - quarantine_or_abort: move_to_failed, log_error, exit 1 on quarantine failure.
+# - require_commands_or_abort: command -v, basename, log_error, notify_failure,
+#   exit 1 when a required command is missing.
 #
 # Linux/NixOS exclusion list:
 # - ensure_failed_dir, move_to_failed, and wait_file_stable are not exercised
