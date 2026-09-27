@@ -13,6 +13,12 @@
 #                                                   : generic-version-check.sh 1회 실행
 #   - _write_immich_version_check_curl_stub / _run_immich_version_check
 #                                                   : 위와 동일 계약 + Immich API 현재 버전 조회 대역
+#   - _extract_last_pushover_message notify_log    : notify_log에서 가장 마지막 Pushover
+#                                                     호출의 message= 값만 정확히 추출
+#   - _write_large_ascii_release_body_github_json out tag workdir
+#                                                   : 400줄 x 240자(약 96KB) 릴리즈 노트를
+#                                                     담은 GitHub 응답 JSON 생성 (SIGPIPE 재현용)
+#   - _expected_large_ascii_release_body           : 위 본문을 20줄·1024자로 자른 기대값
 
 _version_check_service_lib_path() {
   printf '%s\n' "$REPO_ROOT/modules/nixos/lib/service-lib.sh"
@@ -476,15 +482,20 @@ _extract_last_pushover_message() {
 }
 
 # 400줄 x 240자('A')로 약 96KB 본문을 만든다. head -20 파이프에서 SIGPIPE를
-# 안정적으로 재현하는 크기(이슈 #1385 재현 조건)다.
+# 안정적으로 재현하는 크기(이슈 #1385 재현 조건)이자, 파이프 버퍼(보통 64KB)를
+# 넘어 수정 전 코드에서 첫 시도부터 결정적으로 실패하는 크기다. 96KB를 그대로
+# `jq --arg`의 커맨드라인 인자로 넘기면 Linux의 인자당 길이 한도(128KiB)까지
+# 여유가 약 35KB뿐이라 위험하므로, 파일에 써서 --rawfile로 읽는다.
+# $workdir는 호출측 sandbox(각 테스트 반복이 새로 만드는 디렉터리)를 받아 쓴다.
 _write_large_ascii_release_body_github_json() {
-  local out="$1" tag="$2"
-  local body
-  body=$(python3 - <<'PY'
-print("\n".join("A" * 240 for _ in range(400)), end="")
+  local out="$1" tag="$2" workdir="$3"
+  local body_file="$workdir/large-release-body.raw"
+  python3 - "$body_file" <<'PY'
+import sys
+with open(sys.argv[1], "w") as f:
+    f.write("\n".join("A" * 240 for _ in range(400)))
 PY
-)
-  jq -n --arg tag "$tag" --arg body "$body" '{tag_name: $tag, body: $body}' > "$out"
+  jq -n --rawfile body "$body_file" --arg tag "$tag" '{tag_name: $tag, body: $body}' > "$out"
 }
 
 # 위 본문을 "앞 20줄, 이어서 최대 1024자"로 절단한 결과를 손계산한 값.
@@ -504,7 +515,10 @@ ${expected_release_body}
 
 업데이트: sudo demo-update"
 
-  for attempt in $(seq 1 20); do
+  # 96KB 본문은 파이프 버퍼(보통 64KB)를 넘으므로 수정 전 코드는 사실상 매 시도마다
+  # 결정적으로 실패한다. 3회 반복은 "결정적 실패를 반복해도 안정적으로 통과하는지"를
+  # 보되, 굳이 20회씩 돌려 테스트 시간을 늘리지 않는다.
+  for attempt in $(seq 1 3); do
     local sandbox stub_dir state_dir clock_file github_status github_body notify_log cred
     sandbox=$(new_sandbox)
     stub_dir="$sandbox/bin"
@@ -528,7 +542,7 @@ ${expected_release_body}
       || fail "attempt $attempt: initial run must exit 0"
 
     printf '%s\n' "$((1000000 + 3600))" > "$clock_file"
-    _write_large_ascii_release_body_github_json "$github_body" "9.9.9"
+    _write_large_ascii_release_body_github_json "$github_body" "9.9.9" "$sandbox"
     _run_generic_version_check "$stub_dir" "$(_version_check_service_lib_path)" "$cred" "$state_dir" \
       "demo" "demo:1.2" "demo/demo" "Demo" \
       || fail "attempt $attempt: large release body must not abort the script (exit $?, SIGPIPE=141)"
@@ -550,7 +564,10 @@ ${expected_release_body}
 
 업데이트: sudo immich-update"
 
-  for attempt in $(seq 1 20); do
+  # 96KB 본문은 파이프 버퍼(보통 64KB)를 넘으므로 수정 전 코드는 사실상 매 시도마다
+  # 결정적으로 실패한다. 3회 반복은 "결정적 실패를 반복해도 안정적으로 통과하는지"를
+  # 보되, 굳이 20회씩 돌려 테스트 시간을 늘리지 않는다.
+  for attempt in $(seq 1 3); do
     local sandbox stub_dir state_dir clock_file github_status github_body notify_log cred
     local immich_status immich_body api_key_file immich_url
     sandbox=$(new_sandbox)
@@ -583,7 +600,7 @@ ${expected_release_body}
       || fail "attempt $attempt: immich initial run must exit 0"
 
     printf '%s\n' "$((1000000 + 3600))" > "$clock_file"
-    _write_large_ascii_release_body_github_json "$github_body" "9.9.9"
+    _write_large_ascii_release_body_github_json "$github_body" "9.9.9" "$sandbox"
     _run_immich_version_check "$stub_dir" "$(_version_check_service_lib_path)" "$cred" "$state_dir" \
       "$immich_url" "$api_key_file" \
       || fail "attempt $attempt: immich large release body must not abort the script (exit $?, SIGPIPE=141)"
@@ -679,6 +696,51 @@ ${release_body}
     || fail "empty string body must not be replaced by the missing/null default text"
 }
 
+# GitHub 스키마상 .body는 항상 문자열이거나 null이라 숫자 같은 non-string 값은 실무에서
+# 거의 없지만, split("\n") 앞에 tostring이 없으면 문자열이 아닌 값에서 jq가 새로 에러를
+# 낸다(수정 전에는 없던 실패 경로 — 수정 전 코드는 이 값을 그냥 문자열로 찍어 냈다).
+# tostring이 그 예전 동작을 보존하는지 확인한다.
+test_version_check_release_body_non_string_value_is_stringified() {
+  local sandbox stub_dir state_dir clock_file github_status github_body notify_log cred
+  sandbox=$(new_sandbox)
+  stub_dir="$sandbox/bin"
+  state_dir="$sandbox/state"
+  clock_file="$sandbox/clock"
+  github_status="$sandbox/github-status"
+  github_body="$sandbox/github-body"
+  notify_log="$sandbox/notify.log"
+  cred="$sandbox/pushover-cred"
+
+  mkdir -p "$state_dir"
+  _write_fake_clock_stub "$stub_dir" "$clock_file"
+  _write_version_check_curl_stub "$stub_dir" "$github_status" "$github_body" "$notify_log"
+  _write_version_check_pushover_cred "$cred"
+
+  printf '1000000\n' > "$clock_file"
+  printf '0\n' > "$github_status"
+  jq -n --arg tag "1.0.0" --arg body "first release" '{tag_name: $tag, body: $body}' > "$github_body"
+  _run_generic_version_check "$stub_dir" "$(_version_check_service_lib_path)" "$cred" "$state_dir" \
+    "demo" "demo:1.2" "demo/demo" "Demo" \
+    || fail "initial run must exit 0"
+
+  # .body: 42 (문자열이 아닌 숫자)
+  printf '%s\n' "$((1000000 + 3600))" > "$clock_file"
+  jq -n --arg tag "2.0.0" '{tag_name: $tag, body: 42}' > "$github_body"
+  _run_generic_version_check "$stub_dir" "$(_version_check_service_lib_path)" "$cred" "$state_dir" \
+    "demo" "demo:1.2" "demo/demo" "Demo" \
+    || fail "numeric .body must not make jq fail on otherwise-valid JSON"
+
+  local expected_message actual_message
+  expected_message="v2.0.0 출시됨
+
+42
+
+업데이트: sudo demo-update"
+  actual_message=$(_extract_last_pushover_message "$notify_log")
+  [ "$actual_message" = "$expected_message" ] \
+    || fail "numeric .body must be stringified the same way the pre-fix code printed it"
+}
+
 # head -20 이 그랬던 것과 동일하게: 정확히 20줄은 그대로, 21줄 이상은 앞 20줄만 남아야 한다.
 test_version_check_release_body_line_limit_matches_head_boundary() {
   local sandbox stub_dir state_dir clock_file github_status github_body notify_log cred
@@ -765,9 +827,10 @@ test_version_check_release_body_crlf_line_split_matches_head() {
     || fail "initial run must exit 0"
 
   # 기대값은 25줄 CRLF 본문 전체를 "\n" 기준으로만 나눠 앞 20개를 다시 "\n"으로 이은 것이다
-  # (head -20과 동일한 규칙). 20번째 조각은 원본에서 그다음에도 줄이 more 있었으므로 자기
-  # 앞의 "\r"을 그대로 지니고 있다 — 20줄만 있는 본문을 "\r\n"으로 새로 이어붙이면(끝에는
-  # 구분자가 없음) 이 트레일링 "\r"이 빠지므로 기대값을 그렇게 따로 재구성하지 않는다.
+  # (head -20과 동일한 규칙). 원본에서 20번째 줄 뒤에도 21번째 줄이 이어지므로 그 사이의
+  # 구분자는 "\r\n"이고, "\n"만 기준으로 나누면 그 "\r"이 잘리지 않고 20번째 조각의 끝에
+  # 그대로 남는다 — 20줄만 다시 "\r\n"으로 새로 이어붙이면(마지막 줄 뒤에는 구분자가 없음)
+  # 이 트레일링 "\r"이 빠지므로 기대값을 그렇게 따로 재구성하지 않는다.
   local body_crlf expected_body_crlf expected_message actual_message
   body_crlf=$(python3 -c "print('\r\n'.join(f'line{i}' for i in range(1, 26)), end='')")
   expected_body_crlf=$(python3 -c "
@@ -857,10 +920,13 @@ data.decode('utf-8')
 
 # 잘못된 JSON은 정상적인 빈 본문(.body 없음/null)과 구별되는 실패로 남아야 한다. GitHub 응답이
 # 깨졌을 때 태그(tag_name) 추출(fetch_github_release, service-lib.sh)부터 실패하므로, 이 시점
-# 이후의 상태(last-notified-version)는 바뀌지 않아야 한다. (참고: 이 실패는 함수 안에서
-# 일어나는데 스크립트가 set -o errtrace 를 켜지 않아 최상단 ERR trap이 여기서는 실행되지
-# 않는다 — 이 테스트에서는 "실패로 종료되고 정상 흐름처럼 진행되지 않는지"만 확인한다.)
-test_version_check_invalid_github_json_fails_loudly_not_treated_as_empty_body() {
+# 이후의 상태(last-notified-version)는 바뀌지 않아야 하고, 정상적인 "업데이트 알림"(새 버전을
+# 찾았다는 성공 알림)이 나가서는 안 된다. notify_log가 통째로 비어 있어야 한다고까지는
+# 단정하지 않는다 — 이 실패는 함수(fetch_github_release) 안에서 일어나는데 스크립트가
+# set -o errtrace 를 켜지 않아 최상단 ERR trap이 지금은 여기서 실행되지 않기 때문이다
+# (별개의 기존 결함, 이 이슈 범위 밖). 그 결함을 나중에 고쳐 ERR trap의 일반 실패
+# 알림이 추가로 나가게 되어도 이 테스트가 깨지지 않도록, "거짓 성공 알림이 없다"만 본다.
+test_version_check_invalid_github_json_does_not_send_false_success_notification() {
   local sandbox stub_dir state_dir clock_file github_status github_body notify_log cred
   sandbox=$(new_sandbox)
   stub_dir="$sandbox/bin"
@@ -892,5 +958,5 @@ test_version_check_invalid_github_json_fails_loudly_not_treated_as_empty_body() 
   fi
 
   assert_file_contains "$state_dir/last-notified-version" "1.0.0"
-  [ ! -s "$notify_log" ] || fail "invalid JSON must not send a normal 업데이트 알림 (no false new-version notification)"
+  assert_not_contains "$(cat "$notify_log" 2>/dev/null || true)" "title=Demo 업데이트 알림"
 }

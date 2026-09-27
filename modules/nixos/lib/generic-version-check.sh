@@ -78,8 +78,11 @@ echo "New version available: v$LATEST"
 # 찾았는데도 알림이 만들어지지 않고 그 버전이 계속 미전달로 남음). jq가 입력을 끝까지
 # 읽고 나서 자체적으로 줄이므로 이 문제가 없다. jq의 문자열 슬라이스는 유니코드
 # 코드포인트 단위로 동작해 실행 환경 로케일과 무관하게 일정하므로, 이어서 bash에서
-# 다시 바이트/로케일에 좌우되는 ${var:0:1024} 절단을 할 필요가 없다.
-RELEASE_BODY=$(echo "$GITHUB_RESPONSE" | jq -r '(.body // "릴리즈 노트 없음") | split("\n")[0:20] | join("\n") | .[0:1024]')
+# 다시 바이트/로케일에 좌우되는 ${var:0:1024} 절단을 할 필요가 없다. tostring은
+# GitHub 스키마상 .body가 항상 문자열이거나 null이라 거의 걸리지 않지만, 혹시라도
+# 문자열이 아닌 값(숫자 등)이 오면 split 단계에서 jq가 새로 에러를 내는 대신
+# 예전처럼 그 값을 문자열로 바꿔 그대로 내보낸다.
+RELEASE_BODY=$(echo "$GITHUB_RESPONSE" | jq -r '(.body // "릴리즈 노트 없음") | tostring | split("\n")[0:20] | join("\n") | .[0:1024]')
 
 # 업데이트 명령 (서비스명 기반)
 UPDATE_CMD="sudo ${CONTAINER_NAME}-update"
