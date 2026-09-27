@@ -603,6 +603,12 @@ run_test "managing-secrets inventory matches age files and rules" test_managing_
 run_test "managing-secrets host add workflow checks recipients per target" test_managing_secrets_host_add_workflow_checks_recipients_per_target
 run_test "managing-secrets group parser accepts inline key lists" test_managing_secrets_group_parser_accepts_inline_key_lists
 
+# ═══════════════════════════════════════════════════════════════════
+# neovim-clipboard suite (tests/suites/neovim-clipboard.sh) — tmux 밖 SSH의 OSC 52 복사 (#1453)
+# ═══════════════════════════════════════════════════════════════════
+run_test "neovim clipboard uses OSC 52 only for Linux SSH outside tmux" test_neovim_clipboard_osc52_only_for_linux_ssh_outside_tmux
+run_test "neovim SSH clipboard paste returns last copy without query" test_neovim_ssh_clipboard_paste_returns_last_copy_without_query
+
 # 퇴역 키 로더는 tomlkit 없이도 도는 순수 셸 계약이라 아래 게이트 밖에 둔다.
 run_test "codex-config retired keys loader" test_codex_config_retired_keys_loader
 
