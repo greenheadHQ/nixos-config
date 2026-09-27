@@ -1,9 +1,9 @@
 # agenix CLI가 사용하는 파일
 # 새 secret 추가: nix run github:ryantm/agenix -- -e new-secret.age
-# 재암호화: nix run github:ryantm/agenix -- -r
-#   주의: SA token(opnix-service-account-token.age)은 host key 전용(minipcHostOnly) recipient다.
-#   host private key가 없는 Mac에서 전체 rekey는 해당 .age 복호화에 실패하므로,
-#   MiniPC/root에서 user key와 /etc/ssh/ssh_host_ed25519_key를 둘 다 -i로 넘겨 rekey한다.
+# 재암호화: 항목마다 recipient 그룹이 달라 복호화 identity도 다르다. 전체 rekey(-r)는 넘긴 identity로
+#   모든 항목을 복호화할 수 있을 때만 쓴다 — Mac 사용자 키 단독 항목과 MiniPC 호스트 키 전용 항목이
+#   함께 있어 한 호스트의 identity만으로는 중간에 멈춘다. 대상별 절차:
+#   .claude/skills/managing-secrets/references/workflows.md "호스트 추가"
 #
 # 참고: agenix는 SSH 공개키 형식으로 암호화하면 SSH 비밀키로 복호화 가능
 # age 공개키(age1...) 형식은 age 비밀키(AGE-SECRET-KEY-...)가 필요
