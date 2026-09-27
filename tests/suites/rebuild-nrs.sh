@@ -246,6 +246,252 @@ test_rebuild_common_exports_public_api() {
   assert_contains "$output" "repair_codex_config_drift_no_changes"
 }
 
+# ─────────────────────────────────────────────────────────────────────────
+# #1380: release_rebuild_lock 이 fd 200 을 닫으면서 명령 없는 `exec ... 2>/dev/null`
+# 로 호출 셸의 표준 오류까지 영구적으로 /dev/null 로 돌려버리던 결함의 회귀 테스트.
+# lib/rebuild/common.sh + lib/rebuild/locks.sh 만 REPO_ROOT 에서 직접 source 한다
+# (FLAKE_PATH/MAIN_FLAKE_PATH 는 nrs 워크트리 잠금용이고, rebuild critical-section
+# 잠금인 acquire/release_rebuild_lock* 는 이 두 변수와 무관).
+#
+# 두 성질은 서로 다른 결함을 잡으므로 테스트도 분리한다:
+#   - stderr 보존: 원래 버그(exec + 무조건 2>/dev/null 병합)만 깨뜨린다. fd 를 안 닫거나
+#     서브셸에서만 닫는 변이는 stderr 를 건드리지 않으므로 이 테스트들은 green 을 유지한다.
+#   - fd 200 실제 닫힘: "안 닫음"·"서브셸에서만 닫음" 변이를 잡는다. 원래 버그는 fd 는
+#     제대로 닫으므로(문제는 stderr 쪽) 이 테스트들에서는 green 이어도 정상이다.
+# ─────────────────────────────────────────────────────────────────────────
+
+test_release_rebuild_lock_preserves_caller_stderr() {
+  local sandbox output
+  sandbox=$(new_sandbox)
+
+  # shellcheck disable=SC2016  # 내부 bash -c 스크립트의 변수라 여기서 확장되면 안 됨.
+  output=$(
+    bash -c '
+      set -euo pipefail
+      GREEN="" YELLOW="" RED="" NC=""
+      source "'"$REPO_ROOT"'/modules/shared/scripts/lib/rebuild/common.sh"
+      source "'"$REPO_ROOT"'/modules/shared/scripts/lib/rebuild/locks.sh"
+      NRS_REBUILD_LOCK="'"$sandbox"'/rebuild.lock"
+
+      echo before-release-marker >&2
+      acquire_rebuild_lock
+      release_rebuild_lock
+      echo "held_after_first_release=$NRS_REBUILD_LOCK_HELD"
+      # 이미 해제된 상태에서 재호출해도 stderr 대상이 다시 바뀌지 않아야 함.
+      release_rebuild_lock
+      acquire_rebuild_lock
+      release_rebuild_lock
+      echo "held_after_second_release=$NRS_REBUILD_LOCK_HELD"
+      echo after-release-marker >&2
+    ' 2>&1
+  )
+
+  assert_contains "$output" "before-release-marker"
+  assert_contains "$output" "held_after_first_release=false"
+  assert_contains "$output" "held_after_second_release=false"
+  assert_contains "$output" "after-release-marker"
+}
+
+test_release_rebuild_lock_on_failure_preserves_caller_stderr() {
+  local sandbox output
+  sandbox=$(new_sandbox)
+
+  # shellcheck disable=SC2016
+  output=$(
+    bash -c '
+      set -euo pipefail
+      GREEN="" YELLOW="" RED="" NC=""
+      source "'"$REPO_ROOT"'/modules/shared/scripts/lib/rebuild/common.sh"
+      source "'"$REPO_ROOT"'/modules/shared/scripts/lib/rebuild/locks.sh"
+      NRS_REBUILD_LOCK="'"$sandbox"'/rebuild.lock"
+
+      echo before-failure-cleanup-marker >&2
+      acquire_rebuild_lock
+      release_rebuild_lock_on_failure
+      echo "held=$NRS_REBUILD_LOCK_HELD"
+      echo after-failure-cleanup-marker >&2
+    ' 2>&1
+  )
+
+  assert_contains "$output" "before-failure-cleanup-marker"
+  assert_contains "$output" "held=false"
+  assert_contains "$output" "after-failure-cleanup-marker"
+}
+
+test_release_rebuild_lock_without_hold_is_noop() {
+  local sandbox output
+  sandbox=$(new_sandbox)
+
+  # shellcheck disable=SC2016
+  output=$(
+    bash -c '
+      set -euo pipefail
+      GREEN="" YELLOW="" RED="" NC=""
+      source "'"$REPO_ROOT"'/modules/shared/scripts/lib/rebuild/common.sh"
+      source "'"$REPO_ROOT"'/modules/shared/scripts/lib/rebuild/locks.sh"
+      NRS_REBUILD_LOCK="'"$sandbox"'/rebuild.lock"
+
+      echo before-marker >&2
+      release_rebuild_lock
+      echo "release_status=$?"
+      echo "held=$NRS_REBUILD_LOCK_HELD"
+      echo after-marker >&2
+    ' 2>&1
+  )
+
+  assert_contains "$output" "before-marker"
+  assert_contains "$output" "release_status=0"
+  assert_contains "$output" "held=false"
+  assert_contains "$output" "after-marker"
+}
+
+test_release_rebuild_lock_closes_fd200_in_same_shell() {
+  local sandbox output
+  sandbox=$(new_sandbox)
+
+  # 교차 프로세스 경쟁 없이, acquire/release 를 부른 바로 그 프로세스에서 fd 200 이
+  # 실제로 닫혔는지 직접 검사한다. `{ true >&200; } 2>/dev/null` 는 fd 200 이 열려
+  # 있으면 성공, 닫혀 있으면 실패한다(open이면 그 자체가 유효한 명령이 되어 rc=0).
+  # 이 검사는 "fd 를 안 닫음"·"서브셸에서만 닫음" 변이를 잡는다 — 원래 버그(#1380)는
+  # fd 자체는 제대로 닫으므로 이 테스트에서는 green 이어도 정상이며, 원래 버그는
+  # stderr 보존 테스트가 잡는다.
+  # shellcheck disable=SC2016
+  output=$(
+    bash -c '
+      set -euo pipefail
+      GREEN="" YELLOW="" RED="" NC=""
+      source "'"$REPO_ROOT"'/modules/shared/scripts/lib/rebuild/common.sh"
+      source "'"$REPO_ROOT"'/modules/shared/scripts/lib/rebuild/locks.sh"
+      NRS_REBUILD_LOCK="'"$sandbox"'/rebuild.lock"
+
+      acquire_rebuild_lock
+      release_rebuild_lock
+      if { true >&200; } 2>/dev/null; then
+        echo "fd200=open"
+      else
+        echo "fd200=closed"
+      fi
+      echo "held=$NRS_REBUILD_LOCK_HELD"
+    ' 2>&1
+  )
+
+  assert_contains "$output" "fd200=closed"
+  assert_contains "$output" "held=false"
+}
+
+test_release_rebuild_lock_frees_lock_for_other_process() (
+  local sandbox holder_script attempt_script holder_log holder_pid=""
+
+  # 실패 경로(fail() 의 exit 1 포함)에서도 holder 백그라운드 프로세스를 반드시 정리한다.
+  # 정리하지 않으면 sandbox 가 지워진 뒤 holder 의 대기 루프가 PPID 1 로 영구히 돈다.
+  # 선례: tests/suites/claude-remote-control-guardian.sh 의
+  # test_claude_remote_control_launch_guard_reaps_early_exit_descendant.
+  # shellcheck disable=SC2329  # EXIT trap에서만 호출
+  _cleanup_frees_lock_fixture() {
+    [[ -z "$holder_pid" ]] || kill "$holder_pid" 2>/dev/null || true
+    [[ -z "$holder_pid" ]] || wait "$holder_pid" 2>/dev/null || true
+  }
+  trap _cleanup_frees_lock_fixture EXIT
+
+  sandbox=$(new_sandbox)
+  holder_script="$sandbox/holder.sh"
+  attempt_script="$sandbox/attempt.sh"
+  holder_log="$sandbox/holder.log"
+
+  # holder: 잠금을 잡고, 신호 파일이 나타날 때까지 기다렸다가 release_rebuild_lock 을
+  # 호출한다. 해제 뒤에도 곧바로 종료하지 않고 이 테스트가 다른 프로세스의 재획득
+  # 시도를 끝내고 attempt-done 을 남길 때까지 살아있는다 — "fd 를 닫아서 풀렸다"와
+  # "holder 프로세스가 죽어서 풀렸다"를 구분하기 위함(고정 sleep 이면 그 사이 holder가
+  # 먼저 죽어 시도가 지연 성공하는 것과 fd 닫힘을 구분할 수 없다).
+  cat > "$holder_script" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+GREEN="" YELLOW="" RED="" NC=""
+source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/common.sh"
+source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/locks.sh"
+NRS_REBUILD_LOCK="$sandbox/rebuild.lock"
+NRS_REBUILD_LOCK_TIMEOUT=5
+acquire_rebuild_lock
+echo "holder-acquired"
+until [[ -f "$sandbox/release-now" ]]; do sleep 0.05; done
+release_rebuild_lock
+echo "holder-released"
+touch "$sandbox/holder-alive-after-release"
+_holder_waited=0
+until [[ -f "$sandbox/attempt-done" ]]; do
+  sleep 0.05
+  _holder_waited=\$((_holder_waited + 1))
+  (( _holder_waited > 200 )) && break
+done
+EOF
+  chmod +x "$holder_script"
+
+  # attempt: 짧은 타임아웃으로 잠금 획득을 시도하는 별도 프로세스. \$1 은 런타임에
+  # attempt_script 자신에게 전달되는 타임아웃(초)이라 생성 시점에 확장하면 안 된다.
+  # discoteq flock 0.4.0 은 --timeout 0 을 rc=64 로 거부하므로 최소값 1 을 쓴다.
+  cat > "$attempt_script" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+GREEN="" YELLOW="" RED="" NC=""
+source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/common.sh"
+source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/locks.sh"
+NRS_REBUILD_LOCK="$sandbox/rebuild.lock"
+NRS_REBUILD_LOCK_TIMEOUT="\$1"
+if acquire_rebuild_lock; then
+  echo "attempt-acquired"
+  release_rebuild_lock
+else
+  echo "attempt-timeout"
+fi
+EOF
+  chmod +x "$attempt_script"
+
+  "$holder_script" > "$holder_log" 2>&1 &
+  holder_pid=$!
+
+  local waited=0
+  until grep -q "holder-acquired" "$holder_log" 2>/dev/null; do
+    sleep 0.05
+    waited=$((waited + 1))
+    (( waited > 60 )) && break
+  done
+  assert_contains "$(cat "$holder_log")" "holder-acquired"
+
+  # holder 가 잠금을 쥔 동안에는 다른 프로세스가 짧은 타임아웃 안에 획득하지 못해야 함.
+  local blocked_output
+  blocked_output=$("$attempt_script" 1 2>&1)
+  assert_contains "$blocked_output" "attempt-timeout"
+
+  touch "$sandbox/release-now"
+  waited=0
+  until [[ -f "$sandbox/holder-alive-after-release" ]]; do
+    sleep 0.05
+    waited=$((waited + 1))
+    (( waited > 60 )) && break
+  done
+  [[ -f "$sandbox/holder-alive-after-release" ]] \
+    || fail "holder released 이후 상태를 확인하지 못함 (release_rebuild_lock 이 반환하지 않은 것으로 보임)"
+  kill -0 "$holder_pid" 2>/dev/null \
+    || fail "holder 프로세스가 release 증거 기록 직후 이미 종료됨 — fd 닫힘과 프로세스 종료를 구분할 수 없음"
+
+  # holder 프로세스는 여전히 살아있고(attempt-done 을 기다리는 중), 이 시점에는 아직
+  # 그 신호를 주지 않았다. 그런데도 다른 프로세스가 짧은 타임아웃 안에 잠금을 얻을 수
+  # 있다면, release_rebuild_lock 이 실제로 fd 200 을 닫아 OS 잠금을 풀었다는 증거다.
+  local freed_output
+  freed_output=$("$attempt_script" 1 2>&1)
+
+  # 재획득 시도가 끝난 뒤에도 holder 가 살아있었는지 다시 단정한다 — "그 사이 holder가
+  # 죽어서 풀렸다"는 대안 설명을 배제한다.
+  kill -0 "$holder_pid" 2>/dev/null \
+    || fail "holder 프로세스가 재획득 시도 도중 종료됨 — fd 닫힘과 프로세스 종료를 구분할 수 없음"
+
+  touch "$sandbox/attempt-done"
+  wait "$holder_pid" 2>/dev/null || true
+  holder_pid=""
+
+  assert_contains "$freed_output" "attempt-acquired"
+)
+
 test_parse_args_unknown_argument_shows_usage_and_fails() {
   local sandbox stdout_file stderr_file rc
   sandbox=$(new_sandbox)
@@ -1038,4 +1284,317 @@ EOF
   assert_contains "$output" "Applying changes"
   assert_not_contains "$output" "Skipping rebuild"
   [[ -s "$switch_log" ]] || fail "expected no-change nrs to run darwin-rebuild switch when Codex artifact is missing"
+}
+
+# ─────────────────────────────────────────────────────────────────────────
+# nrs-relink cmd_fix_dangling / 인라인 _repair_claude_symlinks probe 일치 (#1381)
+#
+# 두 경로 모두 settings.json 하나만 대표 canary로 검사하면, settings.json이 일반
+# 파일로 배치되는 호스트(hostType "work")에서는 다른 관리 링크(CLAUDE.md)가
+# dangling이어도 감지하지 못한다. lib/rebuild/relink.sh의 재빌드 복구 경로가 이미
+# 쓰는 2-probe(settings.json, CLAUDE.md)를 두 경로에 맞춘다.
+#
+# bash 스크립트(nrs-relink.sh)와 Nix가 렌더링하는 zsh 인라인 문자열(default.nix)
+# 사이에는 probe 목록을 공유할 언어 경계가 없어 각자 복제한다 —
+# test_fix_dangling_probe_lists_match_between_cli_and_inline이 두 목록의 일치를 고정한다.
+# ─────────────────────────────────────────────────────────────────────────
+
+# nrs-relink.sh에서 함수 정의만 source한다(entry point인 파일 끝 case "${1:-}" in ... 는
+# 소스 시 실행되면 안 되므로 그 앞까지만 잘라낸다). 프로덕션 스크립트는 수정하지 않는다.
+_nrs_relink_functions_src() {
+  local script="$REPO_ROOT/modules/shared/scripts/nrs-relink.sh"
+  local marker_line
+  marker_line=$(grep -Fn 'case "${1:-}" in' "$script" | tail -1 | cut -d: -f1)
+  [[ -n "$marker_line" ]] || fail 'nrs-relink.sh entry point marker(case "${1:-}" in)를 찾을 수 없음 — 스크립트가 변경되었는지 확인'
+  sed -n "1,$((marker_line - 1))p" "$script"
+}
+
+# cmd_restore를 대역으로 가리고 cmd_fix_dangling만 호출한다.
+# $1: HOME으로 쓸 디렉터리  $2: 호출 로그 파일(호출마다 한 줄 append)  $3: 대역 cmd_restore 종료 코드(기본 0)
+_run_cmd_fix_dangling_with_stub() {
+  local home_dir="$1" call_log="$2" restore_exit="${3:-0}"
+  (
+    HOME="$home_dir"
+    # shellcheck disable=SC1090
+    source <(_nrs_relink_functions_src)
+    cmd_restore() {
+      printf 'called\n' >> "$call_log"
+      return "$restore_exit"
+    }
+    cmd_fix_dangling
+  )
+}
+
+# 실제 배포본과 동일하게 @flakePath@를 치환한 nrs-relink.sh를 그대로 실행 가능하게 만든다.
+_deploy_real_nrs_relink_cli() {
+  local dest="$1"
+  sed "s|@flakePath@|$REPO_ROOT|g" "$REPO_ROOT/modules/shared/scripts/nrs-relink.sh" > "$dest"
+  chmod +x "$dest"
+}
+
+# default.nix에 인라인으로 박힌 _repair_claude_symlinks 함수 본문만 추출한다. BEGIN/END
+# 마커 사이 추출은 tests/suites/headless-ssh-dispatcher.sh의 initContent 하위 블록 추출
+# 선례를 따른다. 이 블록은 Nix antiquotation(${...})이나 raw string 이스케이프('')를 쓰지
+# 않으므로(오직 $HOME 등 셸 변수만 사용) .nix 소스 텍스트는 Nix가 렌더링한 initContent와
+# 앞쪽 공통 들여쓰기(Nix 들여쓴 문자열이 렌더링 시 제거하는 부분)를 제외하면 동일하다 —
+# 들여쓰기 차이는 셸 파싱에 영향이 없으므로 nix eval 없이 직접 추출해도 충실하며, nix eval
+# 대비 테스트 실행 시간을 크게 줄인다. antiquotation이나 raw string 이스케이프가 이 블록에
+# 섞이면 위 동등성 가정이 깨지므로, 조용히 잘못된 텍스트를 돌려주는 대신 즉시 실패한다.
+_inline_repair_claude_symlinks_src() {
+  local src
+  src="$(
+    awk '
+      /BEGIN nixos-config dangling symlink repair probe/ { emit = 1 }
+      emit { print }
+      /END nixos-config dangling symlink repair probe/ { exit }
+    ' "$REPO_ROOT/modules/shared/programs/shell/default.nix"
+  )"
+  if grep -qF '${' <<<"$src" || grep -qF "''" <<<"$src"; then
+    fail "_repair_claude_symlinks 블록에 Nix antiquotation(\${) 또는 raw string 이스케이프('')가 감지됨 — 텍스트 추출이 렌더링과 더 이상 동등하지 않을 수 있음"
+  fi
+  printf '%s\n' "$src"
+}
+
+# 인라인 함수를 hermetic zsh -f로 실행한다. "$HOME/.local/bin/nrs-relink"는 실제
+# 서브프로세스 경계이므로 대역 스크립트를 파일로 심는다(함수 스텁이 아니라 실제 바이너리 경계).
+# 대역은 stdout·stderr에 각각 한 줄을 쓰고 자신의 argv($*)를 호출 로그에 남긴다 —
+# 아무것도 출력하지 않는 대역은 default.nix의 ">/dev/null 2>&1" 리다이렉트를 지우는 변이나
+# restore 대신 relink를 호출하는 변이를 구분해내지 못한다.
+# $1: HOME  $2: 호출 로그 파일  $3: 대역 nrs-relink 종료 코드(기본 0)
+_run_inline_repair_claude_symlinks() {
+  local home_dir="$1" call_log="$2" restore_exit="${3:-0}" script
+  script="$(new_sandbox)/repair.zsh"
+  mkdir -p "$home_dir/.local/bin"
+  cat > "$home_dir/.local/bin/nrs-relink" <<EOF
+#!/usr/bin/env bash
+printf 'called %s\n' "\$*" >> "$call_log"
+printf 'stub nrs-relink stdout\n'
+printf 'stub nrs-relink stderr\n' >&2
+exit $restore_exit
+EOF
+  chmod +x "$home_dir/.local/bin/nrs-relink"
+  {
+    _inline_repair_claude_symlinks_src
+    printf '\n_repair_claude_symlinks\n'
+  } > "$script"
+  HOME="$home_dir" zsh -f "$script"
+}
+
+# settings.json/CLAUDE.md를 지정 상태로 배치한다.
+# $2 settings_state: file(정상 일반 파일) | symlink(정상 링크) | dangling(끊어진 링크) | absent(부재)
+# $3 claude_md_state: symlink(정상 링크) | dangling(끊어진 링크)
+_setup_probe_fixture() {
+  local home_dir="$1" settings_state="$2" claude_md_state="$3"
+  mkdir -p "$home_dir/.claude" "$home_dir/store-target"
+  rm -f "$home_dir/.claude/settings.json" "$home_dir/.claude/CLAUDE.md"
+
+  case "$settings_state" in
+    file)
+      printf '{"ok":true}\n' > "$home_dir/.claude/settings.json"
+      ;;
+    symlink)
+      printf '{"ok":true}\n' > "$home_dir/store-target/settings.json"
+      ln -sfn "$home_dir/store-target/settings.json" "$home_dir/.claude/settings.json"
+      ;;
+    dangling)
+      ln -sfn "$home_dir/store-target/missing-settings.json" "$home_dir/.claude/settings.json"
+      ;;
+    absent) : ;;
+    *) fail "unknown settings_state: $settings_state" ;;
+  esac
+
+  case "$claude_md_state" in
+    symlink)
+      printf '# CLAUDE\n' > "$home_dir/store-target/CLAUDE.md"
+      ln -sfn "$home_dir/store-target/CLAUDE.md" "$home_dir/.claude/CLAUDE.md"
+      ;;
+    dangling)
+      ln -sfn "$home_dir/store-target/missing-CLAUDE.md" "$home_dir/.claude/CLAUDE.md"
+      ;;
+    *) fail "unknown claude_md_state: $claude_md_state" ;;
+  esac
+}
+
+# 8개 조합(settings.json 4상태 × CLAUDE.md 2상태) 전체에서 CLI(cmd_fix_dangling)가
+# cmd_restore를 호출하는지, 정상 링크·일반 파일이 훼손되지 않는지 확인한다.
+test_cmd_fix_dangling_probe_matrix() {
+  local settings_state claude_md_state
+  local home_dir call_log rc
+
+  for settings_state in file symlink dangling absent; do
+    for claude_md_state in symlink dangling; do
+      home_dir="$(new_sandbox)/home"
+      _setup_probe_fixture "$home_dir" "$settings_state" "$claude_md_state"
+      call_log="$(new_sandbox)/call.log"
+      : > "$call_log"
+
+      rc=0
+      _run_cmd_fix_dangling_with_stub "$home_dir" "$call_log" 0 || rc=$?
+
+      [[ "$rc" -eq 0 ]] || fail "cmd_fix_dangling exited $rc for settings=$settings_state claude_md=$claude_md_state (restore stub succeeds)"
+
+      if [[ "$claude_md_state" == "dangling" || "$settings_state" == "dangling" ]]; then
+        # 두 probe가 모두 dangling인 조합도 포함되므로, 존재 여부가 아니라 정확히 1회
+        # 호출됐는지를 본다 — cmd_restore 뒤 return을 지워 두 probe 각각에서 다시
+        # 호출되게 하는 변이는 "호출됨" 단정만으로는 잡히지 않는다.
+        assert_line_count "$call_log" "called" 1
+      else
+        [[ ! -s "$call_log" ]] || fail "expected no cmd_restore call for settings=$settings_state claude_md=$claude_md_state"
+      fi
+
+      if [[ "$settings_state" == "file" ]]; then
+        assert_file_contains "$home_dir/.claude/settings.json" '{"ok":true}'
+      fi
+      if [[ "$claude_md_state" == "symlink" ]]; then
+        [[ -L "$home_dir/.claude/CLAUDE.md" && -e "$home_dir/.claude/CLAUDE.md" ]] \
+          || fail "expected healthy CLAUDE.md symlink to remain intact for settings=$settings_state"
+      fi
+    done
+  done
+}
+
+# 직접 CLI 호출 시 cmd_restore 실패가 성공(exit 0)으로 처리되지 않아야 한다. 두 probe 중
+# 어느 쪽이 먼저 dangling으로 걸리든(settings.json이 첫 probe, CLAUDE.md가 두 번째 probe)
+# 동일하게 전파되는지 확인한다 — 한쪽 probe에서만 확인하면 다른 probe의 return 경로가
+# 실패를 삼키는 회귀를 놓칠 수 있다.
+test_cmd_fix_dangling_propagates_restore_failure() {
+  local settings_state claude_md_state home_dir call_log rc
+
+  for settings_state in dangling file; do
+    if [[ "$settings_state" == "dangling" ]]; then
+      claude_md_state=symlink
+    else
+      claude_md_state=dangling
+    fi
+
+    home_dir="$(new_sandbox)/home"
+    _setup_probe_fixture "$home_dir" "$settings_state" "$claude_md_state"
+    call_log="$(new_sandbox)/call.log"
+    : > "$call_log"
+
+    rc=0
+    _run_cmd_fix_dangling_with_stub "$home_dir" "$call_log" 1 || rc=$?
+
+    [[ -s "$call_log" ]] \
+      || fail "expected cmd_restore to be attempted before failing (settings=$settings_state claude_md=$claude_md_state)"
+    [[ "$rc" -ne 0 ]] \
+      || fail "expected cmd_fix_dangling to propagate cmd_restore failure as a nonzero exit code (settings=$settings_state claude_md=$claude_md_state)"
+  done
+}
+
+# settings.json이 정상 일반 파일이고 CLAUDE.md도 정상 링크면, 실제 배포본 CLI를
+# 대역 없이 그대로 실행해도 아무것도 건드리지 않아야 한다(불필요한 restore 방지).
+test_nrs_relink_cli_fix_dangling_noop_when_probes_healthy() {
+  local sandbox home_dir cli output rc
+  sandbox="$(new_sandbox)"
+  home_dir="$sandbox/home"
+  cli="$sandbox/nrs-relink"
+  _setup_probe_fixture "$home_dir" file symlink
+  _deploy_real_nrs_relink_cli "$cli"
+
+  rc=0
+  output=$(HOME="$home_dir" "$cli" fix-dangling 2>&1) || rc=$?
+
+  [[ "$rc" -eq 0 ]] || fail "expected fix-dangling to exit 0 when settings.json is a plain file and CLAUDE.md link is healthy (output: $output)"
+  [[ -z "$output" ]] || fail "expected no output when no dangling link is detected (output: $output)"
+  assert_file_contains "$home_dir/.claude/settings.json" '{"ok":true}'
+}
+
+# settings.json은 정상 일반 파일이지만 CLAUDE.md가 dangling인 상태에서, 대역 없이 실제
+# 배포본 CLI를 그대로 실행한다. sandbox에는 HM gcroot도 대체 probe도 없으므로 cmd_restore가
+# 실제로 _discover_hmf에서 실패한다 — "복구 실패가 성공으로 처리되지 않는다"를 대역 없이 검증한다.
+test_nrs_relink_cli_fix_dangling_fails_closed_when_restore_cannot_discover_hmf() {
+  local sandbox home_dir cli output rc
+  sandbox="$(new_sandbox)"
+  home_dir="$sandbox/home"
+  cli="$sandbox/nrs-relink"
+  _setup_probe_fixture "$home_dir" file dangling
+  _deploy_real_nrs_relink_cli "$cli"
+
+  rc=0
+  output=$(HOME="$home_dir" "$cli" fix-dangling 2>&1) || rc=$?
+
+  [[ "$rc" -ne 0 ]] || fail "expected fix-dangling to fail (nonzero exit) when the dangling CLAUDE.md link cannot actually be restored"
+  assert_contains "$output" "Could not discover home-manager-files store path"
+}
+
+# 인라인(_repair_claude_symlinks)도 CLI와 동일한 8개 조합에서 동일하게 대역 nrs-relink
+# 호출 여부를 보인다. probe 목록 자체의 일치는 별도 테스트가 고정한다.
+test_inline_repair_claude_symlinks_probe_matrix() {
+  local settings_state claude_md_state
+  local home_dir call_log output rc
+
+  for settings_state in file symlink dangling absent; do
+    for claude_md_state in symlink dangling; do
+      home_dir="$(new_sandbox)/home"
+      _setup_probe_fixture "$home_dir" "$settings_state" "$claude_md_state"
+      call_log="$(new_sandbox)/call.log"
+      : > "$call_log"
+
+      rc=0
+      output=$(_run_inline_repair_claude_symlinks "$home_dir" "$call_log" 0 2>&1) || rc=$?
+
+      [[ "$rc" -eq 0 ]] || fail "_repair_claude_symlinks exited $rc for settings=$settings_state claude_md=$claude_md_state (output: $output)"
+
+      if [[ "$claude_md_state" == "dangling" || "$settings_state" == "dangling" ]]; then
+        # 정확히 "restore"로 호출됐는지, 정확히 1회인지를 본다. 존재 여부만 보면
+        # restore를 relink로 바꾸는 변이(매 프롬프트 cwd worktree로 전환하는 위험한
+        # 회귀)나, return 제거로 두 probe에서 중복 호출되는 변이를 잡지 못한다.
+        assert_line_count "$call_log" "called restore" 1
+      else
+        [[ ! -s "$call_log" ]] \
+          || fail "expected inline probe NOT to call nrs-relink for settings=$settings_state claude_md=$claude_md_state (got: $(cat "$call_log"))"
+      fi
+
+      if [[ "$settings_state" == "file" ]]; then
+        assert_file_contains "$home_dir/.claude/settings.json" '{"ok":true}'
+      fi
+    done
+  done
+}
+
+# 프롬프트 경로는 상호작용을 방해하지 않으면서 다음 시도 기회를 잃지 않아야 한다(#1381).
+# 현재 설계(#294)는 nrs-relink restore의 출력을 ">/dev/null 2>&1"로 삼켜 터미널에 아무것도
+# 보이지 않게 하면서도 재시도는 막지 않는다 — 이 동작을 측정해 고정한다. 대역이 stdout·
+# stderr에 한 줄씩 쓰므로, 저 리다이렉트를 지우는 변이는 output1/output2가 비지 않게 되어
+# 잡힌다.
+test_inline_repair_claude_symlinks_retries_after_restore_failure() {
+  local home_dir call_log output1 output2
+
+  home_dir="$(new_sandbox)/home"
+  _setup_probe_fixture "$home_dir" file dangling
+  call_log="$(new_sandbox)/call.log"
+  : > "$call_log"
+
+  output1=$(_run_inline_repair_claude_symlinks "$home_dir" "$call_log" 1 2>&1) || true
+  output2=$(_run_inline_repair_claude_symlinks "$home_dir" "$call_log" 1 2>&1) || true
+
+  [[ -z "$output1" && -z "$output2" ]] \
+    || fail "expected inline probe to stay silent on the terminal even when restore fails (got: '$output1' / '$output2')"
+  assert_line_count "$call_log" "called restore" 2
+}
+
+# probe 목록은 bash(cmd_fix_dangling)와 Nix가 렌더링하는 zsh 인라인 문자열
+# (_repair_claude_symlinks) 사이에 공유할 언어 경계가 없어 각자 복제한다 — 이 테스트가
+# 두 목록의 일치를 고정한다. 한쪽만 CLAUDE.md를 추가하는 변경은 이 테스트가 잡는다.
+test_fix_dangling_probe_lists_match_between_cli_and_inline() {
+  local cli_script cli_probes inline_probes
+  cli_script="$REPO_ROOT/modules/shared/scripts/nrs-relink.sh"
+
+  # 파이프라인이 매치 없음(grep exit 1)으로 실패하면 pipefail 하에서 대입 자체가
+  # errexit로 죽어 아래 "markers may be stale" 진단에 닿지 못한다 — `|| true`로 대입은
+  # 항상 성공시키고, 빈 값 여부는 곧이어 [[ -n ]]으로 명시적으로 진단한다.
+  cli_probes="$(
+    awk '/^cmd_fix_dangling\(\) \{/{f=1} f{print} f && /^\}$/{exit}' "$cli_script" \
+      | grep -oE '"\$HOME/\.claude/[A-Za-z0-9_.]+"' | sort -u
+  )" || true
+  inline_probes="$(
+    _inline_repair_claude_symlinks_src \
+      | grep -oE '"\$HOME/\.claude/[A-Za-z0-9_.]+"' | sort -u
+  )" || true
+
+  [[ -n "$cli_probes" ]] || fail "failed to extract cmd_fix_dangling probe list — awk boundary markers may be stale"
+  [[ -n "$inline_probes" ]] || fail "failed to extract _repair_claude_symlinks probe list — BEGIN/END markers may be stale"
+  [[ "$cli_probes" == "$inline_probes" ]] \
+    || fail "cmd_fix_dangling probes ($cli_probes) differ from inline _repair_claude_symlinks probes ($inline_probes)"
 }

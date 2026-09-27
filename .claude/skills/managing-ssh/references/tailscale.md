@@ -149,7 +149,7 @@ ssh mac
 ssh greenhead@<macbook Tailscale IP>
 
 # 불안정한 네트워크에서 mosh
-mosh greenhead@<minipc Tailscale IP> -- tmux attach -t main
+mosh greenhead@<minipc Tailscale IP> -- tmux new-session -A -s main
 ```
 
 양방향 SSH 요약:

@@ -35,6 +35,11 @@ run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
 run_test "wt wrapper ignores runtime HOME for real script" test_wt_wrapper_ignores_runtime_home_for_real_script
 run_test "managed plugin skill helper rejects duplicate matches" test_managed_plugin_skill_link_requires_single_match
 run_test "rebuild-common exports public API" test_rebuild_common_exports_public_api
+run_test "release_rebuild_lock preserves caller stderr" test_release_rebuild_lock_preserves_caller_stderr
+run_test "release_rebuild_lock_on_failure preserves caller stderr" test_release_rebuild_lock_on_failure_preserves_caller_stderr
+run_test "release_rebuild_lock without hold is a no-op" test_release_rebuild_lock_without_hold_is_noop
+run_test "release_rebuild_lock closes fd200 in same shell" test_release_rebuild_lock_closes_fd200_in_same_shell
+run_test "release_rebuild_lock frees OS lock for other process" test_release_rebuild_lock_frees_lock_for_other_process
 run_test "parse_args unknown argument shows usage and fails" test_parse_args_unknown_argument_shows_usage_and_fails
 run_test "nixos nrs --help prints usage" test_nixos_nrs_help_flag_prints_usage
 run_test "darwin nrs -h alias prints usage" test_darwin_nrs_h_alias_prints_usage
@@ -251,7 +256,15 @@ run_test "wt cleanup refuses ambiguous name" test_wt_cleanup_refuses_ambiguous_n
 run_test "wt cleanup keeps unpreserved detached commit" test_wt_cleanup_keeps_unpreserved_detached_commit
 run_test "wt cleanup detached preservation scope" test_wt_cleanup_detached_preservation_scope
 run_test "wt cleanup detached lookup errors fail closed" test_wt_cleanup_detached_lookup_errors_fail_closed
-run_test "wt recreate warns unpreserved detached commit" test_wt_recreate_warns_unpreserved_detached_commit
+run_test "wt recreate refuses unpreserved detached commit" test_wt_recreate_refuses_unpreserved_detached_commit
+run_test "wt existing worktree refuses mapped branch collision" test_wt_existing_worktree_refuses_mapped_branch_collision
+run_test "wt existing worktree refuses switched checkout" test_wt_existing_worktree_refuses_switched_checkout
+run_test "wt recreate keeps requested branch preserving detached commit" test_wt_recreate_keeps_requested_branch_preserving_detached_commit
+run_test "wt recreate keeps unpushed requested branch under other checkout" test_wt_recreate_keeps_unpushed_requested_branch_under_other_checkout
+run_test "wt recreate matching checkout still confirms loss" test_wt_recreate_matching_checkout_still_confirms_loss
+run_test "wt existing worktree lookup errors fail closed" test_wt_existing_worktree_lookup_errors_fail_closed
+run_test "wt existing worktree interactive choice checks checkout unit" test_wt_existing_worktree_interactive_choice_checks_checkout_unit
+run_test "wt create existing path contracts unchanged" test_wt_create_existing_path_contracts_unchanged
 run_test "wt cleanup branch unpushed verdict unchanged" test_wt_cleanup_branch_unpushed_verdict_unchanged
 run_test "wt recreate refuses locked worktree" test_wt_recreate_refuses_locked_worktree
 run_test "wt cleanup name-filter merged without upstream needs no confirm" test_wt_cleanup_name_filter_merged_without_upstream_needs_no_confirm
@@ -330,6 +343,13 @@ run_test "darwin nrs no-change releases worktree lock" test_darwin_nrs_no_change
 run_test "darwin nrs no-change activates when Codex artifact missing" test_darwin_nrs_no_changes_activates_when_codex_artifact_missing
 run_test "darwin nrs no-change skips relink without HM gcroot" test_darwin_nrs_no_changes_skips_relink_without_hm_gcroot
 run_test "darwin nrs no-change restores when HM gcroot present" test_darwin_nrs_no_changes_restores_when_hm_gcroot_present
+run_test "cmd_fix_dangling probe matrix calls restore only on dangling" test_cmd_fix_dangling_probe_matrix
+run_test "cmd_fix_dangling propagates restore failure" test_cmd_fix_dangling_propagates_restore_failure
+run_test "nrs-relink fix-dangling CLI no-ops when probes are healthy" test_nrs_relink_cli_fix_dangling_noop_when_probes_healthy
+run_test "nrs-relink fix-dangling CLI fails closed when restore cannot discover HMF" test_nrs_relink_cli_fix_dangling_fails_closed_when_restore_cannot_discover_hmf
+run_test "inline _repair_claude_symlinks probe matrix calls restore only on dangling" test_inline_repair_claude_symlinks_probe_matrix
+run_test "inline _repair_claude_symlinks retries after restore failure" test_inline_repair_claude_symlinks_retries_after_restore_failure
+run_test "fix-dangling probe lists match between CLI and inline" test_fix_dangling_probe_lists_match_between_cli_and_inline
 run_test "install-lefthook cleans up redundant local core.hooksPath" test_install_lefthook_cleanup_local_redundant
 run_test "install-lefthook preserves custom local core.hooksPath" test_install_lefthook_preserves_custom_local
 run_test "install-lefthook is silent on clean state" test_install_lefthook_silent_on_clean_state
@@ -368,6 +388,9 @@ run_test "folder-actions drain_queue processes rescanned files in order" test_fo
 run_test "folder-actions drain_queue defers unstable files" test_folder_actions_drain_queue_defers_unstable_files
 run_test "folder-actions quarantine_or_abort branches" test_folder_actions_quarantine_or_abort_branches
 run_test "upload-immich missing credential branch is quiet" test_upload_immich_missing_credential_branch_is_quiet_or_skipped
+run_test "folder-actions tool jobs keep input when required tool is missing" test_folder_actions_tool_jobs_keep_input_when_required_tool_missing
+run_test "folder-actions compress-rar runs with launchd minimal PATH" test_folder_actions_compress_rar_runs_with_launchd_minimal_path
+run_test "folder-actions video jobs run with launchd minimal PATH" test_folder_actions_video_jobs_run_with_launchd_minimal_path
 run_test "karakeep fallback-sync success removes only matched queue URL" test_karakeep_fallback_sync_success_removes_only_matched_queue_url
 run_test "karakeep fallback-sync upload failure preserves queue" test_karakeep_fallback_sync_upload_failure_preserves_queue_and_records_notify_state
 run_test "karakeep fallback-sync GC removes expired state" test_karakeep_fallback_sync_gc_removes_only_expired_state_entries
@@ -423,6 +446,22 @@ run_test "immich cleanup paginates v3 nextPage string" test_immich_cleanup_v3_pa
 run_test "immich cleanup preserves empty album notification" test_immich_cleanup_v3_empty_album_preserves_notification
 run_test "immich cleanup rejects invalid asset id" test_immich_cleanup_v3_rejects_invalid_asset_id
 run_test "immich cleanup rejects invalid nextPage" test_immich_cleanup_v3_rejects_invalid_next_page
+# 종료 코드 계약 (#1387) — 삭제 실패는 0이 아닌 종료, 알림 실패는 결과를 바꾸지 않는다
+run_test "immich cleanup all success exits zero with single summary" test_immich_cleanup_all_success_exits_zero_with_single_summary
+run_test "immich cleanup empty album exits zero" test_immich_cleanup_empty_album_exits_zero
+run_test "immich cleanup partial delete failure exits nonzero" test_immich_cleanup_partial_delete_failure_exits_nonzero
+run_test "immich cleanup all delete failure exits nonzero" test_immich_cleanup_all_delete_failure_exits_nonzero
+run_test "immich cleanup notification failure keeps delete failure" test_immich_cleanup_notification_failure_keeps_delete_failure
+run_test "immich cleanup unexpected failure sends single error notification" test_immich_cleanup_unexpected_failure_sends_single_error_notification
+
+# homeserver-smoke-test suite (tests/suites/homeserver-smoke-test.sh) — 종료 코드·알림 계약 (#1387)
+run_test "smoke test all pass exits zero without notification" test_smoke_test_all_pass_exits_zero_without_notification
+run_test "smoke test disabled backups are not checked" test_smoke_test_disabled_backups_are_not_checked
+run_test "smoke test HTTP failure exits nonzero with single summary" test_smoke_test_http_failure_exits_nonzero_with_single_summary
+run_test "smoke test stale backup exits nonzero with single summary" test_smoke_test_stale_backup_exits_nonzero_with_single_summary
+run_test "smoke test systemd failures exit nonzero with single summary" test_smoke_test_systemd_failures_exit_nonzero_with_single_summary
+run_test "smoke test notification failure keeps check failure" test_smoke_test_notification_failure_keeps_check_failure
+run_test "smoke test crash sends single crash notification" test_smoke_test_crash_sends_single_crash_notification
 run_test "hook_init_scan_dir falls back when TMPDIR missing" test_hook_init_scan_dir_falls_back_when_tmpdir_missing
 run_test "hook_init_scan_dir falls back when TMPDIR unwritable" test_hook_init_scan_dir_falls_back_when_tmpdir_unwritable
 run_test "hook_init_scan_dir falls back when system tmp unusable" test_hook_init_scan_dir_falls_back_to_user_cache_when_system_tmp_unusable
@@ -471,6 +510,85 @@ run_test "interaction-limits-renewal missing PAT exits nonzero" test_ilr_missing
 # korean-particle-expansion suite (tests/suites/korean-particle-expansion.sh)
 run_test "korean particle expansions stay brace-bounded" test_korean_particle_expansion_is_brace_bounded
 run_test "SA health check lifecycle and secret handling" test_opnix_health_check_lifecycle
+
+# version-check suite (tests/suites/version-check.sh)
+run_test "version-check initial success records last-success without notification" test_version_check_initial_success_records_last_success_without_notification
+run_test "version-check subsequent failure below threshold keeps last-success" test_version_check_subsequent_failure_below_threshold_keeps_last_success
+run_test "version-check failure at threshold triggers watchdog warning" test_version_check_failure_at_threshold_triggers_watchdog_warning
+run_test "version-check failure just before threshold does not warn" test_version_check_failure_just_before_threshold_no_warning
+run_test "version-check recovery updates last-success without new-version notification" test_version_check_recovery_updates_last_success_without_new_version_notification
+run_test "version-check initial failure records nothing" test_version_check_initial_failure_records_nothing
+run_test "immich version-check initial success records last-success" test_immich_version_check_initial_success_records_last_success
+run_test "immich version-check new version notifies and records" test_immich_version_check_new_version_notifies_and_records
+run_test "version-check large release body notifies without SIGPIPE" test_version_check_new_version_large_release_body_notifies_without_sigpipe
+run_test "immich version-check large release body notifies without SIGPIPE" test_immich_version_check_new_version_large_release_body_notifies_without_sigpipe
+run_test "version-check release body default text for missing or null body" test_version_check_release_body_default_text_for_missing_or_null_body
+run_test "version-check release body preserves empty string" test_version_check_release_body_preserves_empty_string
+run_test "version-check release body non-string value is stringified" test_version_check_release_body_non_string_value_is_stringified
+run_test "version-check release body line limit matches head boundary" test_version_check_release_body_line_limit_matches_head_boundary
+run_test "version-check release body CRLF line split matches head" test_version_check_release_body_crlf_line_split_matches_head
+run_test "version-check release body unicode boundary not corrupted" test_version_check_release_body_unicode_boundary_not_corrupted
+run_test "version-check invalid GitHub JSON does not send false success notification" test_version_check_invalid_github_json_does_not_send_false_success_notification
+
+# git-cleanup suite (tests/suites/git-cleanup.sh) — 날짜 계산 도구 선택 계약 (#1376)
+run_test "git-cleanup BSD-only date dry-run succeeds" test_git_cleanup_bsd_only_date_dry_run_succeeds
+run_test "git-cleanup GNU-only date dry-run succeeds" test_git_cleanup_gnu_only_date_dry_run_succeeds
+run_test "git-cleanup stale boundary consistent across date tools" test_git_cleanup_stale_boundary_consistent_across_date_tools
+run_test "git-cleanup stale boundary is timezone independent" test_git_cleanup_stale_boundary_is_timezone_independent
+run_test "git-cleanup date command failure stops before candidates" test_git_cleanup_date_command_failure_stops_before_candidates
+run_test "git-cleanup date non-numeric output stops before candidates" test_git_cleanup_date_non_numeric_output_stops_before_candidates
+run_test "git-cleanup dry-run does not delete stale branch" test_git_cleanup_dry_run_does_not_delete_stale_branch
+run_test "git-cleanup stale boundary uses fixed seconds not calendar days across DST" test_git_cleanup_stale_boundary_uses_fixed_seconds_not_calendar_days_across_dst
+run_test "git-cleanup date command absent stops before candidates" test_git_cleanup_date_command_absent_stops_before_candidates
+
+# update-script-arg-parse suite (tests/suites/update-script-arg-parse.sh) — #1383
+run_test "immich-update --help exits 0 without side effects" test_immich_update_help_flag_exits_zero_without_side_effects
+run_test "immich-update rejects unknown option" test_immich_update_rejects_unknown_option
+run_test "immich-update rejects excess argument" test_immich_update_rejects_excess_argument
+run_test "immich-update rejects bare positional argument" test_immich_update_rejects_bare_positional_argument
+run_test "immich-update --help avoids boundaries with env wired" test_immich_update_help_flag_avoids_boundaries_with_env
+run_test "immich-update rejects unknown option with env wired" test_immich_update_rejects_unknown_option_with_env
+run_test "immich-update rejects excess argument with env wired" test_immich_update_rejects_excess_argument_with_env
+run_test "immich-update no-args preserves existing update flow" test_immich_update_no_args_preserves_existing_update_flow
+run_test "immich-update --dry-run skips mutating boundaries" test_immich_update_dry_run_skips_mutating_boundaries
+run_test "copyparty-update --help exits 0 without side effects" test_copyparty_update_help_flag_exits_zero_without_side_effects
+run_test "copyparty-update rejects unknown option" test_copyparty_update_rejects_unknown_option
+run_test "copyparty-update rejects excess argument" test_copyparty_update_rejects_excess_argument
+run_test "copyparty-update rejects bare positional argument" test_copyparty_update_rejects_bare_positional_argument
+run_test "copyparty-update --help avoids boundaries with env wired" test_copyparty_update_help_flag_avoids_boundaries_with_env
+run_test "copyparty-update rejects unknown option with env wired" test_copyparty_update_rejects_unknown_option_with_env
+run_test "copyparty-update rejects excess argument with env wired" test_copyparty_update_rejects_excess_argument_with_env
+run_test "copyparty-update no-args preserves existing update flow" test_copyparty_update_no_args_preserves_existing_update_flow
+run_test "copyparty-update --dry-run skips mutating boundaries" test_copyparty_update_dry_run_skips_mutating_boundaries
+run_test "uptime-kuma-update --help exits 0 without side effects" test_uptime_kuma_update_help_flag_exits_zero_without_side_effects
+run_test "uptime-kuma-update rejects unknown option" test_uptime_kuma_update_rejects_unknown_option
+run_test "uptime-kuma-update rejects excess argument" test_uptime_kuma_update_rejects_excess_argument
+run_test "uptime-kuma-update rejects bare positional argument" test_uptime_kuma_update_rejects_bare_positional_argument
+run_test "uptime-kuma-update --help avoids boundaries with env wired" test_uptime_kuma_update_help_flag_avoids_boundaries_with_env
+run_test "uptime-kuma-update rejects unknown option with env wired" test_uptime_kuma_update_rejects_unknown_option_with_env
+run_test "uptime-kuma-update rejects excess argument with env wired" test_uptime_kuma_update_rejects_excess_argument_with_env
+run_test "uptime-kuma-update no-args preserves existing update flow" test_uptime_kuma_update_no_args_preserves_existing_update_flow
+run_test "uptime-kuma-update --dry-run skips mutating boundaries" test_uptime_kuma_update_dry_run_skips_mutating_boundaries
+run_test "karakeep-update --help exits 0 without side effects" test_karakeep_update_help_flag_exits_zero_without_side_effects
+run_test "karakeep-update rejects unknown option" test_karakeep_update_rejects_unknown_option
+run_test "karakeep-update rejects excess argument" test_karakeep_update_rejects_excess_argument
+run_test "karakeep-update rejects bare positional argument" test_karakeep_update_rejects_bare_positional_argument
+run_test "karakeep-update --help avoids boundaries with env wired" test_karakeep_update_help_flag_avoids_boundaries_with_env
+run_test "karakeep-update rejects unknown option with env wired" test_karakeep_update_rejects_unknown_option_with_env
+run_test "karakeep-update rejects excess argument with env wired" test_karakeep_update_rejects_excess_argument_with_env
+run_test "karakeep-update no-args still requires ack-bridge-risk" test_karakeep_update_no_args_still_requires_ack_bridge_risk
+run_test "karakeep-update ack-bridge-risk preserves existing update flow" test_karakeep_update_ack_bridge_risk_preserves_existing_update_flow
+run_test "karakeep-update --dry-run skips mutating boundaries" test_karakeep_update_dry_run_skips_mutating_boundaries
+
+# ═══════════════════════════════════════════════════════════════════
+# add-host.sh — NixOS 분기 default.nix 생성 (#1382)
+# ═══════════════════════════════════════════════════════════════════
+run_test "add-host NixOS generates default.nix without calling sed" test_add_host_nixos_generates_default_nix_without_calling_sed
+run_test "add-host NixOS matches expected template with system tools" test_add_host_nixos_matches_expected_template_with_system_tools
+run_test "add-host NixOS preserves existing default.nix" test_add_host_nixos_preserves_existing_default_nix
+run_test "add-host NixOS mv failure leaves no partial file and removes created dir" test_add_host_nixos_mv_failure_leaves_no_partial_file_and_removes_created_dir
+run_test "add-host NixOS write failure leaves no partial file and removes created dir" test_add_host_nixos_write_failure_leaves_no_partial_file_and_removes_created_dir
+run_test "add-host NixOS printf failure leaves no partial file and removes created dir" test_add_host_nixos_printf_failure_leaves_no_partial_file_and_removes_created_dir
 
 # 퇴역 키 로더는 tomlkit 없이도 도는 순수 셸 계약이라 아래 게이트 밖에 둔다.
 run_test "codex-config retired keys loader" test_codex_config_retired_keys_loader

@@ -3,7 +3,7 @@ name: managing-ssh
 description: |
   Configure SSH, Tailscale VPN, mosh, sudo auth.
   Trigger: 'SSH 인증 실패', 'Tailscale', 'ssh-agent 문제', 'MagicDNS', 'mosh', 'authorized_keys 설정'.
-  NOT for tmux (use managing-tmux). NOT for Atuin (use syncing-atuin).
+  NOT for Atuin (use syncing-atuin).
 ---
 
 # SSH 및 Tailscale 관리

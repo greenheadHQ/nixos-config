@@ -27,9 +27,6 @@ SELF_REAP_DIR=""
 FPS=15
 WIDTH=480
 
-# PATH 설정 (ffmpeg 위치)
-export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
-
 log_info() {
     echo "[$(/bin/date '+%Y-%m-%d %H:%M:%S')] $1"
 }
@@ -590,6 +587,9 @@ preflight_stderr_path "$EXPECTED_STDERR_PATH"
 
 # shellcheck source=/dev/null
 . "$(/usr/bin/dirname "$0")/_folder-actions-lib.sh"
+
+# ffmpeg는 PATH로 찾는다 — launchd는 default.nix가 선언한 Nix bin, 셸 실행은 호출자 PATH (#1402)
+require_commands_or_abort ffmpeg
 
 # 처리 대상 후보 (필터를 한 곳에만 정의)
 find_candidates() {

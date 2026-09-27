@@ -78,8 +78,19 @@ if [[ "$platform" == "nixos" ]]; then
     mkdir -p "$host_dir"
     echo "✓ 호스트 디렉토리 생성됨: hosts/$hostname/"
 
-    cat > "$host_dir/default.nix" << 'NIXEOF'
-# HOST_NAME 호스트 설정
+    # `sed -i`는 BSD·GNU 인자 규칙이 달라 쓰지 않는다(#1382). 호스트명 주석은 printf로,
+    # Nix 본문은 quoted heredoc으로 임시 파일에 쓴 뒤 mv로 배치해 미완성 파일이 남지 않게 한다.
+    # 서브셸을 `if ! ( … )` 같은 조건 문맥에 두면 bash가 그 안의 errexit를 무시하므로
+    # (bash 3.2·5.x 동일) 최상위에서 실행하고 rc를 따로 받는다.
+    set +e
+    (
+      set -euo pipefail
+      default_nix_tmp=""
+      trap 'rm -f "$default_nix_tmp"' EXIT
+      default_nix_tmp="$(mktemp "$host_dir/.default.nix.XXXXXX")"
+      {
+        printf '# %s 호스트 설정\n' "$hostname"
+        cat << 'NIXEOF'
 {
   config,
   lib,
@@ -101,7 +112,21 @@ if [[ "$platform" == "nixos" ]]; then
   ];
 }
 NIXEOF
-    sed -i "s/HOST_NAME/$hostname/g" "$host_dir/default.nix"
+      } > "$default_nix_tmp"
+      # mktemp의 0600 대신 heredoc 리다이렉트가 만들었을 모드(0666 & ~umask)로 맞춘다.
+      default_nix_mode=$(( 0666 & ~0$(umask) ))
+      chmod "$(( default_nix_mode / 64 ))$(( default_nix_mode / 8 % 8 ))$(( default_nix_mode % 8 ))" \
+        "$default_nix_tmp"
+      mv "$default_nix_tmp" "$host_dir/default.nix"
+    )
+    default_nix_write_rc=$?
+    set -e
+    if [[ "$default_nix_write_rc" -ne 0 ]]; then
+      # 이번 실행이 만든 디렉토리를 지워 재시도할 수 있게 한다(비어 있지 않으면 남긴다).
+      rmdir "$host_dir" 2>/dev/null || true
+      echo "✗ hosts/$hostname/default.nix 생성 실패" >&2
+      exit 1
+    fi
     echo "✓ hosts/$hostname/default.nix 생성됨 (SSH_KEY_NAME 수정 필요)"
     echo
     echo "  ⚠️  hardware-configuration.nix는 NixOS 설치 후 생성됩니다."

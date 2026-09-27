@@ -62,7 +62,7 @@ command_shift_space_bind = hs.hotkey.bind({'cmd', 'shift'}, 'space', function()
     command_shift_space_bind:enable()
 end)
 
--- Ctrl + B → 영어 전환 후 tmux prefix 전달 (전역)
+-- Ctrl + B → 영어 전환 후 Ctrl+B 전달 (전역: tmux prefix, Claude Code 백그라운드 전환 등)
 local ctrl_b_bind
 ctrl_b_bind = hs.hotkey.bind({'ctrl'}, 'b', function()
     convertToEngAndSendKey(ctrl_b_bind, {'ctrl'}, 'b')
@@ -112,6 +112,18 @@ end
 -- Finder → Ghostty 터미널 열기 (Ctrl + Option + Cmd + T)
 --------------------------------------------------------------------------------
 
+-- 경로를 POSIX 셸(zsh)의 단일 인자로 안전하게 인용한다.
+-- 작은따옴표로 감싸고 내부의 작은따옴표는 '\''로 치환한다 — $, ", ` 등의 확장·명령
+-- 실행을 막으려면 작은따옴표여야 한다(큰따옴표는 이들을 막지 못한다).
+-- 경로에 개행이 있으면 붙여넣을 명령이 여러 줄로 쪼개져 일부만 실행될 위험이 있으므로
+-- 인용하지 않고 nil을 반환한다 — 호출부가 알림 후 붙여넣기를 중단해야 한다.
+local function shellQuotePath(path)
+    if path:find("[\r\n]") then
+        return nil
+    end
+    return "'" .. path:gsub("'", "'\\''") .. "'"
+end
+
 local function openGhosttyFromFinder()
     local frontApp = hs.application.frontmostApplication()
     local path = nil
@@ -151,9 +163,14 @@ local function openGhosttyFromFinder()
                 -- 딜레이 2: 새 창이 완전히 열릴 때까지 대기 (cd가 새 창에 입력되도록)
                 -- 기존 창에 cd가 입력되면 이 값을 늘려보세요 (예: 0.8)
                 hs.timer.doAfter(0.6, function()
+                    local quotedPath = shellQuotePath(path)
+                    if not quotedPath then
+                        hs.notify.new({title="Ghostty", informativeText="❌ 경로에 개행이 있어 cd 붙여넣기를 중단했습니다"}):send()
+                        return
+                    end
                     -- 클립보드를 활용하여 한글 경로 문제 방지
                     local prevClipboard = hs.pasteboard.getContents()
-                    hs.pasteboard.setContents('cd "' .. path .. '" && clear')
+                    hs.pasteboard.setContents('cd -- ' .. quotedPath .. ' && clear')
                     hs.eventtap.keyStroke({"cmd"}, "v")
                     hs.eventtap.keyStroke({}, "return")
                     -- 클립보드 복원

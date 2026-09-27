@@ -163,7 +163,7 @@ services.openssh = {
 mosh greenhead@100.79.80.95
 
 # 또는 tmux와 함께
-mosh greenhead@100.79.80.95 -- tmux attach -t main
+mosh greenhead@100.79.80.95 -- tmux new-session -A -s main
 ```
 
 ## Tailscale 설정

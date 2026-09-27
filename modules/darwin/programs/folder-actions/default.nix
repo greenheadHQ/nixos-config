@@ -3,6 +3,7 @@
 {
   config,
   lib,
+  pkgs,
   constants,
   hostType,
   ...
@@ -14,6 +15,11 @@ let
   folderActionsDir = "${homeDir}/FolderActions";
   shottrDefaultDir = "${homeDir}/${constants.macos.paths.shottrDefaultFolderRelative}";
   logsDir = "${homeDir}/Library/Logs/folder-actions";
+
+  # launchd는 로그인 셸 PATH를 물려받지 않는다. 작업이 직접 호출하는 도구는
+  # libraries/packages.nix에 선언한 Nix 패키지 bin으로 연결하고, 나머지는 macOS 시스템
+  # 경로만 둔다. Homebrew 경로는 넣지 않는다 — 우연한 외부 설치가 선언을 가린다 (#1402).
+  toolJobPath = tools: "${lib.makeBinPath tools}:/usr/bin:/bin";
 in
 {
   # 스크립트 파일 배치
@@ -68,7 +74,7 @@ in
         StandardOutPath = "${logsDir}/compress-rar.log";
         StandardErrorPath = "${logsDir}/compress-rar.error.log";
         EnvironmentVariables = {
-          PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin";
+          PATH = toolJobPath [ pkgs.rar ];
         };
       };
     };
@@ -83,7 +89,7 @@ in
         StandardOutPath = "${logsDir}/compress-video.log";
         StandardErrorPath = "${logsDir}/compress-video.error.log";
         EnvironmentVariables = {
-          PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin";
+          PATH = toolJobPath [ pkgs.ffmpeg ];
         };
       };
     };
@@ -110,7 +116,7 @@ in
         StandardOutPath = "${logsDir}/convert-video-to-gif.log";
         StandardErrorPath = "${logsDir}/convert-video-to-gif.error.log";
         EnvironmentVariables = {
-          PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin";
+          PATH = toolJobPath [ pkgs.ffmpeg ];
         };
       };
     };
