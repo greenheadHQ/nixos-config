@@ -9,7 +9,7 @@ PR 일반 코멘트·리뷰 요약은 REST 보조로 수집한다.
 |-------------|--------------|-------------|----------|
 | Review thread 코멘트 (diff 위 코멘트) | GraphQL `reviewThreads` | 있음 (`isResolved`) | 답글 + resolve + 재확인 |
 | PR 일반 코멘트 (conversation 탭) | REST `/issues/{pr}/comments` | 없음 | 답글만 |
-| Review 요약 (`state` + `body`) | REST `/pulls/{pr}/reviews` | 없음 | `CHANGES_REQUESTED`/`COMMENTED` + non-empty body는 길이 무관 actionable. `APPROVED` + non-empty body는 approval-only 판정 미해당일 때만 actionable. `DISMISSED`/`PENDING`과 body empty는 대상 아님 |
+| Review 요약 (`state` + `body`) | REST `/pulls/{pr}/reviews` | 없음 | `CHANGES_REQUESTED`/`COMMENTED` + non-empty body는 길이 무관 actionable. `APPROVED` + non-empty body는 approval-only 판정 미해당일 때만 actionable. `DISMISSED`/`PENDING`과 body empty, Codex 봇 작성분은 대상 아님 |
 
 `isResolved` 필드는 REST `pulls/{pr}/comments` 응답에 없다. resolved 상태를 알려면 GraphQL이 필수다.
 REST도 각 엔드포인트 조합으로 같은 수집이 가능하지만, 이 스킬은 단순성 때문에 위 분담을 기본으로 둔다.
@@ -86,7 +86,7 @@ Thread 내부 comment는 기본 계약이 root 1개 (`first: 1`) + latest 20개 
 2. `isOutdated == true` 인 thread도 수집한다. `isOutdated`는 보조 신호일 뿐이며, actionable 여부는 Step 2/Step 3 검증으로 판단한다.
    - 지적이 여전히 유효(현재 코드에서도 문제) → `actionable`로 유지해 Step 4에서 반영하고 Step 6에서 답글 + resolve.
    - 이미 반영된 내용에 대한 지적 → `STALE_REVIEW`로 분류해 반영 참조 링크 답글 후 resolve. 자세한 분류 기준은 [rejection-taxonomy.md](rejection-taxonomy.md).
-3. `isResolved == true` thread는 기본적으로 제외한다. 재확인이 필요하면 별도로 조회.
+3. `isResolved == true` thread는 기본적으로 제외한다. 재확인이 필요하면 별도로 조회. 단 Codex 봇 스레드는 `codex-review-status`의 `unhandled_threads`에 남아 있으면 빠진 항목(`missing`)만 처리한다 ([codex-review.md](codex-review.md#지적-처리)).
 
 ## PR 일반 코멘트 수집 (REST 보조)
 
@@ -96,10 +96,10 @@ gh api --paginate "/repos/$OWNER/$REPO/issues/$PR_NUMBER/comments"
 
 # review 요약 — state와 body 함께 수집 (actionable 분기 근거)
 gh api --paginate "/repos/$OWNER/$REPO/pulls/$PR_NUMBER/reviews" \
-  --jq '.[] | {id, state, body, user: .user.login, html_url}'
+  --jq '.[] | {id, state, body, user: .user.login, user_id: .user.id, html_url}'
 ```
 
-- Issue comment에는 `id`, `user.login`, `body`만 본다.
+- Issue comment에는 `id`, `user.login`, `user.id`, `body`만 본다.
 - 작성자가 Codex 봇(`chatgpt-codex-connector[bot]`, `user.id` 199175422)인 일반 코멘트와 review body는 요약 표·한도·오류 같은 상태 신호다. 아래 state 분기보다 앞서 답글 대상에서 뺀다. 봇의 지적은 review thread로 온다 ([codex-review.md](codex-review.md#지적-처리)).
 - Review summary는 `state`와 `body`를 함께 본다. body가 비어 있지 않으면 state를 primary로 분기한다.
 
@@ -154,9 +154,9 @@ gh api --paginate "/repos/$OWNER/$REPO/pulls/$PR_NUMBER/reviews" \
 - [ ] `pageInfo.hasNextPage`가 false가 될 때까지 모든 thread 페이지 수집.
 - [ ] 각 thread의 `id`, `isResolved`, `isOutdated`, `path`, `line` 보관.
 - [ ] 각 thread의 root comment (opening, `first: 1`)와 latest comment 세트 (`last: 20`) 모두 보관. root는 원 리뷰 요청이므로 long thread에서도 요구사항 판별에 필수.
-- [ ] PR 일반 코멘트 본문 보관 (답글 대상).
+- [ ] PR 일반 코멘트 본문 보관 (답글 대상). Codex 봇 작성 일반 코멘트와 review body는 상태 신호라 제외.
 - [ ] Review summary는 `state`와 `body`를 함께 보관. 답글 대상 결정은 state가 primary:
   - `CHANGES_REQUESTED`/`COMMENTED` + non-empty body → actionable (길이 무관, 짧은 reject 사유도 보존).
   - `APPROVED` + non-empty body → 정규화 후 승인 구절 목록과 exact-match일 때만 drop, 그 외(길이 무관)는 actionable.
   - `DISMISSED`/`PENDING` 또는 body empty → 답글 대상 아님.
-- [ ] resolved thread 제외 (또는 별도 버킷으로 분리).
+- [ ] resolved thread 제외 (또는 별도 버킷으로 분리). Codex 봇 `unhandled_threads`에 남은 스레드는 예외.

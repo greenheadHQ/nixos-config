@@ -24,11 +24,12 @@ description: |
 1. 대상 PR을 확정한다. 인자가 없으면 `gh pr view --json number,url,headRefName,baseRefName,state,isDraft,mergeStateStatus,reviewDecision,statusCheckRollup,body,commits`로 현재 브랜치의 PR을 확인한다.
 2. base가 의도한 기본 브랜치인지, PR이 open 상태인지, draft가 아닌지 확인한다.
 3. CI와 review 상태를 확인한다. 미완료 check가 있으면 대기하거나 사용자에게 현재 상태를 보고한다. 실패 check, merge conflict, required review 미승인은 STOP한다.
-4. Codex 리뷰 게이트를 확인한다. Codex 봇은 check run을 만들지 않으므로 CI가 끝나도 리뷰가 남았을 수 있다. `codex-review-status <PR> -R OWNER/REPO`로 상태를 보고 [Codex 리뷰 봇 처리](../review-pr-feedback/references/codex-review.md)를 따른다.
-   - `pending`: `--wait 540`으로 기다린다. 상태가 바뀔 때까지 반복한다 (대기 한도가 지나면 도구가 `timeout`을 낸다).
-   - 상태와 관계없이 `unhandled_threads`가 남아 있으면 머지하지 않는다. 이전 리뷰의 스레드도 포함된다. review-pr-feedback 절차로 답글·반응·resolve를 마친 뒤 이 게이트부터 다시 확인한다.
+4. Codex 리뷰 게이트를 확인한다. Codex 봇은 check run을 만들지 않으므로 CI가 끝나도 리뷰가 남았을 수 있다. `codex-review-status <PR> -R OWNER/REPO --json`으로 상태를 보고 [Codex 리뷰 봇 처리](../review-pr-feedback/references/codex-review.md)를 따른다.
+   - `draft`: 2번 확인대로 처리한다. ready로 바꿨다면 봇 리뷰가 새로 시작되므로 `pending`부터 다시 확인한다.
+   - `pending`: `--wait 540`을 붙여 기다린다. 이 호출은 오래 걸리므로 셸 명령 제한 시간을 600초로 늘리거나 백그라운드로 실행한다. 상태가 바뀔 때까지 반복한다 (대기 한도가 지나면 도구가 `timeout`을 낸다).
+   - 상태와 관계없이 `unhandled_threads`가 남아 있으면 머지하지 않는다. 이전 리뷰의 스레드와 이미 resolve된 스레드도 포함된다. review-pr-feedback 절차로 빠진 답글·반응·resolve를 채운 뒤 이 게이트부터 다시 확인한다. 그래도 같은 스레드가 남으면 머지하지 않고 STOP한다.
    - `reviewed`·`lgtm`이면서 `stale`이면 재리뷰 요청 기준을 적용한다. 요청했다면 `pending`부터 다시 확인한다.
-   - `limited`·`failed`·`timeout`·`absent`: 봇 리뷰 없이 진행한다. 4단계 PR 후속 코멘트에 그 상태와 사유를 한 줄로 남긴다. `settings_warning`이 있으면 사용자 보고에 포함한다.
+   - `limited`·`failed`·`timeout`·`absent`: 재리뷰를 요청하지 않고 봇 리뷰 없이 진행한다. 4단계 PR 후속 코멘트에 그 상태와 사유를 한 줄로 남긴다. `settings_warning`이 있으면 사용자 보고에 포함한다.
    - 명령이 실패하면 원인을 고쳐 다시 조회한다. 해결하지 못하면 머지하지 않고 STOP한다.
 
 Skip 조건:
@@ -66,7 +67,7 @@ Skip 조건:
    - merge 결과와 main 최신화 여부
    - 실행한 검증 명령
    - 성공/실패 요약
-   - Codex 리뷰 게이트를 봇 리뷰 없이 통과했다면 그 상태와 사유
+   - Codex 리뷰 게이트를 봇 리뷰 없이 통과했다면 그 상태와 사유 (봇 멘션 없이 "Codex 봇"으로 쓴다)
    - 실패 시 원문 오류의 핵심 부분과 다음 조치
 2. 검증 실패 시 코멘트를 남긴 뒤 STOP한다. 관련 이슈 close와 워크트리 정리는 하지 않는다.
 

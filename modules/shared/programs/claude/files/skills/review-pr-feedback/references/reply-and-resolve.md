@@ -26,6 +26,8 @@ PR 본문 아래 대화 탭의 일반 코멘트에는 resolve 상태가 없으�
 | `isResolved=false` + 이번 run의 답글 이미 존재 | skip | 수행 | 수행 |
 | `isResolved=false` + 답글 없음 | 수행 | 수행 | 수행 |
 
+Codex 봇 스레드는 `isResolved=true`여도 `codex-review-status`의 `missing`에 남은 반응·답글을 채우고 resolve는 유지한다 ([codex-review.md](codex-review.md#지적-처리)).
+
 "이번 run의 답글"은 현재 PR 처리 run에서 봇/도구가 남긴 답글(`author.login`과 본문 패턴으로 식별 가능한 것)을 의미한다. 서로 다른 run이 병렬로 같은 thread를 잡은 경우에도 이 분기로 중복 reply를 피하면서 resolve 완결성을 보장한다.
 
 ### 답글: addPullRequestReviewThreadReply
@@ -107,6 +109,7 @@ PR에 새 top-level follow-up 코멘트를 추가한다.
 
 그래서 원 코멘트에 사유를 되돌려 주려면 follow-up 본문에 원 코멘트 URL 인용과
 `@<author>` 멘션으로 연결해 컨텍스트를 잃지 않게 한다.
+Codex 봇 코멘트는 상태 신호라 follow-up 대상이 아니며, 봇 계정은 어떤 형태로도 멘션하지 않는다 ([codex-review.md](codex-review.md#봇-멘션-금지)).
 
 ### REST 경로 (간단)
 

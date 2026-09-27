@@ -41,7 +41,7 @@ PR에 달린 모든 리뷰 코멘트를 수집하고, 각 피드백을 다각도
 ### Step 1: PR 코멘트 수집 (GraphQL-first)
 
 현재 브랜치의 PR을 찾고, review thread와 PR 일반 코멘트를 모두 수집한다.
-수집 전에 `codex-review-status`로 Codex 리뷰 봇 상태를 확인하고, `pending`이면 기다린 뒤 수집해 봇 지적을 빠뜨리지 않는다. 대기와 상태별 처리는 [codex-review.md](references/codex-review.md)를 따른다.
+수집 전에 `codex-review-status <PR> -R OWNER/REPO --json`으로 Codex 리뷰 봇 상태를 확인하고, `pending`이면 기다린 뒤 수집해 봇 지적을 빠뜨리지 않는다. 결과의 `unhandled_threads`는 `isResolved`와 관계없이 처리 대상에 더한다. 대기와 상태별 처리는 [codex-review.md](references/codex-review.md)를 따른다.
 
 ```bash
 # 현재 브랜치의 PR 번호 확인
@@ -52,7 +52,7 @@ gh pr view --json number -q .number
   각 thread의 `id` / `isResolved` / `isOutdated` / `path` / `line` / 내부 comments를 받는다.
 - PR 일반 코멘트(대화 탭)는 REST `/issues/{pr}/comments`로 보조 수집한다.
 - Review 요약(`/pulls/{pr}/reviews`)은 `state`와 `body`를 함께 수집한다. 상태별 분기와 APPROVED 전용 approval-only exact-match 규칙은 [comment-collection.md](references/comment-collection.md)를 따른다. 길이로 실제 피드백을 버리지 않으며 mixed 승인 body는 유지한다. 같은 지적은 thread/일반 코멘트 경로를 우선하고 summary-only에만 follow-up을 남긴다.
-- `isResolved == false`인 thread를 actionable로 간주한다. `isOutdated == true`는 수집하되 Step 2에서 `STALE_REVIEW` 후보로 분류한다.
+- `isResolved == false`인 thread를 actionable로 간주한다. `isOutdated == true`는 수집하되 Step 2에서 `STALE_REVIEW` 후보로 분류한다. Codex 봇 스레드는 resolve됐어도 `unhandled_threads`에 있으면 빠진 항목(`missing`)만 처리한다.
 - `thread.id`는 Step 6 review thread mutation 입력에 반드시 필요하므로 보관한다.
   `comment.id`는 개별 코멘트 단위로 REST reply 엔드포인트를 쓰는 선택 경로에서만 쓴다.
 
@@ -61,13 +61,14 @@ gh pr view --json number -q .number
 ### Step 2: 코멘트 분류
 
 Step 1 수집 결과가 모두 비어 있을 때만 no-op로 종료한다 (Step 3-7 건너뛰기).
-"모두 비어 있음"은 다음 세 조건을 동시에 만족하는 상태다.
+"모두 비어 있음"은 다음 네 조건을 동시에 만족하는 상태다.
 
 - `unresolved review thread == 0`
 - PR 일반 코멘트 (`/issues/{pr}/comments`) 중 actionable == 0
 - actionable review summary == 0 (= Step 1 분기를 통과해 actionable 후보로 남은 summary 개수. `DISMISSED`/`PENDING`과 body empty, `APPROVED` + approval-only 판정 해당 건은 제외)
+- Codex 봇 `unhandled_threads == 0`
 
-위 셋 중 하나라도 있으면 분류를 진행한다. 특히 리뷰어가 inline thread 없이
+위 넷 중 하나라도 있으면 분류를 진행한다. 특히 리뷰어가 inline thread 없이
 summary body에만 reject/nit/follow-up 사유를 남기는 패턴은 thread/issue-comment
 카운트만으로는 보이지 않으므로 summary `state` + `body`를 반드시 함께 본다.
 `CHANGES_REQUESTED`/`COMMENTED`의 짧은 body("Breaks CI.", "Revert this.")도
@@ -86,7 +87,7 @@ actionable summary-only 리뷰의 응답 경로는 Step 6의 PR top-level follow
 | nitpick | 스타일/취향 수준의 사소한 지적 | 합리적이면 반영, 아니면 기각 |
 
 분류가 애매한 코멘트는 actionable로 분류하여 Step 3에서 면밀히 검증한다.
-Codex 봇의 고정 문구(리뷰 객체 본문, 요약 코멘트, 한도·계정·오류 안내)는 상태 신호라 분류 대상에서 뺀다. 봇의 인라인 지적은 `P1`·`P2` 구분 없이 같은 기준으로 다룬다.
+Codex 봇이 작성한 일반 코멘트와 리뷰 객체 본문은 문구와 관계없이 상태 신호라 분류 대상에서 뺀다. 봇의 지적은 인라인 스레드로만 오며 `P1`·`P2` 구분 없이 같은 기준으로 다룬다.
 기각 사유를 구분할 때는 [references/rejection-taxonomy.md](references/rejection-taxonomy.md)를 참고한다.
 
 ### Step 3: 다각도 검증
@@ -111,7 +112,7 @@ Codex 봇의 고정 문구(리뷰 객체 본문, 요약 코멘트, 한도·계�
 - 커밋 메시지에 어떤 피드백을 반영했는지 명시한다.
 - conventional commit 형식을 따른다 (예: `fix(module): address PR feedback`).
 - 반영할 피드백이 여러 영역에 걸쳐 있으면 논리적으로 분리하여 복수 커밋으로 나눈다.
-- 푸시한 변경이 [재리뷰 요청](references/codex-review.md#재리뷰-요청) 기준에 해당하면 Codex 봇에 재리뷰를 한 번 요청한다.
+- 푸시한 변경이 [재리뷰 요청](references/codex-review.md#재리뷰-요청) 기준에 해당하면 Codex 봇에 재리뷰를 한 번 요청한다. 요청 뒤 기다리지 않고 Step 6으로 넘어간다.
 
 ### Step 6: 답글 + resolve
 
@@ -123,7 +124,7 @@ Codex 봇 스레드는 답글 전에 판정에 맞는 👍/👎 반응을 먼저
 각 thread 처리 전에 다음 가드를 적용한다.
 - thread.id가 null/empty → Step 6/7을 건너뛰고 사용자 보고 대상으로 분리.
 - preflight requery: reply 직전 `thread.id`로 최신 `isResolved`와 최신 comments를 다시 조회하고, 결과에 따라 reply / resolve를 독립적으로 분기한다.
-  - `isResolved=true` → 전체 no-op (이미 완료).
+  - `isResolved=true` → 전체 no-op (이미 완료). 단 Codex 봇 스레드는 `missing`에 남은 반응·답글만 수행하고 resolve는 풀지 않는다.
   - `isResolved=false` + 이번 run이 남긴 답글 존재 → reply는 skip, resolve는 반드시 수행 (이전 run이 reply 성공 + resolve 실패로 중단된 케이스 복구).
   - `isResolved=false` + 답글 없음 → reply + resolve 순차 수행.
 
@@ -148,7 +149,7 @@ Codex 봇 스레드는 답글 전에 판정에 맞는 👍/👎 반응을 먼저
 쿼리 스니펫과 retry/실패 정책은 [references/reply-and-resolve.md](references/reply-and-resolve.md)의 "Retry policy"가 정본이다.
 `thread.id`가 null/empty인 thread는 이 단계를 건너뛰고 사용자 보고 대상으로 남긴다.
 PR 일반 코멘트는 resolve가 없으므로 이 단계를 건너뛴다.
-Codex 봇 스레드는 마지막에 `codex-review-status`의 `unhandled_threads`가 비었는지로 답글·반응·resolve를 한 번에 확인한다.
+Codex 봇 스레드는 마지막에 `codex-review-status --json`의 `unhandled_threads`가 비었는지로 답글·반응·resolve를 한 번에 확인한다. 남은 스레드는 `missing`의 항목만 채우고 한 번 다시 조회한다. 그래도 남으면 스레드 URL과 빠진 항목을 사용자에게 보고한다.
 
 ## 검증 의무
 
@@ -163,7 +164,7 @@ Codex 봇 스레드는 마지막에 `codex-review-status`의 `unhandled_threads`
 - resolve 완료는 mutation 응답의 `thread.isResolved=true`로 확인한다. false 또는 필드 누락일 때만 Step 7 재조회·필요한 1회 retry를 적용한다.
 - AI 리뷰어 맹신 금지: CodeRabbit·Codex 봇 등 AI 리뷰어 피드백도 동일한 검증 기준을 적용한다.
   stale diff 기반 지적을 `HALLUCINATION`으로 오분류하지 말고 `STALE_REVIEW`를 쓴다.
-- 봇 멘션 금지: GitHub에 게시하는 어떤 글에도 Codex 봇 멘션을 쓰지 않는다. 백틱 안이어도 봇이 작업 요청으로 읽는다. 예외는 [재리뷰 요청](references/codex-review.md#재리뷰-요청) 한 줄 명령뿐이다.
+- 봇 멘션 금지: GitHub에 게시하는 어떤 글에도 Codex 봇 멘션을 쓰지 않는다. 봇 계정 이름으로도 멘션하지 않는다. 백틱 안이어도 봇이 작업 요청으로 읽는다. 예외는 [재리뷰 요청](references/codex-review.md#재리뷰-요청) 한 줄 명령뿐이다. 변수나 stdin으로 넘기는 본문은 pinning-guard가 읽지 못하므로 게시 전에 직접 확인한다.
 - outside-diff 처리: PR 범위 밖 지적은 유효해도 이번 PR에서 처리하지 않는다.
   남은 문제와 이관 이유를 답글로 남기고, 별도 이슈 게시가 승인된 경우에만 생성한다.
 - 반영 전 회귀 확인: 피드백 반영 시 변경이 다른 기능을 깨뜨리지 않는지 확인한다.
