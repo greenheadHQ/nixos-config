@@ -882,8 +882,10 @@ test_karakeep_fallback_sync_identifier_tag_attribute_syntax() {
   _karakeep_fallback_sync_syntax_expect "$sandbox" held "$b/duplicate-second"
   printf '<link rel="canonical" href="%s" href="%s">\n' "$b/duplicate-first" "$b/duplicate-second" > "$sandbox/fallback/duplicate.html"
 
-  # 따옴표 안의 `>`는 지원하지 않는다. 값이 잘려 보류로 떨어져야 한다.
+  # 따옴표 안의 `>`는 지원하지 않는다. 값이 잘려 보류로 떨어져야 하고, 잘린 값과 정확히
+  # 같은 큐 URL이 있어도 그 URL로 덮어쓰지 않는다.
   _karakeep_fallback_sync_syntax_expect "$sandbox" held "$b/quoted-gt?x=>1"
+  _karakeep_fallback_sync_syntax_expect "$sandbox" held "$b/quoted-gt?x="
   printf '<link rel="canonical" href="%s">\n' "$b/quoted-gt?x=>1" > "$sandbox/fallback/quoted-gt.html"
   _karakeep_fallback_sync_syntax_expect "$sandbox" held "$b/rel-not-token"
   printf '<link rel="canonicalx" href="%s">\n' "$b/rel-not-token" > "$sandbox/fallback/rel-not-token.html"
