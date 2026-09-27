@@ -489,6 +489,14 @@ run_test "version-check recovery updates last-success without new-version notifi
 run_test "version-check initial failure records nothing" test_version_check_initial_failure_records_nothing
 run_test "immich version-check initial success records last-success" test_immich_version_check_initial_success_records_last_success
 run_test "immich version-check new version notifies and records" test_immich_version_check_new_version_notifies_and_records
+run_test "version-check large release body notifies without SIGPIPE" test_version_check_new_version_large_release_body_notifies_without_sigpipe
+run_test "immich version-check large release body notifies without SIGPIPE" test_immich_version_check_new_version_large_release_body_notifies_without_sigpipe
+run_test "version-check release body default text for missing or null body" test_version_check_release_body_default_text_for_missing_or_null_body
+run_test "version-check release body preserves empty string" test_version_check_release_body_preserves_empty_string
+run_test "version-check release body line limit matches head boundary" test_version_check_release_body_line_limit_matches_head_boundary
+run_test "version-check release body CRLF line split matches head" test_version_check_release_body_crlf_line_split_matches_head
+run_test "version-check release body unicode boundary not corrupted" test_version_check_release_body_unicode_boundary_not_corrupted
+run_test "version-check invalid GitHub JSON fails loudly" test_version_check_invalid_github_json_fails_loudly_not_treated_as_empty_body
 
 # git-cleanup suite (tests/suites/git-cleanup.sh) — 날짜 계산 도구 선택 계약 (#1376)
 run_test "git-cleanup BSD-only date dry-run succeeds" test_git_cleanup_bsd_only_date_dry_run_succeeds

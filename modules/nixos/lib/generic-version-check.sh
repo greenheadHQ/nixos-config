@@ -72,9 +72,14 @@ fi
 # ─── 5. 새 버전 발견 → 알림 전송 ────────────────────────────────
 echo "New version available: v$LATEST"
 
-# 릴리즈 노트 추출
-RELEASE_BODY=$(echo "$GITHUB_RESPONSE" | jq -r '.body // "릴리즈 노트 없음"' | head -20)
-RELEASE_BODY="${RELEASE_BODY:0:1024}"
+# 릴리즈 노트 추출: 줄 수(20)·문자 수(1024) 제한을 모두 jq 안에서 처리한다.
+# 예전에는 jq 출력을 `head -20`으로 끊었는데, 본문이 크면 head가 파이프를 먼저 닫아
+# jq가 SIGPIPE(141)로 죽고 pipefail 때문에 스크립트 전체가 실패했다(#1385, 새 버전을
+# 찾았는데도 알림이 만들어지지 않고 그 버전이 계속 미전달로 남음). jq가 입력을 끝까지
+# 읽고 나서 자체적으로 줄이므로 이 문제가 없다. jq의 문자열 슬라이스는 유니코드
+# 코드포인트 단위로 동작해 실행 환경 로케일과 무관하게 일정하므로, 이어서 bash에서
+# 다시 바이트/로케일에 좌우되는 ${var:0:1024} 절단을 할 필요가 없다.
+RELEASE_BODY=$(echo "$GITHUB_RESPONSE" | jq -r '(.body // "릴리즈 노트 없음") | split("\n")[0:20] | join("\n") | .[0:1024]')
 
 # 업데이트 명령 (서비스명 기반)
 UPDATE_CMD="sudo ${CONTAINER_NAME}-update"
