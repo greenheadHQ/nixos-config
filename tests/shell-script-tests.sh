@@ -35,6 +35,11 @@ run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
 run_test "wt wrapper ignores runtime HOME for real script" test_wt_wrapper_ignores_runtime_home_for_real_script
 run_test "managed plugin skill helper rejects duplicate matches" test_managed_plugin_skill_link_requires_single_match
 run_test "rebuild-common exports public API" test_rebuild_common_exports_public_api
+run_test "release_rebuild_lock preserves caller stderr" test_release_rebuild_lock_preserves_caller_stderr
+run_test "release_rebuild_lock_on_failure preserves caller stderr" test_release_rebuild_lock_on_failure_preserves_caller_stderr
+run_test "release_rebuild_lock without hold is a no-op" test_release_rebuild_lock_without_hold_is_noop
+run_test "release_rebuild_lock closes fd200 in same shell" test_release_rebuild_lock_closes_fd200_in_same_shell
+run_test "release_rebuild_lock frees OS lock for other process" test_release_rebuild_lock_frees_lock_for_other_process
 run_test "parse_args unknown argument shows usage and fails" test_parse_args_unknown_argument_shows_usage_and_fails
 run_test "nixos nrs --help prints usage" test_nixos_nrs_help_flag_prints_usage
 run_test "darwin nrs -h alias prints usage" test_darwin_nrs_h_alias_prints_usage
@@ -431,6 +436,22 @@ run_test "immich cleanup paginates v3 nextPage string" test_immich_cleanup_v3_pa
 run_test "immich cleanup preserves empty album notification" test_immich_cleanup_v3_empty_album_preserves_notification
 run_test "immich cleanup rejects invalid asset id" test_immich_cleanup_v3_rejects_invalid_asset_id
 run_test "immich cleanup rejects invalid nextPage" test_immich_cleanup_v3_rejects_invalid_next_page
+# 종료 코드 계약 (#1387) — 삭제 실패는 0이 아닌 종료, 알림 실패는 결과를 바꾸지 않는다
+run_test "immich cleanup all success exits zero with single summary" test_immich_cleanup_all_success_exits_zero_with_single_summary
+run_test "immich cleanup empty album exits zero" test_immich_cleanup_empty_album_exits_zero
+run_test "immich cleanup partial delete failure exits nonzero" test_immich_cleanup_partial_delete_failure_exits_nonzero
+run_test "immich cleanup all delete failure exits nonzero" test_immich_cleanup_all_delete_failure_exits_nonzero
+run_test "immich cleanup notification failure keeps delete failure" test_immich_cleanup_notification_failure_keeps_delete_failure
+run_test "immich cleanup unexpected failure sends single error notification" test_immich_cleanup_unexpected_failure_sends_single_error_notification
+
+# homeserver-smoke-test suite (tests/suites/homeserver-smoke-test.sh) — 종료 코드·알림 계약 (#1387)
+run_test "smoke test all pass exits zero without notification" test_smoke_test_all_pass_exits_zero_without_notification
+run_test "smoke test disabled backups are not checked" test_smoke_test_disabled_backups_are_not_checked
+run_test "smoke test HTTP failure exits nonzero with single summary" test_smoke_test_http_failure_exits_nonzero_with_single_summary
+run_test "smoke test stale backup exits nonzero with single summary" test_smoke_test_stale_backup_exits_nonzero_with_single_summary
+run_test "smoke test systemd failures exit nonzero with single summary" test_smoke_test_systemd_failures_exit_nonzero_with_single_summary
+run_test "smoke test notification failure keeps check failure" test_smoke_test_notification_failure_keeps_check_failure
+run_test "smoke test crash sends single crash notification" test_smoke_test_crash_sends_single_crash_notification
 run_test "hook_init_scan_dir falls back when TMPDIR missing" test_hook_init_scan_dir_falls_back_when_tmpdir_missing
 run_test "hook_init_scan_dir falls back when TMPDIR unwritable" test_hook_init_scan_dir_falls_back_when_tmpdir_unwritable
 run_test "hook_init_scan_dir falls back when system tmp unusable" test_hook_init_scan_dir_falls_back_to_user_cache_when_system_tmp_unusable
