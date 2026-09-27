@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "git commit -m \"docs: @codex 멘션 규칙 설명\""
+  }
+}

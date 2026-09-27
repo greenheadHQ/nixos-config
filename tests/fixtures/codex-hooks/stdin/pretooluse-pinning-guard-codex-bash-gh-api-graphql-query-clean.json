@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh api graphql -f query='query { repository(owner: \"o\", name: \"r\") { pullRequest(number: 12) { comments(first: 50) { nodes { body } } } } }' --jq '.data.repository.pullRequest.comments.nodes[].body | select(test(\"@codex\"))'"
+  }
+}

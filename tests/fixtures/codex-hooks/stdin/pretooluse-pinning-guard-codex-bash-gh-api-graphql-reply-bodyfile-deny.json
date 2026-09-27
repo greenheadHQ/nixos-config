@@ -1,0 +1,7 @@
+{
+  "_fixture_existing_content": "Round 7 반영 완료",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh api graphql -f tid=PRRT_x -F body=@__SANDBOX_BODY_FILE__ -f query='mutation($tid: ID!, $body: String!) { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $tid, body: $body}) { comment { id url } } }'"
+  }
+}

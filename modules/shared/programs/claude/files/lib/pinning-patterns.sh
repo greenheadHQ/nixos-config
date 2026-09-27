@@ -779,9 +779,160 @@ pinning_extract_body_file_paths() {
           sub(/^--file=/, "", w); print strip_quotes(w)
         } else if (w == "-F" || w == "--field") {
           if (i + 1 <= n) { emit_field_or_path(strip_quotes(words[i + 1])); i++ }
+        } else if (w == "--input") {
+          # gh api --input: 요청 본문 전체를 파일로 넘긴다 (#1477).
+          if (i + 1 <= n) { print strip_quotes(words[i + 1]); i++ }
+        } else if (w ~ /^--input=/) {
+          sub(/^--input=/, "", w); print strip_quotes(w)
         }
         i++
       }
     }
   '
+}
+
+# ─── Codex GitHub 앱 멘션 (#1477) ───
+# Codex GitHub 앱(chatgpt-codex-connector)은 PR·이슈 코멘트의 봇 멘션을 작업 요청으로 읽어 클라우드
+# 작업을 시작한다. 백틱이나 인용 안에 있어도 그렇다 (기록 코멘트의 백틱 멘션이 PR 생성 작업을 띄운
+# 사례가 있다). 그래서 PR·이슈 본문과 코멘트를 게시하는 gh 명령에서 멘션을 막고, 재리뷰 요청 한
+# 형태만 명령 문자열에서 허용한다. A–D 범주와 달리 저장소 파일·커밋 메시지는 검사하지 않는다 —
+# 스킬 문서와 커밋은 그 형태를 설명해야 한다.
+# hook은 셸 확장 전 문자열을 보므로 변수로 넘긴 본문 경로(`body=@"$BODY_FILE"`)와 stdin 본문
+# (`--input -`)은 읽지 못한다. A–D 검사와 같은 한계라 1차 방어선은 PR 스킬 지침이다.
+PINNING_CODEX_MENTION_LABEL="Codex 봇 멘션: 백틱이나 인용 안에 있어도 봇이 작업 요청으로 읽는다"
+
+# gh api 호출 중 GitHub에 내용을 쓰는 것만 고른다 (#1477). 읽기 조회는 jq 필터 등에 무엇이 있어도
+# 게시되지 않으므로 제외한다. 명령 구분자(;, &&, ||, |, 줄바꿈)로 나눈 조각마다 판정한다.
+# - REST: -X/--method가 POST·PATCH·PUT이거나, 메서드 지정 없이 필드(-f/-F/--field/--raw-field)나
+#   --input이 있을 때 쓰기다 (gh api는 이때 POST로 보낸다).
+# - GraphQL: 조회도 POST라 메서드로 가를 수 없다. 쿼리를 파일(=@, --input)로 넘기거나 명령 어디든
+#   mutation 키워드가 있으면 쓰기로 본다. 여러 줄 쿼리가 흔해 mutation은 명령 전체에서 찾는다.
+pinning_gh_api_posts_content() {
+  local cmd="${1:-}"
+  case "$cmd" in
+    *"gh api"*) ;;
+    *) return 1 ;;
+  esac
+  printf '%s\n' "$cmd" | awk -v sq="'" -v dq='"' '
+    function unquote(v,    n, first, last) {
+      n = length(v)
+      if (n < 2) return v
+      first = substr(v, 1, 1)
+      last = substr(v, n, 1)
+      if ((first == dq && last == dq) || (first == sq && last == sq)) return substr(v, 2, n - 2)
+      return v
+    }
+    { text = text $0 "\n" }
+    END {
+      gsub(/\\\n/, " ", text)
+      graphql_seen = 0
+      writes = 0
+      nseg = split(text, segs, "&&|[|][|]|;|[|]|\n")
+      for (s = 1; s <= nseg; s++) {
+        n = split(segs[s], w, "[ \t]+")
+        start = 0
+        for (i = 1; i < n; i++) {
+          if (w[i] ~ /(^|[\/$(`])gh$/ && w[i + 1] == "api") { start = i + 2; break }
+        }
+        if (!start) continue
+        graphql = 0; method = ""; fields = 0; file_field = 0; input = 0
+        for (i = start; i <= n; i++) {
+          t = w[i]
+          if (unquote(t) == "graphql") {
+            graphql = 1
+          } else if (t == "-X" || t == "--method") {
+            if (i < n) { i++; method = toupper(unquote(w[i])) }
+          } else if (t ~ /^-X/) {
+            method = toupper(unquote(substr(t, 3)))
+          } else if (t ~ /^--method=/) {
+            method = toupper(unquote(substr(t, 10)))
+          } else if (t == "-f" || t == "-F" || t == "--field" || t == "--raw-field") {
+            fields = 1
+            if (i < n) { i++; if (index(w[i], "=@") > 0) file_field = 1 }
+          } else if (t ~ /^-[fF]/ || t ~ /^--(raw-)?field=/) {
+            fields = 1
+            if (index(t, "=@") > 0) file_field = 1
+          } else if (t == "--input" || t ~ /^--input=/) {
+            input = 1
+          }
+        }
+        if (graphql) {
+          graphql_seen = 1
+          if (file_field || input) writes = 1
+          continue
+        }
+        if (method != "") {
+          if (method == "POST" || method == "PATCH" || method == "PUT") writes = 1
+          continue
+        }
+        if (fields || input) writes = 1
+      }
+      if (graphql_seen && tolower(text) ~ /(^|[^a-z0-9_])mutation([^a-z0-9_]|$)/) writes = 1
+      exit(writes ? 0 : 1)
+    }
+  '
+}
+
+# 멘션 검사 대상 명령: PR·이슈 본문과 코멘트를 게시하는 gh 명령과 gh api 쓰기.
+# git commit과 gh pr merge(병합 커밋 메시지)는 대상이 아니다.
+pinning_codex_mention_scope() {
+  local cmd="${1:-}"
+  case "$cmd" in
+    *"gh pr create"* | *"gh pr edit"* | *"gh pr comment"* | *"gh pr review"* | \
+    *"gh issue create"* | *"gh issue edit"* | *"gh issue comment"*) return 0 ;;
+  esac
+  pinning_gh_api_posts_content "$cmd"
+}
+
+# 멘션 findings. 출력은 A–D의 렌더 형식(라벨 한 줄 + `<line>: <token>`)을 따르고, 없으면 빈 출력이다.
+#   $1 scan_file
+#   $2 mode — command: 명령 문자열. `gh pr comment <PR> [인자...] --body '@codex review'`
+#             (-b, --body=, 큰따옴표 포함)만 빼고 검사한다. 줄 끝 역슬래시 이어쓰기는 한 줄로 본다.
+#           — body: --body-file 등으로 넘긴 본문. 허용 형태 없이 모든 멘션을 잡는다.
+# 대소문자를 가리지 않는다. 허용 형태는 소문자 원문 그대로일 때만 인정한다.
+pinning_codex_mention_findings_text() {
+  local scan_file="$1" mode="${2:-body}" allow=0
+  [ "$mode" = "command" ] && allow=1
+  awk -v allow="$allow" -v sq="'" -v dq='"' \
+    -v indent="$PINNING_REPORT_INDENT" -v label="$PINNING_CODEX_MENTION_LABEL" '
+    BEGIN {
+      arg = "[A-Za-z0-9_./:#=" sq dq "-]+[ \t]+"
+      allow_re = "[ \t;&|(/]gh[ \t]+pr[ \t]+comment[ \t]+(" arg ")*(--body[ \t]+|--body=|-b[ \t]+)(" \
+        sq "@codex review" sq "|" dq "@codex review" dq ")[ \t;&|)]"
+      found = 0
+    }
+    function report(text, lineno,    lower, pos, tok, after) {
+      lower = tolower(text)
+      while ((pos = index(lower, "@codex")) > 0) {
+        # 멘션 뒤 요청어 한 단어까지 보여 준다. ASCII만 이어 붙여 멀티바이트 경계를 자르지 않는다.
+        tok = substr(text, pos, 6)
+        after = substr(text, pos + 6)
+        if (match(after, /^[A-Za-z0-9_-]*( [A-Za-z0-9_-]+)?/)) tok = tok substr(after, 1, RLENGTH)
+        if (!found) { printf "\n  - %s", label; found = 1 }
+        printf "\n%s%d: %s", indent, lineno, tok
+        text = substr(text, pos + 6)
+        lower = substr(lower, pos + 6)
+      }
+    }
+    function scan(text, lineno,    line) {
+      line = " " text " "
+      if (allow) { while (gsub(allow_re, " ", line) > 0) {} }
+      report(line, lineno)
+    }
+    {
+      if (pending) { buf = buf " " $0 } else { buf = $0; start = NR }
+      if (allow && buf ~ /\\$/) { sub(/\\$/, "", buf); pending = 1; next }
+      pending = 0
+      scan(buf, start)
+    }
+    END { if (pending) scan(buf, start) }
+  ' "$scan_file"
+}
+
+# 멘션 deny 사유. surface/target은 A–D deny와 같은 뜻이고 findings는 위 함수의 출력이다.
+pinning_codex_mention_deny_reason() {
+  local surface="$1" target="$2" findings="$3"
+  printf "[pinning-guard] %s on %s mentions the Codex GitHub app:%s\n%s" \
+    "$surface" "$target" "$findings" \
+    "재리뷰 요청은 한 줄 명령 gh pr comment <PR> --body '@codex review'로만 보낸다. 그 밖에는 멘션 없이 'Codex 봇'처럼 쓰고 다시 시도한다."
 }

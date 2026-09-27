@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh api -X GET search/issues -f q='@codex review in:comments repo:o/r'"
+  }
+}

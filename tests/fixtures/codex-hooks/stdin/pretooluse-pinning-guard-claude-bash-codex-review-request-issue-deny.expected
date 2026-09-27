@@ -1,0 +1,4 @@
+[pinning-guard] Bash on durable shell command mentions the Codex GitHub app:
+  - Codex 봇 멘션: 백틱이나 인용 안에 있어도 봇이 작업 요청으로 읽는다
+         1: @codex review
+재리뷰 요청은 한 줄 명령 gh pr comment <PR> --body '@codex review'로만 보낸다. 그 밖에는 멘션 없이 'Codex 봇'처럼 쓰고 다시 시도한다.

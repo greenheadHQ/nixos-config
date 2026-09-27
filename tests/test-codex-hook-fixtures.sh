@@ -983,6 +983,140 @@ test_pinning_session_url_category_behavioral() {
     "[7/lib] session URL category must match only claude.ai/code/session_<id> addresses with a 20+ char id"
 }
 
+# Codex 봇 멘션 검사(#1477)의 lib 판정 표. hook 통합과 deny 문구는 7b fixture가 보고, 여기서는
+# gh api 쓰기 판별·검사 대상 명령·허용 형태의 경계를 한 곳에서 본다. findings는 `<line>: <token>`을
+# `|`로 이은 값으로 비교하고, 빈 값은 통과를 뜻한다.
+_pinning_mention_test_tokens() {
+  local scan_file="$1" mode="$2" text="$3"
+  printf '%s' "$text" > "$scan_file"
+  pinning_codex_mention_findings_text "$scan_file" "$mode" \
+    | awk 'NR > 2' | sed 's/^ *//' | paste -sd'|' -
+}
+
+test_pinning_codex_mention_behavioral() {
+  local sandbox scan_file cmd i
+  sandbox=$(new_hook_sandbox)
+  scan_file="$sandbox/pinning-codex-mention-scan.txt"
+
+  # shellcheck source=../modules/shared/programs/claude/files/lib/pinning-patterns.sh
+  . "$PINNING_LIB_REPO_FILE"
+
+  local -a api_writes=(
+    "gh api repos/o/r/issues/12/comments -f body='hi'"
+    "gh api repos/o/r/issues/12/comments -F body=@/tmp/body.md"
+    "gh api repos/o/r/issues/12/comments --field body=hi"
+    "gh api repos/o/r/issues/12/comments --raw-field=body=hi"
+    "gh api repos/o/r/issues/12/comments -fbody=hi"
+    "gh api repos/o/r/issues/12/comments --input /tmp/body.json"
+    "gh api repos/o/r/issues/12/comments --input=/tmp/body.json"
+    "gh api -X PATCH repos/o/r/pulls/12 -f body=x"
+    "gh api -X post repos/o/r/issues/12/comments -f body=x"
+    "gh api --method 'PUT' repos/o/r/contents/a -f message=x"
+    "gh api -X DELETE repos/o/r/issues/comments/1; gh api repos/o/r/issues/1/comments -f body=x"
+    "gh api -X GET search/issues -f q=x && gh api repos/o/r/issues/1/comments -f body=x"
+    "gh api graphql -f query='mutation { addComment(input: {subjectId: \"X\", body: \"hi\"}) { clientMutationId } }'"
+    $'gh api graphql -f query=\'\n  mutation($id: ID!) {\n    resolveReviewThread(input: {threadId: $id}) { thread { id } }\n  }\' -f id=X'
+    "gh api graphql -F query=@/tmp/q.graphql"
+    "gh api graphql --input /tmp/q.json"
+    "x=\$(gh api repos/o/r/issues/1/comments -f body=x)"
+    "/opt/homebrew/bin/gh api repos/o/r/issues/1/comments -f body=x"
+    $'gh api repos/o/r/issues/1/comments \\\n  -f body=x'
+  )
+  local -a api_reads=(
+    "gh api repos/o/r/issues/12/comments --jq '.[] | select(.body | startswith(\"@codex review\")) | .id'"
+    "gh api -X GET search/issues -f q='@codex review in:comments'"
+    "gh api --method GET search/issues -f q=x"
+    "gh api --method=GET search/issues -f q=x"
+    "gh api -XGET search/issues -f q=x"
+    "gh api -X DELETE repos/o/r/issues/comments/1"
+    "gh api --paginate repos/o/r/pulls/1/comments"
+    "gh api graphql -f query='query { viewer { login } }'"
+    "gh api graphql -f query='query { mutationCount }'"
+    "gh apiary -f x"
+    "echo gh api"
+  )
+  for cmd in "${api_writes[@]}"; do
+    assert_eq "$(if pinning_gh_api_posts_content "$cmd"; then printf write; else printf read; fi)" "write" \
+      "[7/lib] gh api write must be detected: $cmd"
+  done
+  for cmd in "${api_reads[@]}"; do
+    assert_eq "$(if pinning_gh_api_posts_content "$cmd"; then printf write; else printf read; fi)" "read" \
+      "[7/lib] gh api read must stay out of scope: $cmd"
+  done
+
+  local -a scope_in=(
+    "gh pr comment 12 --body x"
+    "gh pr create --title t --body x"
+    "gh pr edit 12 --body x"
+    "gh pr review 12 --comment -b x"
+    "gh issue create --title t --body x"
+    "gh issue edit 5 --body x"
+    "gh issue comment 5 --body x"
+    "gh api repos/o/r/issues/12/comments -f body=x"
+  )
+  local -a scope_out=(
+    "gh pr merge 12 --squash --body x"
+    "git commit -m 'docs: x'"
+    "gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "gh api repos/o/r/issues/12/comments --jq '.[].body'"
+  )
+  for cmd in "${scope_in[@]}"; do
+    assert_eq "$(if pinning_codex_mention_scope "$cmd"; then printf in; else printf out; fi)" "in" \
+      "[7/lib] mention scope must include posting command: $cmd"
+  done
+  for cmd in "${scope_out[@]}"; do
+    assert_eq "$(if pinning_codex_mention_scope "$cmd"; then printf in; else printf out; fi)" "out" \
+      "[7/lib] mention scope must exclude non-posting command: $cmd"
+  done
+
+  # (기대 findings, 명령) 쌍. 허용 형태는 gh pr comment의 --body/-b/--body= 값이 정확히 소문자
+  # 재리뷰 요청일 때뿐이다.
+  local -a command_cases=(
+    "" "gh pr comment 12 --body '@codex review'"
+    "" "gh pr comment 12 --body \"@codex review\""
+    "" "gh pr comment 12 -b '@codex review'"
+    "" "gh pr comment 12 --body='@codex review'"
+    "" "gh pr comment 12 -R owner-x/repo.name_1 --body '@codex review'"
+    "" "gh pr comment https://github.com/o/r/pull/12 --body '@codex review'"
+    "" "gh pr comment --body '@codex review' 12"
+    "" "gh pr comment 12 --repo=o/r --body '@codex review'; echo done"
+    "" "out=\$(gh pr comment 12 --body '@codex review')"
+    "" $'gh pr comment 12 \\\n  -R o/r \\\n  --body \'@codex review\''
+    "" "gh pr comment 1 -b '@codex review';gh pr comment 2 -b '@codex review'"
+    "1: @codex review" "gh pr comment 12 --body '@codex review please'"
+    "1: @Codex review" "gh pr comment 12 --body '@Codex review'"
+    "1: @codex review" "gh issue comment 5 --body '@codex review'"
+    "1: @codex review" "gh api repos/o/r/issues/12/comments -f body='@codex review'"
+    "1: @codex fix" "gh pr comment 12 --body '@codex review' && gh pr comment 12 --body '@codex fix it'"
+    "1: @codex" "gh pr comment 12 --body \"봇 확인: \\\`@codex\\\` 참고\""
+    "1: @CODEX" "gh pr comment 12 --body 'ping @CODEX!'"
+    "1: @codex review" "gh pr comment 12 --body @codex review"
+    "1: @codex review" "gh pr comment 12 -b'@codex review'"
+    "1: @codex review" "gh pr comment 12 --body '@codex review'' extra'"
+    "1: @codex review" "gh pr comment \$(gh issue comment 5 --body 'x') --body '@codex review'"
+    "2: @codex fix" $'gh pr comment 12 --body-file - <<\'MSG\'\n@codex fix this\nMSG'
+    "1: @codex review|1: @codex review" "gh issue comment 5 -b '@codex review' && gh issue comment 6 -b '@codex review'"
+    "1: @codexbot hi" "gh pr comment 12 --body 'hey @codexbot hi'"
+    "1: @codex" "gh pr comment 12 --body '한글@codex한글'"
+  )
+  for ((i = 0; i < ${#command_cases[@]}; i += 2)); do
+    assert_eq "$(_pinning_mention_test_tokens "$scan_file" command "${command_cases[i + 1]}")" "${command_cases[i]}" \
+      "[7/lib] command mention findings: ${command_cases[i + 1]}"
+  done
+
+  # 본문 파일에는 허용 형태가 없다.
+  local -a body_cases=(
+    "1: @codex review" "@codex review"
+    "" "Codex 봇 리뷰를 기다린다"
+    "2: @codex|3: @Codex fix" $'# t\n`@codex`\n@Codex fix it'
+    "1: @codex review" $'@codex review \\'
+  )
+  for ((i = 0; i < ${#body_cases[@]}; i += 2)); do
+    assert_eq "$(_pinning_mention_test_tokens "$scan_file" body "${body_cases[i + 1]}")" "${body_cases[i]}" \
+      "[7/lib] body mention findings: ${body_cases[i + 1]}"
+  done
+}
+
 _assert_pinning_expectation() {
   local fixture="$1" stderr_log="$2"
   local expected="${fixture%.json}.expected"
@@ -2106,6 +2240,8 @@ run_test "pinning shared library behavioral" \
   test_pinning_shared_library_behavioral
 run_test "pinning session URL category (#1422)" \
   test_pinning_session_url_category_behavioral
+run_test "pinning Codex mention scope and findings (#1477)" \
+  test_pinning_codex_mention_behavioral
 run_test "pinning-alert behavioral (#606)" \
   test_pinning_alert_behavioral
 run_test "pretooluse pinning-guard behavioral (#587)" \

@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh api -X PATCH repos/o/r/pulls/12 -f body='리뷰는 @Codex 참고'"
+  }
+}

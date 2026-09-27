@@ -87,6 +87,35 @@ path 추출). 파일이 없으면 fail-open(clean)이다 — guard가 존재하�
 | `pretooluse-pinning-guard-{claude,codex}-bash-bodyfile-missing-clean.*` | `--body-file`이 존재하지 않는 경로를 가리킴 | 빈 파일 (fail-open) |
 | `pretooluse-pinning-guard-{claude,codex}-bash-gh-api-atfile-deny.*` | `gh api ... -F body=@<file>` (`@file` 경유 입력) | deny reason |
 
+Issue #1477 Codex 봇 멘션 fixture:
+
+Codex GitHub 앱은 PR·이슈 코멘트의 봇 멘션을 백틱 안에서도 작업 요청으로 읽는다. guard는 PR·이슈 본문과
+코멘트를 게시하는 gh 명령(gh api 쓰기와 GraphQL mutation 포함)에서 멘션을 막고, 명령 문자열의
+`gh pr comment <PR> --body '@codex review'` 한 형태만 허용한다. 본문 파일에는 허용 형태가 없다.
+박제 범주 검사가 먼저 돌므로 둘 다 걸리면 박제 deny가 나온다. 같은 변경으로 박제 범주의 검사 대상도
+gh api 쓰기 전반(GraphQL mutation 포함)과 `--input` 파일로 넓어졌다. 판정 경계 표는 lib 단위 테스트
+`test_pinning_codex_mention_behavioral`에 있다.
+
+| 파일 | 입력 의도 | expected |
+|------|----------|----------|
+| `pretooluse-pinning-guard-claude-bash-codex-mention-deny.*` | `gh pr comment` 본문의 백틱 멘션 | deny reason |
+| `pretooluse-pinning-guard-claude-bash-codex-mention-bodyfile-deny.*` | `gh pr create --body-file` 본문의 멘션 | deny reason |
+| `pretooluse-pinning-guard-claude-bash-codex-review-request-clean.*` | 허용 형태의 재리뷰 요청 (`-R` 포함) | 빈 파일 |
+| `pretooluse-pinning-guard-claude-bash-codex-review-request-issue-deny.*` | 같은 문구를 이슈 코멘트로 게시 | deny reason |
+| `pretooluse-pinning-guard-claude-bash-codex-review-request-chained-deny.*` | 허용 형태 뒤에 다른 멘션 명령을 이어 붙임 | deny reason |
+| `pretooluse-pinning-guard-claude-bash-gh-api-graphql-mutation-deny.*` | GraphQL 스레드 답글 mutation의 박제 토큰 | deny reason |
+| `pretooluse-pinning-guard-claude-bash-gh-api-patch-mention-deny.*` | `gh api -X PATCH`로 PR 본문 수정 | deny reason |
+| `pretooluse-pinning-guard-claude-bash-gh-api-get-fields-mention-clean.*` | `-X GET` 검색 조회의 질의어 | 빈 파일 |
+| `pretooluse-pinning-guard-codex-bash-codex-mention-bodyfile-deny.*` | `--body-file` 본문의 멘션 | deny reason |
+| `pretooluse-pinning-guard-codex-bash-codex-review-request-bodyfile-deny.*` | 본문 파일에 담은 재리뷰 요청 | deny reason |
+| `pretooluse-pinning-guard-codex-bash-gh-api-graphql-reply-mention-deny.*` | 여러 줄 GraphQL mutation 본문의 멘션 | deny reason |
+| `pretooluse-pinning-guard-codex-bash-gh-api-graphql-reply-bodyfile-deny.*` | GraphQL 스레드 답글의 `-F body=@<file>` 본문 박제 토큰 | deny reason |
+| `pretooluse-pinning-guard-codex-bash-gh-api-read-mention-clean.*` | REST 읽기 조회의 jq 필터 | 빈 파일 |
+| `pretooluse-pinning-guard-codex-bash-gh-api-graphql-query-clean.*` | GraphQL 읽기 쿼리의 jq 필터 | 빈 파일 |
+| `pretooluse-pinning-guard-codex-bash-gh-api-input-deny.*` | `gh api --input <file>` 본문의 박제 토큰 | deny reason |
+| `pretooluse-pinning-guard-codex-bash-git-commit-codex-mention-clean.*` | 커밋 메시지의 멘션 (검사 대상 아님) | 빈 파일 |
+| `pretooluse-pinning-guard-codex-bash-codex-mention-and-round-deny.*` | 박제 토큰과 멘션이 함께 있음 | 박제 deny reason |
+
 Issue #686 path-aware PATTERN_A guard fixtures add the explicit matrix:
 
 | 시나리오 | fixture |

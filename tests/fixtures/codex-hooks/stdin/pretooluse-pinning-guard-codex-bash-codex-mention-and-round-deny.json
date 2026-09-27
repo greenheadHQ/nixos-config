@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh pr comment 12 --body 'Round 3 반영, @codex fix'"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "_fixture_existing_content": "{\"body\": \"Round 21 반영 완료\"}",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh api repos/o/r/issues/12/comments --input __SANDBOX_BODY_FILE__"
+  }
+}

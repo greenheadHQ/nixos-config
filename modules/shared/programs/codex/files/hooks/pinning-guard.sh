@@ -58,8 +58,9 @@ _targeted_bash_command() {
     *"gh pr create"* | *"gh pr edit"* | *"gh pr comment"* | *"gh pr review"* | *"gh pr merge"* | \
     *"gh issue create"* | *"gh issue edit"* | *"gh issue comment"* | \
     *"gh api"*"issues/"*"comments"* | *"gh api"*"pulls/"*"comments"* | *"gh api"*"pulls/"*"reviews"*) return 0 ;;
-    *) return 1 ;;
   esac
+  # 엔드포인트와 무관하게 gh api 쓰기(GraphQL mutation 포함)도 게시면이다 (#1477).
+  pinning_gh_api_posts_content "$cmd"
 }
 
 _scan_text_file() {
@@ -71,25 +72,47 @@ case "$TOOL_NAME" in
   Bash)
     COMMAND_TEXT=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
     [ -n "$COMMAND_TEXT" ] || exit 0
-    _targeted_bash_command "$COMMAND_TEXT" || exit 0
+    # 박제 범주(A–D)와 Codex 봇 멘션(#1477)은 검사 대상 명령이 겹치지만 같지 않다.
+    SCAN_PINNING=0
+    SCAN_MENTION=0
+    if _targeted_bash_command "$COMMAND_TEXT"; then SCAN_PINNING=1; fi
+    if pinning_codex_mention_scope "$COMMAND_TEXT"; then SCAN_MENTION=1; fi
+    [ "$SCAN_PINNING" = 1 ] || [ "$SCAN_MENTION" = 1 ] || exit 0
 
     _scan_text_file "$COMMAND_TEXT" "$SCAN_DIR/bash.txt"
-    findings="$(pinning_findings_text "$SCAN_DIR/bash.txt")"
-    if [ -n "$findings" ]; then
-      _deny "$TOOL_NAME" "durable shell command" "$findings"
+    if [ "$SCAN_PINNING" = 1 ]; then
+      findings="$(pinning_findings_text "$SCAN_DIR/bash.txt")"
+      if [ -n "$findings" ]; then
+        _deny "$TOOL_NAME" "durable shell command" "$findings"
+      fi
+    fi
+    if [ "$SCAN_MENTION" = 1 ]; then
+      findings="$(pinning_codex_mention_findings_text "$SCAN_DIR/bash.txt" command)"
+      if [ -n "$findings" ]; then
+        _deny_with_reason "$(pinning_codex_mention_deny_reason "$TOOL_NAME" "durable shell command" "$findings")"
+      fi
     fi
 
-    # --body-file / -F(--field) 로 넘겨진 파일 내용도 재스캔한다 (issue #684).
-    # command 문자열 자체는 클린해도 파일 내용에 박제 패턴이 있는 케이스를 잡는다.
+    # --body-file / -F(--field) / --input 으로 넘겨진 파일 내용도 재스캔한다 (issue #684, #1477).
+    # command 문자열 자체는 클린해도 파일 내용에 박제 패턴이나 봇 멘션이 있는 케이스를 잡는다.
     while IFS= read -r body_file; do
       [ -n "$body_file" ] || continue
       [ -e "$body_file" ] || continue
       if ! cat "$body_file" > "$SCAN_DIR/bash.txt" 2>/dev/null; then
         _deny_with_reason "[pinning-guard] failed to read $body_file referenced via --body-file; denying by fail-closed policy."
       fi
-      findings="$(pinning_findings_text "$SCAN_DIR/bash.txt")"
-      [ -n "$findings" ] || continue
-      _deny "$TOOL_NAME" "$body_file (via --body-file)" "$findings"
+      if [ "$SCAN_PINNING" = 1 ]; then
+        findings="$(pinning_findings_text "$SCAN_DIR/bash.txt")"
+        if [ -n "$findings" ]; then
+          _deny "$TOOL_NAME" "$body_file (via --body-file)" "$findings"
+        fi
+      fi
+      if [ "$SCAN_MENTION" = 1 ]; then
+        findings="$(pinning_codex_mention_findings_text "$SCAN_DIR/bash.txt" body)"
+        if [ -n "$findings" ]; then
+          _deny_with_reason "$(pinning_codex_mention_deny_reason "$TOOL_NAME" "$body_file (via --body-file)" "$findings")"
+        fi
+      fi
     done < <(pinning_extract_body_file_paths "$COMMAND_TEXT")
     ;;
   Edit | Write | NotebookEdit)
