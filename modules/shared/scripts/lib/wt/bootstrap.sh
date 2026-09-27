@@ -315,8 +315,11 @@ _wt_branch_checkout_state() {
 _remove_worktree() {
   local wt_path="$1" branch="$2" git_root="$3" mode="${4:-}" expected_oid="${5:-}"
   local active_guard="${6:-check}"
+  # 안내와 재실행 명령에 쓰는 이름은 `wt ls`·`wt cleanup`이 쓰는 상대 경로(feat/x)다.
+  # 마지막 경로 요소(x)만 쓰면 같은 이름의 다른 worktree를 가리켜, 안내한 `--yes` 명령이
+  # 엉뚱한 worktree를 지운다.
   local name
-  name=$(basename "$wt_path")
+  name=$(_wt_display_name "$git_root" "$wt_path")
 
   # mode는 폐쇄 집합이다. 미지정이나 오타를 기본값으로 흘리면 가장 파괴적인 정책이
   # 조용히 선택되므로, 알 수 없는 값은 여기서 거부한다.

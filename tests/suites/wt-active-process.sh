@@ -438,10 +438,7 @@ test_wt_remove_worktree_active_guard_bypass_scope_unit() {
     git -C "$repo" commit -q --allow-empty -m first
     git -C "$repo" worktree add -q "$wt_path" -b feature
 
-    for helper in ui git-state process bootstrap; do
-      # shellcheck source=/dev/null
-      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
-    done
+    wt_source_helpers ui git-state process bootstrap
     _wt_require_state_helpers() { :; }
     _wt_remove_claude_local_plugins_for_worktree() { :; }
     _wt_untrust_codex_project() { :; }
@@ -473,4 +470,90 @@ test_wt_remove_worktree_active_guard_bypass_scope_unit() {
     [[ ! -d "$wt_path" ]] || exit 19
     [[ ! -s "$calls" ]] || exit 20
   ) || fail "활성 가드 우회 범위가 기대와 다름 (exit $?)"
+}
+
+# 출력에서 "위험을 알고 진행하려면: <명령>" 안내 명령을 뽑는다 (색상 코드는 걷어 낸다).
+wt_bypass_hint_from_output() {
+  printf '%s\n' "$1" | sed $'s/\033\\[[0-9;]*m//g' | sed -n 's/.*위험을 알고 진행하려면: //p' | head -1
+}
+
+test_wt_cleanup_active_guard_hint_names_nested_worktree() {
+  # 활성 가드가 안내하는 --yes 명령은 막힌 그 worktree를 가리켜야 한다. 이름은 wt ls가
+  # 보여 주는 상대 경로(feat/x)다. 마지막 경로 요소(x)로 안내하면 같은 이름의 depth 1
+  # worktree를 지목하고, 그 안내를 그대로 실행하면 커밋하지 않은 작업이 있는 다른
+  # worktree가 지워진다(--yes는 dirty 확인도 넘긴다). 안내를 그대로 실행해 확인한다.
+  local sandbox home_dir repo_root gh_dir base nested top
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  gh_dir="$sandbox/gh-bin"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  git -C "$repo_root" remote add origin https://example.invalid/nixos-config.git
+  base="$repo_root/.claude/worktrees"
+  nested="$base/feat/x"
+  top="$base/x"
+  add_fixture_worktree "$repo_root" "$nested" "feat-x"
+  add_fixture_worktree "$repo_root" "$top" "x"
+  echo "unsaved" > "$top/notes.txt"
+  mkdir -p "$nested/sub"
+  # feat/x만 MERGED로 둬 확인 프롬프트 없이 가드까지 가게 한다.
+  install_merged_pr_mock_for_branch "$gh_dir" "feat-x" "$(git -C "$nested" rev-parse HEAD)"
+
+  (
+    wt_holder_pid=""
+    trap stop_wt_cwd_holder EXIT
+    start_wt_cwd_holder "$nested/sub"
+    local output hint
+    local -a hint_args
+
+    output=$(run_fixture_wt "$home_dir" "$repo_root" "$gh_dir:" cleanup feat/x 2>&1) \
+      || fail "cleanup feat/x 비정상 종료: $output"
+    assert_contains "$output" "스킵: feat/x (이 worktree를 작업 위치로 쓰는 프로세스가 있습니다)"
+    hint=$(wt_bypass_hint_from_output "$output")
+    [[ "$hint" == "wt cleanup feat/x --yes" ]] || fail "--yes 안내가 막힌 worktree를 가리키지 않음: [$hint]"
+
+    read -r -a hint_args <<< "${hint#wt }"
+    output=$(run_fixture_wt "$home_dir" "$repo_root" "$gh_dir:" "${hint_args[@]}" 2>&1) \
+      || fail "안내 명령 실행 실패: $output"
+    [[ ! -d "$nested" ]] || fail "안내 명령이 feat/x를 지우지 않음: $output"
+    [[ -f "$top/notes.txt" ]] || fail "안내 명령이 다른 worktree(x)를 지움: $output"
+  )
+}
+
+test_wt_remove_worktree_guarded_failure_hint_names_nested_worktree_unit() {
+  # guarded 제거를 git이 거부할 때의 재실행 안내(--yes)도 상대 경로 이름을 쓴다 — 위와
+  # 같은 이유로, 마지막 경로 요소만 쓰면 다른 worktree를 지목한다.
+  local sandbox repo wt_path
+  sandbox=$(new_sandbox)
+  repo="$(cd "$sandbox" && pwd -P)/repo"
+  wt_path="$repo/.claude/worktrees/feat/x"
+  mkdir -p "$repo"
+
+  (
+    set -euo pipefail
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+    git -C "$repo" init -q
+    git -C "$repo" config user.email t@example.invalid
+    git -C "$repo" config user.name t
+    git -C "$repo" commit -q --allow-empty -m first
+    git -C "$repo" worktree add -q "$wt_path" -b feat-x
+    local recorded_oid
+    recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
+    # 추적하지 않는 파일이 있으면 비강제 remove가 거부한다.
+    echo "untracked" > "$wt_path/untracked.txt"
+
+    wt_source_helpers ui git-state process bootstrap
+    _wt_require_state_helpers() { :; }
+    _wt_cwd_holders() { :; }
+    _wt_remove_claude_local_plugins_for_worktree() { :; }
+
+    local output
+    output=$(_remove_worktree "$wt_path" feat-x "$repo" guarded "$recorded_oid" 2>&1) && exit 11
+    [[ "$output" == *"스킵: feat/x ("* ]] || exit 12
+    [[ "$output" == *"wt cleanup feat/x --yes"* ]] || exit 13
+    [[ -d "$wt_path" ]] || exit 14
+  ) || fail "guarded 제거 실패 안내가 중첩 worktree 이름을 쓰지 않음 (exit $?)"
 }

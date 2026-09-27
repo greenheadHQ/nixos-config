@@ -71,6 +71,20 @@ add_detached_orphan_worktree() {
   wt_fixture_git -C "$wt_path" rev-parse HEAD
 }
 
+# 단위 테스트용 helper 로더. wt.sh처럼 helper가 읽는 전역(WORKTREE_DIR·WT_LAST_FILE)을
+# 세운 뒤 지정한 lib/wt helper를 순서대로 source한다.
+wt_source_helpers() {
+  # shellcheck disable=SC2034  # 아래에서 source하는 helper가 읽는다.
+  WORKTREE_DIR=".claude/worktrees"
+  # shellcheck disable=SC2034
+  WT_LAST_FILE=".claude/worktrees/.wt-last"
+  local helper
+  for helper in "$@"; do
+    # shellcheck source=/dev/null
+    source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
+  done
+}
+
 # fixture 저장소 루트에서 비대화형 wt를 실행한다. path_prefix는 PATH 앞에 붙일 대역
 # 디렉토리(끝에 `:` 포함, 없으면 빈 문자열)다. 출력 스트림 처리와 종료 코드는 호출자 몫이다.
 run_fixture_wt() {
@@ -1499,10 +1513,7 @@ test_wt_remove_worktree_guarded_rechecks_branch_unit() {
     local recorded_oid
     recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
 
-    for helper in ui git-state process bootstrap; do
-      # shellcheck source=/dev/null
-      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
-    done
+    wt_source_helpers ui git-state process bootstrap
     # 이 테스트의 대상은 근거 재확인뿐이다. 삭제 경로의 나머지 부수 효과(helper 요구,
     # 활성 작업 탐지, plugin 등록)는 stub으로 걷어내 재확인 결과만 관찰한다.
     _wt_require_state_helpers() { :; }
@@ -1547,10 +1558,7 @@ test_wt_remove_worktree_guarded_keeps_reused_branch_unit() {
     local recorded_oid
     recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
 
-    for helper in ui git-state process bootstrap; do
-      # shellcheck source=/dev/null
-      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
-    done
+    wt_source_helpers ui git-state process bootstrap
     _wt_require_state_helpers() { :; }
     _wt_cwd_holders() { :; }
     # 이 helper는 worktree 제거 성공 후 ref 삭제 전에 호출된다 — 경쟁 창을 주입할 지점이다.
@@ -1590,10 +1598,7 @@ test_wt_remove_worktree_guarded_clears_branch_config_unit() {
     local recorded_oid
     recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
 
-    for helper in ui git-state process bootstrap; do
-      # shellcheck source=/dev/null
-      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
-    done
+    wt_source_helpers ui git-state process bootstrap
     _wt_require_state_helpers() { :; }
     _wt_cwd_holders() { :; }
     _wt_remove_claude_local_plugins_for_worktree() { :; }
@@ -1632,10 +1637,7 @@ test_wt_remove_worktree_forced_refuses_locked_unit() {
     git -C "$repo" commit -q --allow-empty -m first
     git -C "$repo" worktree add -q "$wt_path" -b feature
 
-    for helper in ui git-state process bootstrap; do
-      # shellcheck source=/dev/null
-      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
-    done
+    wt_source_helpers ui git-state process bootstrap
     # 관찰 대상은 잠금 가드뿐이다. 나머지 부수 효과는 stub으로 걷어낸다.
     _wt_require_state_helpers() { :; }
     _wt_cwd_holders() { :; }
@@ -1689,10 +1691,7 @@ test_wt_remove_worktree_forced_keeps_path_when_remove_fails_unit() {
     git -C "$repo" commit -q --allow-empty -m first
     git -C "$repo" worktree add -q "$wt_path" -b feature
 
-    for helper in ui git-state process bootstrap; do
-      # shellcheck source=/dev/null
-      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
-    done
+    wt_source_helpers ui git-state process bootstrap
     _wt_require_state_helpers() { :; }
     _wt_cwd_holders() { :; }
     _wt_remove_claude_local_plugins_for_worktree() { :; }
@@ -1736,10 +1735,7 @@ test_wt_remove_worktree_refuses_unknown_lock_state_unit() {
     git -C "$repo" commit -q --allow-empty -m first
     git -C "$repo" worktree add -q "$wt_path" -b feature
 
-    for helper in ui git-state process bootstrap; do
-      # shellcheck source=/dev/null
-      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
-    done
+    wt_source_helpers ui git-state process bootstrap
     _wt_require_state_helpers() { :; }
     _wt_cwd_holders() { :; }
     _wt_remove_claude_local_plugins_for_worktree() { :; }
@@ -1783,10 +1779,7 @@ test_wt_remove_worktree_failure_notes_registration_state_unit() {
     git -C "$repo" commit -q --allow-empty -m first
     git -C "$repo" worktree add -q "$wt_path" -b feature
 
-    for helper in ui git-state process bootstrap; do
-      # shellcheck source=/dev/null
-      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
-    done
+    wt_source_helpers ui git-state process bootstrap
     _wt_require_state_helpers() { :; }
     _wt_cwd_holders() { :; }
     _wt_remove_claude_local_plugins_for_worktree() { :; }
@@ -1821,10 +1814,7 @@ test_wt_remove_worktree_failure_notes_registration_state_unit() {
     set -euo pipefail
     export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
-    for helper in ui git-state process bootstrap; do
-      # shellcheck source=/dev/null
-      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
-    done
+    wt_source_helpers ui git-state process bootstrap
     _wt_require_state_helpers() { :; }
     _wt_cwd_holders() { :; }
     _wt_remove_claude_local_plugins_for_worktree() { :; }
@@ -1966,10 +1956,7 @@ test_wt_remove_worktree_preserves_active_process_unit() {
     local recorded_oid
     recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
 
-    for helper in ui git-state process bootstrap; do
-      # shellcheck source=/dev/null
-      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
-    done
+    wt_source_helpers ui git-state process bootstrap
     # 관찰 대상은 활성 작업 가드뿐이다. 나머지 부수 효과는 stub으로 걷어낸다.
     _wt_require_state_helpers() { :; }
     _wt_remove_claude_local_plugins_for_worktree() { :; }

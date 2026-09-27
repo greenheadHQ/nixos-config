@@ -290,6 +290,8 @@ run_test "wt cleanup active guard matches physical folder" test_wt_cleanup_activ
 run_test "wt cleanup --yes bypasses active guard only when named" test_wt_cleanup_yes_bypasses_active_guard_only_when_named
 run_test "wt recreate --yes bypasses active guard" test_wt_recreate_yes_bypasses_active_guard
 run_test "wt remove active guard bypass scope unit" test_wt_remove_worktree_active_guard_bypass_scope_unit
+run_test "wt cleanup active guard hint names nested worktree" test_wt_cleanup_active_guard_hint_names_nested_worktree
+run_test "wt guarded remove failure hint names nested worktree unit" test_wt_remove_worktree_guarded_failure_hint_names_nested_worktree_unit
 run_test "missing managed helpers fail closed" test_missing_managed_helpers_fail_closed
 run_test "missing wt Python helpers fail state changes" test_missing_wt_python_helpers_fail_state_changes
 run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_python_helpers_fail_cleanup_state_changes
