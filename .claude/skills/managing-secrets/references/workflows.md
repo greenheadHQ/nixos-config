@@ -52,6 +52,14 @@ recipient 그룹마다 복호화에 필요한 identity가 다르다. 그룹 선�
    ```bash
    cd secrets
    test -f <name>.age && nix run github:ryantm/agenix -- -d <name>.age -i <identity> >/dev/null && echo "복호화 가능"
+   test -f <name>.age && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key >/dev/null && echo "복호화 가능"  # 호스트 키
+   ```
+
+   재암호화 전 바이트 수를 적어 둔다. 빈 값 placeholder로 둔 항목(`secrets.nix` 주석 참조)은 0일 수 있다. 값은 출력하지 않고 해시로도 비교하지 않는다 — 짧은 값은 해시로 역산할 수 있다.
+
+   ```bash
+   nix run github:ryantm/agenix -- -d <name>.age -i <identity> | wc -c
+   sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c  # 호스트 키
    ```
 
 6. 재암호화: 확인된 항목만 재암호화한다. `EDITOR=:`이면 agenix가 에디터를 열지 않고, 복호화한 내용을 현재 `publicKeys`로 다시 암호화한다. `-r`이 항목마다 쓰는 경로와 같다. `EDITOR=:`가 agenix까지 전달되지 않으면 비대화형 실행에서 표준입력이 값을 대체해 시크릿이 비워진다(rc는 0이다). sudo는 앞에 둔 환경 변수를 명령에 넘기지 않으므로, 호스트 키 항목은 `EDITOR=:`를 sudo 뒤에 둔다.
@@ -63,10 +71,11 @@ recipient 그룹마다 복호화에 필요한 identity가 다르다. 그룹 선�
    sudo chown "$USER" <name>.age
    ```
 
-7. 빈 값 확인: 재암호화한 항목을 복호화해 바이트 수만 본다. 0이면 `git restore <name>.age`로 되돌린다.
+7. 값 보존 확인: 재암호화한 항목을 복호화해 바이트 수가 재암호화 전과 같은지 본다(5단계에서 적어 둔 값). 다르면 `git restore <name>.age`로 되돌린다.
 
    ```bash
    nix run github:ryantm/agenix -- -d <name>.age -i <identity> | wc -c
+   sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c  # 호스트 키
    ```
 
 전체 재암호화(`nix run github:ryantm/agenix -- -r`)는 넘긴 identity로 `secrets.nix`의 모든 항목을 복호화할 수 있을 때만 쓴다. `-r`은 항목을 차례로 처리하다 복호화하지 못하는 항목에서 멈추고, 그 앞 항목만 새 recipient로 바뀐 채 남는다. 현재 선언에는 Mac 사용자 키 전용 항목과 MiniPC 호스트 키 전용 항목이 함께 있어, 한 호스트의 identity만으로는 이 조건을 채우지 못한다. identity가 없는 항목은 그 identity가 있는 호스트에서 대상별로 재암호화한다. 원본 값에서 새로 암호화해야 하면 [troubleshooting.md](troubleshooting.md)의 "agenix -e의 /dev/stdin 에러" 절차를 쓴다.

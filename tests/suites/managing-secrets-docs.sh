@@ -55,11 +55,12 @@ _secrets_docs_declared_groups() {
 }
 
 # 그룹 표기가 가리키는 키 참조를 "sshKeys.<k>"/"hostKeys.<h>" 한 줄씩 낸다. let 바인딩이 있으면 그
-# 본문(첫 `;`까지)에서 찾고, 없으면 인라인 표기를 되돌린다. 키를 하나도 찾지 못하면 실패한다.
+# 본문(첫 `;`까지)에서 찾고, 없으면 인라인 표기를 되돌린다. 본문 각 줄의 `#` 이후(Nix 주석)는 먼저
+# 지운다 — 주석 속 키 참조를 세거나 주석 속 `;`에서 본문이 끝나지 않게 한다. 키를 하나도 찾지 못하면 실패한다.
 _secrets_docs_group_keys() {
   local rules="$1" group="$2" binding part
   local -a parts refs=()
-  binding="$(awk -v g="$group" '$1 == g && $2 == "=" { on = 1 } on { print } on && /;/ { exit }' "$rules")"
+  binding="$(awk -v g="$group" '{ sub(/#.*/, "") } $1 == g && $2 == "=" { on = 1 } on { print } on && /;/ { exit }' "$rules")"
   if [[ -n "$binding" ]]; then
     while IFS= read -r part; do
       [[ -n "$part" ]] && refs+=("$part")
@@ -107,6 +108,36 @@ _secrets_docs_assert_rekey_all_conditional() {
   [[ "$count" -le 1 ]] \
     || fail "$where: 전체 재암호화(-r) 명령이 ${count}곳에 있음 — 조건 문장 한 곳만 허용한다: $lines"
   [[ "$lines" == *때만* ]] || fail "$where: 전체 재암호화(-r) 명령을 조건 없이 안내함: $lines"
+}
+
+# 재암호화 안내의 확인 명령 검사(add-host.sh 출력과 workflows.md 호스트 추가 절이 함께 쓴다). 입력은 표준입력.
+#   - 재암호화 전 바이트 수 기록과 재암호화 뒤 비교: 사용자 키·호스트 키(sudo) 명령이 재암호화 명령의
+#     앞뒤에 모두 있어야 한다. 빈 값 placeholder는 정상 재암호화 뒤에도 0바이트라, "0이면 되돌린다"는
+#     안내는 새 recipient가 빠진 옛 암호문으로 되돌리게 한다 — 전후가 같은지로만 판정한다.
+#   - 복호화 확인도 호스트 키 sudo 변형을 함께 낸다. 사용자 키 명령은 권한 상승 없이 둔다.
+_secrets_docs_assert_value_check_steps() {
+  local where="$1" text enc_line bytes_cmd compare_line first last
+  local user_bytes_cmd='nix run github:ryantm/agenix -- -d <name>.age -i <identity> | wc -c'
+  local host_bytes_cmd='sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c'
+  local host_dec_cmd='test -f <name>.age && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key >/dev/null'
+  text="$(cat)"
+  enc_line="$(grep -nF -m1 -- '-e <name>.age -i <identity>' <<< "$text" | cut -d: -f1 || true)"
+  [[ -n "$enc_line" ]] || fail "$where: 대상별 재암호화 명령이 없음"
+
+  grep -qF -- "$host_dec_cmd" <<< "$text" || fail "$where: 복호화 확인에 호스트 키 sudo 변형이 없음"
+  for bytes_cmd in "$user_bytes_cmd" "$host_bytes_cmd"; do
+    first="$(grep -nF -m1 -- "$bytes_cmd" <<< "$text" | cut -d: -f1 || true)"
+    last="$(grep -nF -- "$bytes_cmd" <<< "$text" | cut -d: -f1 | tail -1 || true)"
+    [[ -n "$first" && "$first" -lt "$enc_line" ]] || fail "$where: 재암호화 전 바이트 수 기록 명령이 없음: $bytes_cmd"
+    [[ -n "$last" && "$last" -gt "$enc_line" ]] || fail "$where: 재암호화 뒤 바이트 수 비교 명령이 없음: $bytes_cmd"
+  done
+  compare_line="$(sed -n "$enc_line,\$p" <<< "$text" | grep -F '재암호화 전과 같은지' || true)"
+  [[ "$compare_line" == *'git restore <name>.age'* ]] \
+    || fail "$where: 재암호화 뒤 바이트 수가 재암호화 전과 같은지 보고 다르면 되돌리는 안내가 없음"
+  ! grep -F '0이면' <<< "$text" | grep -qF 'git restore' \
+    || fail "$where: 바이트 수 0을 되돌림 기준으로 안내함 — 빈 값 placeholder가 옛 암호문으로 되돌려진다"
+  ! grep -F -- '-i <identity>' <<< "$text" | grep -qF 'sudo' \
+    || fail "$where: 사용자 키(-i <identity>) 명령에 sudo가 붙음"
 }
 
 # SKILL.md 통합 Secret Inventory 표의 `.age` 행을 "이름<TAB>recipient 열의 첫 단어"로 낸다.
@@ -214,7 +245,8 @@ test_managing_secrets_group_parser_accepts_inline_key_lists() {
 let
   users = [
     constants.sshKeys.macbook
-    constants.sshKeys.minipc
+    # constants.sshKeys.retired; 주석 속 참조와 `;`는 무시한다
+    constants.sshKeys.minipc # constants.hostKeys.retired
   ];
 in
 {
@@ -230,7 +262,7 @@ EOF
   [[ "$out" == "$expected" ]] || fail "선언 그룹 표기가 기대와 다름: $(diff <(printf '%s\n' "$expected") <(printf '%s\n' "$out") || true)"
 
   [[ "$(_secrets_docs_group_keys "$rules" users)" == $'sshKeys.macbook\nsshKeys.minipc' ]] \
-    || fail "let 바인딩 users의 키 참조가 기대와 다름"
+    || fail "let 바인딩 users의 키 참조가 기대와 다름(주석 속 참조 제외): $(_secrets_docs_group_keys "$rules" users | tr '\n' ' ')"
   [[ "$(_secrets_docs_group_keys "$rules" macbook+minipc)" == $'sshKeys.macbook\nsshKeys.minipc' ]] \
     || fail "여러 키 인라인 목록의 키 참조가 기대와 다름"
   [[ "$(_secrets_docs_group_keys "$rules" minipc+hostKeys.minipc)" == $'sshKeys.minipc\nhostKeys.minipc' ]] \
@@ -286,6 +318,7 @@ test_managing_secrets_host_add_workflow_checks_recipients_per_target() {
   assert_not_contains "$section" 'EDITOR=: sudo'
   grep -F 'EDITOR=:' <<< "$section" | grep -qF '비워진다' \
     || fail "EDITOR=:가 전달되지 않으면 시크릿이 비워진다는 경고가 없음"
+  _secrets_docs_assert_value_check_steps "workflows.md 호스트 추가 절" <<< "$section"
 
   assert_not_contains "$(cat "$wf")" '`allHosts`에 추가'
   assert_not_contains "$(cat "$wf")" '`allHosts` 목록에 있는 모든 공개키'
