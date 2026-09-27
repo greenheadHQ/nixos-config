@@ -199,7 +199,8 @@ EOF
 }
 
 # Immich v3.0.0 스키마를 줄인 합성 스키마: contrib 확장, 스키마 한정 SQL 함수와 식 인덱스,
-# 예약어 테이블("user"), FK·CHECK·UNIQUE 제약, gin/gist 인덱스.
+# 예약어 테이블("user"), FK·CHECK·UNIQUE 제약, gin/gist 인덱스, version_history(최근 3.0.0 —
+# Immich는 serverVersion.toString()을 v 접두 없이 기록한다).
 _immich_restore_fixture_sql() {
   cat <<'SQL'
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -237,6 +238,13 @@ CREATE TABLE album (
   "ownerId" uuid NOT NULL REFERENCES "user"(id),
   "albumName" varchar NOT NULL
 );
+CREATE TABLE version_history (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  "createdAt" timestamptz NOT NULL DEFAULT now(),
+  version varchar NOT NULL
+);
+INSERT INTO version_history ("createdAt", version)
+  VALUES ('2025-06-01T00:00:00Z', '1.132.3'), ('2026-07-03T00:00:00Z', '3.0.0');
 INSERT INTO "user" (email, name) VALUES ('admin@example.invalid', 'Admin'), ('b@example.invalid', 'Béla');
 INSERT INTO asset ("ownerId", "originalFileName", checksum)
   SELECT u.id, 'IMG_' || g || '.jpg', decode(md5(u.email || g), 'hex') FROM "user" u, generate_series(1, 3) g;
@@ -424,8 +432,9 @@ IMMICH_REQUIRED_EXTENSIONS="$IMMICH_RESTORE_TEST_EXTENSIONS"
 '"$commands"
 }
 
+# $4에 --no-start를 주면 전환이 앱을 멈춘 채 두는지(시작 호출 없음, 다음 단계 안내) 본다.
 _immich_restore_assert_success_flow() {
-  local shell="$1" backup="$2" before_backup_snapshot="$3"
+  local shell="$1" backup="$2" before_backup_snapshot="$3" switch_args="${4:-}"
   local mutated_snapshot file_state output rc old
 
   _immich_restore_mutate_original
@@ -450,12 +459,12 @@ _immich_restore_assert_success_flow() {
   fi
 
   set +e
-  output="$(_immich_restore_run "$shell" "$backup" 'immich_switch_to_restore' 2>&1)"
+  output="$(_immich_restore_run "$shell" "$backup" "immich_switch_to_restore $switch_args" 2>&1)"
   rc=$?
   set -e
-  [ "$rc" = 0 ] || fail "immich_switch_to_restore failed ($shell): $output"
-  assert_contains "$output" "전환 완료"
+  [ "$rc" = 0 ] || fail "immich_switch_to_restore $switch_args failed ($shell): $output"
   assert_contains "$output" "복원한 백업: ${backup##*/}"
+  assert_contains "$output" "백업 시점 Immich 버전: 3.0.0"
   old="$(_immich_restore_before_dbs)"
   case "$old" in
     immich_before_restore_[0-9]*_[0-9]*) ;;
@@ -466,13 +475,25 @@ _immich_restore_assert_success_flow() {
     || fail "전환 뒤 immich DB가 백업 시점(행·스키마·제약·소유자)과 다르다"
   [ "$(_immich_restore_snapshot "$old")" = "$mutated_snapshot" ] || fail "전환 전 DB가 보존되지 않았다"
   _immich_restore_db_exists immich_restore && fail "전환 뒤 immich_restore가 남았다"
-  [ "$(_immich_restore_app_connections)" = 1 ] || fail "전환 뒤 앱이 immich DB에 다시 연결되지 않았다"
   grep -Eq '^systemctl stop .*podman-immich-server\.service' "$FAKE_TRACE" \
     && grep -Eq '^systemctl stop .*podman-immich-ml\.service' "$FAKE_TRACE" \
     || fail "전환이 앱(server·ml)을 멈추지 않았다: $(cat "$FAKE_TRACE")"
-  grep -Eq '^systemctl start .*podman-immich-server\.service' "$FAKE_TRACE" \
-    && grep -Eq '^systemctl start .*podman-immich-ml\.service' "$FAKE_TRACE" \
-    || fail "전환이 앱(server·ml)을 시작하지 않았다: $(cat "$FAKE_TRACE")"
+  if [ "$switch_args" = --no-start ]; then
+    if grep -q '^systemctl start' "$FAKE_TRACE"; then
+      fail "--no-start 전환이 앱을 시작했다: $(cat "$FAKE_TRACE")"
+    fi
+    [ "$(_immich_restore_app_connections)" = 0 ] || fail "--no-start 전환 뒤 앱이 immich DB에 붙어 있다"
+    assert_contains "$output" "이름 변경 완료 — 이전 DB: $old"
+    assert_contains "$output" "nrs"
+    assert_contains "$output" "immich_revert_restore --no-start $old"
+    assert_not_contains "$output" "전환 완료"
+  else
+    assert_contains "$output" "전환 완료"
+    [ "$(_immich_restore_app_connections)" = 1 ] || fail "전환 뒤 앱이 immich DB에 다시 연결되지 않았다"
+    grep -Eq '^systemctl start .*podman-immich-server\.service' "$FAKE_TRACE" \
+      && grep -Eq '^systemctl start .*podman-immich-ml\.service' "$FAKE_TRACE" \
+      || fail "전환이 앱(server·ml)을 시작하지 않았다: $(cat "$FAKE_TRACE")"
+  fi
   [ "$(_immich_restore_file_state)" = "$file_state" ] || fail "백업 파일·디렉터리의 권한이나 소유자, 내용이 바뀌었다"
 
   IMMICH_RESTORE_OLD_DB="$old"
@@ -546,7 +567,7 @@ test_immich_restore_dump_switch_and_revert() {
 test_immich_restore_sql_gz_switch() {
   _immich_restore_require_tools || return 0
   (
-    local sandbox before
+    local sandbox before output rc
     sandbox="$(new_sandbox)"
     IMMICH_RESTORE_SANDBOX="$sandbox"
     FAKE_APP_PIDS="$sandbox/app.pids"
@@ -556,7 +577,30 @@ test_immich_restore_sql_gz_switch() {
     _immich_restore_make_backups
     _immich_restore_lock_user_view
 
-    _immich_restore_assert_success_flow bash "$IMMICH_RESTORE_SQL_GZ" "$before"
+    # 이미지 태그가 백업 시점과 다른 경우의 흐름: 앱을 멈춘 채 전환하고, 복귀도 앱을 시작하지 않는다.
+    _immich_restore_assert_success_flow bash "$IMMICH_RESTORE_SQL_GZ" "$before" --no-start
+
+    : > "$FAKE_TRACE"
+    set +e
+    output="$(_immich_restore_run bash "$IMMICH_RESTORE_SQL_GZ" "immich_revert_restore --no-start $IMMICH_RESTORE_OLD_DB" 2>&1)"
+    rc=$?
+    set -e
+    [ "$rc" = 0 ] || fail "immich_revert_restore --no-start failed: $output"
+    assert_contains "$output" "nrs"
+    assert_not_contains "$output" "복귀 완료"
+    if grep -q '^systemctl start' "$FAKE_TRACE"; then
+      fail "--no-start 복귀가 앱을 시작했다: $(cat "$FAKE_TRACE")"
+    fi
+    [ "$(_immich_restore_app_connections)" = 0 ] || fail "--no-start 복귀 뒤 앱이 immich DB에 붙어 있다"
+    [ "$(_immich_restore_snapshot immich)" = "$IMMICH_RESTORE_MUTATED_SNAPSHOT" ] \
+      || fail "--no-start 복귀 뒤 immich DB가 전환 전 DB와 다르다"
+    [ -z "$(_immich_restore_before_dbs)" ] || fail "--no-start 복귀 뒤 immich_before_restore_* DB가 남았다"
+
+    set +e
+    output="$(_immich_restore_run bash "$IMMICH_RESTORE_SQL_GZ" 'immich_switch_to_restore --now' 2>&1)"
+    rc=$?
+    set -e
+    [ "$rc" = 2 ] || fail "알 수 없는 전환 옵션이 사용법 오류(2)로 끝나지 않았다: rc=$rc $output"
   )
 }
 
@@ -1000,12 +1044,72 @@ test_immich_restore_interrupted_restore_is_not_switched() {
   )
 }
 
+# VectorChord 전환 뒤 Immich 1.133.0 미만으로의 다운그레이드(immich.nix 이미지 주석)는 전환하지
+# 않는다. 백업 시점 버전은 immich_restore의 version_history 최근 행으로 보고, 읽지 못하면 거부한다.
+test_immich_restore_switch_refuses_forbidden_downgrade() {
+  _immich_restore_require_tools || return 0
+  (
+    local sandbox mutated label backup expected output rc args
+    sandbox="$(new_sandbox)"
+    IMMICH_RESTORE_SANDBOX="$sandbox"
+    FAKE_APP_PIDS="$sandbox/app.pids"
+    trap _immich_restore_teardown EXIT
+    _immich_restore_setup "$sandbox"
+
+    _immich_restore_make_db scratch
+    _immich_restore_psql -d scratch -c "DELETE FROM version_history WHERE version = '3.0.0'"
+    pg_dump -Fc -U immich scratch | cat > "$sandbox/old.dump"
+    _immich_restore_psql -d scratch -c "INSERT INTO version_history (\"createdAt\", version) VALUES ('2026-08-01T00:00:00Z', 'dev')"
+    pg_dump -Fc -U immich scratch | cat > "$sandbox/garbled.dump"
+    _immich_restore_psql -d scratch -c 'DROP TABLE version_history'
+    pg_dump -Fc -U immich scratch | cat > "$sandbox/nohistory.dump"
+    _immich_restore_psql -d postgres -c 'DROP DATABASE scratch'
+    _immich_restore_place_backup "$sandbox/old.dump" mnt/data/backups/immich/immich-db-2025-06-01_053000.dump >/dev/null
+    _immich_restore_place_backup "$sandbox/garbled.dump" mnt/data/backups/immich/immich-db-2026-08-01_053000.dump >/dev/null
+    _immich_restore_place_backup "$sandbox/nohistory.dump" mnt/data/backups/immich/immich-db-2026-08-02_053000.dump >/dev/null
+    _immich_restore_lock_user_view
+    _immich_restore_mutate_original
+    mutated="$(_immich_restore_snapshot immich)"
+
+    for label in old garbled nohistory; do
+      case "$label" in
+        old) backup=immich-db-2025-06-01_053000.dump; expected="1.133.0 미만" ;;
+        garbled) backup=immich-db-2026-08-01_053000.dump; expected="백업 시점 버전을 읽지 못했다" ;;
+        nohistory) backup=immich-db-2026-08-02_053000.dump; expected="version_history 테이블이 없다" ;;
+      esac
+      backup="$sandbox/fs/mnt/data/backups/immich/$backup"
+      _immich_restore_run bash "$backup" 'immich_restore_db' >/dev/null 2>&1 \
+        || fail "$label: 버전과 무관한 복원·검증이 실패했다"
+      : > "$FAKE_TRACE"
+      for args in "" --no-start; do
+        set +e
+        output="$(_immich_restore_run bash "$backup" "immich_switch_to_restore $args" 2>&1)"
+        rc=$?
+        set -e
+        [ "$rc" != 0 ] || fail "$label: 금지된 버전의 백업으로 전환했다($args): $output"
+        assert_contains "$output" "$expected"
+        assert_not_contains "$output" "이름 변경 완료"
+      done
+      if grep -q '^systemctl' "$FAKE_TRACE"; then
+        fail "$label: 버전 거부에서 앱을 멈추거나 시작했다: $(cat "$FAKE_TRACE")"
+      fi
+      [ -z "$(_immich_restore_before_dbs)" ] || fail "$label: 버전 거부 뒤 이름을 바꿨다"
+      [ "$(_immich_restore_snapshot immich)" = "$mutated" ] || fail "$label: 버전 거부가 immich DB를 바꿨다"
+      [ "$(_immich_restore_app_connections)" = 1 ] || fail "$label: 버전 거부 뒤 앱이 immich DB에서 떨어졌다"
+      _immich_restore_db_exists immich_restore || fail "$label: 버전 거부가 immich_restore를 지웠다"
+      _immich_restore_psql -d postgres -c 'DROP DATABASE immich_restore'
+    done
+  )
+}
+
 # 문서의 실행 블록이 이 스위트가 부르는 함수와 같은지 고정한다.
 test_immich_restore_doc_invocations_match_suite() {
   local doc procedure restore_fn restore_line verify_line marker_line
   doc="$(_immich_restore_doc)"
   grep -Fxq 'immich_restore_db' "$doc" || fail "immich-update.md에 immich_restore_db 실행 줄이 없다"
   grep -Fxq 'immich_switch_to_restore' "$doc" || fail "immich-update.md에 immich_switch_to_restore 실행 줄이 없다"
+  grep -Fxq 'immich_switch_to_restore --no-start' "$doc" \
+    || fail "immich-update.md에 immich_switch_to_restore --no-start 실행 줄이 없다"
   grep -Eq '^immich_revert_restore immich_before_restore_' "$doc" \
     || fail "immich-update.md에 immich_revert_restore 실행 줄이 없다"
   # 동작 테스트가 결과로 구분하지 못하는 방어(부분 커밋 방지, 빈 템플릿, autovacuum worker를 세지

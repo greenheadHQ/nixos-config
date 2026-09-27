@@ -118,8 +118,10 @@ Immich DB 백업은 두 계층으로 나뉜다. disko 재설치는 NVMe(`/dev/nv
 - 복원이나 검증이 실패하면 `immich_restore`를 지우고 멈춘다. 이때 `immich` DB와 앱은 복원 전 그대로다.
 - 전환은 `immich_restore_db`가 복원과 검증을 모두 마쳐 검증 완료 표식(`COMMENT ON DATABASE immich_restore IS 'verified:<백업 파일 이름>'`)을 남긴 DB만 받는다. 표식은 전환 트랜잭션에서 지워지므로, 도중에 끊긴 복원(SSH 끊김·Ctrl-C)이나 복귀 뒤 남은 `immich_restore`는 앱을 건드리지 않고 거부된다.
 - 앱은 검증과 이름 맞바꿈이 모두 성공한 뒤에만 다시 시작한다.
-- 앱 버전을 백업 시점에 맞춘다. 업데이트 직전 백업은 새 이미지를 받기 전에 만든 것이다. 백업 시점 버전(2절의 `version_history` 조회)과 현재 이미지 태그(`modules/nixos/programs/docker/immich.nix`의 `immich-server`·`immich-ml`)가 다르면, 태그를 먼저 되돌려 `nrs`한 뒤 전환한다. 새 앱이 옛 스키마에 마이그레이션을 다시 실행하지 않게 하려는 것이다.
-  - 태그를 되돌려 `nrs`하면 전환 전까지 옛 앱이 현재 DB(새 스키마)에 붙는 구간이 생긴다. 순서는 `immich_restore_db` → `sudo systemctl stop podman-immich-server.service podman-immich-ml.service` → 태그 되돌림과 `nrs` → `immich_switch_to_restore`로 한다. `nrs`가 바뀐 컨테이너 유닛을 다시 시작할 수 있어 앱이 멈춘 상태가 유지된다고 보장할 수는 없다(추론). 이때 옛 앱은 DB에 있는 모르는 마이그레이션 때문에 시작하지 못하고 스키마를 바꾸지 않을 것으로 본다(Immich v3.0.0의 kysely 마이그레이터 설정 기준 추론, 실측 아님). 전환 함수가 앱을 다시 멈춘 뒤 이름을 바꾼다.
+- 앱 버전을 백업 시점에 맞춘다. 업데이트 직전 백업은 새 이미지를 받기 전에 만든 것이다. 백업 시점 버전(2절의 `version_history` 조회)과 현재 이미지 태그(`modules/nixos/programs/docker/immich.nix`의 `immich-server`·`immich-ml`)가 다르면, 앱을 멈춘 채 전환한 뒤 태그를 되돌린다: `immich_restore_db` → 버전 확인 → `immich_switch_to_restore --no-start` → 태그를 백업 시점 버전으로 바꾸고 `nrs` → 확인. 새 앱이 옛 스키마에 마이그레이션을 다시 실행하지 않게 하려는 것이다.
+  - 태그를 먼저 되돌려 `nrs`하지 않는다. `immich-server`는 `autoStart`라서 옛 서버가 아직 새 버전인 `immich` DB에 붙어 뜨고, 복원하는 내내 그 상태가 이어진다.
+  - `nrs`가 멈춰 둔 유닛을 시작하는지는 확인하지 않았다. `nrs` 뒤 앱이 떠 있지 않으면 `sudo systemctl start podman-immich-ml.service podman-immich-server.service`로 시작한다.
+  - 전환 함수는 백업 시점 버전이 1.133.0 미만이거나 읽을 수 없으면(`version_history` 없음 등) 앱을 건드리지 않고 거부한다. VectorChord 전환 뒤에는 1.133.0 미만으로 되돌릴 수 없다(`immich.nix`의 이미지 주석).
 - 백업 시점 이후(복원하는 동안 포함)에 올린 사진은 전환 뒤 DB에 행이 없다.
 
 #### 1. 준비
@@ -276,9 +278,18 @@ SQL
   printf '검증 통과 — 위 확장 목록, 행 수, 제약·인덱스 수를 확인한다\n'
 }
 
-# 3) 전환: 표식 확인 → 재검증 → 앱 중지 → 연결 확인 → 이름 맞바꿈 → 앱 시작
+# 3) 전환: 표식·버전 확인 → 재검증 → 앱 중지 → 연결 확인 → 이름 맞바꿈 → 앱 시작
+#    --no-start: 이름을 바꾼 뒤 앱을 멈춘 채 둔다(이미지 태그를 백업 시점 버전으로 되돌려 nrs할 때)
 immich_switch_to_restore() {
-  local old
+  local old start=1
+  case "${1:-}" in
+    '') ;;
+    --no-start) start=0 ;;
+    *)
+      printf '사용법: immich_switch_to_restore [--no-start]\n' >&2
+      return 2
+      ;;
+  esac
   old="immich_before_restore_$(date +%Y%m%d_%H%M%S)"
   if ! immich_psql -d postgres -At <<'SQL'
 DO $$
@@ -297,6 +308,33 @@ SELECT '복원한 백업: ' || regexp_replace(shobj_description(oid, 'pg_databas
 SQL
   then
     printf '전환 거부 — immich_restore_db로 다시 복원한다 (남은 immich_restore는 내용을 확인한 뒤 수동으로 DROP)\n' >&2
+    return 1
+  fi
+  # 백업 시점 버전(version_history 최근 행)을 확인한다. VectorChord 전환 뒤에는 Immich를
+  # 1.133.0 미만으로 되돌릴 수 없다(immich.nix 이미지 주석). 버전을 읽지 못해도 거부한다
+  if ! immich_psql -d immich_restore -At <<'SQL'
+DO $$
+DECLARE
+  latest text;
+  parts text[];
+BEGIN
+  IF to_regclass('public.version_history') IS NULL THEN
+    RAISE EXCEPTION 'version_history 테이블이 없다 — 백업 시점 버전을 알 수 없다';
+  END IF;
+  SELECT version INTO latest FROM public.version_history ORDER BY "createdAt" DESC LIMIT 1;
+  parts := regexp_match(coalesce(latest, ''), '^v?(\d+)\.(\d+)\.(\d+)');
+  IF parts IS NULL THEN
+    RAISE EXCEPTION '백업 시점 버전을 읽지 못했다: %', coalesce(latest, '(행 없음)');
+  END IF;
+  IF parts::int[] < ARRAY[1, 133, 0] THEN
+    RAISE EXCEPTION '백업 시점 버전 %: 1.133.0 미만 — VectorChord 전환 뒤에는 되돌릴 수 없다', latest;
+  END IF;
+END
+$$;
+SELECT '백업 시점 Immich 버전: ' || version FROM public.version_history ORDER BY "createdAt" DESC LIMIT 1;
+SQL
+  then
+    printf '전환 거부 — 백업 시점 버전을 확인할 수 없거나 되돌릴 수 없는 버전이다\n' >&2
     return 1
   fi
   if ! immich_verify_restore; then
@@ -326,6 +364,10 @@ SQL
     return 1
   fi
   printf '이름 변경 완료 — 이전 DB: %s\n' "$old"
+  if [ "$start" = 0 ]; then
+    printf '앱은 멈춘 채 둔다. 다음: modules/nixos/programs/docker/immich.nix의 immich-server·immich-ml 태그를 위 백업 시점 버전으로 바꾸고 nrs한다. 되돌리려면: immich_revert_restore --no-start %s\n' "$old"
+    return 0
+  fi
   if ! sudo systemctl start podman-immich-ml.service podman-immich-server.service; then
     printf '앱 시작 실패 — 로그(sudo podman logs --tail 50 immich-server)를 보거나 immich_revert_restore %s로 되돌린다\n' "$old" >&2
     return 1
@@ -334,11 +376,17 @@ SQL
 }
 
 # 4) 복귀: 인자는 전환 때 출력된 이전 DB 이름
+#    --no-start: 이름을 되돌린 뒤 앱을 멈춘 채 둔다(--no-start로 전환해 태그도 되돌려야 할 때)
 immich_revert_restore() {
+  local start=1
+  if [ "${1:-}" = --no-start ]; then
+    start=0
+    shift
+  fi
   case "${1:-}" in
     immich_before_restore_*) ;;
     *)
-      printf '사용법: immich_revert_restore immich_before_restore_<시각>\n' >&2
+      printf '사용법: immich_revert_restore [--no-start] immich_before_restore_<시각>\n' >&2
       return 2
       ;;
   esac
@@ -363,6 +411,10 @@ SQL
   then
     printf '복귀 실패 — DB 이름은 그대로이고 앱은 멈춰 있다. 원인을 해결해 다시 실행하거나, 지금 DB로 앱을 시작하려면: sudo systemctl start podman-immich-ml.service podman-immich-server.service\n' >&2
     return 1
+  fi
+  if [ "$start" = 0 ]; then
+    printf 'DB 이름을 되돌렸다. 앱은 멈춘 채 둔다. 다음: immich.nix의 immich-server·immich-ml 태그를 전환 전 버전으로 되돌리고 nrs한다\n'
+    return 0
   fi
   if ! sudo systemctl start podman-immich-ml.service podman-immich-server.service; then
     printf '앱 시작 실패 — 로그(sudo podman logs --tail 50 immich-server)를 본다\n' >&2
@@ -411,18 +463,27 @@ SQL
 
 #### 3. 전환
 
+백업 시점 버전과 현재 이미지 태그가 같으면 아래를 실행한다.
+
 ```bash
 immich_switch_to_restore
 ```
 
-1. `immich_restore`에 검증 완료 표식이 있는지 보고, 표식의 백업 파일 이름을 출력한다. 표식이 없으면 앱을 건드리지 않고 거부한다. `immich_restore_db`로 다시 복원하되, 남은 `immich_restore`는 내용을 확인한 뒤 5절 방법으로 지운다.
-2. 검증을 다시 실행한다. 실패하면 `immich_restore`를 지우고, 앱을 건드리지 않고 멈춘다.
-3. `podman-immich-server`와 `podman-immich-ml`을 멈춘다.
-4. `immich`·`immich_restore`·`immich_before_restore_*` DB에 남은 클라이언트 연결이 없는지 확인한다. 남아 있으면 각 연결의 pid·DB·앱 이름·주소를 출력한다.
-5. `postgres` DB에서 한 트랜잭션으로 표식을 다시 확인하고, 표식을 지우고, 이름을 바꾼다: `immich` → `immich_before_restore_<시각>`, `immich_restore` → `immich`. 1 이후 표식이 사라졌거나 하나라도 실패하면 모두 되돌려진다.
-6. 이전 DB 이름을 먼저 출력하고 앱을 시작한다. 복귀와 정리에 이 이름을 쓴다. 앱 시작이 실패하면 복귀 명령을 안내한다.
+다르면 앱을 멈춘 채 전환하고, 출력된 안내대로 태그를 백업 시점 버전으로 바꿔 `nrs`한다.
 
-4·5에서 실패하면 DB 이름은 그대로이고 앱은 멈춘 채 남는다. 원인(예: 남은 연결)을 해결하고 `immich_switch_to_restore`를 다시 실행한다. 복원을 포기하려면 기존 DB 그대로 앱을 시작한다: `sudo systemctl start podman-immich-ml.service podman-immich-server.service`.
+```bash
+immich_switch_to_restore --no-start
+```
+
+1. `immich_restore`에 검증 완료 표식이 있는지 보고, 표식의 백업 파일 이름을 출력한다. 표식이 없으면 앱을 건드리지 않고 거부한다. `immich_restore_db`로 다시 복원하되, 남은 `immich_restore`는 내용을 확인한 뒤 5절 방법으로 지운다.
+2. 백업 시점 버전(`version_history` 최근 행)을 출력한다. 1.133.0 미만이거나 읽을 수 없으면 앱을 건드리지 않고 거부한다.
+3. 검증을 다시 실행한다. 실패하면 `immich_restore`를 지우고, 앱을 건드리지 않고 멈춘다.
+4. `podman-immich-server`와 `podman-immich-ml`을 멈춘다.
+5. `immich`·`immich_restore`·`immich_before_restore_*` DB에 남은 클라이언트 연결이 없는지 확인한다. 남아 있으면 각 연결의 pid·DB·앱 이름·주소를 출력한다.
+6. `postgres` DB에서 한 트랜잭션으로 표식을 다시 확인하고, 표식을 지우고, 이름을 바꾼다: `immich` → `immich_before_restore_<시각>`, `immich_restore` → `immich`. 1 이후 표식이 사라졌거나 하나라도 실패하면 모두 되돌려진다.
+7. 이전 DB 이름을 먼저 출력하고 앱을 시작한다. 복귀와 정리에 이 이름을 쓴다. 앱 시작이 실패하면 복귀 명령을 안내한다. `--no-start`면 앱을 멈춘 채 두고 다음 단계(태그 변경과 `nrs`)를 출력한다.
+
+5·6에서 실패하면 DB 이름은 그대로이고 앱은 멈춘 채 남는다. 원인(예: 남은 연결)을 해결하고 `immich_switch_to_restore`를 다시 실행한다. 복원을 포기하려면 기존 DB 그대로 앱을 시작한다: `sudo systemctl start podman-immich-ml.service podman-immich-server.service`.
 
 전환 뒤 앱을 확인한다. Immich는 시작할 때 확장 버전과 마이그레이션을 점검하므로, 로그에 오류가 없고 웹에서 사진·앨범이 보이는지 본다.
 
@@ -437,6 +498,12 @@ sudo podman logs --tail 50 immich-server
 
 ```bash
 immich_revert_restore immich_before_restore_YYYYMMDD_HHMMSS
+```
+
+`--no-start`로 전환해 태그도 바꿨다면, 앱을 멈춘 채 이름을 되돌린 뒤 태그를 전환 전 버전으로 되돌려 `nrs`한다.
+
+```bash
+immich_revert_restore --no-start immich_before_restore_YYYYMMDD_HHMMSS
 ```
 
 먼저 이전 DB가 있는지 보고, 없으면 앱을 멈추지 않고 끝난다. 이어서 앱을 멈추고 연결을 확인한 뒤, 한 트랜잭션으로 `immich` → `immich_restore`, `immich_before_restore_<시각>` → `immich`로 바꾸고 앱을 시작한다. 복원했던 DB는 표식 없이 `immich_restore`로 남으므로 다시 전환되지 않는다.
@@ -468,6 +535,7 @@ SQL
 - 손상된 gzip, 중간 SQL 오류, `pg_restore` 실패, 검증 실패(행·확장·테이블)는 모두 종료 코드 1로 끝나고, 전환과 앱 재시작 없이 기존 DB를 그대로 둔다.
 - post-data가 빠진 `immich_restore`는 표식이 없으면 표식 확인에서, 표식이 있으면 검증에서 전환을 거부한다. FK만 빠진 백업도 검증에서 멈춘다. 복귀 뒤 남은 `immich_restore`도 다시 전환하지 않는다.
 - 복원 도중 운영자 셸이 죽어 검증을 통과할 만한 부분 복원(마지막 FK만 빠짐)이 남아도, 표식이 없어 전환하지 않는다. 표식 확인 뒤 표식이 사라지면 이름 변경 트랜잭션이 거부한다.
+- 백업 시점 버전이 1.133.0 미만이거나 `version_history`가 없거나 버전을 읽을 수 없으면, 두 전환 방식 모두 앱을 건드리지 않고 거부한다. `--no-start` 전환과 복귀는 이름만 바꾸고 앱을 시작하지 않는다.
 - 연결이 남아 있으면 이름을 바꾸지 않는다. 확인 뒤 생긴 연결로 두 번째 이름 변경이 실패해도 첫 번째 변경과 표식 삭제까지 되돌려진다.
 - 복원 DB는 `template0`에서 만들어 `template1`의 객체가 섞이지 않는다.
 
