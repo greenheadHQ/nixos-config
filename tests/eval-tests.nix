@@ -1064,6 +1064,25 @@ let
   immichDbBackup = nixosCfg.systemd.services."immich-db-backup";
   immichOriginalsMirror = nixosCfg.systemd.services."immich-originals-mirror";
 
+  # ── #1391: 브리지가 SIGTERM을 받으면 실행 중 요청을 최대
+  # SHUTDOWN_DRAIN_TIMEOUT_SEC(소스 기본값)까지 drain한 뒤 스스로 종료한다.
+  # 유닛의 TimeoutStopSec이 그 상한보다 짧으면 systemd가 정상 drain이 끝나기 전에
+  # SIGKILL을 보내버리므로, 두 값의 대소 관계를 고정한다.
+  karakeepSinglefileBridgeSvc = nixosCfg.systemd.services."karakeep-singlefile-bridge";
+  karakeepSinglefileBridgeSrc = builtins.readFile ../modules/nixos/programs/docker/karakeep-singlefile-bridge/files/singlefile-bridge.py;
+  # 파일 전체에 `.*` 정규식을 걸지 않고 줄 단위로 찾는다. 정의 줄은 정확히 하나여야 한다.
+  karakeepSinglefileBridgeDrainDefaultMatches = builtins.filter (m: m != null) (
+    map (
+      line:
+      builtins.match "SHUTDOWN_DRAIN_TIMEOUT_SEC = int\\(os\\.environ\\.get\\(\"SINGLEFILE_BRIDGE_SHUTDOWN_DRAIN_SEC\", \"([0-9]+)\"\\)\\)" line
+    ) (nixpkgsLib.splitString "\n" karakeepSinglefileBridgeSrc)
+  );
+  karakeepSinglefileBridgeDrainDefaultSec =
+    if builtins.length karakeepSinglefileBridgeDrainDefaultMatches == 1 then
+      builtins.fromJSON (builtins.head (builtins.head karakeepSinglefileBridgeDrainDefaultMatches))
+    else
+      null;
+
   # ── headless Anki (#1306): loopback 전용·인스턴스 격리·sync/backup 타이머 계약 고정
   ankiHostCfg = nixosCfg.homeserver.ankiHost;
   ankiRuntimeCheck = flake.checks.x86_64-linux.anki-host-runtime;
@@ -1981,6 +2000,19 @@ let
         smokeBackupWiringOk smokeKarakeepAnkiOff
         && (smokeEnvOf smokeKarakeepAnkiOff).KARAKEEP_BACKUP_DIR == ""
         && (smokeEnvOf smokeKarakeepAnkiOff).ANKI_BACKUP_INSTANCES == "";
+    }
+    {
+      name = "Test KB1: karakeep-singlefile-bridge의 TimeoutStopSec(${toString karakeepSinglefileBridgeSvc.serviceConfig.TimeoutStopSec}s)이 브리지 소스의 drain 상한 기본값(${toString karakeepSinglefileBridgeDrainDefaultSec}s)보다 커야 함 — 짧으면 systemd가 정상 drain을 못 기다리고 SIGKILL로 끊는다";
+      cond =
+        karakeepSinglefileBridgeDrainDefaultSec != null
+        &&
+          karakeepSinglefileBridgeSvc.serviceConfig.TimeoutStopSec > karakeepSinglefileBridgeDrainDefaultSec;
+    }
+    {
+      # 기본값 control-group에서는 stop 시 SIGTERM이 cgroup 전체로 가서, drain 중인
+      # curl 자식(run_curl/send_pushover)까지 죽는다 — drain이 없는 것과 같아진다.
+      name = "Test KB2: karakeep-singlefile-bridge의 KillMode가 mixed여야 함(SIGTERM이 메인에만 가야 drain 중 curl 자식이 살아남는다)";
+      cond = karakeepSinglefileBridgeSvc.serviceConfig.KillMode == "mixed";
     }
   ]
   ++ tmuxVanillaTests "greenhead-minipc" true nixosHm
