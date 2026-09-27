@@ -17,6 +17,7 @@ wt — Git worktree 관리 (fzf TUI)
     detached, 조회 실패) 선택 없이 실패 — 경로를 내지 않고 worktree도 건드리지 않음
   브랜치만 있음 (wt 없음)  → fzf 선택: 기존 브랜치 사용 / 새로 생성 / 취소
   재생성 시 dirty/unpushed  → 경고 + 확인 프롬프트
+  재생성 시 쓰는 중         → 스킵 + PID·명령 표시 (아래 활성 작업 가드, --yes로 우회)
 
 [worktree 이동]
   wt cd                     fzf 퍼지 검색으로 선택 → cd
@@ -41,9 +42,9 @@ wt — Git worktree 관리 (fzf TUI)
 
   삭제 시:
     강제 경로 — --yes, 개별 확인 통과, clean한 비-MERGED 이름 지정
-      tmux 윈도우/세션 닫기 → git worktree remove --force → git branch -D
+      git worktree remove --force → git branch -D
     보호 경로 — 확인 없이 지우는 MERGED
-      tmux 세션 있으면 스킵 → 근거 OID·브랜치 재확인 → git worktree remove (비강제)
+      근거 OID·브랜치 재확인 → git worktree remove (비강제)
       → 부수 정리 → 브랜치 사용 중인지 확인 → update-ref -d (CAS) → branch.<name> 설정 제거
       비강제 remove가 사전 검사에서 거부되면 아무것도 건드리지 않고 스킵 (mutation 경계)
       검사 통과 후 삭제가 실패하면 등록만 풀린 부분 제거일 수 있음 — 그 경우 남은 경로와
@@ -57,15 +58,17 @@ wt — Git worktree 관리 (fzf TUI)
       지우기 전 installed_plugins.json.bak-gc-<UTC> 백업 + 지운 경로를 한 줄씩 출력
         (백업은 ~/.claude/plugins/에 쌓이므로 복구가 필요 없으면 지워도 됨)
       wt <branch> --if-exists=recreate의 기존 worktree 제거도 같은 GC를 탐
-  안전 가드: pane에 셸 이외의 프로세스(nvim, claude 등)가 있으면 삭제하지 않음
-             창 닫기 대상은 pane의 cwd가 그 worktree 아래인 창 — 창 이름이나 만든 주체는
-               보지 않으므로 직접 만든 창도 닫힘 (orphan cwd 방지)
-             닫는 시점은 전략별로 다름 — 강제 경로는 worktree 제거 '전에',
-               보호 경로는 제거에 성공한 '뒤' 부수 정리로 (부분 정리 방지)
-             세션은 wt-<repo>-<dir> 이름 매칭 (예전 --tmux 세션 모드의 잔재)
-               보호 경로에서는 그 세션이 남아 있으면 아예 스킵
-             현재 윈도우 / 마지막 윈도우는 닫지 않음
-             현재 위치한 worktree는 제외 (저장소 루트에서 재실행)
+  안전 가드 (두 경로 공통, 삭제 전에 봄):
+    활성 작업 — 대상 worktree(하위 포함)를 cwd로 둔 프로세스가 있으면 스킵 + PID·명령 표시
+      유휴 셸도 막음 (wt는 창을 닫지 않으므로 사라진 cwd를 붙잡은 셸이 남지 않게)
+      탐지(lsof, wt 래퍼가 WT_LSOF로 Nix store 경로 주입)에 실패해도 스킵
+      제외: wt를 부른 셸·세션(조상)과 wt의 자손. 같은 세션이 따로 띄운 셸은 잡힘
+      현재 사용자 프로세스만 봄 — 다른 사용자·root 프로세스, cwd가 밖인 프로세스
+        (폴더를 연 GUI 편집기 등)는 못 막음
+      우회: wt cleanup <name> --yes, wt --yes --if-exists=recreate <branch>
+        (--auto --yes는 우회하지 않고 건너뜀. 우회하면 남은 프로세스는 사라진 cwd를 붙잡음)
+    잠금 — git worktree lock된 worktree는 --yes로도 지우지 않음
+    현재 위치한 worktree는 제외 (저장소 루트에서 재실행)
 
 [Codex trust 정리]
   worktree 삭제 시 ~/.codex/config.toml의 [projects."<경로>"] 항목도 함께 해제됨

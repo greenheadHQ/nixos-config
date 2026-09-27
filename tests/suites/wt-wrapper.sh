@@ -15,6 +15,9 @@ test_wt_help_from_deployed_layout() {
 
   assert_contains "$output" "사용법: wt"
   assert_contains "$output" "wt cleanup [--auto]"
+  # 활성 작업 가드와 그 --yes 우회 범위는 help가 알린다 (--auto --yes는 우회하지 않음).
+  assert_contains "$output" "활성 작업 가드"
+  assert_contains "$output" "wt cleanup --auto --yes는 우회하지 않고"
   # 퇴역한 presentation 플래그는 help에 남으면 안 된다 — 문서에만 남은 플래그는
   # 실행하면 unknown option으로 죽는다.
   local flag

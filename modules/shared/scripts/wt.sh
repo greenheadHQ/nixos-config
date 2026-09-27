@@ -146,7 +146,7 @@ Git worktree 관리 도구 (fzf TUI; 비대화형/LLM 셸 호환)
   --if-exists=MODE        충돌 시 동작: reuse|recreate|fail (비대화형 충돌 시 필수)
                           기존 worktree의 reuse/recreate는 그 경로에 요청 브랜치가
                           checkout돼 있을 때만 (다른 브랜치·detached·조회 실패면 실패)
-  --yes, -y               확인 프롬프트 자동 승인
+  --yes, -y               확인 프롬프트 자동 승인. 재생성에서는 활성 작업 가드도 우회
 
 옵션 (ls):
   --json                  JSON 배열로 출력 (name/branch/path/pr/dirty/unpushed/...)
@@ -157,8 +157,18 @@ Git worktree 관리 도구 (fzf TUI; 비대화형/LLM 셸 호환)
                           자동 승인하고, MERGED 무확인 삭제에 붙는 보호(비강제 제거·
                           제거 직전 재확인·ref CAS)를 해제한다. 단 --auto의 후보 선정과
                           그 경로가 삭제 직전에 다시 보는 dirty·근거(조회 이후 HEAD 변경,
-                          근거 기록 부재 포함)는 우회하지 않는다
+                          근거 기록 부재 포함)는 우회하지 않는다. 이름을 지정한 정리에서만
+                          활성 작업 가드도 우회한다. 잠금과 현재 위치한 worktree 제외는
+                          우회하지 않는다
   [name...]               정리할 worktree 이름 직접 지정
+
+활성 작업 가드 (cleanup·재생성):
+  대상 worktree(하위 포함)를 작업 위치(cwd)로 둔 프로세스가 있으면 유휴 셸이라도
+  지우지 않고 PID와 명령을 보여 준다. 탐지(lsof)에 실패해도 멈춘다. wt를 부른
+  셸·세션(조상)과 wt의 자손은 빼고, 현재 사용자 프로세스만 본다 — 다른 사용자·root
+  프로세스와 cwd가 worktree 밖인 프로세스(폴더를 연 GUI 편집기 등)는 막지 못한다.
+  우회: wt cleanup <name> --yes, wt --yes --if-exists=recreate <branch>
+  (wt cleanup --auto --yes는 우회하지 않고 그 worktree를 건너뛴다)
 
 경로 출력:
   생성/이동은 언제나 경로 한 줄을 stdout으로 낸다 — 실제 이동은 셸 래퍼나
