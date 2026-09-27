@@ -1125,8 +1125,25 @@ _pinning_codex_mention_table() {
     "bash -c \"'gh' pr comment 12 --body x\""
     "bash -c '\"gh\" pr comment 12 --body x'"
     $'x=`echo # `; gh pr comment 12 --body x\nz=`echo # `'
-    # 실행기 인자가 동적이면 무엇이 실행될지 모르므로 명령 문자열 어디든 gh가 보이면 대상이다.
-    "bash -c \"echo \$(date)\"; gh pr view 1"
+    # 실행기 인자가 동적이면 무엇이 실행될지 모르므로, 명령으로 해석하지 않은 자리(따옴표 속 글자,
+    # heredoc 본문)에 gh가 보이면 대상이다.
+    "bash -c \"echo \$(date)\"; echo 'gh pr comment 12 --body x'"
+    "ssh minipc \"\$CMD\"; gh pr view 1 -q '\"gh pr comment\"'"
+    # 변수로 적은 gh는 wrapper 뒤에서도 하위 명령으로 판정한다.
+    "env \"\$GH\" pr comment 12 --body x"
+    "sudo \$GH pr comment 12 --body x"
+    "command \"\$HOME/bin/gh\" pr comment 12 --body x"
+    $'g\\\nh pr comment 12 --body x'
+    # bash·zsh는 역슬래시로 이은 논리 줄을 heredoc 종결자와 비교하므로 뒤 줄은 명령이다.
+    $'cat <<EOF\nx\nEOF\\\n\ngh pr comment 12 --body x\nEOF'
+    $'cat <<EOF\nx\nE\\\nOF\ngh pr comment 12 --body x\nEOF'
+    # <<- 에서 이어진 줄의 탭은 bash만 뗀다. 둘 중 하나라도 종결자로 보면 거기서 끝나고, 판정이
+    # 갈리므로 판정 불확실로 본다 (문자열 판정에 걸리지 않는 "gh"로 끝나는 위치를 확인한다).
+    $'cat <<-EOF\n\t\\\n\tEOF\ngh pr comment 12 --body x\nEOF'
+    $'cat <<-EOF\n\t\\\n\tEOF\n"gh" pr comment 12 --body x\nEOF'
+    $'cat <<-EOF\n\t\\\n\tEOF\ngh pr view 1'
+    # 판정이 불확실하면 실행기와 함께 있는 gh를 모두 센다.
+    "eval \"\$X\"; \"gh\" pr view 1; echo \"unterminated"
     "echo \"it's\"; gh pr comment 12 --body x"
     "gh pr comment 12 --body 'x"
   )
@@ -1150,6 +1167,17 @@ _pinning_codex_mention_table() {
     "gh pr view 1 || bash -c 'echo done'"
     "bash -c \"echo \$(date)\""
     "eval \"\$(direnv export bash)\""
+    # 실행기가 동적이어도 명령 자리의 gh는 그 호출대로 판정한다.
+    "bash -c \"echo \$(date)\"; gh pr view 1"
+    "eval \"\$(direnv export bash)\"; gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "ssh minipc \"systemctl status \$SVC\" && gh pr view 12 --json comments"
+    "gh pr view 1 --jq '.x'; eval \"\$(direnv export bash)\""
+    "eval \"\$X\"; /opt/homebrew/bin/gh pr view 1"
+    "eval \"\$X\"; gh pr view 1 && gh pr checks 1"
+    $'cat <<-EOF\n\tx\n\tEOF\ngh pr view 1'
+    "bash -c \"\$(gh pr view 1 --json body -q .body)\""
+    "gh pr view 1 --json body -q .body | bash"
+    $'cat <<\'EOF\'\nx\nEOF\\\n\ngh pr comment 12 --body x\nEOF'
     "ssh minipc \"ls \$HOME\""
     "git commit -m x && git rev-parse --abbrev-ref HEAD | awk -F/ '{print \$NF}'"
     $'cat <<EOF\nfoo\\\nEOF\ngh pr comment 12 --body x\nEOF'
@@ -1252,6 +1280,9 @@ _pinning_codex_mention_table() {
     "2: @codex fix" $'bash -c "$(cat <<\'EOF\'\ngh pr comment 12 --body \'@codex fix\'\nEOF\n)"'
     "1: @codex fix" $'bash -c $\'cd /tmp\\ngh pr comment 12 --body "@codex fix"\''
     "1: @codex fix" "gh pr revert 12 --body '@codex fix the regression'"
+    # bash·zsh는 역슬래시로 이은 논리 줄을 heredoc 종결자와 비교하므로 뒤 줄은 명령이다.
+    "5: @codex fix" $'cat <<EOF\nx\nEOF\\\n\ngh pr comment 12 --body \'@codex fix\'\nEOF'
+    "4: @codex review" $'cat <<-EOF\n\t\\\n\tEOF\ngh pr comment 12 --body \'@codex review\'\nEOF'
   )
   for ((i = 0; i < ${#command_cases[@]}; i += 2)); do
     assert_eq "$(_pinning_mention_test_tokens "$scan_file" command "${command_cases[i + 1]}")" "${command_cases[i]}" \

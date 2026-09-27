@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "cat <<EOF\nx\nEOF\\\n\ngh pr comment 12 --body '@codex fix'\nEOF"
+  }
+}

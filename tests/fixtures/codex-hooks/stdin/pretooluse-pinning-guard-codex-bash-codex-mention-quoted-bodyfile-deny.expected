@@ -1,4 +1,4 @@
 [pinning-guard] Bash on __SANDBOX_BODY_FILE__ (via --body-file) mentions the Codex GitHub app:
   - Codex 봇 멘션: 백틱이나 인용 안에 있어도 봇이 작업 요청으로 읽는다
          3: @codex fix
-재리뷰 요청은 heredoc 없는 명령에서 gh pr comment <PR> -R OWNER/REPO --body '@codex review' 형태로만 보낸다. 그 밖의 게시물에는 멘션 없이 'Codex 봇'처럼 쓴다. 조회 필터처럼 게시하지 않는 부분의 멘션이면 게시 명령과 나눠 실행한다. Codex에 작업을 맡기려던 것이면 사용자에게 넘긴다.
+재리뷰 요청은 heredoc 없는 명령에서 gh pr comment <PR> -R OWNER/REPO --body '@codex review' 형태로만 보낸다. 그 밖의 게시물에는 멘션 없이 'Codex 봇'처럼 쓴다. 조회 필터처럼 게시하지 않는 부분의 멘션이면 게시 명령·셸 실행기(bash -c, ssh, watch 등)와 나눠 실행한다. Codex에 작업을 맡기려던 것이면 사용자에게 넘긴다.

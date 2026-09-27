@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "eval \"$(direnv export bash)\"; gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+  }
+}
