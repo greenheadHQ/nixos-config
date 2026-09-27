@@ -14,8 +14,8 @@ agenix를 사용한 `.age` 파일 기반 secret 암호화/배포 가이드.
 
 Claude Code에서 `agenix -e` 실패 (`/dev/stdin` 에러)
 - `agenix -e`는 interactive 에디터를 사용하므로 non-interactive 환경에서 실패
-- 해결: `age` CLI pipe 패턴 사용 (아래 "Secret 추가/수정" 참조)
-- 상세: [references/troubleshooting.md](references/troubleshooting.md)
+- 우회 절차(age CLI + 임시 파일)도 값 입력 자체는 사람이 대화형 터미널에서 해야 한다. 절차 첫 줄의 가드는 비대화형 실행에서 빈 값이 암호화되는 것을 막을 뿐이고, 값을 에이전트가 입력하지 않는 것은 별도로 지키는 규칙이다
+- 상세: [references/troubleshooting.md](references/troubleshooting.md) "agenix -e의 /dev/stdin 에러" 절
 
 ## 빠른 참조
 
@@ -150,7 +150,7 @@ KC_VAULT=<base64 encoded vault>
 
 ## 자주 발생하는 문제
 
-1. `agenix -e`의 `/dev/stdin` 에러: non-interactive 환경에서 발생 → `age` CLI pipe 우회
+1. `agenix -e`의 `/dev/stdin` 에러: non-interactive 환경에서 발생 → [references/troubleshooting.md](references/troubleshooting.md)의 안전한 우회 절차(사람이 대화형 터미널에서 입력)
 2. 복호화 실패: SSH 키 불일치 또는 identity path 오류
 3. 재암호화 누락: `secrets/secrets.nix`의 publicKeys 변경 후 `cd secrets && nix run github:ryantm/agenix -- -r` 미실행
 4. 배포 후 파일 미생성: Home Manager agenix 서비스 상태 확인, `nrs` 재실행

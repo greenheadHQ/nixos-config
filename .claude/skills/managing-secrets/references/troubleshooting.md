@@ -6,7 +6,7 @@
 ## agenix -e의 /dev/stdin 에러
 
 > 발생 시점: 2026-01-27
-> 해결: age CLI pipe 우회
+> 해결: age CLI + 임시 파일, 대화형 터미널에서 실행
 
 증상: Claude Code Bash 환경에서 `agenix -e` 실행 시 실패.
 
@@ -19,22 +19,78 @@ pushover-claude-stop.age wasn't created.
 
 원인: `agenix -e`는 내부적으로 `/dev/stdin`을 사용하는 interactive 모델이다. Claude Code의 Bash 환경은 non-interactive라 `/dev/stdin`이 없다.
 
-| 방식 | Interactive 터미널 | Claude Code (non-interactive) |
+| 방식 | 대화형 터미널(사람) | 에이전트(non-interactive) |
 |------|:--:|:--:|
 | `agenix -e` | O | X (`/dev/stdin` 없음) |
-| `age` CLI (pipe) | O | O |
+| 아래 절차 | O (사람이 값을 입력) | X (값을 다루지 않는다) |
 
-해결: `age` CLI를 직접 호출하되, 임시 파일 경유로 암호화. stdin 파이프는 `nix-shell --run` 내부 셸에서 특수문자(`!`, `$`, `` ` `` 등)가 이스케이프되어 `\!`처럼 백슬래시가 추가될 수 있다.
+이 절차는 값을 사람이 대화형 터미널에서 입력하는 경로다. 에이전트는 값을 대신 입력하지 않는다 — `cat > file`이 표준입력이 터미널이 아닌 곳(파이프, `/dev/null`, 에이전트 Bash 도구 등)에서 실행되면 즉시 EOF를 만나 빈 파일이 되고 그 빈 값이 그대로 암호화될 수 있다. 서브셸 첫 줄의 대화형 터미널 가드가 이 경로를 막는다. 에이전트가 사람에게 넘길 것:
+
+- 코드 블록 전체
+- `<name>`·`<key1>`·`<key2>` 치환값
+- 저장소 루트 cwd
+- 이후 별도 배포 확인 블록
+
+해결: `age` CLI를 직접 호출하되, 임시 파일 경유로 암호화한다. 값은 명령 텍스트에 직접 적지 않는다 — xtrace, 셸 히스토리(Atuin 동기화 대상), 에이전트 대화 기록에 그대로 남기 때문이다. 서브셸로 감싸 임시 디렉터리를 격리하고, 입력 대기 문구가 보인 뒤에만 값을 붙여넣고 Ctrl-D(EOF)로 받는다 — 여러 줄 값이라 `read -s`는 쓸 수 없어 `stty -echo`로 화면 에코를 끄고, EXIT trap이 `stty echo`로 복원한다(Ctrl-C·Ctrl-\·HUP·정상 종료 모두 포함). 최상위(대화형 셸)에 `trap`을 걸면 그 셸이 끝날 때까지 발동하지 않아 같은 셸에서 두 번 반복하면 첫 임시 디렉터리가 남는다 — 서브셸 `( … )`로 감싸야 즉시 정리된다. 정리 중 시그널로 끊기지 않도록 EXIT trap이 먼저 신호를 무시하고, HUP·QUIT도 잡는다.
+
+새 암호문은 임시 경로에 먼저 쓴 뒤, 왕복 검증(즉시 복호화해 입력 평문과 비교)을 통과했을 때만 `secrets/<name>.age`로 옮긴다. 암호화·mv 각각의 종료 코드를 확인해 실패하면 중단하고, 성공했을 때만 완료 문구를 낸다 — 그렇지 않으면 실패해도 "교체 완료"가 나오고 기존 파일이 조용히 사라질 수 있다. 왕복 복호화 실패는 `decrypt.err`에 `no identity matched any of the recipients`가 있을 때만 "이 호스트가 recipient가 아님"(다른 호스트 전용 시크릿, 정상 — recipient는 `secrets/secrets.nix`에서 관리)으로 분류해 경고 후 교체한다. 그 외 실패는 손상으로 보고 중단한다. 값 입력이 끝난 뒤 `nrs` 배포 확인은 별도 코드 블록이다 — 이어 붙이면 뒷부분이 입력값에 섞여 그대로 암호화될 수 있다.
 
 ```bash
-# 임시 파일 경유 (특수문자 안전)
-printf 'KEY=value\n' > /tmp/secret
-nix-shell -p age --run \
-  'age -r "ssh-ed25519 <key1>" -r "ssh-ed25519 <key2>" -o secrets/<name>.age /tmp/secret'
-rm /tmp/secret
+(
+  [ -t 0 ] || { echo "값 입력은 사용자가 대화형 터미널에서 한다 — 이 셸의 표준입력은 대화형이 아니다." >&2; exit 1; }
+  [ -f secrets/secrets.nix ] || { echo "저장소 루트에서 실행한다." >&2; exit 1; }
 
-# 암호화 결과 검증 (xxd로 바이트 단위 확인)
-# 배포 후: sudo cat /run/agenix/<name> | xxd
+  umask 077
+  d=$(mktemp -d) || exit 1
+  trap 'trap "" HUP INT TERM QUIT; stty echo 2>/dev/null; rm -rf "$d"' EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 131' QUIT
+  trap 'exit 143' TERM
+
+  # 이 문구가 보인 뒤에만 값을 붙여넣는다 — 예: KEY=<실제 값>, 끝나면 Ctrl-D(EOF)
+  printf '값을 붙여넣고 Ctrl-D: ' >&2
+  stty -echo
+  cat > "$d/secret" || { echo "입력 저장 실패 — 중단한다." >&2; exit 1; }
+  stty echo; echo >&2
+  chmod 0600 "$d/secret"
+  [ -s "$d/secret" ] || { echo "입력이 비어 있다 — 아무것도 쓰지 않고 중단한다." >&2; exit 1; }
+
+  nix-shell -p age --run \
+    "age -r 'ssh-ed25519 <key1>' -r 'ssh-ed25519 <key2>' -o '$d/out.age' '$d/secret'" \
+    || { echo "암호화 실패 — 중단한다." >&2; exit 1; }
+
+  # 왕복 검증 (원문은 출력하지 않음)
+  nix-shell -p age --run \
+    "age -d -i ~/.ssh/id_ed25519 '$d/out.age'" > "$d/roundtrip" 2>"$d/decrypt.err"
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    grep -qF 'no identity matched any of the recipients' "$d/decrypt.err" \
+      || { echo "왕복 복호화 실패(recipient 문제가 아님) — 중단한다." >&2; cat "$d/decrypt.err" >&2; exit 1; }
+  elif ! cmp -s "$d/secret" "$d/roundtrip"; then
+    echo "왕복 검증: 불일치 — 값이 손상됐다. 중단한다." >&2
+    exit 1
+  fi
+
+  mv "$d/out.age" secrets/<name>.age || exit 1
+
+  if [ "$rc" -ne 0 ]; then
+    echo "secrets/<name>.age 교체됐다. recipient 호스트에서 복호화로 확인한다. 잘못됐으면 git restore secrets/<name>.age로 되돌린다."
+  else
+    grep -qF '\' "$d/roundtrip" && echo "백슬래시 포함: 있음" || echo "백슬래시 포함: 없음"
+    echo "secrets/<name>.age 교체 완료"
+  fi
+)
+```
+
+--- 이 아래는 별도 붙여넣기(다른 코드 블록)로 실행한다. `nrs`로 배포한 뒤 확인한다 ---
+
+```bash
+# 배포 후 검증 (원문은 출력하지 않음) — 존재/비어있지 않음, 필수 키 유무만 확인.
+# 아래 grep '^KEY='는 KEY=value 형식(env) 시크릿 예시에 한정된다. 배포 경로는 시크릿마다
+# age.secrets.<name>.path 기준이며, Home Manager로 배포되는 시크릿은 /run/agenix가 아니다.
+sudo test -s /run/agenix/<name> && echo "배포됨/비어있지 않음" || echo "미배포/비어있음"
+sudo grep -q '^KEY=' /run/agenix/<name> && echo "KEY 있음" || echo "KEY 없음"
 ```
 
 ---
@@ -61,10 +117,11 @@ cat ~/.ssh/id_ed25519.pub
 # secrets/secrets.nix의 allHosts에 포함되어 있는지 확인
 ```
 
-해결: identity path를 명시적으로 지정하여 복호화.
+해결: identity path를 명시적으로 지정해 복호화가 성공하는지 확인 (원문은 출력하지 않음).
 
 ```bash
-nix-shell -p age --run 'age -d -i ~/.ssh/id_ed25519 secrets/<name>.age'
+nix-shell -p age --run 'age -d -i ~/.ssh/id_ed25519 secrets/<name>.age' >/dev/null \
+  && echo "복호화 성공" || echo "복호화 실패"
 ```
 
 키가 포함되어 있지 않다면 `secrets/secrets.nix`에 공개키 추가 후 `cd secrets && nix run github:ryantm/agenix -- -r`로 재암호화 필요.

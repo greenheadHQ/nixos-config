@@ -21,11 +21,54 @@ ls -la /var/lib/docker-data/copyparty/config/copyparty.conf  # 설정 파일 존
 
 증상: 웹 UI에서 greenhead 계정으로 로그인 불가
 
-진단:
+진단 (원문은 출력하지 않음 — 존재/계정 유무/값 일치/이스케이프·공백·제어문자 포함 여부만 확인):
+
+root 전용 파일은 `sudo` 컨텍스트 안에서만 읽는다 — `<(...)` 프로세스 치환의 `< file`은 부모 셸이 직접 여는 것이라 여기서는 쓰지 않는다.
+
 ```bash
-sudo cat /run/agenix/copyparty-password              # 복호화된 비밀번호 확인
-sudo cat /var/lib/docker-data/copyparty/config/copyparty.conf  # 설정 파일 내 계정 확인
-sudo cat /run/agenix/copyparty-password | xxd         # 바이트 레벨 확인 (이스케이프 문자)
+CONF=/var/lib/docker-data/copyparty/config/copyparty.conf
+PWFILE=/run/agenix/copyparty-password
+
+if sudo test -s "$PWFILE"; then
+  PW_OK=1
+  echo "비밀번호 파일: 존재/비어있지 않음"
+else
+  PW_OK=0
+  echo "비밀번호 파일: 없음/비어있음"
+fi
+
+sudo test -f "$CONF" \
+  && { sudo grep -q '^[[:space:]]*greenhead:' "$CONF" && echo "설정 파일 계정: 있음" || echo "설정 파일 계정: 없음"; } \
+  || echo "설정 파일 계정: 판정 불가(설정 파일 없음)"
+
+# agenix 파일 값과 설정 파일 값 일치 여부. 구분자(콜론+공백 1개)만 지워야
+# 값의 선행 공백이 비교에서 사라지지 않는다. 값은 sh -c 내부 로컬 변수로만
+# 존재하고 인자·출력에는 나오지 않는다. 종료 코드를 10~13으로 둬 sudo 자체의
+# 실패(1·126·127 등)와 겹치지 않게 하고, 예기치 못한 코드는 별도 분기로 잡는다.
+sudo sh -c '
+  p=$(cat "$1") || exit 12
+  v=$(sed -nE "s/^[[:space:]]*greenhead: //p" "$2") || exit 12
+  [ -n "$p" ] && [ -n "$v" ] || exit 13
+  [ "$p" = "$v" ] && exit 10 || exit 11
+' _ "$PWFILE" "$CONF"
+rc=$?
+case $rc in
+  10) echo "값 비교: 일치" ;;
+  11) echo "값 비교: 불일치" ;;
+  12) echo "값 비교: 읽기 실패" ;;
+  13) echo "값 비교: 빈 값" ;;
+  *) echo "값 비교: 판정 불가(rc=$rc)" ;;
+esac
+
+# 이스케이프 문자(\)·공백·제어문자 포함 여부, 실질 줄 수를 확인한다.
+# 파일이 없으면 grep이 매치 실패와 같은 rc를 내 "없음"으로 거짓 음성이 나므로 먼저 존재를 확인한다.
+if [ "$PW_OK" = 1 ]; then
+  sudo grep -qF '\' "$PWFILE" && echo "이스케이프 문자: 포함" || echo "이스케이프 문자: 없음"
+  sudo grep -qE '[[:space:][:cntrl:]]' "$PWFILE" && echo "공백/제어문자: 포함" || echo "공백/제어문자: 없음"
+  echo "줄 수: $(sudo grep -c '' "$PWFILE")"
+else
+  echo "이스케이프·공백·줄 수: 판정 불가(비밀번호 파일 없음/비어있음)"
+fi
 ```
 
 해결:
@@ -39,7 +82,12 @@ sudo cat /run/agenix/copyparty-password | xxd         # 바이트 레벨 확인 
 진단:
 ```bash
 sudo podman logs --tail 20 copyparty         # CORS 에러 로그 확인
-sudo podman exec copyparty cat /cfg/config.conf  # 설정 확인
+
+# 설정 확인 — [global] 섹션만 발췌 ([accounts]에 평문 비밀번호가 있어 전체를 보지 않음).
+# 헤더 패턴은 들여쓴 [global]도 인식한다.
+sudo podman exec copyparty cat /cfg/config.conf \
+  | awk '/^[[:space:]]*\[global\]/{f=1} /^[[:space:]]*\[/&&!/^[[:space:]]*\[global\]/{f=0} f'
+
 curl -I http://127.0.0.1:3923                # localhost 직접 확인
 curl -sI -H 'Origin: https://copyparty.greenhead.dev' https://copyparty.greenhead.dev/  # CORS 헤더 확인
 ```
@@ -67,14 +115,46 @@ sudo systemctl restart podman-copyparty
 
 ## 5. 설정 파일 내용 확인
 
-진단: 설정 파일이 올바르게 생성되었는지 확인
+진단: 설정 파일이 올바르게 생성되었는지 확인 (`[accounts]` 섹션의 비밀번호 값은 마스킹)
+
+[accounts] 섹션에서는 예상 계정 이름(`configScript`가 쓰는 이름, 예 `greenhead`)으로 시작하는 줄만 `이름: ***`로 가리고, 그 외 비어 있지 않은 줄(값 중간 개행으로 생긴 이어짐 줄, 예상 밖 계정 등)은 통째로 가린다. 빈 줄은 그대로 둔다 — `configScript`가 계정 줄 뒤에 빈 줄을 쓰므로, 빈 줄까지 가리면 정상 설정도 이상하게 보인다. 섹션 헤더 패턴은 들여쓴 헤더도 인식한다.
+
+sed 대신 awk를 쓴다. 이중인용부호 안의 `!`는 대화형 셸(히스토리 확장이 켜진 zsh·bash)에서 히스토리 이벤트로 해석돼 변수 할당이 깨질 수 있으므로, awk 스크립트는 작은따옴표로 감싸고 `!`를 쓰지 않으며 계정 이름은 `-v acct=`로 넘긴다. 스크립트를 변수로 재사용할 때는 `${AWK_MASK:?}`로 비어 있으면 실패하게 한다(비면 awk가 아무 것도 가리지 않고 그대로 출력하는 fail-open을 막는다).
+
+한계: 이어짐 줄이 `[`로 시작하면 헤더로 오인되어 그 뒤가 그대로 노출된다. 2절의 "줄 수" 판정이 2 이상이면 값이 여러 줄로 쪼개졌다는 신호이므로, 그 경우 이 절의 마스킹 결과를 그대로 믿지 않는다.
 
 ```bash
-# 설정 파일 전체 확인
-sudo cat /var/lib/docker-data/copyparty/config/copyparty.conf
+CONF=/var/lib/docker-data/copyparty/config/copyparty.conf
+ACCOUNT=greenhead   # configScript(copyparty.nix)가 쓰는 계정 이름
+AWK_MASK='
+  /^[[:space:]]*\[/ { insec = ($0 ~ /^[[:space:]]*\[accounts\]/); print; next }
+  insec {
+    if ($0 ~ /^[[:space:]]*$/) { print; next }
+    if (match($0, "^[[:space:]]*" acct ":")) { print substr($0, 1, RLENGTH) " ***"; next }
+    print "*** (예상 밖 줄)"
+    next
+  }
+  { print }
+'
 
-# 공백/탭 등 whitespace 문제 확인
-sudo cat /var/lib/docker-data/copyparty/config/copyparty.conf | cat -A
+# 설정 파일 구조 확인 (accounts 값은 마스킹, 빈 줄은 유지)
+sudo awk -v acct="$ACCOUNT" "${AWK_MASK:?}" "$CONF"
+
+# 공백/탭 등 whitespace 문제 확인 (같은 마스킹 유지)
+sudo awk -v acct="$ACCOUNT" "${AWK_MASK:?}" "$CONF" | cat -A
+
+# accounts 값 자체의 공백/제어문자 포함 여부 (마스킹 때문에 안 보이는 정보를 별도 판정으로 보존, 값은 출력 안 함).
+# 구분자(`이름: `, 콜론+공백 1개)만 제거해야 값의 선행 공백이 판정에서 사라지지 않는다.
+sudo awk -v acct="$ACCOUNT" '
+  /^[[:space:]]*\[/ { insec = ($0 ~ /^[[:space:]]*\[accounts\]/); next }
+  insec {
+    if ($0 ~ /^[[:space:]]*$/) { next }
+    if (match($0, "^[[:space:]]*" acct ": ")) { print substr($0, RSTART+RLENGTH); next }
+    print
+    next
+  }
+' "$CONF" | grep -qE '[[:space:][:cntrl:]]' \
+  && echo "accounts 값 공백/제어문자: 포함" || echo "accounts 값 공백/제어문자: 없음"
 ```
 
 정상 설정 예시 (정본은 `modules/nixos/programs/docker/copyparty.nix`의 `configScript`):
