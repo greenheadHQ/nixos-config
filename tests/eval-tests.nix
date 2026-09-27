@@ -918,7 +918,7 @@ let
           # PATH는 home.packages로 선언한 그 도구의 bin과 macOS 시스템 경로로만 이뤄져야 한다.
           # Homebrew 경로는 우연한 외부 설치로 선언을 가리고, 다른 패키지 bin(예: GNU coreutils)은
           # 스크립트가 PATH로 찾는 find·basename 등을 BSD 도구에서 바꿔 놓는다.
-          name = "Test D36 ${hostName}: Folder Actions의 rar·ffmpeg 작업 launchd PATH가 선언된 Nix 도구 bin과 /usr/bin:/bin으로만 구성되어야 함";
+          name = "Test D37 ${hostName}: Folder Actions의 rar·ffmpeg 작업 launchd PATH가 선언된 Nix 도구 bin과 /usr/bin:/bin으로만 구성되어야 함";
           cond =
             hasHost
             && (
