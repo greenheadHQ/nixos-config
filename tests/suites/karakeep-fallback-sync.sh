@@ -549,3 +549,147 @@ STUB
     || fail "expected recovered run to exit 0"
   _karakeep_fallback_sync_assert_relinked "$sandbox" "$source_url"
 }
+
+# root는 파일 권한을 무시해 읽기 실패를 재현할 수 없다.
+_karakeep_fallback_sync_skip_if_root() {
+  if [ "$(id -u)" -eq 0 ]; then
+    echo "SKIP: $1 needs a non-root user to make a file unreadable" >&2
+    return 0
+  fi
+  return 1
+}
+
+# 판정 실패: 업로드·큐 변경·보류 기록 없이 "판정 실패"를 한 번 알리고 실패로 센다.
+_karakeep_fallback_sync_assert_match_error() {
+  local sandbox="$1"
+  local file="$2"
+  local output
+  [ ! -s "$sandbox/curl.log" ] || fail "expected no upload after match error"
+  cmp -s "$sandbox/queue-before" "$sandbox/state/failed-urls.txt" \
+    || fail "expected match error to leave the failed URL queue unchanged"
+  [ ! -s "$sandbox/state/fallback-unmatched-notified.tsv" ] \
+    || fail "expected match error not to be recorded as a notified hold"
+  [ "$(grep -Fc "원인: 판정 실패" "$sandbox/notifications.log" || true)" = "1" ] \
+    || fail "expected exactly one match error notification"
+  output=$(cat "$sandbox/stdout")
+  assert_contains "$output" "Auto relink match error: $file"
+  assert_contains "$output" "Fallback sync failure count: 1/3"
+}
+
+# 해시를 못 구하면 빈 해시가 processed 기록의 아무 줄과 일치해 조용히 건너뛰던 경로를 막는다.
+test_karakeep_fallback_sync_unreadable_file_is_a_match_error() {
+  local sandbox file now
+  _karakeep_fallback_sync_skip_if_root "unreadable fallback file" && return 0
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  _karakeep_fallback_sync_write_queue "$sandbox" "https://example.com/articles/source"
+  now=$(date +%s)
+  : > "$sandbox/kept.html"
+  printf 'old-hash\thttps://example.com/articles/old\t%s\t%s\n' "$sandbox/kept.html" "$now" \
+    > "$sandbox/state/fallback-processed.tsv"
+  cp "$sandbox/state/fallback-processed.tsv" "$sandbox/processed-before"
+  file="$sandbox/fallback/unreadable.html"
+  printf '<link rel="canonical" href="https://example.com/articles/source">\n' > "$file"
+  chmod 000 "$file"
+
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || { chmod 600 "$file"; fail "expected unreadable file run to keep script-level exit 0"; }
+  chmod 600 "$file"
+
+  _karakeep_fallback_sync_assert_match_error "$sandbox" "$file"
+  cmp -s "$sandbox/processed-before" "$sandbox/state/fallback-processed.tsv" \
+    || fail "expected unreadable file not to change processed state"
+  grep -Fq "match-error:path:" "$sandbox/state/fallback-notify-state.tsv" \
+    || fail "expected unreadable file notification to be throttled by a path-based key"
+}
+
+test_karakeep_fallback_sync_unreadable_queue_is_a_match_error() {
+  local sandbox file
+  _karakeep_fallback_sync_skip_if_root "unreadable failed URL queue" && return 0
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  _karakeep_fallback_sync_write_queue "$sandbox" "https://example.com/articles/source"
+  file="$sandbox/fallback/archive.html"
+  printf '<link rel="canonical" href="https://example.com/articles/source">\n' > "$file"
+  chmod 000 "$sandbox/state/failed-urls.txt"
+
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || { chmod 600 "$sandbox/state/failed-urls.txt"; fail "expected unreadable queue run to keep script-level exit 0"; }
+  chmod 600 "$sandbox/state/failed-urls.txt"
+
+  _karakeep_fallback_sync_assert_match_error "$sandbox" "$file"
+}
+
+# 저장 주석 안의 `<!--`는 본문이다. 그 뒤의 `url:`을 줄 머리로 읽지 않고, `<!-->`의 `-->`는 주석을 닫는다.
+test_karakeep_fallback_sync_comment_open_inside_saved_comment_is_text() {
+  local sandbox source_url injected_url after_close_url
+  source_url="https://example.com/articles/real"
+  injected_url="https://example.com/articles/injected"
+  after_close_url="https://example.com/articles/after-close"
+
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  _karakeep_fallback_sync_write_queue "$sandbox" "$injected_url"
+  printf '%s\n' \
+    '<!DOCTYPE html> <html lang="en"><!--' \
+    ' Page saved with SingleFile ' \
+    " url: $source_url " \
+    "<!-- url: $injected_url" \
+    '--><meta charset="utf-8">' > "$sandbox/fallback/archive.html"
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected injected url run to exit 0"
+  _karakeep_fallback_sync_assert_held "$sandbox" "실패 URL 일치 없음"
+
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  _karakeep_fallback_sync_write_queue "$sandbox" "$after_close_url"
+  printf '%s\n' \
+    '<!DOCTYPE html> <html lang="en"><!--' \
+    ' Page saved with SingleFile <!-->' \
+    " url: $after_close_url " \
+    '--><meta charset="utf-8">' > "$sandbox/fallback/archive.html"
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected early close run to exit 0"
+  _karakeep_fallback_sync_assert_held "$sandbox" "원문 식별자 없음"
+}
+
+# url 줄이 없는 저장 주석에서 멈추면 뒤의 실제 저장 주석을 놓친다.
+test_karakeep_fallback_sync_skips_saved_comment_without_url() {
+  local sandbox source_url
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  source_url="https://example.com/articles/real"
+  _karakeep_fallback_sync_write_queue "$sandbox" "$source_url"
+  {
+    printf '%s\n' '<!-- Page saved with SingleFile -->'
+    _karakeep_fallback_sync_singlefile_header "$source_url"
+  } > "$sandbox/fallback/archive.html"
+
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected relink run to exit 0"
+
+  _karakeep_fallback_sync_assert_relinked "$sandbox" "$source_url"
+}
+
+# 쿼리만 다른 두 URL은 다른 북마크라 업로드 실패 알림도 따로 억제한다.
+test_karakeep_fallback_sync_upload_failure_notify_key_keeps_query() {
+  local sandbox first_url second_url notification_count notify_state
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  first_url="https://example.com/articles/query?x=1"
+  second_url="https://example.com/articles/query?x=2"
+  _karakeep_fallback_sync_write_queue "$sandbox" "$first_url" "$second_url"
+  printf '<link rel="canonical" href="%s">\n' "$first_url" > "$sandbox/fallback/first.html"
+  printf '<link rel="canonical" href="%s">\n' "$second_url" > "$sandbox/fallback/second.html"
+
+  FALLBACK_SYNC_TEST_CURL_EXIT=7 FALLBACK_SYNC_TEST_HTTP_CODE=000 \
+    _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected upload failure run to keep script-level exit 0"
+
+  notification_count=$(grep -Fc "자동 재연결 실패" "$sandbox/notifications.log" || true)
+  [ "$notification_count" = "2" ] \
+    || fail "expected one upload failure notification per query URL, got $notification_count"
+  notify_state=$(cat "$sandbox/state/fallback-notify-state.tsv")
+  assert_contains "$notify_state" "upload-failed:example.com/articles/query?x=1"
+  assert_contains "$notify_state" "upload-failed:example.com/articles/query?x=2"
+}

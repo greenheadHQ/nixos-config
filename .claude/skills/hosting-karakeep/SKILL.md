@@ -122,10 +122,10 @@ Caddy가 `/api/v1/bookmarks/singlefile`만 `karakeep-singlefile-bridge`로 우�
 `karakeep-fallback-sync` 타이머가 `/mnt/data/archive-fallback`의 HTML에서 원문 식별자를 읽어
 큐와 대조하고, 고른 큐 URL로 Karakeep SingleFile API에 덮어쓴다(`ifexists=overwrite`).
 
-- 원문 식별자: 첫 SingleFile 저장 주석(`Page saved with SingleFile` 블록)의 `url:` 줄, canonical, `og:url`, `twitter:url`. 본문 링크와 문서 중간의 다른 저장 주석은 판정에 쓰지 않는다.
+- 원문 식별자: `url:` 줄이 있는 첫 SingleFile 저장 주석(`Page saved with SingleFile` 블록)의 `url:` 줄, canonical, `og:url`, `twitter:url`. 본문 링크와 문서 중간의 다른 저장 주석은 판정에 쓰지 않는다.
 - 판정: 식별자와 `normalize_url`(scheme, `#` 뒤, 끝 `/` 차이만 무시)로 같은 큐 URL이 정확히 하나일 때만 그 URL을 쓴다. 쿼리만 다른 URL은 다른 글로 본다. 식별자 출처 사이에 우선순위는 없다.
 - 보류: 식별자 없음·일치 없음·후보 여럿이면 업로드·큐 제거·처리 기록 없이 파일과 큐를 그대로 두고, 원인을 담은 "자동 재연결 보류" 알림을 파일당 한 번 보낸다.
-- 판정 실패: 식별자 추출이나 큐 읽기가 실패하면 "원인: 판정 실패"로 알리되 보류 알림 기록은 남기지 않아, 회복 뒤의 판정 결과를 다시 알린다. 판정 실패 알림은 파일별로 `NOTIFY_DEDUP_WINDOW_SEC` 창 안에서 한 번만 보내고, 연속 실패 횟수에 넣는다.
+- 판정 실패: 파일 해시 계산, 식별자 추출, 큐 읽기 중 하나가 실패하면 "원인: 판정 실패"로 알린다. 보류 알림 기록은 남기지 않아 회복 뒤의 판정 결과를 다시 알린다. 판정 실패가 계속되면 파일마다 30분(`NOTIFY_DEDUP_WINDOW_SEC`)에 한 번 알리고, 연속 실패 횟수에 넣는다.
 - journal(`journalctl -u karakeep-fallback-sync`) 근거:
   - 성공: `Auto relink succeeded: <큐 URL> <- <파일> (via <출처>)`
   - 첫 보류: `Auto relink held (<판정>)` 줄 아래에 식별자와 후보 URL

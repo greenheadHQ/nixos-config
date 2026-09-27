@@ -124,13 +124,6 @@ normalize_url() {
   printf "%s" "$url"
 }
 
-normalize_url_loose() {
-  local url
-  url=$(normalize_url "$1")
-  url="${url%%\?*}"
-  printf "%s" "$url"
-}
-
 shorten_url() {
   local url="$1"
   if [ "$url" = "(unknown URL)" ]; then
@@ -160,6 +153,11 @@ should_notify_key() {
   printf "%s\t%s\n" "$key" "$now" >> "$tmp"
   mv "$tmp" "$NOTIFY_STATE_FILE"
   return 0
+}
+
+is_processed() {
+  local file_hash="$1"
+  awk -F '\t' -v hash="$file_hash" '$1 == hash { found = 1 } END { exit(found ? 0 : 1) }' "$PROCESSED_FILE"
 }
 
 is_unmatched_notified() {
@@ -212,10 +210,10 @@ remove_queue_url() {
 }
 
 # SingleFile 저장 주석(`Page saved with SingleFile` 블록, 보통 <html> 직후)의 `url:` 줄만 읽는다.
-# 주석 밖 본문이나 마커 없는 주석의 `url:` 텍스트는 원문 식별자가 아니다. 마커가 든 첫 블록에서
-# 멈춰 문서 중간의 가짜 저장 주석은 읽지 않는다. 줄을 `<!--`로 한 번에 나누고 블록 본문을 쌓지
-# 않아 주석이 많은 긴 줄에서도 입력 크기에 비례한 시간만 쓰며, 비교 대상이 ASCII라 바이트
-# 단위(LC_ALL=C)로 처리한다.
+# 주석 밖 본문이나 마커 없는 주석의 `url:` 텍스트는 원문 식별자가 아니다. `url:` 줄이 있는 첫
+# 저장 주석에서 멈춰 문서 중간의 가짜 저장 주석은 읽지 않는다. 줄을 `<!--`로 한 번에 나누고
+# 블록 본문을 쌓지 않아 주석이 많은 긴 줄에서도 입력 크기에 비례한 시간만 쓰며, 비교 대상이
+# ASCII라 바이트 단위(LC_ALL=C)로 처리한다.
 extract_singlefile_saved_url() {
   LC_ALL=C awk '
     # seg는 주석 안 한 줄의 조각이다. 줄 머리 조각만 `url:`로 시작할 수 있다.
@@ -249,7 +247,8 @@ extract_singlefile_saved_url() {
         }
         scan(substr(seg, 1, close_pos - 1))
         in_comment = 0
-        if (has_marker) {
+        # url 줄이 없는 저장 주석이면 뒤의 실제 저장 주석을 계속 찾는다.
+        if (has_marker && urls != "") {
           printf "%s", urls
           exit
         }
@@ -416,13 +415,30 @@ upload_singlefile_archive() {
   return 0
 }
 
+# 판정 실패는 보류 알림 기록에 남기지 않아 다음 실행에서 다시 판정하고, 알림은 키별 시간 창으로만 억제한다.
+report_match_error() {
+  local file="$1"
+  local notify_key="$2"
+  local message
+  echo "Auto relink match error: $file"
+  if should_notify_key "$notify_key"; then
+    message=$(printf "자동 재연결 보류: %s\n원인: 판정 실패\njournalctl -u karakeep-fallback-sync 확인 필요" "$(basename "$file")")
+    send_notification "Karakeep" "$message" 0
+  fi
+}
+
 process_file() {
   local file="$1"
   local file_hash match_result match_status queue_line hold_reason failed_url match_sources
-  local short_url notify_key message
-  file_hash=$(sha256sum "$file" | cut -d ' ' -f 1)
+  local short_url notify_key message path_hash
+  if ! file_hash=$(sha256sum "$file" | cut -d ' ' -f 1) || [ -z "$file_hash" ]; then
+    # 해시가 없으면 처리·보류 기록과 대조할 수 없다. 알림 키는 파일 경로에서 만든다.
+    path_hash=$(printf '%s' "$file" | sha256sum | cut -d ' ' -f 1)
+    report_match_error "$file" "match-error:path:${path_hash}"
+    return 1
+  fi
 
-  if grep -Fq "${file_hash}" "$PROCESSED_FILE"; then
+  if is_processed "$file_hash"; then
     return 0
   fi
 
@@ -441,12 +457,7 @@ process_file() {
   esac
 
   if [ "$match_status" = "error" ]; then
-    # 판정 실패는 보류 알림 기록에 남기지 않아 다음 실행에서 다시 판정하고, 알림은 시간 창으로만 억제한다.
-    echo "Auto relink match error: $file"
-    if should_notify_key "match-error:${file_hash}"; then
-      message=$(printf "자동 재연결 보류: %s\n원인: 판정 실패\njournalctl -u karakeep-fallback-sync 확인 필요" "$(basename "$file")")
-      send_notification "Karakeep" "$message" 0
-    fi
+    report_match_error "$file" "match-error:${file_hash}"
     return 1
   fi
 
@@ -486,7 +497,7 @@ process_file() {
     return 0
   fi
 
-  notify_key="upload-failed:$(normalize_url_loose "$failed_url")"
+  notify_key="upload-failed:$(normalize_url "$failed_url")"
   if should_notify_key "$notify_key"; then
     message=$(printf "자동 재연결 실패: %s\n파일: %s\njournalctl -u karakeep-fallback-sync 확인 필요" "$(shorten_url "$failed_url")" "$(basename "$file")")
     send_notification "Karakeep" "$message" 0
