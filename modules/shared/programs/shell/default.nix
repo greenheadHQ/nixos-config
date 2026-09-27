@@ -26,6 +26,12 @@ in
     source = "${sharedScriptsDir}/git-cleanup.sh";
     executable = true;
   };
+  # Codex GitHub 앱 PR 리뷰 상태 판정 (#1477): PR 스킬(review-pr-feedback, finish-pr)이 공유하는
+  # 조회 전용 명령. stdlib만 쓰는 Python이라 호스트 python3로 실행한다 (atuin-clean-kr와 같은 방식).
+  home.file.".local/bin/codex-review-status" = {
+    source = "${sharedScriptsDir}/codex-review-status.py";
+    executable = true;
+  };
   home.file.".local/bin/.wt-real" = {
     source = "${sharedScriptsDir}/wt.sh";
     executable = true;
