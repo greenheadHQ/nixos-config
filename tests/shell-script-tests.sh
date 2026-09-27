@@ -388,6 +388,9 @@ run_test "folder-actions drain_queue processes rescanned files in order" test_fo
 run_test "folder-actions drain_queue defers unstable files" test_folder_actions_drain_queue_defers_unstable_files
 run_test "folder-actions quarantine_or_abort branches" test_folder_actions_quarantine_or_abort_branches
 run_test "upload-immich missing credential branch is quiet" test_upload_immich_missing_credential_branch_is_quiet_or_skipped
+run_test "folder-actions tool jobs keep input when required tool is missing" test_folder_actions_tool_jobs_keep_input_when_required_tool_missing
+run_test "folder-actions compress-rar runs with launchd minimal PATH" test_folder_actions_compress_rar_runs_with_launchd_minimal_path
+run_test "folder-actions video jobs run with launchd minimal PATH" test_folder_actions_video_jobs_run_with_launchd_minimal_path
 run_test "karakeep fallback-sync success removes only matched queue URL" test_karakeep_fallback_sync_success_removes_only_matched_queue_url
 run_test "karakeep fallback-sync upload failure preserves queue" test_karakeep_fallback_sync_upload_failure_preserves_queue_and_records_notify_state
 run_test "karakeep fallback-sync GC removes expired state" test_karakeep_fallback_sync_gc_removes_only_expired_state_entries
