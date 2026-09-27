@@ -460,6 +460,7 @@ run_test "immich DB restore legacy forms fail on root-only backup" test_immich_r
 run_test "immich DB restore failures keep existing DB" test_immich_restore_failures_keep_existing_db
 run_test "immich DB restore switch refuses open connections" test_immich_restore_switch_refuses_open_connections
 run_test "immich DB restore switch refuses unverified restore" test_immich_restore_switch_refuses_unverified_restore
+run_test "immich DB restore interrupted restore is not switched" test_immich_restore_interrupted_restore_is_not_switched
 run_test "immich cleanup paginates v3 nextPage string" test_immich_cleanup_v3_paginates_next_page_string
 run_test "immich cleanup preserves empty album notification" test_immich_cleanup_v3_empty_album_preserves_notification
 run_test "immich cleanup rejects invalid asset id" test_immich_cleanup_v3_rejects_invalid_asset_id

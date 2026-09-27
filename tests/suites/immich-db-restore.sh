@@ -9,6 +9,9 @@
 #   - podman: `podman exec [-i] immich-postgres <cmd>`를 로컬 <cmd>로 실행한다. `-i`가 없으면 표준
 #     입력을 붙이지 않는다(실제 podman과 같다). root가 아니면 거부한다(rootful 컨테이너).
 #     FAKE_RACE_DB를 주면 이름 변경 직전에 그 DB로 연결을 연다(확인과 변경 사이의 경합).
+#     FAKE_RACE_CLEAR_MARKER를 주면 이름 변경 직전에 immich_restore의 검증 완료 표식을 지운다.
+#     FAKE_INTERRUPT_RESTORE를 주면 plain SQL 복원 입력을 마지막 제약 직전에서 끊어(psql -1은
+#     입력이 끝나면 COMMIT한다) 부분 복원을 남기고, 운영자 셸(FAKE_OPERATOR_PID)을 죽인다.
 #   - systemctl: podman-immich-server/ml 유닛만 받는다. server 시작은 immich DB에 연결을 여는
 #     앱 대역을 띄우고, 중지는 그 연결이 끊길 때까지 기다린다. root가 아니면 거부한다.
 #     FAKE_START_FAIL을 주면 start가 실패한다.
@@ -116,6 +119,19 @@ if [ -n "${FAKE_RACE_DB:-}" ] && [[ " $* " == *" old="* ]] && [ ! -e "$FAKE_TRAC
     [ "$(psql -X -At -U immich -d postgres -c "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'race-client'")" = 1 ] && break
     sleep 0.1
   done
+fi
+if [ -n "${FAKE_RACE_CLEAR_MARKER:-}" ] && [[ " $* " == *" old="* ]] && [ ! -e "$FAKE_TRACE.clear" ]; then
+  : > "$FAKE_TRACE.clear"
+  psql -X -q -U immich -d postgres -c 'COMMENT ON DATABASE immich_restore IS NULL'
+fi
+if [ -n "${FAKE_INTERRUPT_RESTORE:-}" ] && [[ " $* " == *" --single-transaction "* ]]; then
+  partial="$(mktemp "${TMPDIR:-/tmp}/interrupted-restore.XXXXXX")"
+  cat > "$partial"
+  cut="$(awk '/^    ADD CONSTRAINT /{ last = NR - 2 } END { print last }' "$partial")"
+  head -n "$cut" "$partial" | "$@" || true
+  rm -f "$partial"
+  kill -KILL "$FAKE_OPERATOR_PID"
+  exit 1
 fi
 if [ "$interactive" = 1 ]; then
   exec "$@"
@@ -400,6 +416,8 @@ _immich_restore_run() {
   esac
   IMMICH_RESTORE_BACKUP="$backup" PATH="$IMMICH_RESTORE_SANDBOX/bin:$PATH" "${shell_cmd[@]}" \
     '[ "$(command -v sudo)" = "$IMMICH_RESTORE_FAKE_BIN/sudo" ] || { echo "fake sudo is not first on PATH" >&2; exit 97; }
+FAKE_OPERATOR_PID=$$
+export FAKE_OPERATOR_PID
 . "$IMMICH_RESTORE_PROCEDURE"
 BACKUP="$IMMICH_RESTORE_BACKUP"
 IMMICH_REQUIRED_EXTENSIONS="$IMMICH_RESTORE_TEST_EXTENSIONS"
@@ -437,6 +455,7 @@ _immich_restore_assert_success_flow() {
   set -e
   [ "$rc" = 0 ] || fail "immich_switch_to_restore failed ($shell): $output"
   assert_contains "$output" "전환 완료"
+  assert_contains "$output" "복원한 백업: ${backup##*/}"
   old="$(_immich_restore_before_dbs)"
   case "$old" in
     immich_before_restore_[0-9]*_[0-9]*) ;;
@@ -670,6 +689,12 @@ test_immich_restore_failures_keep_existing_db() {
     _immich_restore_psql -d postgres -c 'DROP DATABASE scratch'
     _immich_restore_place_backup "$sandbox/nouser.dump" mnt/data/backups/immich/immich-db-2026-09-27_058000.dump >/dev/null
 
+    # (h) 검증 실패: PK·인덱스까지는 있고 FK만 없는 백업(첫 FOREIGN KEY 직전에서 끊은 완결된 SQL).
+    cut="$(awk '/^    ADD CONSTRAINT .* FOREIGN KEY /{ print NR - 2; exit }' "$plain")"
+    [ -n "$cut" ] && [ "$cut" -gt 0 ] || fail "plain dump에서 첫 FOREIGN KEY 경계를 찾지 못했다"
+    head -n "$cut" "$plain" | gzip > "$sandbox/nofk.sql.gz"
+    _immich_restore_place_backup "$sandbox/nofk.sql.gz" var/lib/immich-update/backups/backup-20260927-042000.sql.gz >/dev/null
+
     # (e) 검증 실패: 필수 확장(unaccent)이 없는 백업. (f) 검증 실패: 핵심 테이블(album)이 없는 백업.
     _immich_restore_make_db scratch
     PGOPTIONS='-c client_min_messages=warning' _immich_restore_psql -d scratch -c 'DROP EXTENSION unaccent CASCADE'
@@ -696,6 +721,8 @@ test_immich_restore_failures_keep_existing_db() {
       "$sandbox/fs/mnt/data/backups/immich/immich-db-2026-09-27_058000.dump" "user 테이블이 비어 있다"
     _immich_restore_assert_failure_case "검증 실패(확장)" \
       "$sandbox/fs/mnt/data/backups/immich/immich-db-2026-09-27_056000.dump" "확장이 없다: unaccent"
+    _immich_restore_assert_failure_case "검증 실패(FK)" \
+      "$sandbox/fs/var/lib/immich-update/backups/backup-20260927-042000.sql.gz" "외래 키가 없다"
     _immich_restore_assert_failure_case "검증 실패(테이블)" \
       "$sandbox/fs/mnt/data/backups/immich/immich-db-2026-09-27_057000.dump" "핵심 테이블이 없다: album"
     [ "$(_immich_restore_file_state)" = "$file_state" ] || fail "백업 파일·디렉터리의 권한이나 소유자, 내용이 바뀌었다"
@@ -795,6 +822,27 @@ test_immich_restore_switch_refuses_open_connections() {
     fi
     _immich_restore_close_client race-client
 
+    # 표식 확인 뒤 이름 변경 직전에 표식이 사라지면, 이름 변경 트랜잭션이 다시 확인해 거부한다.
+    : > "$FAKE_TRACE"
+    set +e
+    output="$(
+      export FAKE_RACE_CLEAR_MARKER=1
+      _immich_restore_run bash "$IMMICH_RESTORE_SQL_GZ" 'immich_switch_to_restore' 2>&1
+    )"
+    rc=$?
+    set -e
+    [ "$rc" != 0 ] || fail "이름 변경 직전에 표식이 사라졌는데 전환했다: $output"
+    [ -e "$FAKE_TRACE.clear" ] || fail "표식 삭제를 주입하지 못했다: $(cat "$FAKE_TRACE")"
+    assert_contains "$output" "검증 완료 표식이 없다"
+    [ -z "$(_immich_restore_before_dbs)" ] || fail "표식이 사라졌는데 이름을 바꿨다"
+    [ "$(_immich_restore_snapshot immich)" = "$mutated" ] || fail "표식이 사라진 전환이 immich DB를 바꿨다"
+    _immich_restore_db_exists immich_restore || fail "표식이 사라진 전환이 immich_restore를 지웠다"
+    if grep -q '^systemctl start' "$FAKE_TRACE"; then
+      fail "표식이 사라진 전환 뒤 앱을 시작했다: $(cat "$FAKE_TRACE")"
+    fi
+    # 이 경합은 테스트가 만든 것이므로 표식을 되돌리고 이어 간다.
+    _immich_restore_psql -d postgres -c "COMMENT ON DATABASE immich_restore IS 'verified:backup-20260927-030000.sql.gz'"
+
     # 재실행: 이름 변경은 성공하고 앱 시작만 실패하면, 이전 DB 이름과 복귀 명령을 안내한다.
     set +e
     output="$(
@@ -863,6 +911,14 @@ test_immich_restore_switch_refuses_unverified_restore() {
     [ "$(psql -X -At -U immich -d immich_restore -c "SELECT count(*) FROM pg_constraint WHERE connamespace = 'public'::regnamespace AND contype IN ('p', 'f')")" = 0 ] \
       || fail "부분 복원 fixture에 post-data가 들어갔다"
 
+    # 검증 함수는 판정만 한다. 단독으로 불러 실패해도 immich_restore를 지우지 않는다.
+    set +e
+    output="$(_immich_restore_run bash "$IMMICH_RESTORE_SQL_GZ" 'immich_verify_restore' 2>&1)"
+    rc=$?
+    set -e
+    [ "$rc" != 0 ] || fail "post-data 없는 immich_restore가 검증을 통과했다: $output"
+    _immich_restore_db_exists immich_restore || fail "단독으로 부른 검증이 immich_restore를 지웠다"
+
     # 표식 없음: 거부하고 immich_restore를 지우지 않는다(내용 확인 뒤 수동 DROP).
     : > "$FAKE_TRACE"
     set +e
@@ -899,9 +955,54 @@ test_immich_restore_switch_refuses_unverified_restore() {
   )
 }
 
+# 복원 도중 운영자 셸이 죽으면(SSH 끊김) 검증 완료 표식 없이 부분 복원만 남고, 전환은 이를 거부한다.
+# 부분 복원은 마지막 FK만 빠져 검증은 통과하므로, 표식이 복원·검증 뒤에 기록돼야만 막힌다.
+test_immich_restore_interrupted_restore_is_not_switched() {
+  _immich_restore_require_tools || return 0
+  (
+    local sandbox mutated output rc
+    sandbox="$(new_sandbox)"
+    IMMICH_RESTORE_SANDBOX="$sandbox"
+    FAKE_APP_PIDS="$sandbox/app.pids"
+    trap _immich_restore_teardown EXIT
+    _immich_restore_setup "$sandbox"
+    _immich_restore_make_backups
+    _immich_restore_lock_user_view
+    _immich_restore_mutate_original
+    mutated="$(_immich_restore_snapshot immich)"
+
+    set +e
+    output="$(
+      export FAKE_INTERRUPT_RESTORE=1
+      _immich_restore_run bash "$IMMICH_RESTORE_SQL_GZ" 'immich_restore_db; echo "operator shell survived"' 2>&1
+    )"
+    rc=$?
+    set -e
+    [ "$rc" != 0 ] || fail "끊긴 복원이 성공으로 끝났다: $output"
+    assert_not_contains "$output" "operator shell survived"
+    _immich_restore_db_exists immich_restore || fail "부분 복원 fixture가 남지 않았다"
+    [ "$(psql -X -At -U immich -d immich_restore -c "SELECT count(*) FROM pg_constraint WHERE connamespace = 'public'::regnamespace AND contype = 'f'")" -gt 0 ] \
+      || fail "부분 복원에 FK가 하나도 없다 — 검증이 통과하는 부분 복원이 아니다"
+
+    : > "$FAKE_TRACE"
+    set +e
+    output="$(_immich_restore_run bash "$IMMICH_RESTORE_SQL_GZ" 'immich_switch_to_restore' 2>&1)"
+    rc=$?
+    set -e
+    [ "$rc" != 0 ] || fail "끊긴 복원으로 전환했다: $output"
+    assert_contains "$output" "검증 완료 표식이 없다"
+    if grep -q '^systemctl' "$FAKE_TRACE"; then
+      fail "끊긴 복원에서 앱을 멈추거나 시작했다: $(cat "$FAKE_TRACE")"
+    fi
+    [ -z "$(_immich_restore_before_dbs)" ] || fail "끊긴 복원으로 이름을 바꿨다"
+    [ "$(_immich_restore_snapshot immich)" = "$mutated" ] || fail "끊긴 복원 뒤 immich DB가 바뀌었다"
+    [ "$(_immich_restore_app_connections)" = 1 ] || fail "끊긴 복원 뒤 앱이 immich DB에서 떨어졌다"
+  )
+}
+
 # 문서의 실행 블록이 이 스위트가 부르는 함수와 같은지 고정한다.
 test_immich_restore_doc_invocations_match_suite() {
-  local doc procedure
+  local doc procedure restore_fn restore_line verify_line marker_line
   doc="$(_immich_restore_doc)"
   grep -Fxq 'immich_restore_db' "$doc" || fail "immich-update.md에 immich_restore_db 실행 줄이 없다"
   grep -Fxq 'immich_switch_to_restore' "$doc" || fail "immich-update.md에 immich_switch_to_restore 실행 줄이 없다"
@@ -913,6 +1014,15 @@ test_immich_restore_doc_invocations_match_suite() {
   assert_contains "$procedure" "-v ON_ERROR_STOP=1 --single-transaction -U immich -d immich_restore"
   assert_contains "$procedure" "CREATE DATABASE immich_restore OWNER immich TEMPLATE template0;"
   assert_contains "$procedure" "WHERE backend_type = 'client backend'"
+  # 검증 완료 표식은 immich_restore_db 안에서 복원(esac)과 검증 성공 뒤에만 기록한다.
+  restore_fn="$(printf '%s\n' "$procedure" | awk '/^immich_restore_db\(\) \{$/{ f = 1 } f { print } f && /^}$/{ exit }')"
+  restore_line="$(printf '%s\n' "$restore_fn" | awk '/^  esac \|\|/{ print NR; exit }')"
+  verify_line="$(printf '%s\n' "$restore_fn" | awk '$0 == "  if ! immich_verify_restore; then" { print NR; exit }')"
+  marker_line="$(printf '%s\n' "$restore_fn" | awk -v l="COMMENT ON DATABASE immich_restore IS :'marker';" '$0 == l { print NR; exit }')"
+  [ -n "$restore_line" ] && [ -n "$verify_line" ] && [ -n "$marker_line" ] \
+    || fail "immich_restore_db에서 복원·검증·표식 기록 줄을 찾지 못했다: restore=$restore_line verify=$verify_line marker=$marker_line"
+  [ "$restore_line" -lt "$verify_line" ] && [ "$verify_line" -lt "$marker_line" ] \
+    || fail "검증 완료 표식이 복원·검증 뒤에 기록되지 않는다: restore=$restore_line verify=$verify_line marker=$marker_line"
   # 옛 형태(일반 사용자 셸이 백업을 여는 복원 명령)가 문서에 남지 않아야 한다.
   if grep -Eq '^gunzip -c .*\| *\\?$|^gunzip -c .*\| *sudo|< /mnt/data/backups/|< /var/lib/immich-update/' "$doc"; then
     fail "immich-update.md에 일반 사용자 셸이 백업을 여는 옛 복원 형태가 남아 있다"
