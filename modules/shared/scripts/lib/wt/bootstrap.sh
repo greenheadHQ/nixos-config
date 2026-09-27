@@ -194,13 +194,13 @@ _wt_emit_worktree_path() {
   printf '%s\n' "$1"
 }
 
-# ── worktree 제거 (tmux 윈도우 포함) ─────────────────────────────────────────
+# ── worktree 제거 ────────────────────────────────────────────────────────────
 
 # 비강제 `git worktree remove`가 실패한 뒤 이 경로가 아직 worktree로 등록돼 있는가.
 # git은 사전 검사(정리되지 않은 변경·잠금·submodule)에서 거부하면 아무것도 건드리지
 # 않지만, 검사를 통과한 뒤 디렉토리 삭제가 실패하면(권한·I/O) 관리 디렉토리 등록 해제는
 # 그대로 진행하고 실패를 알린다. 그래서 "실패했으니 무변경"이 성립하지 않는다.
-# stdout: registered | absent | unknown (tmux 상태 probe와 같은 삼상태 계약)
+# stdout: registered | absent | unknown (잠금 상태 probe와 같은 삼상태 계약)
 _wt_worktree_registration_state() {
   local git_root="$1" wt_path="$2" canonical_wt_path="$3"
   local list
@@ -373,9 +373,8 @@ _remove_worktree() {
   _wt_require_state_helpers
 
   # canonical path는 제거 전에 확보한다 — 제거 후에는 디렉토리가 없어 구할 수 없다.
-  local canonical_wt_path session_name
+  local canonical_wt_path
   canonical_wt_path="$(cd "$wt_path" && pwd -P)" || canonical_wt_path="$wt_path"
-  session_name=$(_wt_session_name "$name")
 
   # ref 유지 안내에 쓰는 shell-quoted 사본. 제거 실패 쪽 안내는 _wt_warn_remove_failure가
   # 같은 규칙으로 따로 만든다 (두 경로가 그 함수를 공유하므로 인용 규칙은 한 벌로 유지된다).
@@ -384,30 +383,13 @@ _remove_worktree() {
   printf -v _safe_wt_branch '%q' "$branch"
 
   if [[ "$mode" == "guarded" ]]; then
-    # 무확인 삭제에서는 worktree 제거 성공을 mutation 경계로 삼는다. tmux 창 종료와
-    # plugin 등록 해제는 되돌릴 수 없어서, 그것들을 먼저 하고 나서 제거가 거부되면
-    # worktree는 남고 작업 문맥만 사라진 부분 정리가 된다. 제거를 앞에 두면 거부가
-    # 대부분 사전 검사에서 나므로 아무것도 건드리지 않은 채 끝난다 — lock·submodule처럼
-    # 미리 예측하기 어려운 거부 사유도 이 검사에 함께 걸린다.
+    # 무확인 삭제에서는 worktree 제거 성공을 mutation 경계로 삼는다. plugin 등록 해제는
+    # 되돌릴 수 없어서, 그것을 먼저 하고 나서 제거가 거부되면 worktree는 남고 작업 문맥만
+    # 사라진 부분 정리가 된다. 제거를 앞에 두면 거부가 대부분 사전 검사에서 나므로 아무것도
+    # 건드리지 않은 채 끝난다 — lock·submodule처럼 미리 예측하기 어려운 거부 사유도 이
+    # 검사에 함께 걸린다.
     #
-    # 무확인 삭제에서는 대상 tmux 세션이 존재하는 것만으로 물러난다. 클라이언트 유무를
-    # 확인해도 그 직후 attach할 수 있고, 세션 종료는 제거 뒤라(부분 정리 방지) 그 사이를
-    # 막을 수단이 없다. idle shell은 활성 프로세스 가드에도 걸리지 않으므로, 위험을
-    # 알릴 기회가 없던 삭제에서는 세션 자체를 스킵 조건으로 삼는 편이 안전하다.
-    #
-    # "세션 없음"과 "상태를 못 읽음"의 구분은 tmux.sh의 삼상태 probe가 소유한다.
-    case "$(_wt_tmux_session_state "$session_name")" in
-      present)
-        _info "스킵: $name — tmux 세션이 남아 있습니다 (세션 종료 후 다시 실행하거나 --yes)"
-        return 1
-        ;;
-      unknown)
-        _warn "스킵: $name (tmux 상태를 확인하지 못해 무확인 삭제를 중단합니다)"
-        return 1
-        ;;
-    esac
-
-    # 근거 재확인은 제거 직전에 둔다. tmux probe 같은 외부 호출은 시간이 걸리고, 그 사이
+    # 근거 재확인은 제거 직전에 둔다. 활성 작업 스캔 같은 외부 호출은 시간이 걸리고, 그 사이
     # HEAD나 체크아웃 브랜치가 바뀌면 확인한 적 없는 대상을 지우게 된다. 브랜치까지 보는
     # 이유는 _wt_head_unchanged와 같다 — 같은 커밋을 가리키는 다른 브랜치로 전환되면 OID
     # 비교만으로는 통과하고, 그 worktree를 지운 뒤 수집 시점 브랜치의 ref를 CAS 삭제한다.
@@ -438,21 +420,13 @@ _remove_worktree() {
 
     # 제거에 성공했으므로 이제 부수 상태를 정리한다. 여기서 실패해도 worktree는 이미
     # 사라졌으니 중단하지 않고 알리기만 한다.
-    _wt_tmux_close "$wt_path" || true
-    _wt_tmux_session_close "$session_name" || _info "참고: $name — tmux 세션이 남아 있습니다 (연결된 클라이언트 또는 상태 확인 실패)"
     _wt_remove_claude_local_plugins_for_worktree "$wt_path" "$canonical_wt_path" \
       || _warn "참고: $name — Claude local plugin 등록을 정리하지 못했습니다"
     _wt_untrust_codex_project "$canonical_wt_path"
   else
-    # forced는 main과 같은 순서를 유지한다 (호출자가 승인을 받은 경우와 clean 비-MERGED
-    # 기존 경로가 여기로 온다). 아래 세션 종료가 실패하면 worktree 제거 전에 중단하므로
-    # tmux 창만 닫힌 부분 정리가 남을 수 있다 — 기존부터 있던 동작이라 그대로 둔다.
-    # guarded가 제거를 앞으로 당긴 것은 그 경로에만 적용되는 정책이다.
-    _wt_tmux_close "$wt_path" || true
-    _wt_tmux_session_close "$session_name" || {
-      _info "스킵: $name — tmux 세션을 정리하지 못했습니다 (연결된 클라이언트 또는 상태 확인 실패)"
-      return 1
-    }
+    # forced는 기존 순서를 유지한다 (호출자가 승인을 받은 경우와 clean 비-MERGED 기존
+    # 경로가 여기로 온다): plugin 등록 해제 → 강제 제거. guarded가 제거를 앞으로 당긴 것은
+    # 그 경로에만 적용되는 정책이다.
     _wt_remove_claude_local_plugins_for_worktree "$wt_path" "$canonical_wt_path" || return 1
     # `rm -rf` fallback은 제거했다. git이 `--force`로도 거부하는 대상(잠금 등)을 디렉토리만
     # 지워 흉내내면 등록은 남고 실체만 사라진 유령 worktree가 생긴다 — 실제로 잠긴 브리지

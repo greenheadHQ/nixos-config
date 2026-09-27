@@ -607,8 +607,8 @@ test_wt_cleanup_reports_missing_worktree_prune_hint() {
 }
 
 test_wt_cleanup_skips_locked_worktree() {
-  # git lock은 "다른 주체가 이 worktree를 붙잡고 있다"는 신호이고, tmux pane 기반 활성
-  # 판정에는 잡히지 않는다. --auto도, 이름 지정 --yes도 정리해서는 안 되며(--yes는 제거
+  # git lock은 "다른 주체가 이 worktree를 붙잡고 있다"는 신호이고, cwd 기반 활성 작업
+  # 판정에는 잡히지 않을 수 있다. --auto도, 이름 지정 --yes도 정리해서는 안 되며(--yes는 제거
   # 전략만 바꾸지 잠금을 해제하지 않는다) 디렉토리와 git 등록이 모두 그대로 남아야 한다.
   #
   # 대상 worktree를 MERGED로 만들어 두는 것이 이 테스트의 판별력이다: PR이 없으면 --auto의
@@ -1311,7 +1311,7 @@ test_wt_existing_worktree_interactive_choice_checks_checkout_unit() {
     # shellcheck disable=SC2034
     WT_LAST_FILE=".claude/worktrees/.wt-last"
     local helper out rc
-    for helper in ui tmux process git-state bootstrap create; do
+    for helper in ui process git-state bootstrap create; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
@@ -1474,46 +1474,9 @@ test_wt_pr_status_returns_verified_oid_unit() {
   [[ "$reuse_raw" == "NONE" ]] || fail "재사용 브랜치는 NONE이어야 하는데 '$reuse_raw'"
 }
 
-test_wt_tmux_session_state_classification_unit() {
-  # 서버 부재와 조회 불능을 stderr errno 문구로 가른다. 이 분류가 한쪽으로 치우치면
-  # 정상적인 서버 부재가 unknown이 되어 무확인 정리가 전부 막히거나(실제로 겪은 회귀),
-  # 반대로 권한 오류가 absent로 통과해 접근 못 하는 활성 세션의 worktree가 지워진다.
-  local sandbox bin state msg expect case_spec
-  sandbox=$(new_sandbox)
-  bin="$sandbox/bin"
-  mkdir -p "$bin"
-
-  for case_spec in \
-    "no server running on /tmp/x|absent" \
-    "error connecting to /tmp/x (No such file or directory)|absent" \
-    "error connecting to /tmp/x (Connection refused)|absent" \
-    "error connecting to /tmp/x (Permission denied)|unknown" \
-    "server exited unexpectedly|unknown"
-  do
-    msg="${case_spec%|*}"
-    expect="${case_spec##*|}"
-    cat > "$bin/tmux" <<EOF
-#!/usr/bin/env bash
-printf '%s\n' "$msg" >&2
-exit 1
-EOF
-    chmod +x "$bin/tmux"
-
-    state=$(
-      PATH="$bin:$PATH" bash -c '
-        set -euo pipefail
-        source "$1/modules/shared/scripts/lib/wt/tmux.sh"
-        _wt_tmux_session_state wt-example
-      ' _ "$REPO_ROOT"
-    )
-    [[ "$state" == "$expect" ]] \
-      || fail "tmux 상태 분류 오류: stderr='$msg' → '$state' (기대: '$expect')"
-  done
-}
-
 test_wt_remove_worktree_guarded_rechecks_branch_unit() {
   # 무확인 삭제의 근거는 OID와 브랜치를 함께 묶는다. 그런데 후보 수집과 실제 제거 사이에는
-  # tmux probe 같은 외부 호출이 끼어들어 시간이 흐른다. 그 사이 같은 커밋을 가리키는 다른
+  # 활성 작업 스캔 같은 외부 호출이 끼어들어 시간이 흐른다. 그 사이 같은 커밋을 가리키는 다른
   # 브랜치로 전환되면 OID만 비교하는 재확인은 통과하고, 조회한 적 없는 브랜치의 worktree를
   # 지운 뒤 수집 시점 브랜치의 ref를 CAS 삭제하게 된다. 제거 직전 재확인이 브랜치 정체성도
   # 보는지 확인한다.
@@ -1536,17 +1499,14 @@ test_wt_remove_worktree_guarded_rechecks_branch_unit() {
     local recorded_oid
     recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
 
-    for helper in ui git-state tmux process bootstrap; do
+    for helper in ui git-state process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
     # 이 테스트의 대상은 근거 재확인뿐이다. 삭제 경로의 나머지 부수 효과(helper 요구,
-    # tmux, plugin 등록)는 stub으로 걷어내 재확인 결과만 관찰한다.
+    # 활성 작업 탐지, plugin 등록)는 stub으로 걷어내 재확인 결과만 관찰한다.
     _wt_require_state_helpers() { :; }
     _wt_cwd_holders() { :; }
-    _wt_tmux_session_state() { printf 'absent\n'; }
-    _wt_tmux_close() { :; }
-    _wt_tmux_session_close() { :; }
     _wt_remove_claude_local_plugins_for_worktree() { :; }
 
     # 같은 OID의 다른 브랜치로 전환된 상태 → 제거를 거부해야 한다
@@ -1587,15 +1547,12 @@ test_wt_remove_worktree_guarded_keeps_reused_branch_unit() {
     local recorded_oid
     recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
 
-    for helper in ui git-state tmux process bootstrap; do
+    for helper in ui git-state process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
     _wt_require_state_helpers() { :; }
     _wt_cwd_holders() { :; }
-    _wt_tmux_session_state() { printf 'absent\n'; }
-    _wt_tmux_close() { :; }
-    _wt_tmux_session_close() { :; }
     # 이 helper는 worktree 제거 성공 후 ref 삭제 전에 호출된다 — 경쟁 창을 주입할 지점이다.
     _wt_remove_claude_local_plugins_for_worktree() {
       git -C "$repo" worktree add -q "$reused_path" feature
@@ -1633,15 +1590,12 @@ test_wt_remove_worktree_guarded_clears_branch_config_unit() {
     local recorded_oid
     recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
 
-    for helper in ui git-state tmux process bootstrap; do
+    for helper in ui git-state process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
     _wt_require_state_helpers() { :; }
     _wt_cwd_holders() { :; }
-    _wt_tmux_session_state() { printf 'absent\n'; }
-    _wt_tmux_close() { :; }
-    _wt_tmux_session_close() { :; }
     _wt_remove_claude_local_plugins_for_worktree() { :; }
 
     _remove_worktree "$wt_path" feature "$repo" guarded "$recorded_oid" >/dev/null 2>&1 || exit 41
@@ -1657,7 +1611,7 @@ test_wt_remove_worktree_guarded_clears_branch_config_unit() {
 test_wt_remove_worktree_forced_refuses_locked_unit() {
   # forced는 `--force` 실패 시 `rm -rf`로 물러나던 경로다. git은 잠긴 worktree의 제거를
   # `--force`로도 거부하므로, 그 fallback은 디렉토리만 지우고 등록은 남겨 "등록만 남은
-  # 유령"을 만들었다. 잠금은 tmux pane 기반 활성 판정에 잡히지 않는 독립 신호이므로 삭제
+  # 유령"을 만들었다. 잠금은 cwd 기반 활성 작업 판정에 잡히지 않을 수 있는 독립 신호이므로 삭제
   # 전략보다 먼저 보고 거부해야 하며, 해제된 뒤에는 같은 호출이 정상 동작해야 한다.
   local sandbox repo wt_path
   sandbox=$(new_sandbox)
@@ -1678,16 +1632,13 @@ test_wt_remove_worktree_forced_refuses_locked_unit() {
     git -C "$repo" commit -q --allow-empty -m first
     git -C "$repo" worktree add -q "$wt_path" -b feature
 
-    for helper in ui git-state tmux process bootstrap; do
+    for helper in ui git-state process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
     # 관찰 대상은 잠금 가드뿐이다. 나머지 부수 효과는 stub으로 걷어낸다.
     _wt_require_state_helpers() { :; }
     _wt_cwd_holders() { :; }
-    _wt_tmux_session_state() { printf 'absent\n'; }
-    _wt_tmux_close() { :; }
-    _wt_tmux_session_close() { :; }
     _wt_remove_claude_local_plugins_for_worktree() { :; }
 
     git -C "$repo" worktree lock --reason "bridge holds it" "$wt_path"
@@ -1738,15 +1689,12 @@ test_wt_remove_worktree_forced_keeps_path_when_remove_fails_unit() {
     git -C "$repo" commit -q --allow-empty -m first
     git -C "$repo" worktree add -q "$wt_path" -b feature
 
-    for helper in ui git-state tmux process bootstrap; do
+    for helper in ui git-state process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
     _wt_require_state_helpers() { :; }
     _wt_cwd_holders() { :; }
-    _wt_tmux_session_state() { printf 'absent\n'; }
-    _wt_tmux_close() { :; }
-    _wt_tmux_session_close() { :; }
     _wt_remove_claude_local_plugins_for_worktree() { :; }
 
     # 강제 제거만 거부하고 나머지 git 호출(등록 조회 등)은 그대로 통과시킨다.
@@ -1788,15 +1736,12 @@ test_wt_remove_worktree_refuses_unknown_lock_state_unit() {
     git -C "$repo" commit -q --allow-empty -m first
     git -C "$repo" worktree add -q "$wt_path" -b feature
 
-    for helper in ui git-state tmux process bootstrap; do
+    for helper in ui git-state process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
     _wt_require_state_helpers() { :; }
     _wt_cwd_holders() { :; }
-    _wt_tmux_session_state() { printf 'absent\n'; }
-    _wt_tmux_close() { :; }
-    _wt_tmux_session_close() { :; }
     _wt_remove_claude_local_plugins_for_worktree() { :; }
 
     # 등록 목록 조회만 실패시킨다 — 잠금 상태를 "확인하지 못한" 상태 그 자체.
@@ -1838,15 +1783,12 @@ test_wt_remove_worktree_failure_notes_registration_state_unit() {
     git -C "$repo" commit -q --allow-empty -m first
     git -C "$repo" worktree add -q "$wt_path" -b feature
 
-    for helper in ui git-state tmux process bootstrap; do
+    for helper in ui git-state process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
     _wt_require_state_helpers() { :; }
     _wt_cwd_holders() { :; }
-    _wt_tmux_session_state() { printf 'absent\n'; }
-    _wt_tmux_close() { :; }
-    _wt_tmux_session_close() { :; }
     _wt_remove_claude_local_plugins_for_worktree() { :; }
 
     # 제거는 거부하되, 제거를 시도한 뒤의 등록 조회에서는 이 경로가 사라진 것처럼 보이게
@@ -1879,15 +1821,12 @@ test_wt_remove_worktree_failure_notes_registration_state_unit() {
     set -euo pipefail
     export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
-    for helper in ui git-state tmux process bootstrap; do
+    for helper in ui git-state process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
     _wt_require_state_helpers() { :; }
     _wt_cwd_holders() { :; }
-    _wt_tmux_session_state() { printf 'absent\n'; }
-    _wt_tmux_close() { :; }
-    _wt_tmux_session_close() { :; }
     _wt_remove_claude_local_plugins_for_worktree() { :; }
 
     # 같은 시점 구분으로, 이번에는 제거 이후 등록 조회 자체가 실패하게 한다 =
@@ -2003,51 +1942,6 @@ test_wt_cleanup_auto_reports_current_merged_exclusion() {
   [[ -d "$target_path" ]] || fail "현재 worktree는 보존돼야 함: $target_path"
 }
 
-# tmux 대역(stub) 설치. 실제 tmux 서버 없이 "대상 worktree에 pane이 있는 세션"을 재현하고,
-# 파괴적 호출(kill-window/kill-session)이 일어난 시점에 worktree 디렉토리가 아직 남아
-# 있었는지를 로그에 남긴다 — close-before-remove 순서를 시간축 없이 관찰하는 지점이다.
-install_wt_tmux_guard_stub() {
-  local stub_dir="$1"
-  mkdir -p "$stub_dir"
-  cat > "$stub_dir/tmux" <<'STUB'
-#!/usr/bin/env bash
-log="${TMUX_STUB_LOG:?}"
-wt_path="${TMUX_STUB_PANE_PATH:?}"
-note() {
-  local state=absent
-  [[ -d "$wt_path" ]] && state=present
-  printf '%s worktree=%s\n' "$1" "$state" >> "$log"
-}
-case "${1:-}" in
-  list-sessions) exit 0 ;;
-  list-panes)
-    # -a = 전체 pane 경로 조회(_wt_find_tmux_window), -t = 대상 윈도우의 pane 명령
-    # 조회(_wt_has_active_process). 두 호출의 출력 형식이 다르므로 여기서 가른다.
-    if [[ "${2:-}" == "-a" ]]; then
-      printf '@1 %s\n' "$wt_path"
-    else
-      printf '%s\n' "${TMUX_STUB_PANE_COMMANDS:-zsh}"
-    fi
-    ;;
-  display-message) printf '2\n' ;;   # 마지막 윈도우가 아니어야 kill-window까지 간다
-  has-session)
-    # 기본은 "세션 있음". TMUX_STUB_SESSION_ABSENT=1이면 tmux가 부재를 알릴 때 쓰는
-    # 문구로 실패시켜 삼상태 probe가 absent로 분류하게 한다 (무확인 삭제 경로 재현용).
-    if [[ -n "${TMUX_STUB_SESSION_ABSENT:-}" ]]; then
-      printf "can't find session: %s\n" "${3:-}" >&2
-      exit 1
-    fi
-    exit 0
-    ;;
-  list-clients)    : ;;              # 연결된 클라이언트 없음 → 종료 허용
-  kill-window)     note kill-window ;;
-  kill-session)    note kill-session ;;
-  *)               exit 0 ;;
-esac
-STUB
-  chmod +x "$stub_dir/tmux"
-}
-
 test_wt_remove_worktree_preserves_active_process_unit() {
   # 활성 작업 가드는 두 삭제 전략(forced/guarded)이 모두 지난다 — 전략별로 갈리면 무확인
   # 삭제가 우회로가 된다. 탐지(_wt_cwd_holders)를 대역으로 바꿔, 붙잡은 프로세스가 있을 때와
@@ -2072,15 +1966,12 @@ test_wt_remove_worktree_preserves_active_process_unit() {
     local recorded_oid
     recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
 
-    for helper in ui git-state tmux process bootstrap; do
+    for helper in ui git-state process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
     # 관찰 대상은 활성 작업 가드뿐이다. 나머지 부수 효과는 stub으로 걷어낸다.
     _wt_require_state_helpers() { :; }
-    _wt_tmux_session_state() { printf 'absent\n'; }
-    _wt_tmux_close() { :; }
-    _wt_tmux_session_close() { :; }
     _wt_remove_claude_local_plugins_for_worktree() { :; }
     _wt_untrust_codex_project() { :; }
     local holder_mode=held
@@ -2113,112 +2004,4 @@ test_wt_remove_worktree_preserves_active_process_unit() {
     _remove_worktree "$wt_path" feature "$repo" guarded "$recorded_oid" >/dev/null 2>&1 || exit 22
     [[ ! -d "$wt_path" ]] || exit 23
   ) || fail "_remove_worktree가 쓰는 중인 worktree를 두 전략 모두에서 보존하는지 확인 실패 (exit $?)"
-}
-
-test_wt_remove_worktree_closes_tmux_before_remove_unit() {
-  # 강제(forced) 경로 한정의 삭제 순서 계약: _wt_has_active_process → _wt_tmux_close
-  # → _wt_tmux_session_close → git worktree remove. 창·세션을 먼저 닫아야 worktree가
-  # 사라진 뒤 남은 pane이 없어진 cwd를 붙잡는 orphan 상태를 만들지 않는다. 순서가
-  # 뒤집히면 close 시점에 디렉토리가 이미 없다 — stub이 그 시점 상태를 기록해 고정한다.
-  # 무확인 삭제(guarded)는 부분 정리를 피하려고 일부러 제거-후-close이며, 그 순서는
-  # 아래 test_wt_remove_worktree_guarded_closes_tmux_after_remove_unit이 따로 고정한다.
-  local sandbox repo wt_path stub_dir log
-  sandbox=$(new_sandbox)
-  repo="$sandbox/repo"
-  mkdir -p "$repo"
-  repo="$(cd "$repo" && pwd -P)"
-  wt_path="$(cd "$sandbox" && pwd -P)/wt"
-  stub_dir="$sandbox/stubbin"
-  log="$sandbox/tmux-calls.log"
-  install_wt_tmux_guard_stub "$stub_dir"
-
-  (
-    set -euo pipefail
-    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
-    git -C "$repo" init -q
-    git -C "$repo" config user.email t@example.invalid
-    git -C "$repo" config user.name t
-    git -C "$repo" commit -q --allow-empty -m first
-    git -C "$repo" worktree add -q "$wt_path" -b feature
-
-    unset TMUX
-    export PATH="$stub_dir:$PATH"
-    export TMUX_STUB_LOG="$log"
-    export TMUX_STUB_PANE_PATH="$wt_path"
-    export TMUX_STUB_PANE_COMMANDS=zsh   # 모든 pane이 셸 = 삭제 가능
-
-    for helper in ui git-state tmux process bootstrap; do
-      # shellcheck source=/dev/null
-      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
-    done
-    _wt_require_state_helpers() { :; }
-    _wt_remove_claude_local_plugins_for_worktree() { :; }
-    _wt_untrust_codex_project() { :; }
-
-    _remove_worktree "$wt_path" feature "$repo" forced >/dev/null 2>&1 || exit 21
-    [[ ! -d "$wt_path" ]] || exit 22
-
-    local calls
-    calls=$(cat "$log")
-    [[ "$calls" == *"kill-window worktree=present"* ]] || exit 23
-    [[ "$calls" == *"kill-session worktree=present"* ]] || exit 24
-    # 순서까지 고정한다 — 윈도우를 닫기 전에 세션을 죽이면 같은 세션의 다른 창까지 잃는다.
-    [[ "$(printf '%s\n' "$calls" | head -1)" == "kill-window"* ]] || exit 25
-  ) || fail "_remove_worktree가 worktree 제거 전에 tmux 창·세션을 닫는지 확인 실패 (exit $?)"
-}
-
-test_wt_remove_worktree_guarded_closes_tmux_after_remove_unit() {
-  # 무확인 삭제(guarded, `wt cleanup --auto`의 MERGED 경로)는 순서가 반대다 — 되돌릴 수
-  # 없는 창·세션 종료를 먼저 하고 나서 제거가 거부되면 worktree는 남고 작업 문맥만
-  # 사라지므로, 제거 성공을 mutation 경계로 두고 그 뒤에 부수 정리로 닫는다.
-  # 고정하려는 것은 "그래도 닫기는 한다"이다: 이 호출이 빠지면 지워진 worktree를 cwd로
-  # 붙잡은 pane이 남는다. 두 close 호출 시점의 worktree 상태(absent)가 곧 순서 증거다.
-  local sandbox repo wt_path stub_dir log
-  sandbox=$(new_sandbox)
-  repo="$sandbox/repo"
-  mkdir -p "$repo"
-  repo="$(cd "$repo" && pwd -P)"
-  wt_path="$(cd "$sandbox" && pwd -P)/wt"
-  stub_dir="$sandbox/stubbin"
-  log="$sandbox/tmux-calls.log"
-  install_wt_tmux_guard_stub "$stub_dir"
-
-  (
-    set -euo pipefail
-    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
-    git -C "$repo" init -q
-    git -C "$repo" config user.email t@example.invalid
-    git -C "$repo" config user.name t
-    git -C "$repo" commit -q --allow-empty -m first
-    git -C "$repo" worktree add -q "$wt_path" -b feature
-    local recorded_oid
-    recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
-
-    unset TMUX
-    export PATH="$stub_dir:$PATH"
-    export TMUX_STUB_LOG="$log"
-    export TMUX_STUB_PANE_PATH="$wt_path"
-    export TMUX_STUB_PANE_COMMANDS=zsh   # 모든 pane이 셸 = 삭제 가능
-    # guarded는 세션이 present이기만 해도 스킵한다. 여기서 관찰하려는 것은 그 스킵이
-    # 아니라 스킵을 통과한 뒤의 정리 호출이므로 세션을 absent로 둔다.
-    export TMUX_STUB_SESSION_ABSENT=1
-
-    for helper in ui git-state tmux process bootstrap; do
-      # shellcheck source=/dev/null
-      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
-    done
-    _wt_require_state_helpers() { :; }
-    _wt_remove_claude_local_plugins_for_worktree() { :; }
-    _wt_untrust_codex_project() { :; }
-
-    _remove_worktree "$wt_path" feature "$repo" guarded "$recorded_oid" >/dev/null 2>&1 || exit 31
-    [[ ! -d "$wt_path" ]] || exit 32
-
-    local calls
-    calls=$(cat "$log")
-    [[ "$calls" == *"kill-window worktree=absent"* ]] || exit 33
-    [[ "$calls" == *"kill-session worktree=absent"* ]] || exit 34
-    # 창 → 세션 순서는 두 전략이 같다: 세션을 먼저 죽이면 같은 세션의 다른 창까지 잃는다.
-    [[ "$(printf '%s\n' "$calls" | head -1)" == "kill-window"* ]] || exit 35
-  ) || fail "_remove_worktree(guarded)가 제거 뒤 tmux 창·세션을 닫는지 확인 실패 (exit $?)"
 }

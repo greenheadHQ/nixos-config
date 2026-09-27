@@ -204,16 +204,30 @@ stop_wt_cwd_holder() {
   wt_holder_pid=""
 }
 
+# tmux 호출을 기록만 하는 대역. wt가 tmux를 부르지 않는지 보려고 PATH 앞에 둔다 — 활성
+# 판정은 tmux 사용 여부와 무관하고, 창·세션 닫기도 더는 하지 않는다.
+install_wt_tmux_call_recorder() {
+  local bin_dir="$1"
+  mkdir -p "$bin_dir"
+  cat > "$bin_dir/tmux" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$bin_dir/tmux.calls"
+exit 1
+EOF
+  chmod +x "$bin_dir/tmux"
+}
+
 test_wt_cleanup_preserves_worktree_held_by_process() {
   # tmux 밖 터미널 탭이 worktree 하위 폴더에 머문 상황을 실제 프로세스로 재현한다.
   # 이름 지정 정리와 --auto가 모두 대상을 보존하고 PID와 명령을 알려야 하며, 프로세스가
   # 끝나면 같은 명령이 지워야 한다(과잉 차단 아님). MERGED 대역은 이름 지정 정리의 확인
-  # 프롬프트(push하지 않은 커밋)를 없애 가드까지 도달하게 한다.
-  local sandbox home_dir repo_root gh_dir target_path head_oid
+  # 프롬프트(push하지 않은 커밋)를 없애 가드까지 도달하게 한다. tmux는 한 번도 부르지 않는다.
+  local sandbox home_dir repo_root gh_dir stub_dir target_path head_oid
   sandbox=$(new_sandbox)
   home_dir="$sandbox/home"
   repo_root="$sandbox/repo"
   gh_dir="$sandbox/gh-bin"
+  stub_dir="$sandbox/stub-bin"
 
   create_git_fixture_repo "$repo_root"
   repo_root="$(cd "$repo_root" && pwd -P)"
@@ -223,6 +237,7 @@ test_wt_cleanup_preserves_worktree_held_by_process() {
   mkdir -p "$target_path/sub"
   head_oid="$(git -C "$target_path" rev-parse HEAD)"
   install_merged_pr_mock "$gh_dir" "$head_oid"
+  install_wt_tmux_call_recorder "$stub_dir"
 
   (
     wt_holder_pid=""
@@ -230,7 +245,7 @@ test_wt_cleanup_preserves_worktree_held_by_process() {
     start_wt_cwd_holder "$target_path/sub"
     local output
 
-    output=$(run_fixture_wt "$home_dir" "$repo_root" "$gh_dir:" cleanup feature_one 2>&1) \
+    output=$(run_fixture_wt "$home_dir" "$repo_root" "$stub_dir:$gh_dir:" cleanup feature_one 2>&1) \
       || fail "cleanup <name> 비정상 종료: $output"
     assert_contains "$output" "스킵: feature_one (이 worktree를 작업 위치로 쓰는 프로세스가 있습니다)"
     assert_contains "$output" "PID $wt_holder_pid: sleep 120"
@@ -238,17 +253,18 @@ test_wt_cleanup_preserves_worktree_held_by_process() {
     assert_contains "$output" "정리 완료: 0개 삭제"
     [[ -d "$target_path" ]] || fail "쓰는 중인 worktree가 이름 지정 정리로 지워짐: $output"
 
-    output=$(run_fixture_wt "$home_dir" "$repo_root" "$gh_dir:" cleanup --auto 2>&1) \
+    output=$(run_fixture_wt "$home_dir" "$repo_root" "$stub_dir:$gh_dir:" cleanup --auto 2>&1) \
       || fail "cleanup --auto 비정상 종료: $output"
     assert_contains "$output" "PID $wt_holder_pid: sleep 120"
     [[ -d "$target_path" ]] || fail "쓰는 중인 worktree가 --auto로 지워짐: $output"
 
     stop_wt_cwd_holder
-    output=$(run_fixture_wt "$home_dir" "$repo_root" "$gh_dir:" cleanup feature_one 2>&1) \
+    output=$(run_fixture_wt "$home_dir" "$repo_root" "$stub_dir:$gh_dir:" cleanup feature_one 2>&1) \
       || fail "프로세스 종료 후 cleanup 비정상 종료: $output"
     assert_contains "$output" "정리 완료: 1개 삭제"
     [[ ! -d "$target_path" ]] || fail "프로세스가 끝난 worktree는 지워져야 함: $output"
   )
+  [[ ! -e "$stub_dir/tmux.calls" ]] || fail "wt가 tmux를 호출함: $(cat "$stub_dir/tmux.calls")"
 }
 
 test_wt_recreate_preserves_worktree_held_by_process() {
@@ -367,11 +383,13 @@ test_wt_cleanup_yes_bypasses_active_guard_only_when_named() {
 
 test_wt_recreate_yes_bypasses_active_guard() {
   # 재생성도 --yes로 활성 가드를 우회한다(설계 선택 G). create의 --yes는 확인 프롬프트용
-  # WT_ASSUME_YES와 별개로 우회 여부를 재생성 분기까지 넘겨야 한다.
-  local sandbox home_dir repo_root target_path
+  # WT_ASSUME_YES와 별개로 우회 여부를 재생성 분기까지 넘겨야 한다. 재생성 전 tmux 창·세션을
+  # 닫던 단계도 없어졌으므로 tmux는 부르지 않는다.
+  local sandbox home_dir repo_root stub_dir target_path
   sandbox=$(new_sandbox)
   home_dir="$sandbox/home"
   repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stub-bin"
 
   create_git_fixture_repo "$repo_root"
   repo_root="$(cd "$repo_root" && pwd -P)"
@@ -380,6 +398,7 @@ test_wt_recreate_yes_bypasses_active_guard() {
   wt_fixture_git -C "$repo_root" branch -m feature-one feature/one
   mkdir -p "$target_path/sub"
   echo "stale" > "$target_path/sub/marker.txt"
+  install_wt_tmux_call_recorder "$stub_dir"
 
   (
     wt_holder_pid=""
@@ -387,13 +406,14 @@ test_wt_recreate_yes_bypasses_active_guard() {
     start_wt_cwd_holder "$target_path/sub"
     local output
 
-    output=$(run_fixture_wt "$home_dir" "$repo_root" "" --yes --if-exists=recreate feature/one 2>/dev/null) \
+    output=$(run_fixture_wt "$home_dir" "$repo_root" "$stub_dir:" --yes --if-exists=recreate feature/one 2>/dev/null) \
       || fail "--yes 재생성이 활성 가드에서 멈춤"
     [[ "$output" == "$target_path" ]] || fail "재생성은 worktree 경로를 내야 함: $output"
     [[ ! -e "$target_path/sub/marker.txt" ]] || fail "재생성이 기존 worktree를 지우지 않음"
     [[ "$(git -C "$target_path" branch --show-current)" == "feature/one" ]] \
       || fail "재생성된 worktree의 브랜치가 다름"
   )
+  [[ ! -e "$stub_dir/tmux.calls" ]] || fail "wt가 tmux를 호출함: $(cat "$stub_dir/tmux.calls")"
 }
 
 test_wt_remove_worktree_active_guard_bypass_scope_unit() {
@@ -417,14 +437,11 @@ test_wt_remove_worktree_active_guard_bypass_scope_unit() {
     git -C "$repo" commit -q --allow-empty -m first
     git -C "$repo" worktree add -q "$wt_path" -b feature
 
-    for helper in ui git-state tmux process bootstrap; do
+    for helper in ui git-state process bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
     done
     _wt_require_state_helpers() { :; }
-    _wt_tmux_session_state() { printf 'absent\n'; }
-    _wt_tmux_close() { :; }
-    _wt_tmux_session_close() { :; }
     _wt_remove_claude_local_plugins_for_worktree() { :; }
     _wt_untrust_codex_project() { :; }
     _wt_cwd_holders() {

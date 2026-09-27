@@ -271,7 +271,6 @@ run_test "wt cleanup name-filter merged without upstream needs no confirm" test_
 run_test "wt cleanup name-filter confirmed dirty merged removes" test_wt_cleanup_name_filter_confirmed_dirty_merged_removes
 run_test "wt cleanup name-filter current worktree reports root command" test_wt_cleanup_name_filter_current_worktree_reports_root_command
 run_test "wt cleanup auto reports current merged exclusion" test_wt_cleanup_auto_reports_current_merged_exclusion
-run_test "wt tmux session-state classification unit" test_wt_tmux_session_state_classification_unit
 run_test "wt head-unchanged guard unit" test_wt_head_unchanged_guard_unit
 run_test "wt pr-status returns verified oid unit" test_wt_pr_status_returns_verified_oid_unit
 run_test "wt guarded remove rechecks branch unit" test_wt_remove_worktree_guarded_rechecks_branch_unit
@@ -291,8 +290,6 @@ run_test "wt cleanup active guard matches physical folder" test_wt_cleanup_activ
 run_test "wt cleanup --yes bypasses active guard only when named" test_wt_cleanup_yes_bypasses_active_guard_only_when_named
 run_test "wt recreate --yes bypasses active guard" test_wt_recreate_yes_bypasses_active_guard
 run_test "wt remove active guard bypass scope unit" test_wt_remove_worktree_active_guard_bypass_scope_unit
-run_test "wt remove closes tmux before worktree remove unit" test_wt_remove_worktree_closes_tmux_before_remove_unit
-run_test "wt remove guarded closes tmux after worktree remove unit" test_wt_remove_worktree_guarded_closes_tmux_after_remove_unit
 run_test "missing managed helpers fail closed" test_missing_managed_helpers_fail_closed
 run_test "missing wt Python helpers fail state changes" test_missing_wt_python_helpers_fail_state_changes
 run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_python_helpers_fail_cleanup_state_changes

@@ -204,15 +204,6 @@ _handle_existing_worktree() {
           ;;
       esac
 
-      _wt_tmux_close "$worktree_dir" || true
-      # tmux 세션 정리 (연결된 클라이언트 있으면 재생성 중단)
-      local _recreate_session
-      _recreate_session=$(_wt_session_name "$dir_name")
-      _wt_tmux_session_close "$_recreate_session" || {
-        _info "재생성 불가: tmux 세션을 정리하지 못했습니다 (연결된 클라이언트 또는 상태 확인 실패)"
-        _info "세션을 종료한 뒤 다시 시도하세요"
-        return 1
-      }
       local canonical_worktree_dir
       canonical_worktree_dir="$(cd "$worktree_dir" && pwd -P)" || canonical_worktree_dir="$worktree_dir"
       _wt_remove_claude_local_plugins_for_worktree "$worktree_dir" "$canonical_worktree_dir" \
