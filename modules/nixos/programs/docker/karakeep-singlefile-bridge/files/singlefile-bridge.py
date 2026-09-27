@@ -6,6 +6,7 @@ import signal
 import sqlite3
 import subprocess
 import tempfile
+import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
@@ -21,6 +22,12 @@ KARAKEEP_BASE_URL = os.environ.get("KARAKEEP_BASE_URL", "http://127.0.0.1:3000")
 LISTEN_HOST = os.environ.get("SINGLEFILE_BRIDGE_LISTEN", "127.0.0.1")
 LISTEN_PORT = int(os.environ.get("SINGLEFILE_BRIDGE_PORT", "3010"))
 REQUEST_TIMEOUT_SEC = int(os.environ.get("SINGLEFILE_BRIDGE_TIMEOUT_SEC", "240"))
+# Ceiling for waiting on in-flight do_GET/do_POST calls during shutdown.
+# Bounds how long a leaked tracker count or an unexpectedly slow handler can
+# hold up stop, independent of REQUEST_TIMEOUT_SEC; kept well under
+# systemd's default TimeoutStopSec (90s) so exceeding it shows up as a
+# logged, bounded stop rather than the hard SIGKILL that default triggers.
+SHUTDOWN_DRAIN_TIMEOUT_SEC = int(os.environ.get("SINGLEFILE_BRIDGE_SHUTDOWN_DRAIN_SEC", "30"))
 KARAKEEP_DB_PATH = os.environ.get("KARAKEEP_DB_PATH", "/mnt/data/karakeep/db.db")
 KARAKEEP_QUEUE_DB_PATH = os.environ.get("KARAKEEP_QUEUE_DB_PATH", "/mnt/data/karakeep/queue.db")
 SQLITE_BUSY_TIMEOUT_MS = int(os.environ.get("SINGLEFILE_BRIDGE_SQLITE_TIMEOUT_MS", "5000"))
@@ -365,6 +372,64 @@ def cleanup_stale_crawler_tasks(bookmark_id: str) -> int:
     return with_sqlite_write(KARAKEEP_QUEUE_DB_PATH, _write)
 
 
+class ShutdownTracker:
+    """Counts do_GET/do_POST calls currently executing.
+
+    Shutdown waits (bounded, see SHUTDOWN_DRAIN_TIMEOUT_SEC) for this count
+    to reach zero so an in-flight request gets a chance to finish and
+    respond. Connections that are open but haven't sent a full request yet
+    are never counted here, so an idle connection alone can never hold up
+    shutdown at all, let alone up to the drain deadline.
+    """
+
+    def __init__(self) -> None:
+        self._condition = threading.Condition()
+        self._count = 0
+
+    @property
+    def count(self) -> int:
+        with self._condition:
+            return self._count
+
+    def track(self) -> "_InFlight":
+        return _InFlight(self)
+
+    def _enter(self) -> None:
+        with self._condition:
+            self._count += 1
+
+    def _exit(self) -> None:
+        with self._condition:
+            self._count -= 1
+            if self._count <= 0:
+                self._condition.notify_all()
+
+    def wait_for_drain(self, timeout: float) -> bool:
+        """Block until the count reaches zero or `timeout` elapses.
+
+        Returns True if every tracked call finished in time, False if the
+        timeout elapsed with calls still in flight.
+        """
+        with self._condition:
+            return self._condition.wait_for(lambda: self._count <= 0, timeout=timeout)
+
+
+class _InFlight:
+    __slots__ = ("_tracker",)
+
+    def __init__(self, tracker: ShutdownTracker) -> None:
+        self._tracker = tracker
+
+    def __enter__(self) -> None:
+        self._tracker._enter()
+
+    def __exit__(self, *exc_info: object) -> None:
+        self._tracker._exit()
+
+
+SHUTDOWN_TRACKER = ShutdownTracker()
+
+
 class SingleFileBridgeHandler(BaseHTTPRequestHandler):
     server_version = "KarakeepSingleFileBridge/1.0"
 
@@ -383,6 +448,10 @@ class SingleFileBridgeHandler(BaseHTTPRequestHandler):
         self.respond_bytes(status, body, "application/json; charset=utf-8")
 
     def do_GET(self) -> None:
+        with SHUTDOWN_TRACKER.track():
+            self._do_get()
+
+    def _do_get(self) -> None:
         parsed = urlsplit(self.path)
         if parsed.path in ("/healthz", "/health"):
             self.respond_json(
@@ -397,6 +466,10 @@ class SingleFileBridgeHandler(BaseHTTPRequestHandler):
         self.respond_json(404, {"error": "Not Found"})
 
     def do_POST(self) -> None:
+        with SHUTDOWN_TRACKER.track():
+            self._do_post()
+
+    def _do_post(self) -> None:
         parsed = urlsplit(self.path)
         if parsed.path not in ("/api/v1/bookmarks/singlefile", "/"):
             self.respond_json(404, {"error": "Not Found"})
@@ -665,10 +738,40 @@ class SingleFileBridgeHandler(BaseHTTPRequestHandler):
 
 def main() -> None:
     server = ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), SingleFileBridgeHandler)
+    shutdown_started = False
 
     def _shutdown(signum, _frame) -> None:
+        nonlocal shutdown_started
+        # server.shutdown() blocks until serve_forever()'s loop (this same
+        # thread) exits, so calling it directly here would deadlock. Hand
+        # it to a throwaway thread instead.
+        #
+        # Signal handlers are reentrant: a second signal can start a nested
+        # call of this function while the first is still running. A
+        # lock-based guard (Event/Lock/Condition) can then deadlock on
+        # itself if a reentrant call arrives mid-acquire. This plain bool
+        # avoids that: nothing between the check and the set gives CPython
+        # a point to recheck a pending signal, so a reentrant call always
+        # sees the flag already written by whichever call got here first.
+        # Only code after the set may call anything lock-based
+        # (thread.start(), log()).
+        if shutdown_started:
+            return
+        shutdown_started = True
+        thread = threading.Thread(target=server.shutdown, daemon=True)
+        try:
+            thread.start()
+        except RuntimeError as exc:
+            # Can't hand shutdown off to a thread, and calling
+            # server.shutdown() directly here would deadlock (see above).
+            # Raising unwinds serve_forever() on this same thread instead:
+            # main()'s try/finally still runs (drain, server_close), and the
+            # process exits instead of running until systemd's
+            # TimeoutStopSec forces a SIGKILL with no drain at all. The flag
+            # stays True — this thread is on its way out regardless.
+            log(f"received signal {signum} but failed to start shutdown thread: {exc}")
+            raise SystemExit(1) from exc
         log(f"received signal {signum}, shutting down...")
-        server.shutdown()
 
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
@@ -681,6 +784,21 @@ def main() -> None:
         server.serve_forever()
     finally:
         server.server_close()
+        # In-flight do_GET/do_POST calls run on ThreadingHTTPServer's daemon
+        # connection threads and would otherwise be cut off mid-call the
+        # instant this process exits. Give them up to
+        # SHUTDOWN_DRAIN_TIMEOUT_SEC to finish and respond. Idle connections
+        # that haven't sent a full request are never counted by
+        # SHUTDOWN_TRACKER, so they never extend shutdown at all — this
+        # ceiling only bounds how long an actually-running handler call (or
+        # a leaked tracker count) gets to finish.
+        if SHUTDOWN_TRACKER.wait_for_drain(SHUTDOWN_DRAIN_TIMEOUT_SEC):
+            log("in-flight requests drained before shutdown")
+        else:
+            log(
+                f"shutdown drain deadline ({SHUTDOWN_DRAIN_TIMEOUT_SEC}s) reached with "
+                f"{SHUTDOWN_TRACKER.count} in-flight request(s) still running; exiting anyway"
+            )
         log("karakeep-singlefile-bridge stopped")
 
 
