@@ -1187,8 +1187,8 @@ _pinning_codex_mention_table() {
     "CMD='gh pr comment 12 --body x'; \$GH_SH -c \"\$CMD\""
     "\$GH_RUN api 'gh pr comment 12 --body x'"
     "\$GH_RUN api \"gh pr comment \$N --body x\""
-    # 명령어 자리의 변수 명령어는 무엇이 실행될지 모르므로 명령 자리가 아닌 gh가 보이면 대상이다. 기본값·변수
-    # 값·따옴표로 감싼 치환 출력은 단어로 나뉘어 gh 호출이 되고, 변수 셸 실행기는 stdin도 스크립트로 읽는다.
+    # 명령어 자리의 변수 명령어는 무엇이 실행될지 모르므로 명령 자리가 아닌 gh가 보이면 대상이다. 따옴표 밖의
+    # 기본값·변수 값·치환 출력은 단어로 나뉘어 gh 호출이 되고, 변수 셸 실행기는 stdin도 스크립트로 읽는다.
     "\${y:-gh pr comment 12 --body x}"
     $'${y:-\ngh pr comment 12 --body x\n}'
     "\${y:-\`\`gh pr comment 12 --body x\`\`}"
@@ -1200,8 +1200,8 @@ _pinning_codex_mention_table() {
     $'$SSH host <<\'EOF\'\ngh pr comment 12 --body x\nEOF'
     $'S=bash; $S <<EOF\ngh pr comment 12 --body x\nEOF'
     # 래퍼 뒤 실행 자리의 변수도 명령어로 본다. 래퍼 옵션 바로 뒤의 변수는 옵션 값일 수도 있지만 명령어로
-    # 본다. 기본값·대체값이 여러 단어면 단어로 나뉘어, 뒤의 하위 명령이 조회여도 기본값 속 단어가 명령어와
-    # 하위 명령이 된다.
+    # 본다. 따옴표 밖의 기본값·대체값이 여러 단어면 단어로 나뉘어, 뒤의 하위 명령이 조회여도 기본값 속 단어가
+    # 명령어와 하위 명령이 된다.
     "sudo \"\$SHELL\" -c 'gh pr comment 12 --body x'"
     "X='gh pr comment 12 --body x'; nohup \$X"
     "nohup \$(echo \"gh pr\") comment 12 --body x"
@@ -1212,6 +1212,23 @@ _pinning_codex_mention_table() {
     $'${y:-gh\npr\ncomment\n12} pr view 12'
     "\${a[1]:-gh pr comment 12 --body x} pr view 12"
     "\${Y:+gh pr comment 12 --body x} pr view 12"
+    # 셸 실행기로 보는 변수 명령어는 하위 명령이 pr·issue·api여도 입력(heredoc, here-string, 파이프)을
+    # 스크립트로 읽는다(호스트 이름이 api인 ssh, \$0 자리의 pr). 따옴표 안에서도 여러 단어가 되는
+    # 확장("\$@", zsh의 "\${=X}"·"\$a[@]")과 zsh의 \$=X, 래퍼 인자의 동적 할당·timeout 옵션 값·command
+    # --·time -p 뒤의 변수, 치환 문자열이 여러 단어인 패턴 치환도 명령어로 본다.
+    $'$SSH api <<\'EOF\'\ngh pr comment 12 --body x\nEOF'
+    "echo 'gh pr comment 12 --body x' | \$SSH api"
+    "\"\$SHELL\" -s -- pr <<< 'gh pr comment 12 --body x'"
+    $'sudo -E "$SSH" api <<\'EOF\'\ngh pr comment 12 --body x\nEOF'
+    "X='gh pr comment 12 --body x'; set -- \$X; \"\$@\""
+    "X='gh pr comment 12 --body x'; \"\${=X}\""
+    "X='gh pr comment 12 --body x'; \$=X"
+    "read -rA a <<< 'gh pr comment 12 --body x'; \"\$a[@]\""
+    "Y='gh pr comment 12 --body x'; env A=\"\$B\" \$Y"
+    "Y='gh pr comment 12 --body x'; command -- \$Y"
+    "X='gh pr comment 12 --body x'; timeout -s KILL 5 \$X"
+    "X='gh pr comment 12 --body x'; time -p \$X"
+    "X=x; \${X/x/gh api repos/o/r/issues/12/comments -f body=x -t} api"
     # macOS 파일시스템은 대소문자를 가리지 않아 GH도 gh를 실행한다. 변수 기본값과 줄 이음 앞의 gh도 본다.
     "bash -c 'GH pr comment 12 --body x'"
     "echo 'GH pr comment 12 --body x' | bash"
@@ -1430,11 +1447,11 @@ _pinning_codex_mention_table() {
     "gh -- x pr comment 12 --body x"
     "echo pr comment 12; gh"
     "a/{gh pr comment 12 --body x"
-    # 명령어 자리의 변수 명령어여도 명령 자리가 아닌 gh가 없으면 대상이 아니다. 이름에 gh가 든 변수의 조회와
-    # 래퍼 뒤의 동적 할당은 셸 실행기로 보지 않는다. 하위 명령이 pr·issue·api인 변수 명령어는 그 호출로
-    # 판정하고(명령 치환으로 찾은 gh 포함), 기본값이 한 단어(gh)면 하위 명령은 뒤따르는 단어다. 기본값의
-    # 앞뒤 공백은 단어를 나누지 않고, 여러 단어인 기본값도 명령어 자리가 아니거나 명령 자리가 아닌 gh가
-    # 없으면 대상이 아니다.
+    # 명령어 자리의 변수 명령어여도 명령 자리가 아닌 gh가 없으면 대상이 아니다. 하위 명령이 pr·issue·api인
+    # 이름에 gh가 든 변수는 셸 실행기로 보지 않고, 래퍼 뒤의 동적 할당은 건너뛴다. 하위 명령이
+    # pr·issue·api인 변수 명령어는 그 호출로 판정하고(명령 치환으로 찾은 gh 포함), 기본값이 한 단어(gh)면
+    # 하위 명령은 뒤따르는 단어다. 기본값의 앞뒤 공백은 단어를 나누지 않고, 여러 단어인 기본값도 명령어
+    # 자리가 아니거나 명령 자리가 아닌 gh가 없으면 대상이 아니다.
     "\$PY script.py; gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
     "GH=\$(command -v gh); \"\$GH\" pr view 12 --json comments --jq '.comments[].body'"
     "env HOME=\"\$H\" GH_TOKEN=\"\$(gh auth token)\" gh pr view 12 --json body"
@@ -1447,6 +1464,18 @@ _pinning_codex_mention_table() {
     "\${y:-gh } pr view 12 --json body"
     "echo \${y:-gh pr comment 12 --body x}"
     "\${EDITOR:-vim -n} notes.md; gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    # 따옴표 안의 변수 명령어("\$GH", "\$PY", "\$W"/x.sh)와 이름에 gh가 든 변수 뒤에 다른 하위 명령이나
+    # --version이 오는 명령어는 단어로 나뉘어 다른 명령이 되지 않으므로, 명령 자리가 아닌 gh를 세지 않는다.
+    # timeout의 -s·-k 값과 time의 -p는 명령어가 아니고, 따옴표 안의 기본값은 단어로 나뉘지 않는다.
+    "\"\$GH\" auth status && \"\$GH\" pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "GH=/opt/homebrew/bin/gh; \$GH repo view --json name; \$GH pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "GH=\$(command -v gh); \$GH --version; \$GH pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "\"\$PY\" list_prs.py | xargs -n1 gh pr view --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "\"\$W\"/tests/run.sh 2>&1 | grep -F \"gh pr comment 12 --body '@codex review'\""
+    "timeout -s KILL \"\$T\" gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "eval \"\$(direnv export bash)\"; time -p gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "env GH_PAGER=\"\${PAGER:-less -R}\" gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "\"\${GH:-/Applications/My Tools/gh}\" pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
     # 닫힌 백틱 치환 뒤 따옴표 속 백틱과 백틱 치환 바로 안 주석의 백틱은 판정 불확실이 아니다.
     "x=\`date\`; git commit -m 'docs: gh pr comment \`12\`'"
     "x=\`date # \`; git commit -m 'docs: gh pr comment 12'"

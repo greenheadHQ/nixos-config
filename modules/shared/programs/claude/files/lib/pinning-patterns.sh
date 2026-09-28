@@ -809,12 +809,13 @@ pinning_extract_body_file_paths() {
 # hook은 셸 확장 전 문자열을 보므로 변수로 넘긴 본문 경로(`body=@"$BODY_FILE"`)와 stdin 본문
 # (`--input -`), 인코딩하거나 조립한 멘션은 읽지 못한다. 셸 실행기가 아닌 인터프리터(python -c 등),
 # 배열로 조립한 명령, source·`.`로 읽거나 파일로 써서 실행하는 스크립트, trap·`env -S`에 넘긴 명령,
-# 래퍼 옵션으로 여는 셸(sudo -s), 정적인 래퍼 옵션 값 뒤의 변수 셸 실행기(`sudo -u bot "$SHELL" -c
-# '...'`), 그룹·서브셸·함수로 감싼 셸 실행기의 입력(`(bash) <<EOF`) 안의 gh 호출도 보지 못한다. 뒤에
-# pr·issue·api가 오는 변수·치환 명령어는 gh로 보고 뒤 단어로 판정하므로, 그 값이 여러 단어의 게시
-# 명령인 호출(`X="gh pr comment 12"; $X pr view`)도 보지 못한다. 중괄호 확장(`{gh,}`), gh 글자가 남지
-# 않는 인코딩(`$'\x67\x68'`), g와 h가 모두 변수·치환에서 나오는 이름(`$X$Y`)으로 만든 명령어도 보지
-# 못한다.
+# 래퍼 옵션으로 여는 셸(sudo -s), 정적인 래퍼 옵션 값 뒤의 변수 명령어(`sudo -u bot "$SHELL" -c
+# '...'`, `nice -n 5 $CMD`), 그룹·서브셸·함수로 감싼 셸 실행기의 입력(`(bash) <<EOF`) 안의 gh 호출도
+# 보지 못한다. 뒤에 pr·issue·api가 오는 변수·치환 명령어와, 이름에 gh가 든 변수 뒤에 다른 하위 명령이
+# 오는 명령어는 gh로 보고 뒤 단어로 판정하므로, 그 값이 여러 단어의 게시 명령인 호출
+# (`X="gh pr comment 12"; $X pr view`)도 보지 못한다. 중괄호 확장(`{gh,}`), gh 글자가 남지 않는
+# 인코딩(`$'\x67\x68'`), IFS로 나누는 값(`${X:-gh${IFS}pr...}`), g와 h가 모두 변수·치환에서 나오는
+# 이름(`$X$Y`)으로 만든 명령어도 보지 못한다.
 # 판정이 불확실하지 않은 명령에서는 셸 실행기에 넘기는 문자열 안에서 따옴표·역슬래시·줄 이음으로 끊은
 # gh(`bash -c 'g\h pr comment ...'`)와 줄 이음으로 나뉜 기본값(`${X` 역슬래시 줄바꿈 `-gh}`)도 gh로 보지
 # 않는다. A–D 검사와 같은 한계라 1차 방어선은 PR 스킬 지침이다.
@@ -843,15 +844,20 @@ PINNING_CODEX_MENTION_LABEL="Codex 봇 멘션: 백틱이나 인용 안에 있어
 #   문자열에서 명령 자리가 아닌 gh(따옴표 속 글자, heredoc 본문, `echo gh`·`command -v gh`의 인자,
 #   `GH=/.../gh` 할당 값)가 보이면 게시로 본다. 명령 자리(할당·예약어와 sudo·env·timeout 같은 래퍼
 #   뒤)의 gh는 그 호출대로 판정한다 — `eval "$(direnv export bash)"; gh pr view ...`의 gh는 조회다.
-#   래퍼의 옵션 값(`sudo -u bot`, `nice -n 5`) 뒤의 gh는 명령 자리로 보지 않는다. 변수 명령어(`$GH pr
-#   comment`, `sudo "$GH" pr comment`, 변수 뒤에 h를 붙인 `"$X"h pr comment`)는 뒤따르는 하위 명령과
-#   인자로 판정한다. 명령 자리의 변수 명령어는 이름에 gh가 없거나 하위 명령이 pr·issue·api가 아니면 셸
-#   실행기로 본다(래퍼 옵션 바로 뒤의 변수는 옵션 값일 수도 있지만 명령어로 본다) — 인자로 넘긴
-#   스크립트(`$SHELL -c "..."`, `sudo "$SHELL" -c "..."`, `$SSH host "..."`)를 실행기 인자로 보고, 하위
-#   명령이 pr·issue·api가 아니면 무엇이 실행될지 모르므로 명령 문자열에 명령 자리가 아닌 gh가 보이면
-#   게시로 본다(`X="gh pr comment 12"; nohup $X`, `echo ... | $SHELL`, `$SSH host <<EOF`). 기본값·
-#   대체값이 여러 단어인 변수 명령어는 단어로 나뉘므로 하위 명령과 관계없이 그렇게 본다(`${X:-gh pr
-#   comment 12} pr view`). 변수 값과 치환 출력은 한 단어로 본다 — `$(command -v gh) pr view`는 조회다.
+#   래퍼의 옵션 값(`sudo -u bot`, `nice -n 5`) 뒤의 gh는 명령 자리로 보지 않는다(time의 -p, timeout의
+#   -s·-k 값과 command의 -p·--, 래퍼 인자의 할당은 건너뛴다). 변수 명령어(`$GH pr comment`, `sudo "$GH"
+#   pr comment`, 변수 뒤에 h를 붙인 `"$X"h pr comment`)는 뒤따르는 하위 명령과 인자로 판정한다. 명령
+#   자리의 변수 명령어는 이름에 gh가 없거나 하위 명령이 pr·issue·api가 아니면 셸 실행기로 보아(래퍼
+#   옵션 바로 뒤의 변수는 옵션 값일 수도 있지만 명령어로 본다) 인자로 넘긴 스크립트(`$SHELL -c "..."`,
+#   `sudo "$SHELL" -c "..."`)와 입력(`$SSH api <<EOF`, `echo ... | $SHELL`)을 실행기 인자·입력으로
+#   본다. 따옴표 밖의 변수·치환 명령어는 값이 단어로 나뉘어 할당·치환 출력 속 단어가 명령어가 될 수
+#   있으므로, 하위 명령이 pr·issue·api가 아니면 명령 문자열에 명령 자리가 아닌 gh가 보일 때 게시로
+#   본다(`X="gh pr comment 12"; nohup $X`). 따옴표 안에서도 여러 단어가 되는 `"$@"`·`"${a[@]}"`와
+#   zsh의 `$=X`·`"${=X}"`·`"$a[@]"`도 그렇다. 기본값·대체값·치환 문자열이 여러 단어인 변수 명령어는
+#   하위 명령과 관계없이 그렇게 본다(`${X:-gh pr comment 12} pr view`). 따옴표 안의 변수 명령어(`"$GH"
+#   auth status`, `"$ROOT"/x.sh`)와 이름에 gh가 든 변수 뒤에 다른 하위 명령이나 --help·--version이 오는
+#   명령어(`$GH repo view`)는 명령 자리가 아닌 gh를 세지 않는다. 변수 값과 치환 출력은 한 단어로 본다
+#   — `$(command -v gh) pr view`는 조회다.
 #   gh 글자는 대소문자를 가리지 않고, `${GH:-gh}`·`${GH-gh}` 같은 기본값 안에서도 찾는다 (macOS
 #   파일시스템에서는 GH도 gh를 실행한다).
 # - 허용 형태는 heredoc이 없는 명령에서, 명령 위치의 `gh pr comment`로만 인정한다. here-string(<<<),
@@ -876,7 +882,7 @@ _PINNING_SH_LEXER_AWK='
     # 없는 구분자의 heredoc 본문. 단어는 T·B·H 프레임에 속하고 D·P·A의 글자는 아래 프레임의 단어에
     # 붙는다. 작은따옴표와 ANSI-C 따옴표는 프레임 대신 sqm·ansi 상태로 다룬다.
     function reset_word(d) {
-      cw[d] = ""; cwn[d] = 0; cwon[d] = 0; cwdyn[d] = 0; cwq[d] = 0; cwat[d] = ""; cwlong[d] = 0
+      cw[d] = ""; cwn[d] = 0; cwon[d] = 0; cwdyn[d] = 0; cwud[d] = 0; cwq[d] = 0; cwat[d] = ""; cwlong[d] = 0
       cwb[d] = ""; cwbn[d] = 1; cwpre[d] = 1
     }
     function push(t, dollar_,    below) {
@@ -909,7 +915,15 @@ _PINNING_SH_LEXER_AWK='
       if (c == "/" || (pre && (c == "{" || c == "="))) cwbn[o] = 1
       else if (cwbn[o]) { cwb[o] = (k > 0 && i > 0) ? (k ":" i) : ""; cwbn[o] = 0 }
     }
-    function mark_dyn(    o) { o = own[sp]; cwon[o] = 1; cwdyn[o] = 1; add("$", 0, 0) }
+    # 따옴표 밖의 확장은 값이 단어로 나뉠 수 있다(cwud). q는 ANSI-C 따옴표처럼 나뉘지 않는 확장이다.
+    function mark_dyn(q,    o, t) {
+      o = own[sp]; cwon[o] = 1; cwdyn[o] = 1
+      t = ft[sp]; if (t == "P") t = pctx[sp]
+      if (!q && (t == "T" || t == "B")) cwud[o] = 1
+      add("$", 0, 0)
+    }
+    # 따옴표 안에서도 여러 단어가 되는 확장("$@", "${a[@]}", zsh의 "${=X}"·"$=X"·"${(z)X}"·"$a[@]").
+    function mark_split() { cwud[own[sp]] = 1 }
     function mark_q(    o) { o = own[sp]; cwon[o] = 1; cwq[o] = 1 }
     function end_word(d,    j) {
       if (!cwon[d]) return
@@ -928,7 +942,8 @@ _PINNING_SH_LEXER_AWK='
         if (cwdyn[d] || cwlong[d]) confused = 1
       } else {
         j = ++sn[d]
-        sv[d, j] = cw[d]; sdy[d, j] = cwdyn[d] || cwlong[d]; sat[d, j] = cwat[d]; sgp[d, j] = cwb[d]
+        sv[d, j] = cw[d]; sdy[d, j] = cwdyn[d] || cwlong[d]; sud[d, j] = cwud[d] || cwlong[d]
+        sat[d, j] = cwat[d]; sgp[d, j] = cwb[d]
         sk[d, j] = rtnext[d] == 2 ? "h" : rtnext[d] == 3 ? "i" : rtnext[d] ? "r" : "w"
         rtnext[d] = 0
       }
@@ -961,7 +976,7 @@ _PINNING_SH_LEXER_AWK='
     # gh도 잡도록 따옴표를 gh 앞뒤 경계로 보고, 대소문자를 가리지 않는다. 기본값 안의 gh(${GH:-gh},
     # ${GH-gh}, ${a[0]-gh})도 gh 글자로 본다.
     function has_gh_text(s) { return tolower(s) ~ GH_TEXT_RE || (index(s, "{") && tolower(s) ~ DEF_GH_RE) }
-    function classify(d,    j, np, t, u, cmdpos, xpos, hstr, sdyn, runner, rdone, sub1) {
+    function classify(d,    j, np, t, u, cmdpos, xpos, hstr, sdyn, runner, rdone, sub1, ghname) {
       np = 0; hstr = 0; sdyn = 0; runner = 0; rdone = 0; napi = 0
       for (j = 1; j <= sn[d]; j++) {
         # here-string과 < 입력은 셸 실행기라면 실행할 스크립트다.
@@ -971,34 +986,40 @@ _PINNING_SH_LEXER_AWK='
           continue
         }
         if (sk[d, j] != "w") continue
-        np++; pw[np] = sv[d, j]; pd[np] = sdy[d, j]; pa[np] = sat[d, j]; pg[np] = sgp[d, j]
+        np++; pw[np] = sv[d, j]; pd[np] = sdy[d, j]; pu[np] = sud[d, j]; pa[np] = sat[d, j]; pg[np] = sgp[d, j]
       }
       if (np == 0) return
       check_allowed(np)
       gh_next_words(np)
-      # 명령어 자리: 앞의 할당과 예약어(if, then, !, { 등)를 건너뛴다.
+      # 명령어 자리: 앞의 할당과 예약어(if, then, !, { 등)를 건너뛴다. bash의 예약어 time은 -p를 받는다.
       cmdpos = 1
-      while (cmdpos <= np && (pw[cmdpos] ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || (!pd[cmdpos] && pw[cmdpos] ~ /^(if|then|elif|else|do|while|until|time|!|[{])$/))) cmdpos++
+      while (cmdpos <= np && (pw[cmdpos] ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || (!pd[cmdpos] && pw[cmdpos] ~ /^(if|then|elif|else|do|while|until|time|!|[{])$/))) {
+        if (pw[cmdpos] == "time" && cmdpos < np && !pd[cmdpos + 1] && pw[cmdpos + 1] == "-p") cmdpos++
+        cmdpos++
+      }
       xpos = exec_pos(cmdpos, np)
       for (t = 1; t <= np; t++) {
         if (pd[t]) {
           # 변수로 적은 명령어는 뒤따르는 하위 명령과 인자로 판정한다($GH pr comment, sudo "$GH" pr
-          # comment). 명령어 자리와 래퍼 뒤 실행 자리(할당 제외)의 변수는 이름에 gh가 없거나 하위 명령이
-          # pr·issue·api가 아니면 셸 실행기로도 본다($SHELL -c "$CMD" pr, sudo "$SHELL" -c "$CMD", $SSH
-          # api "$CMD"). 래퍼 옵션 바로 뒤의 변수는 옵션 값일 수도 있지만 명령어로 본다(caffeinate -i
-          # "$CMD"). 하위 명령이 pr·issue·api가 아니면 무엇이 실행될지 모르므로, 동적 입력을 받은 셸
-          # 실행기처럼 END에서 명령 자리가 아닌 gh 글자도 센다. 기본값·치환·변수 값은 단어로 나뉘어 gh
-          # 호출이 된다(${X:-gh pr comment 12}, $(echo "gh pr comment 12"), X="gh pr comment"; $X). 하위
-          # 명령이 pr·issue·api면 명령어를 gh로 보고 그 호출로 판정한다($(command -v gh) pr view 는
-          # 조회다). 다만 기본값·대체값이 여러 단어면 단어로 나뉘어 기본값 속 단어가 명령어와 하위 명령이
-          # 되므로 동적 입력으로 본다(${X:-gh pr comment 12} pr view). 변수 값과 치환 출력은 한 단어로
-          # 본다. 이름에 gh가 든 변수도 인자에 gh 글자가 보이면 게시로 본다.
+          # comment). 명령어 자리와 래퍼 뒤 실행 자리의 변수는 이름에 gh가 없거나 하위 명령이
+          # pr·issue·api가 아니면 셸 실행기로 보고, 인자와 입력(heredoc, here-string, < 입력, 파이프)을
+          # 실행기에 넘기는 스크립트로 읽는다($SHELL -c "$CMD", sudo "$SHELL" -c "$CMD", $SSH api <<EOF).
+          # 래퍼 옵션 바로 뒤의 변수는 옵션 값일 수도 있지만 명령어로 본다(caffeinate -i "$CMD").
+          # 따옴표 밖의 확장은 값이 단어로 나뉘어 할당·치환 출력 속 단어가 명령어와 하위 명령이 된다
+          # (X="gh pr comment 12"; $X, $(echo "gh pr") comment). 그런 명령어는 하위 명령이 pr·issue·api가
+          # 아니면 무엇이 실행될지 모르므로, 동적 입력을 받은 셸 실행기처럼 END에서 명령 자리가 아닌 gh
+          # 글자도 센다. 다만 이름에 gh가 든 변수 뒤에 다른 하위 명령이나 -h·--help·--version이 오면 gh로
+          # 본다($GH repo view). 하위 명령이 pr·issue·api면 명령어를 gh로 보고 그 호출로 판정하되($(command
+          # -v gh) pr view 는 조회다), 기본값·대체값·치환 문자열이 여러 단어면 그 단어가 명령어와 하위
+          # 명령이 되므로 동적 입력으로 본다(${X:-gh pr comment 12} pr view). 래퍼에 인자로 넘긴 할당도
+          # 단어로 나뉜다(env A=${X:-a gh pr comment 12} true). 따옴표 안의 변수("$GH", "$ROOT"/x.sh),
+          # 변수 값, 치환 출력은 한 단어로 본다. 이름에 gh가 든 변수도 인자에 gh 글자가 보이면 게시로 본다.
           gh_invocation(t, np, 1)
-          if ((t == cmdpos || t == xpos) && def_split(pw[t])) dyn_runner = 1
-          if (t == cmdpos || (t == xpos && pw[t] !~ /^[A-Za-z_][A-Za-z0-9_]*=/)) {
-            sub1 = gh_subcmd_next(t, np)
-            if (!sub1) dyn_runner = 1
-            if (!sub1 || tolower(pw[t]) !~ /gh/) { if (!rdone++ && runner_args(t, np)) posts = 1 }
+          if (t >= cmdpos && t <= xpos && pu[t] && def_split(pw[t])) dyn_runner = 1
+          if (t == cmdpos || t == xpos) {
+            sub1 = gh_subcmd_next(t, np); ghname = tolower(pw[t]) ~ /gh/
+            if (pu[t] && sub1 != 1 && !(ghname && sub1 == 2)) dyn_runner = 1
+            if (sub1 != 1 || !ghname) { runner = 1; if (!rdone++ && runner_args(t, np)) posts = 1 }
             else for (u = t + 1; u <= np; u++) if (has_gh_text(pw[u])) posts = 1
           }
           continue
@@ -1019,42 +1040,49 @@ _PINNING_SH_LEXER_AWK='
       if (sdyn) dyn_runner = 1
       if (pipe_in[d]) piped_runner = 1
     }
-    # 매개변수 확장의 기본값·대체값이 여러 단어인지(${X:-gh pr comment 12}, ${X:-$Y gh pr comment 12}).
-    # lexer는 ${ }를 $와 안쪽 글자로 적는다($X:-gh pr comment 12). 이런 기본값은 단어로 나뉘어 명령어와
-    # 하위 명령이 되므로, 뒤따르는 단어가 pr·issue·api여도 그 호출로 판정할 수 없다. 앞뒤 공백만 있으면
-    # 한 단어다(${X:- gh} pr view 는 조회다).
+    # 매개변수 확장의 기본값·대체값·치환 문자열이 여러 단어인지(${X:-gh pr comment 12}, ${X:-$Y gh pr
+    # comment 12}, ${X/x/gh api ...}). lexer는 ${ }를 $와 안쪽 글자로 적는다($X:-gh pr comment 12). 따옴표
+    # 밖의 이런 값은 단어로 나뉘어 명령어와 하위 명령이 되므로, 뒤따르는 단어가 pr·issue·api여도 그 호출로
+    # 판정할 수 없다. 앞뒤 공백만 있으면 한 단어다(${X:- gh} pr view 는 조회다).
     function def_split(w) {
-      return match(w, /[$][#!]?[A-Za-z0-9_@*]+(\[[^][]*\])?:?[-=+?]/) && substr(w, RSTART + RLENGTH) ~ /[^ \t\n][ \t\n]+[^ \t\n]/
+      return match(w, /[$][#!]?[A-Za-z0-9_@*]+(\[[^][]*\])?(:?[-=+?]|\/)/) && substr(w, RSTART + RLENGTH) ~ /[^ \t\n][ \t\n]+[^ \t\n]/
     }
-    # 변수 명령어 뒤의 첫 하위 명령이 pr·issue·api인지. 한 글자 옵션과 등호 없는 긴 옵션은 값을 하나
-    # 받는다고 보고 건너뛴다(gh_invocation과 달리 -h·--help·--version도 값을 받는다고 본다).
+    # 변수 명령어 뒤의 첫 하위 명령. pr·issue·api면 1, 다른 정적 단어나 -h·--help·--version이면 2,
+    # 없거나 동적이면 0이다. 그 밖의 한 글자 옵션과 등호 없는 긴 옵션은 값을 하나 받는다고 보고
+    # 건너뛴다. gh는 -h·--help·--version이 있으면 게시하지 않는다.
     function gh_subcmd_next(t, np,    u, w) {
       for (u = t + 1; u <= np; u++) {
         w = pw[u]
         if (substr(w, 1, 1) == "-" && w != "-") {
+          if (!pd[u] && (w == "-h" || w == "--help" || w == "--version")) return 2
           if (substr(w, 1, 2) == "--") { if (index(w, "=") == 0) u++ }
           else if (length(w) == 2) u++
           continue
         }
-        return !pd[u] && w ~ /^(pr|issue|api)$/
+        if (pd[u]) return 0
+        return w ~ /^(pr|issue|api)$/ ? 1 : 2
       }
       return 0
     }
     # 실제로 실행되는 명령어 자리. 뒤 명령을 그대로 실행하는 래퍼(sudo, env, nohup, time, exec,
-    # nice, caffeinate, timeout, command)와 그 옵션·할당을 건너뛴다. 옵션 값(sudo -u bot)이나 변수를
-    # 만나면 거기서 멈추므로, 그 뒤의 gh는 숨은 gh 검사에 남는다. 멈춘 자리의 변수는 classify가
-    # 명령어로 본다.
+    # nice, caffeinate, timeout, command)와 그 옵션·할당(값이 변수여도)을 건너뛴다. timeout은 -s·-k의
+    # 값과 시간을, command는 -p와 -- 를 건너뛴다. 다른 옵션 값(sudo -u bot)이나 변수를 만나면 거기서
+    # 멈추므로, 그 뒤의 gh는 숨은 gh 검사에 남는다. 멈춘 자리의 변수는 classify가 명령어로 본다.
     function exec_pos(u, np,    w) {
       while (u <= np && !pd[u]) {
         w = lower_base(pw[u])
         if (w ~ /^(sudo|env|nohup|time|exec|nice|caffeinate)$/) {
           u++
-          while (u <= np && !pd[u] && (pw[u] ~ /^-/ || pw[u] ~ /^[A-Za-z_][A-Za-z0-9_]*=/)) u++
+          while (u <= np && ((!pd[u] && pw[u] ~ /^-/) || pw[u] ~ /^[A-Za-z_][A-Za-z0-9_]*=/)) u++
           continue
         }
-        if (w == "timeout") { u++; while (u <= np && pw[u] ~ /^-/) u++; u++; continue }
+        if (w == "timeout") {
+          u++
+          while (u <= np && pw[u] ~ /^-/) { if (pw[u] ~ /^(-[sk]|--signal|--kill-after)$/) u++; u++ }
+          u++; continue
+        }
         # command -v gh 는 뒤 옵션에서 멈추므로 gh를 실행 자리로 보지 않는다.
-        if (w == "command") { u++; continue }
+        if (w == "command") { u++; while (u <= np && !pd[u] && (pw[u] == "-p" || pw[u] == "--")) u++; continue }
         break
       }
       return u
@@ -1207,20 +1235,36 @@ _PINNING_SH_LEXER_AWK='
       }
       return 0
     }
-    function dollar(k, i, c2) {
+    function dollar(k, i, c2,    j) {
       if (c2 == "(") {
         mark_dyn()
         if (C[i + 2] == "(") { push("A", 0); return i + 2 }
         push("T", 1); return i + 1
       }
       # ${ cmd; } 와 ${| cmd; } 는 bash 5.3에서 명령을 실행하는 함수 치환이다. 매개변수 확장으로 읽되
-      # 판정 불확실로 본다.
-      if (c2 == "{") { if (C[i + 2] == "" || C[i + 2] ~ /^[ \t|]$/ || (C[i + 2] == "\\" && C[i + 3] == "")) confused = 1; mark_dyn(); push("P", 0); return i + 1 }
+      # 판정 불확실로 본다. zsh의 ${=X}·${(z)X} 는 따옴표 안에서도 값을 단어로 나눈다.
+      if (c2 == "{") {
+        if (C[i + 2] == "" || C[i + 2] ~ /^[ \t|]$/ || (C[i + 2] == "\\" && C[i + 3] == "")) confused = 1
+        mark_dyn(); if (C[i + 2] ~ /^[=(]$/) mark_split()
+        push("P", 0); return i + 1
+      }
       # $[ ] 는 bash·zsh의 옛 산술 확장이다.
       if (c2 == "[") { mark_dyn(); push("A", 0); abr[sp] = 1; return i + 1 }
       if (ft[sp] == "T" || ft[sp] == "B") {
-        if (c2 == sq) { mark_dyn(); ansi = 1; return i + 1 }
+        if (c2 == sq) { mark_dyn(1); ansi = 1; return i + 1 }
         if (c2 == dq) { mark_q(); push("D", 0); return i + 1 }
+      }
+      # zsh의 $=X 는 따옴표 안에서도 값을 단어로 나누고, $~X·$^X 는 값을 패턴·배열로 편다(bash에서는
+      # 글자다).
+      if (c2 ~ /^[=~^]$/ && C[i + 2] ~ /^[A-Za-z_]$/) { mark_dyn(); if (c2 == "=") mark_split(); return i + 1 }
+      if (c2 == "@") { mark_dyn(); mark_split(); return i }
+      # zsh는 중괄호 없는 첨자도 읽는다("$a[@]"는 요소마다 한 단어다).
+      if (c2 ~ /^[A-Za-z_]$/) {
+        mark_dyn()
+        j = i + 2
+        while (C[j] ~ /^[A-Za-z0-9_]$/) j++
+        if (C[j] == "[" && C[j + 1] == "@" && C[j + 2] == "]") mark_split()
+        return i
       }
       if (c2 ~ /^[A-Za-z0-9_@*#?$!-]$/) { mark_dyn(); return i }
       add("$", k, i); return i
@@ -1319,6 +1363,8 @@ _PINNING_SH_LEXER_AWK='
       if (c == dq) { push("D", 0); return i }
       if (c == "$") return dollar(k, i, c2)
       if (c == "`") { push("B", 0); return i }
+      # ${@}·${a[@]}·${!a[@]} 는 따옴표 안에서도 요소마다 한 단어다.
+      if (c == "@") mark_split()
       add(c, k, i); return i
     }
     # 산술 확장 $(( )), $[ ] 과 산술 명령 (( )). << 는 시프트 연산자다.
