@@ -13,7 +13,61 @@ from pathlib import Path
 import re
 import stat
 from typing import Any
+import urllib.error
 import urllib.request
+
+
+MAX_ERROR_BODY_BYTES = 4096
+REMOTE_ERROR_CODES = frozenset({
+    "invalid-unused-tags-request", "invalid-operation-parameters", "root-operator-command-required",
+    "tags-must-be-nonempty-and-contain-no-whitespace-or-control-characters", "tags-must-not-be-empty",
+    "unused-tag-name-missing-or-changed", "unused-tag-selection-must-include-all-descendants",
+    "unused-tag-selection-includes-protected-name", "selected-tag-or-descendant-is-in-use",
+    "stale-preview-create-a-new-request-id", "preview-expired-create-a-new-request-id",
+    "preview-token-mismatch", "explicit-confirmation-required", "restore-point-not-mirrored",
+    "request-id-payload-mismatch", "operation-not-found", "collection-not-ready", "collection-not-open",
+})
+LOCAL_ERROR_CODES = frozenset({
+    "expected-private-root-owned-regular-file", "input-file-too-large", "expected-json-list-of-tag-names",
+    "invalid-configured-instance", "invalid-configured-helper-boundary", "selected-tags-must-not-be-empty",
+    "invalid-local-credential", "helper-request-failed", "unexpected-operation-action",
+    "operation-not-completed-inspect-status-do-not-repeat", "apply-response-unknown-check-status-do-not-repeat",
+    "helper-busy", "helper-busy-check-status-do-not-repeat",
+})
+STATUS_GUIDANCE = "Use status for the same operation before any retry; do not create a new request ID."
+
+
+def describe_error(error: Exception) -> str:
+    # Only our closed vocabulary is printable. Never print an arbitrary exception,
+    # HTTP body, filename, tag, credential or traceback, even if it is a ValueError.
+    code = str(error) if isinstance(error, ValueError) else ""
+    if code not in REMOTE_ERROR_CODES | LOCAL_ERROR_CODES:
+        return type(error).__name__
+    if code in {"operation-not-completed-inspect-status-do-not-repeat",
+                "apply-response-unknown-check-status-do-not-repeat", "helper-busy-check-status-do-not-repeat"}:
+        return code + ". " + STATUS_GUIDANCE
+    return code
+
+
+def remote_error_code(error: urllib.error.HTTPError) -> str | None:
+    if error.code not in (400, 409):
+        return None
+    try:
+        raw = error.read(MAX_ERROR_BODY_BYTES + 1)
+        if len(raw) > MAX_ERROR_BODY_BYTES:
+            return None
+        value = json.loads(raw)
+        if (not isinstance(value, dict) or value.get("ok") is not False
+                or set(value) - {"ok", "error", "busy"} or not isinstance(value.get("error"), str)):
+            return None
+        code = value["error"]
+        if error.code == 409 and code == "busy":
+            return "helper-busy"
+        if error.code == 400 and code in REMOTE_ERROR_CODES:
+            return code
+    except Exception:
+        pass
+    return None
 
 
 def identifier(value: str) -> str:
@@ -67,10 +121,26 @@ def helper(path: str, payload: dict[str, Any], *, key: str, port: int, timeout: 
             return None
 
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
-    with opener.open(request, timeout=timeout) as response:
-        value = json.load(response)
-    if not isinstance(value, dict) or value.get("ok") is not True or not isinstance(value.get("result"), dict):
-        raise ValueError("helper-request-failed")
+    applying = path == "/tags/unused/apply"
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            value = json.load(response)
+        if not isinstance(value, dict) or value.get("ok") is not True or not isinstance(value.get("result"), dict):
+            raise ValueError("helper-request-failed")
+    except urllib.error.HTTPError as error:
+        code = remote_error_code(error)
+        error.close()
+        if code is not None:
+            if applying and code == "helper-busy":
+                code = "helper-busy-check-status-do-not-repeat"
+            raise ValueError(code) from None
+        if applying:
+            raise ValueError("apply-response-unknown-check-status-do-not-repeat") from None
+        raise
+    except Exception:
+        if applying:
+            raise ValueError("apply-response-unknown-check-status-do-not-repeat") from None
+        raise
     return value["result"]
 
 
@@ -135,4 +205,4 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as error:
-        raise SystemExit("anki-host-unused-tags failed: " + type(error).__name__) from None
+        raise SystemExit("anki-host-unused-tags failed: " + describe_error(error)) from None

@@ -71,20 +71,27 @@ def test_rejects_unapproved_descendants_exceptions_live_children_and_changed_nam
     assert preserve(r) == before and r.col.tags.all() == registered and not r.restored
 
 
-@pytest.mark.parametrize("change", ["used", "new-child", "renamed"])
-def test_changed_preview_stops_before_write(runtime, change):
+@pytest.mark.parametrize("change,error", [("used", "in-use"), ("new-child", "include-all-descendants"),
+                                         ("replaced-name", "missing-or-changed")])
+def test_changed_preview_stops_before_write(runtime, change, error):
     r = runtime
     nid = add(r)
     register(r, "unused")
     p = preview(r, ["unused"])
+    original = (preserve(r), r.col.tags.all())
     if change == "used":
         r.col.tags.bulk_add([nid], "unused")
     elif change == "new-child":
         register(r, "unused::new")
     else:
-        r.col.tags.rename("unused", "renamed")
+        # Anki rename is deliberately a no-op for an unused registry name.
+        # Replace it through native APIs to actually invalidate the preview.
+        assert r.col.tags.remove("unused").count == 0
+        register(r, "renamed")
+        assert "unused" not in r.col.tags.all() and "renamed" in r.col.tags.all()
     before, registered = preserve(r), r.col.tags.all()
-    with pytest.raises(r.error):
+    assert (before, registered) != original
+    with pytest.raises(r.error, match=error):
         apply(r, p)
     assert preserve(r) == before and r.col.tags.all() == registered and not r.restored
 
