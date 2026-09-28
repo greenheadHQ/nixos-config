@@ -264,3 +264,17 @@ def test_managed_source_rename_and_history_field_preserve_collection(runtime, tm
     rollback = build_bundle(r.col.models.get(model_id), assets)
     paths = diff_bundle(v1, rollback)
     warnings.warn('managed history rollback: ' + ('same v1 digest' if not paths else 'changed paths: ' + ', '.join(paths)))
+
+    # Field removal can fill an empty browser question format. Verify the
+    # separate model update used by the user's Browser Appearance correction.
+    model = r.col.models.get(model_id)
+    for template, original in zip(model['tmpls'], v1['definition']['tmpls'], strict=True):
+        template['bqfmt'] = original['bqfmt']
+    r.col.models.update_dict(model)
+    r.col.models._clear_cache()
+    assert build_bundle(r.col.models.get(model_id), assets)['digest'] == v1['digest']
+    note = r.col.get_note(nid)
+    assert note.mid == model_id and note.card_ids() == [cid]
+    assert dict(note.items()) == fields and note.tags == note_tags
+    assert r.col.db.all('select * from cards order by id') == before_cards
+    assert r.col.db.all('select * from revlog order by id') == before_reviews
