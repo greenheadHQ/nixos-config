@@ -20,6 +20,7 @@ class FakeAnki:
     def __init__(self, busy=None):
         self.calls = []
         self.operation_calls = []
+        self.helper_calls = []
         self.busy = busy
         self.notes = {
             1: {"noteId": 1, "modelName": "Basic", "tags": ["x"], "cards": [10],
@@ -35,11 +36,14 @@ class FakeAnki:
         body = json.loads(request.content)
         if request.url.path.startswith("/operations/"):
             path = request.url.path.rsplit("/", 1)[1]
-            if self.busy and path != "status":
+            self.helper_calls.append((path, body))
+            if self.busy and path not in ("status", "history"):
                 return httpx.Response(409, json={"ok": False, "error": "busy", "busy": self.busy})
             try:
                 if path == "status":
                     result = self.engine.status(body["operation_id"])
+                elif path == "history":
+                    result = self.engine.history(body.get("limit", 20), body.get("offset", 0), body.get("note_id"))
                 elif path == "prepare":
                     result = self.engine.prepare(body["action"], body["params"], body.get("request_id"))
                 elif path == "apply":
@@ -203,8 +207,62 @@ async def test_tool_annotations_mark_read_and_write(tmp_path):
     assert tools["anki_delete_notes"].annotations.destructiveHint is True
     assert tools["anki_set_due_date"].annotations.idempotentHint is False
     assert tools["anki_operation_status"].annotations.readOnlyHint is True
+    assert tools["anki_recent_operations"].annotations.readOnlyHint is True
     assert tools["anki_set_card_flags"].annotations.readOnlyHint is False
     assert tools["anki_set_card_flags"].annotations.idempotentHint is True
+
+
+@pytest.mark.anyio
+async def test_recent_operations_keeps_default_response_and_filters_while_busy(tmp_path):
+    fake = FakeAnki(busy="export")
+    mcp = make_mcp(fake, tmp_path)
+    for note_id in (1, 2):
+        fake.engine._save({
+            "operation_id": f"{note_id:032x}", "request_id": f"history-{note_id}",
+            "action": "update_fields", "state": "applied", "created_at": note_id,
+            "summary": {"notes": 1, "note_ids": [note_id]}, "result": {"note_id": note_id},
+            "backup": {"path": "private-path"},
+        })
+    result = await mcp.call_tool("anki_recent_operations", {})
+    unfiltered = result[1] if isinstance(result, tuple) else result
+    assert unfiltered == fake.engine.history()
+    assert fake.helper_calls[-1] == ("history", {"limit": 20, "offset": 0})
+    result = await mcp.call_tool("anki_recent_operations", {"note_id": 1, "limit": 1, "offset": 0})
+    filtered = result[1] if isinstance(result, tuple) else result
+    assert filtered == {
+        "note_id": 1,
+        "operations": [{"operation_id": f"{1:032x}", "request_id": "history-1", "action": "update_fields",
+                        "state": "applied", "created_at": 1}],
+        "total": 1, "next_offset": None, "undetermined": 0,
+    }
+    assert fake.helper_calls[-1] == ("history", {"limit": 1, "offset": 0, "note_id": 1})
+    assert not fake.calls and not fake.operation_calls
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("note_id", [0, -1, True, "1", 1.0, [], {}])
+async def test_recent_operations_rejects_invalid_note_id_before_helper(tmp_path, note_id):
+    fake = FakeAnki()
+    mcp = make_mcp(fake, tmp_path)
+    with pytest.raises(ToolError):
+        await mcp.call_tool("anki_recent_operations", {"note_id": note_id})
+    assert not fake.helper_calls and not fake.calls
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("echo", [{}, {"note_id": 2}, {"note_id": True}, {"note_id": "1"}])
+async def test_recent_operations_refuses_unfiltered_or_mismatched_helper_response(tmp_path, echo):
+    class OldHelper(FakeAnki):
+        def handler(self, request):
+            if request.url.path == "/operations/history":
+                return httpx.Response(200, json={"ok": True, "result": {
+                    "operations": [{"summary": "unfiltered-private-detail"}], "total": 1, "next_offset": None, **echo,
+                }})
+            return super().handler(request)
+    mcp = make_mcp(OldHelper(), tmp_path)
+    with pytest.raises(ToolError, match="note-operation-history-unavailable-update-host") as error:
+        await mcp.call_tool("anki_recent_operations", {"note_id": 1})
+    assert "unfiltered-private-detail" not in str(error.value)
 
 
 @pytest.mark.anyio

@@ -841,7 +841,7 @@ class _Handler(BaseHTTPRequestHandler):
             elif path == "/operations/history" and self.command == "POST":
                 if _operations is None:
                     raise OperationError("collection-not-ready")
-                result = _operations.history(body.get("limit", 20), body.get("offset", 0))
+                result = _operations.history(body.get("limit", 20), body.get("offset", 0), body.get("note_id"))
             elif path == "/operations/delivery" and self.command == "POST":
                 result = _mutating("delivery", lambda: _ops().record_delivery(body["operation_id"], body["kind"], body["receipt"]))
             elif path == "/schema/inspect" and self.command == "POST":

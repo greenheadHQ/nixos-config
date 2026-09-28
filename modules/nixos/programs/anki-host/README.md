@@ -134,6 +134,9 @@ PYTHONPATH=modules/nixos/programs/anki-mcp/src nix shell .#ankiMcpTestEnv -c \
 | `expired` | 확인 기간이 지났다. 새 미리보기와 사용자 확인이 필요하다. |
 
 `anki_operation_status(operation_id)`와 `anki_recent_operations`로 작업을 찾는다.
+`anki_recent_operations(note_id=...)`는 해당 노트의 영수증을 최신순으로 간략히 반환한다. 복구점 등 상세는
+`anki_operation_status`로 확인한다. 노트 유형·덱 옵션 변경은 제외하며, 잘린 대상 ID 목록 때문에 판단할 수 없는
+영수증 수는 `undetermined`로 표시한다. 결과가 불명인 노트 추가는 새 노트 ID가 없어 조회되지 않을 수 있다.
 ID 없이 보낸 요청의 응답을 잃었으면 최근 작업부터 확인한다. `notification=unknown`은 알림 전달 여부 불명이며
 자동 재발송하지 않는다. 원장은 종료 시 본문·미디어·확인 토큰을 지우고 결과와 재사용 방지 기록을 보존한다.
 미완료 본문도 만료 정리 시 제거한다. 원장은 파일 0600·디렉터리 0700으로 생성하며, 원장 파일은 삭제하지 않고 무기한 보존한다.
