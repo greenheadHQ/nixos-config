@@ -1879,6 +1879,9 @@ let
               (builtins.any (
                 package: (package.name or "") == "anki-host-managed-${name}"
               ) nixosCfg.environment.systemPackages) == (svc.environment ? ANKI_HOST_MANAGED_BUNDLE)
+            && builtins.any (
+              package: (package.name or "") == "anki-host-unused-tags-${name}"
+            ) nixosCfg.environment.systemPackages
           )
           [
             "main"
