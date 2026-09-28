@@ -1,6 +1,7 @@
 """Selected registry cleanup on generated collections with the real Anki backend."""
 
 import pytest
+from anki.collection import AddNoteRequest
 
 from test_real_collection import add, runtime  # noqa: F401
 
@@ -112,3 +113,54 @@ def test_name_reuse_during_export_is_rechecked_on_reopened_collection(runtime):
     assert "unused" in r.col.get_note(nid).tags
     assert r.ops.status(p["operation_id"])["state"] == "prepared"
     assert len(r.restored) == 1
+
+
+@pytest.mark.parametrize("registered,note_tag,used", [
+    ("ss", "ß", False), ("ß", "ss", False), ("ẞ", "ß", True),
+    ("İ", "i", False), ("ı", "I", False), ("K", "K", True),
+    ("Σ", "ς", True), ("S", "ſ", True),
+    ("a", "a:::b", True), ("a:", "a:::b", True),
+    ("parent", "PARENT::child", True), ("literal_*", "literal_ab", False),
+    ("literal_*", "literal_*::child", True),
+])
+def test_inspect_retains_native_unicode_case_and_boundary_semantics(runtime, registered, note_tag, used):
+    r = runtime
+    nid = add(r)
+    register(r, registered)
+    # Preserve different historical spelling without native registration
+    # canonicalizing the note to the already registered name. Synthetic only.
+    r.col.db.execute("update notes set tags = ? where id = ?", f" {note_tag} ", nid)
+    assert registered in r.col.tags.all()
+    assert r.helper.unused_tags._used(r.col, [registered]) is used
+    before, registry = preserve(r), r.col.tags.all()
+    scan = r.helper.unused_tags.inspect(r.col, [])
+    assert (registered not in scan["unused_tags"]) is used
+    assert preserve(r) == before and r.col.tags.all() == registry
+
+
+def test_large_generated_collection_inspection_reads_notes_once(runtime, monkeypatch):
+    r = runtime
+    requests = []
+    model = r.col.models.by_name("Basic")
+    for i in range(3_000):
+        note = r.col.new_note(model)
+        note["Front"], note["Back"] = f"synthetic {i}", "back"
+        note.tags = [f"live-{i % 300:03d}::child"]
+        requests.append(AddNoteRequest(note, 1))
+    r.col.add_notes(requests)
+    empty = [f"unused-{i:04d}" for i in range(2_000)]
+    register(r, *empty, "keep", "keep::child")
+    before, registry = preserve(r), r.col.tags.all()
+    queries = []
+    original = r.col.db.list
+    def traced(sql, *args, **kwargs):
+        queries.append(sql)
+        return original(sql, *args, **kwargs)
+    monkeypatch.setattr(r.col.db, "list", traced)
+    result = r.helper.unused_tags.inspect(r.col, ["KEEP"])
+    assert result["unused_tags"] == empty
+    assert result["protected_unused_tags"] == ["keep", "keep::child"]
+    assert [sql for sql in queries if "from notes" in sql] == [
+        "select distinct tags from notes where tags != ''"]
+    assert sum(sql == "select tag from tags where tag regexp ?" for sql in queries) == 3
+    assert preserve(r) == before and r.col.tags.all() == registry

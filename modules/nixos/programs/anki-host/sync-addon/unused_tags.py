@@ -7,9 +7,14 @@ matching as tags.remove(). No caller can supply SQL or a regular expression.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from typing import Any
 
 from .operations import OperationError, digest, tags
+
+
+_USAGE_BATCH_NAMES = 256
+_USAGE_BATCH_BYTES = 16 * 1024
 
 
 def _pattern(names: list[str], *, in_notes: bool = False) -> str:
@@ -37,11 +42,47 @@ def _note_tags(col: Any) -> list[list[Any]]:
     return col.db.all("select id, tags, mod, usn from notes order by id")
 
 
+def _usage_patterns(names: set[str]) -> Iterator[str]:
+    batch: list[str] = []
+    overhead = len("(?i)^(?:)$")
+    size = overhead
+    for name in sorted(names):
+        escaped = re.escape(name)
+        length = len(escaped.encode("utf-8")) + 1
+        if batch and (len(batch) == _USAGE_BATCH_NAMES or size + length > _USAGE_BATCH_BYTES):
+            yield "(?i)^(?:" + "|".join(batch) + ")$"
+            batch, size = [], overhead
+        # A single long name stays intact in its own pattern, never truncated.
+        batch.append(escaped)
+        size += length
+    if batch:
+        yield "(?i)^(?:" + "|".join(batch) + ")$"
+
+
+def _used_registry(col: Any) -> set[str]:
+    names: set[str] = set()
+    # Scan notes once, irrespective of the number of unused registered names.
+    for value in col.db.list("select distinct tags from notes where tags != ''"):
+        for name in value.split(" "):
+            if name:
+                names.add(name)
+                # Include overlapping boundaries: a:::b uses both a and a:.
+                names.update(name[:match.start()] for match in re.finditer(r"(?=::)", name))
+    used: set[str] = set()
+    for pattern in _usage_patterns(names):
+        # Reverse the literal match using Anki's Rust Unicode simple folding.
+        # Python casefold() would incorrectly conflate e.g. ss with ß. Bound
+        # unions so distinct usage cannot produce one enormous compiled regex.
+        used.update(col.db.list("select tag from tags where tag regexp ?", pattern))
+    return used
+
+
 def inspect(col: Any, protected_tags: list[str]) -> dict[str, Any]:
     protected_tags = tags(protected_tags)
     registered = [row[0] for row in _registry(col)]
     protected = set(_matching(col, protected_tags))
-    unused = [name for name in registered if not _used(col, [name])]
+    used = _used_registry(col) if registered else set()
+    unused = [name for name in registered if name not in used]
     return {"unused_tags": [name for name in unused if name not in protected],
             "protected_unused_tags": [name for name in unused if name in protected],
             "registered_count": len(registered), "scope": "local-tag-registry"}
