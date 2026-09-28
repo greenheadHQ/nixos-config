@@ -1,7 +1,0 @@
-{
-  "_fixture_existing_content": "## 요약\n\n리뷰 봇 안내\n\n봇 호출 예: `@codex fix the tests`",
-  "tool_name": "Bash",
-  "tool_input": {
-    "command": "gh pr create --title t --body-file __SANDBOX_BODY_FILE__"
-  }
-}

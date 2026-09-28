@@ -1,6 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input": {
-    "command": "git commit -m \"docs: 재리뷰는 gh pr comment <PR> --body '@codex review' 한 줄로 요청한다\""
-  }
-}

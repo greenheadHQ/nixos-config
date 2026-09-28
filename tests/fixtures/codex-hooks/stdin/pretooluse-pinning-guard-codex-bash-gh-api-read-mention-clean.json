@@ -1,6 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input": {
-    "command": "gh api repos/o/r/issues/12/comments --jq '.[] | select(.body | startswith(\"@codex review\")) | .id'"
-  }
-}

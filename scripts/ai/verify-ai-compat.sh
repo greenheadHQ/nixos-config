@@ -907,7 +907,7 @@ _pinning_hooks=(
   "$REPO_ROOT/modules/shared/programs/codex/files/hooks/pinning-alert.sh"
   "$REPO_ROOT/modules/shared/programs/codex/files/hooks/pinning-guard.sh"
 )
-for _var in PATTERN_A PATTERN_B PATTERN_C PATTERN_D PINNING_REPORT_INDENT PINNING_PATTERN_A_LABEL PINNING_PATTERN_B_LABEL PINNING_PATTERN_C_LABEL PINNING_PATTERN_D_LABEL PINNING_CODEX_MENTION_LABEL; do
+for _var in PATTERN_A PATTERN_B PATTERN_C PATTERN_D PINNING_REPORT_INDENT PINNING_PATTERN_A_LABEL PINNING_PATTERN_B_LABEL PINNING_PATTERN_C_LABEL PINNING_PATTERN_D_LABEL; do
   _lib_line="$(grep -m1 -E "^${_var}=" "$_pinning_lib" || true)"
   if [ -n "$_lib_line" ]; then
     pass "pinning $_var shared lib 정의 OK"
@@ -915,7 +915,7 @@ for _var in PATTERN_A PATTERN_B PATTERN_C PATTERN_D PINNING_REPORT_INDENT PINNIN
     fail "pinning $_var 정의 부재 ($_pinning_lib)"
   fi
 done
-for _fn in pinning_findings_records pinning_findings_text pinning_match_count pinning_should_check_path pinning_is_prd_or_plan_path pinning_canonicalize_existing_parent_path pinning_apply_patch_added_sections pinning_apply_patch_section_paths pinning_apply_patch_section_lines_for_path pinning_findings_records_for_path pinning_findings_text_for_path pinning_match_count_for_path pinning_guard_findings_text_for_path pinning_extract_body_file_paths pinning_gh_api_posts_content pinning_codex_mention_scope pinning_codex_mention_findings_text pinning_codex_mention_deny_reason; do
+for _fn in pinning_findings_records pinning_findings_text pinning_match_count pinning_should_check_path pinning_is_prd_or_plan_path pinning_canonicalize_existing_parent_path pinning_apply_patch_added_sections pinning_apply_patch_section_paths pinning_apply_patch_section_lines_for_path pinning_findings_records_for_path pinning_findings_text_for_path pinning_match_count_for_path pinning_guard_findings_text_for_path; do
   if grep -m1 -E "^${_fn}\(\)" "$_pinning_lib" >/dev/null 2>&1; then
     pass "pinning $_fn shared lib 함수 OK"
   else

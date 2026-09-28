@@ -1,7 +1,0 @@
-{
-  "_fixture_existing_content": "@codex review",
-  "tool_name": "Bash",
-  "tool_input": {
-    "command": "gh pr comment 12 --body-file __SANDBOX_BODY_FILE__"
-  }
-}

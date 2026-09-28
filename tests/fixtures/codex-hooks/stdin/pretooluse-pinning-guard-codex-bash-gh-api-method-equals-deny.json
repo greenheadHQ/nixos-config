@@ -1,6 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input": {
-    "command": "gh api -X=POST repos/o/r/issues/12/comments -f body='@codex fix'"
-  }
-}

@@ -164,7 +164,7 @@ Codex 봇 스레드는 마지막에 `codex-review-status --json`의 `unhandled_t
 - resolve 완료는 mutation 응답의 `thread.isResolved=true`로 확인한다. false 또는 필드 누락일 때만 Step 7 재조회·필요한 1회 retry를 적용한다.
 - AI 리뷰어 맹신 금지: CodeRabbit·Codex 봇 등 AI 리뷰어 피드백도 동일한 검증 기준을 적용한다.
   stale diff 기반 지적을 `HALLUCINATION`으로 오분류하지 말고 `STALE_REVIEW`를 쓴다.
-- 봇 멘션 금지: GitHub에 게시하는 어떤 글에도 Codex 봇 멘션을 쓰지 않는다. 봇 계정 이름으로도 멘션하지 않는다. 백틱 안이어도 봇이 작업 요청으로 읽는다. 예외는 [재리뷰 요청](references/codex-review.md#재리뷰-요청) 한 줄 명령뿐이다. 변수나 stdin으로 넘기는 본문은 pinning-guard가 읽지 못하므로 게시 전에 직접 확인한다.
+- 봇 멘션 금지: GitHub에 게시하는 어떤 글에도 Codex 봇 멘션을 쓰지 않는다. 봇 계정 이름으로도 멘션하지 않는다. 백틱 안이어도 봇이 작업 요청으로 읽는다. 예외는 [재리뷰 요청](references/codex-review.md#재리뷰-요청) 한 줄 명령뿐이다.
 - outside-diff 처리: PR 범위 밖 지적은 유효해도 이번 PR에서 처리하지 않는다.
   남은 문제와 이관 이유를 답글로 남기고, 별도 이슈 게시가 승인된 경우에만 생성한다.
 - 반영 전 회귀 확인: 피드백 반영 시 변경이 다른 기능을 깨뜨리지 않는지 확인한다.

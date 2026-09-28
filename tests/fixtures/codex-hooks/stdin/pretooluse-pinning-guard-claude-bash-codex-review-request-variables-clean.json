@@ -1,6 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input": {
-    "command": "PR=12; gh pr comment \"$PR\" -R \"$OWNER/$REPO\" --body '@codex review' && codex-review-status \"$PR\" -R \"$OWNER/$REPO\" --json"
-  }
-}

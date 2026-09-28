@@ -1,6 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input": {
-    "command": "gh pr create --title \"v$(echo 1.2 | awk -F. '{print $1}')\" --body \"릴리스 준비\" && git rev-parse --abbrev-ref HEAD | awk -F/ '{print $NF}'"
-  }
-}

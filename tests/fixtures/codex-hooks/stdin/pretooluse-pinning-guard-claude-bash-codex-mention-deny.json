@@ -1,6 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input": {
-    "command": "gh pr comment 12 --body \"봇 확인: `@codex` 참고\""
-  }
-}

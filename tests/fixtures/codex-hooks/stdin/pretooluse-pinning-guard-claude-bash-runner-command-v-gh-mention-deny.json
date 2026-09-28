@@ -1,6 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input": {
-    "command": "bash -c \"$(command -v gh) pr comment 12 --body '@codex fix'\""
-  }
-}
