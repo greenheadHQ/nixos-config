@@ -1228,6 +1228,28 @@ _pinning_codex_mention_table() {
     "Y='gh pr comment 12 --body x'; command -- \$Y"
     "X='gh pr comment 12 --body x'; timeout -s KILL 5 \$X"
     "X='gh pr comment 12 --body x'; time -p \$X"
+    # 백틱 치환 안의 따옴표 밖 변수, zsh가 따옴표 안에서도 나누는 "\${(z)X}"·"\$=X"·"\$arr[@]"와 값을 펴는
+    # \$~X·\$^X, 요소마다 한 단어가 되는 "\${a[@]}"·"\${@}", 래퍼 인자로 넘긴 할당의 여러 단어 기본값도
+    # 명령어가 된다. 이름에 gh가 든 변수도 하위 명령이 없거나 동적이면 무엇이 실행될지 모르고, 셸
+    # 실행기로 보는 변수는 따옴표 안이어도 입력을 스크립트로 읽는다. timeout의 --signal·-k 값과 command
+    # -p도 건너뛴다(command -p는 기본 PATH에서 찾으므로 gh가 /usr/bin에 있으면 게시한다).
+    "X='gh pr comment 12 --body x'; y=\`\$X\`"
+    "X='gh pr comment 12 --body x'; echo \"\`\$X\`\""
+    "X='gh pr comment 12 --body x'; \"\${(z)X}\""
+    "X='gh pr comment 12 --body x'; \"\$=X\""
+    "read -rA arr <<< 'gh pr comment 12 --body x'; \"\$arr[@]\""
+    "X=gh; \$~X pr comment 12 --body x"
+    "X=gh; \$^X pr comment 12 --body x"
+    "read -ra a <<< 'gh pr comment 12 --body x'; \"\${a[@]}\""
+    "X='gh pr comment 12 --body x'; set -- \$X; \"\${@}\""
+    "env A=\${X:-a gh pr comment 12 --body x} true"
+    "GH='gh pr comment 12 --body x'; \$GH"
+    "GH='gh pr comment 12 --body x'; \$GH \"\$Y\""
+    $'GH_SH=bash; "$GH_SH" <<\'EOF\'\ngh pr comment 12 --body x\nEOF'
+    "GH_SH=bash; echo 'gh pr comment 12 --body x' | \"\$GH_SH\""
+    "X='gh pr comment 12 --body x'; timeout --signal KILL 5 \$X"
+    "X='gh pr comment 12 --body x'; timeout -k 1 5 \$X"
+    "Y='gh pr comment 12 --body x'; command -p \$Y"
     "X=x; \${X/x/gh api repos/o/r/issues/12/comments -f body=x -t} api"
     # macOS 파일시스템은 대소문자를 가리지 않아 GH도 gh를 실행한다. 변수 기본값과 줄 이음 앞의 gh도 본다.
     "bash -c 'GH pr comment 12 --body x'"
@@ -1474,6 +1496,12 @@ _pinning_codex_mention_table() {
     "\"\$W\"/tests/run.sh 2>&1 | grep -F \"gh pr comment 12 --body '@codex review'\""
     "timeout -s KILL \"\$T\" gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
     "eval \"\$(direnv export bash)\"; time -p gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    # ANSI-C 따옴표로 적은 명령어는 한 단어다. 앞 세그먼트의 따옴표 밖 변수는 뒤 명령어의 판정에 남지
+    # 않고, 이름에 gh가 든 변수 뒤의 -h와 긴 옵션 값(--repo o/r) 뒤의 pr은 gh 조회다.
+    "\$'/bin/date' +%s; echo 'gh pr view 12'"
+    "cd \$D && \"\$PY\" list_prs.py | xargs -n1 gh pr view --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "GH=/opt/homebrew/bin/gh; \$GH -h; \$GH pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "CLI=\$(command -v gh); \$CLI --repo o/r pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
     "env GH_PAGER=\"\${PAGER:-less -R}\" gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
     "\"\${GH:-/Applications/My Tools/gh}\" pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
     # 닫힌 백틱 치환 뒤 따옴표 속 백틱과 백틱 치환 바로 안 주석의 백틱은 판정 불확실이 아니다.
