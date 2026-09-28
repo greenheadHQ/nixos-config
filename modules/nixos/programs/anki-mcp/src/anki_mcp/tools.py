@@ -234,16 +234,20 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         (0 = no truncation). The user's review queue is starred notes: query 'tag:marked'. Collect all pages
         when reviewing the entire queue. Use anki_note_info for full fields and the review cleanup choices;
         never automatically unmark completed items. Check freshness for the host's
-        recorded sync boundary; phone edits may still be absent even after a successful host sync."""
+        recorded sync boundary; phone edits may still be absent even after a successful host sync.
+        cardLinks에는 모든 형제 카드의 열기 URL이 있다. 반환 열기 URL은 Markdown 링크로 그대로 표시.
+        조립·수정·필드 저장 금지."""
         freshness = read_freshness(deps.sync_status_file)
         ids: list[int] = await anki.invoke("findNotes", query=query)
         chunk, meta = page(ids, limit, offset, deps.page_max)
         notes = await anki.invoke("notesInfo", notes=chunk) if chunk else []
-        return {"query": query, "page": meta, "notes": [note_view(n, max_field_chars) for n in notes], "freshness": freshness}
+        return {"query": query, "page": meta,
+                "notes": [note_view(n, max_field_chars, deps.public_url) for n in notes], "freshness": freshness}
 
     @mcp.tool(name="anki_note_info", annotations=READ_ONLY)
     async def anki_note_info(note_ids: list[int], max_field_chars: int = 0) -> dict[str, Any]:
-        """Full note details for the given note ids (fields untruncated by default).
+        """지정한 노트 전체 조회(기본값: 필드 원문).
+        반환 열기 URL은 Markdown 링크로 그대로 표시. 조립·수정·필드 저장 금지.
         Before reviewing a note with a 검토 메모 field, read its complete memo here, including all paragraphs.
         The memo is shared by sibling cards. Do not clear or rewrite it merely because a review mark is removed.
         After completing the requested review work and necessary readback, report results and ask once, as one
@@ -268,7 +272,7 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         freshness = read_freshness(deps.sync_status_file)
         chunk, meta = page(note_ids, deps.page_max, 0, deps.page_max)
         notes = await anki.invoke("notesInfo", notes=chunk) if chunk else []
-        return {"page": meta, "notes": [note_view(n, max_field_chars) for n in notes], "freshness": freshness}
+        return {"page": meta, "notes": [note_view(n, max_field_chars, deps.public_url) for n in notes], "freshness": freshness}
 
     @mcp.tool(name="anki_find_cards", annotations=READ_ONLY)
     async def anki_find_cards(
@@ -282,13 +286,16 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         use anki_note_info for full note fields.
         Search flags with flag:1 through flag:7 (flag:0 means no flag). The response's flag is 0–7,
         or null if unavailable. Rendered question/answer are truncated to max_chars.
+        cardUrl은 이 카드의 열기 URL이다. 반환 열기 URL은 Markdown 링크로 그대로 표시.
+        조립·수정·필드 저장 금지.
         Check freshness for the host's recorded sync boundary; phone edits may still be absent even after
         a successful host sync."""
         freshness = read_freshness(deps.sync_status_file)
         ids: list[int] = await anki.invoke("findCards", query=query)
         chunk, meta = page(ids, limit, offset, deps.page_max)
         cards = await anki.invoke("cardsInfo", cards=chunk) if chunk else []
-        return {"query": query, "page": meta, "cards": [card_view(c, max_chars) for c in cards], "freshness": freshness}
+        return {"query": query, "page": meta,
+                "cards": [card_view(c, max_chars, deps.public_url) for c in cards], "freshness": freshness}
 
     @mcp.tool(name="anki_card_reviews", annotations=READ_ONLY)
     async def anki_card_reviews(card_ids: list[int]) -> dict[str, Any]:

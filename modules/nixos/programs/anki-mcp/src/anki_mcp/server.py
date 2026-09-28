@@ -1,7 +1,8 @@
 """두 앱, 두 loopback 포트.
 
 공개 앱(port)      : /mcp(Streamable HTTP, Bearer), /.well-known/oauth-authorization-server(authorization_endpoint는
-                       승인 URL을 가리킨다), /.well-known/oauth-protected-resource/mcp, /register, /token, /revoke
+                       승인 URL을 가리킨다), /.well-known/oauth-protected-resource/mcp, /register, /token, /revoke,
+                       /c/<card-id>(인증 없는 앱 열기 페이지, 카드 조회 없음)
 승인 앱(approval_port): /authorize, /approve — Tailscale serve 9443(tailnet 전용)만 여기로 프록시한다
 """
 
@@ -32,6 +33,7 @@ from starlette.routing import Route
 from .ankiconnect import AnkiConnect
 from .approval import Lockout, build_approval_app
 from .authoring import compose_guidance
+from .card_links import register_card_links
 from .config import Settings, read_local_key, read_passphrase
 from .guard import RequestGuard
 from .helper import Helper
@@ -163,6 +165,7 @@ def build(cfg: Settings):
         uploads=uploads,
     )
     register_tools(mcp, deps)
+    register_card_links(mcp)
 
     funnel_app = mcp.streamable_http_app()
     # /authorize는 승인 포트에만 둔다 — 공개 앱에서 제거

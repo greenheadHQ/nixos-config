@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .card_links import card_url
+
 
 def truncate(value: str, max_chars: int) -> str:
     """max_chars <= 0 이면 절단하지 않는다. 절단 시 원 길이를 표시해 호출자가 전체를 다시 요청할 수 있게 한다."""
@@ -22,23 +24,27 @@ def page(items: list[Any], limit: int, offset: int, page_max: int) -> tuple[list
     return chunk, {"total": total, "offset": offset, "limit": limit, "next_offset": next_offset}
 
 
-def note_view(note: dict[str, Any], max_chars: int) -> dict[str, Any]:
-    """notesInfo 항목 → {noteId, modelName, tags, fields{name: value}, cards}. 필드 순서는 Anki의 order를 따른다."""
+def note_view(note: dict[str, Any], max_chars: int, public_url: str) -> dict[str, Any]:
+    """필드는 Anki의 order를 따르고, 기존 cards와 모든 형제 카드의 정확한 열기 링크를 함께 반환한다."""
     fields = note.get("fields") or {}
     ordered = sorted(fields.items(), key=lambda kv: kv[1].get("order", 0))
+    cards = note.get("cards") or []
     return {
         "noteId": note.get("noteId"),
         "modelName": note.get("modelName"),
         "tags": note.get("tags") or [],
         "fields": {name: truncate(str(spec.get("value", "")), max_chars) for name, spec in ordered},
-        "cards": note.get("cards") or [],
+        "cards": cards,
+        "cardLinks": [{"cardId": str(cid), "cardUrl": url} for cid in cards
+                      if (url := card_url(cid, public_url)) is not None],
     }
 
 
-def card_view(card: dict[str, Any], max_chars: int) -> dict[str, Any]:
+def card_view(card: dict[str, Any], max_chars: int, public_url: str) -> dict[str, Any]:
     """cardsInfo 항목 → 학습 상태 위주. 렌더된 question/answer는 절단하고 css는 뺀다."""
     return {
         "cardId": card.get("cardId"),
+        "cardUrl": card_url(card.get("cardId"), public_url),
         "noteId": card.get("note"),
         "deckName": card.get("deckName"),
         "modelName": card.get("modelName"),
