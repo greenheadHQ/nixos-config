@@ -184,6 +184,10 @@ EOF
   register_recursive "$shell_nix" ".local/lib/rebuild" \
     '${sharedScriptsDir}/lib/rebuild' "modules/shared/scripts/lib/rebuild"
 
+  # shellcheck disable=SC2016  # Literal Nix source strings.
+  register_copy_exec "$shell_nix" ".local/bin/codex-review-status" \
+    '${sharedScriptsDir}/codex-review-status.py' "modules/shared/scripts/codex-review-status.py"
+
   # cross-cutting: recursive 배포가 정확히 2개
   assert_line_count "$shell_nix" '    recursive = true;' 2
 }
