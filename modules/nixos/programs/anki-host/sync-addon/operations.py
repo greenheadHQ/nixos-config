@@ -322,12 +322,66 @@ class Operations:
     def status(self, operation_id: str) -> dict[str, Any]:
         return self._public(self._read(operation_id))
 
-    def history(self, limit: int = 20, offset: int = 0) -> dict[str, Any]:
-        if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
+    @staticmethod
+    def _note_history_match(record: dict[str, Any], note_id: int) -> bool | None:
+        action = record["action"]
+        if action.startswith("model_") or action == "update_deck_options":
+            return False
+        summary = record.get("summary", {})
+        note_ids = summary.get("note_ids", [])
+        if note_id in note_ids:
+            return True
+        result = record.get("result", {})
+        if action == "update_fields" and result.get("note_id") == note_id:
+            return True
+        result_ids = set()
+        if action in ("update_fields_bulk", "add_notes"):
+            key = "note_id" if action == "update_fields_bulk" else "noteId"
+            result_ids = {item[key] for item in result.get("results", [])
+                          if type(item.get(key)) is int and item[key] > 0}
+            if note_id in result_ids:
+                return True
+        if summary.get("notes", 0) > len(note_ids):
+            # Bulk field results name every target, including unknown and
+            # not-attempted items, so a complete result resolves a capped summary.
+            if action == "update_fields_bulk" and len(result_ids) >= summary["notes"]:
+                return False
+            return None
+        return False
+
+    @staticmethod
+    def _compact_note_operation(record: dict[str, Any], note_id: int) -> dict[str, Any]:
+        allowed = ("operation_id", "request_id", "action", "state", "created_at", "applied_at")
+        out = {key: record[key] for key in allowed if key in record}
+        if "state" in record.get("sync", {}):
+            out["sync"] = {"state": record["sync"]["state"]}
+        if record["action"] == "update_fields_bulk":
+            for item in record.get("result", {}).get("results", []):
+                if item.get("note_id") == note_id and item.get("state") in ("applied", "unknown", "not-attempted"):
+                    out["note_state"] = item["state"]
+                    break
+        return out
+
+    def history(self, limit: int = 20, offset: int = 0, note_id: int | None = None) -> dict[str, Any]:
+        if (type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0
+                or (note_id is not None and (type(note_id) is not int or note_id <= 0))):
             raise OperationError("invalid-operation-history-page")
         records = [self._read(path.stem) for path in self.root.glob("*.json")
                    if re.fullmatch(r"[0-9a-f]{32}\.json", path.name)]
         records.sort(key=lambda record: record["created_at"], reverse=True)
+        if note_id is not None:
+            matches = []
+            undetermined = 0
+            for record in records:
+                public = self._public(record)
+                matched = self._note_history_match(public, note_id)
+                if matched:
+                    matches.append(self._compact_note_operation(public, note_id))
+                elif matched is None:
+                    undetermined += 1
+            return {"note_id": note_id, "operations": matches[offset:offset + limit],
+                    "total": len(matches), "next_offset": offset + limit if offset + limit < len(matches) else None,
+                    "undetermined": undetermined}
         return {"operations": [self._public(record) for record in records[offset:offset + limit]],
                 "total": len(records), "next_offset": offset + limit if offset + limit < len(records) else None}
 

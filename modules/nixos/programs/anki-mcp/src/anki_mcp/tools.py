@@ -418,10 +418,25 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         return await operations.status(operation_id)
 
     @mcp.tool(name="anki_recent_operations", annotations=READ_ONLY)
-    async def anki_recent_operations(limit: int = 20, offset: int = 0) -> dict[str, Any]:
+    async def anki_recent_operations(
+        limit: int = 20,
+        offset: int = 0,
+        note_id: Annotated[int, Field(strict=True, gt=0)] | None = None,
+    ) -> dict[str, Any]:
         """List recent operation receipts (no note bodies). Use this to locate an operation after losing a
-        response or its server-generated ID. Inspect the receipt before considering any retry."""
-        return await deps.helper.post("/operations/history", {"limit": limit, "offset": offset})
+        response or its server-generated ID. Inspect the receipt before considering any retry.
+        With note_id, list only receipts tied to that note, newest first, as compact entries (action,
+        state, times, sync state); read anki_operation_status for details such as the restore point.
+        Note-type and deck-option changes are not listed per note; receipts whose capped ID lists
+        cannot show the note are only counted as undetermined. An add whose result is unknown may
+        not name its new note."""
+        body = {"limit": limit, "offset": offset}
+        if note_id is not None:
+            body["note_id"] = note_id
+        result = await deps.helper.post("/operations/history", body)
+        if note_id is not None and (type(result.get("note_id")) is not int or result["note_id"] != note_id):
+            raise ToolError("note-operation-history-unavailable-update-host")
+        return result
 
     @mcp.tool(name="anki_move_cards", annotations=UPDATE)
     async def anki_move_cards(card_ids: list[int], deck_name: str, request_id: str | None = None,
