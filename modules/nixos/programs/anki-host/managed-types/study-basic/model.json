@@ -87,12 +87,26 @@
       "size": 20,
       "sticky": false,
       "tag": null
+    },
+    {
+      "collapsed": false,
+      "description": "",
+      "excludeFromSearch": false,
+      "font": "Arial",
+      "name": "노트 변천사",
+      "ord": 6,
+      "plainText": false,
+      "preventDeletion": false,
+      "rtl": false,
+      "size": 20,
+      "sticky": false,
+      "tag": null
     }
   ],
   "latexPost": "\\end{document}",
   "latexPre": "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n",
   "latexsvg": false,
-  "name": "CS 재활 Basic",
+  "name": "학습 Basic",
   "originalStockKind": 1,
   "req": [
     [

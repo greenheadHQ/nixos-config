@@ -18,8 +18,8 @@ from .code_highlighting import _script_json
 from .managed_bundle import ManagedBundleError, build_bundle, canonical_model, filename
 
 SOURCE_SCHEMA_VERSION = 1
-MODEL_NAME = "CS 재활 Basic"
-SOURCE_DIR = "managed-types/cs-rehab-basic"
+MODEL_NAME = "학습 Basic"
+SOURCE_DIR = "managed-types/study-basic"
 VERSION_PATH = "managed-types/version.json"
 _MODEL_FILES = ("model.json", "front.html", "back.html", "style.css", "manifest.json")
 _FEATURE_FILES = (

@@ -10,7 +10,7 @@ import pytest
 from test_real_collection import add, runtime  # noqa: F401
 
 
-NAME = "CS 재활 Basic"
+NAME = "학습 Basic"
 ASSET = "_managed-restore-fixture.js"
 
 

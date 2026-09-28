@@ -20,7 +20,7 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from .ankiconnect import AnkiConnect
-from .authoring import compose_guidance
+from .authoring import NEW_NOTE_HISTORY, NOTE_HISTORY_RULES, compose_guidance
 from .helper import Helper
 from .managed import DEFAULT_MODEL, ManagedService
 from .operations import OperationService
@@ -70,7 +70,7 @@ UPLOAD_RESULT_TEXT = (
 class NewNote(BaseModel):
     deck_name: str = Field(description="Target deck (existing; use anki_create_deck first if needed)")
     model_name: str = Field(description="Note type name, e.g. 'Basic' or 'Cloze' (see anki_models)")
-    fields: dict[str, str] = Field(description="Field values by field name; HTML allowed")
+    fields: dict[str, str] = Field(description="Field values by field name; HTML allowed. " + NEW_NOTE_HISTORY)
     tags: list[str] = Field(
         default_factory=list,
         description="Only tags the user explicitly asks for; do not invent new tags. 'mcp::added' is always appended",
@@ -80,7 +80,9 @@ class NewNote(BaseModel):
 class NoteFieldUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     note_id: Annotated[int, Field(strict=True, gt=0)]
-    fields: dict[str, str] = Field(min_length=1, description="Only fields to replace; other fields remain unchanged")
+    fields: dict[str, str] = Field(
+        min_length=1, description="Only fields to replace; other fields remain unchanged. " + NOTE_HISTORY_RULES,
+    )
     expected_fields: dict[str, str] | None = Field(
         default=None,
         description="Optional exact old values for the same field names; stale values reject the whole operation",
@@ -145,7 +147,7 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     @mcp.tool(name="anki_models", annotations=READ_ONLY)
     async def anki_models(name: str | None = None) -> dict[str, Any]:
         """List note types. With `name`, return that type's field names (in order) and card template names.
-        Only CS 재활 Basic is initially managed; other types are unmanaged, not automatically registered.
+        Only 학습 Basic is initially managed; other types are unmanaged, not automatically registered.
         Use anki_managed_model_check for the applied baseline, observed drift and separate pending updates."""
         freshness = read_freshness(deps.sync_status_file)
         if name is None:
@@ -165,7 +167,7 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         Drift/unavailable blocks MCP note creation and field writes for that type, including mixed batches;
         reads, other types and the user's app review/editing remain available. Show the differences and ask
         whether to restore the verified baseline or review app changes for Git adoption. Never automatically
-        restore or adopt. Only CS 재활 Basic is initially managed. Detailed snapshots remain private."""
+        restore or adopt. Only 학습 Basic is initially managed. Detailed snapshots remain private."""
         return await deps.helper.post("/managed/check", {"model_name": model_name})
 
     @mcp.tool(name="anki_managed_model_history", annotations=READ_ONLY)
@@ -254,12 +256,13 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         while awaiting the choice or when still working; do not ask again if the user already explicitly
         authorized that cleanup choice for those notes.
         Exclude notes with unfinished work or unresolved memo questions, including those about sibling cards.
+        노트 변천사는 정리 대상이 아니다. 이 칸이 있는 노트의 검토 메모를 비우기 전에 계속 지킬 결정과 이유를 옮긴다.
         Before clearing, reread the current full memo; if it changed since the choice was offered, preserve it
         and reconfirm. For either field-update tool, clear a memo only with expected_fields containing its
         exact last-read full value (including HTML and newlines); include it for every note in a bulk edit.
         On expected-field-value-mismatch, keep memos and stars, reread and reconfirm; never omit the guard
         or substitute newly read values just to retry. Clear only the approved notes' existing 검토 메모 field
-        to an empty string and/or their marked tag, according to the choice. Preserve other fields, tags,
+        to an empty string and/or their marked tag, according to the choice. Preserve unrelated fields, tags,
         flags and scheduling. For both,
         clear the memo and verify it first, then remove marked. On partial/unknown results, inspect and
         report the remaining state instead of claiming cleanup complete or retrying with a new request_id.
@@ -345,7 +348,9 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         "Managed-type drift or unavailable checks block field writes; inspect anki_managed_model_check. "
         "A verified media-free restore point is created before every field edit, including one note."
     ))
-    async def anki_update_note_fields(note_id: int, fields: dict[str, str], expected_fields: dict[str, str] | None = None,
+    async def anki_update_note_fields(note_id: int,
+                                     fields: Annotated[dict[str, str], Field(description=NOTE_HISTORY_RULES)],
+                                     expected_fields: dict[str, str] | None = None,
                                      request_id: str | None = None,
                                      preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
         params = {"note_id": note_id, "fields": fields}

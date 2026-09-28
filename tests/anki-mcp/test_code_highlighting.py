@@ -21,7 +21,7 @@ TARGETS = [
 
 def model():
     return {
-        "id": 1787809609173, "name": "CS 재활 Basic", "type": 0,
+        "id": 1787809609173, "name": "학습 Basic", "type": 0,
         "flds": [{"name": name, "ord": i} for i, name in enumerate(("질문", "답", "설명", "검토 메모"))],
         "tmpls": [{"name": "카드 1", "ord": 0,
                    "qfmt": '<div class="question">{{질문}}</div><!-- existing cid widget -->',
