@@ -44,11 +44,15 @@ Anki; the next apply restores the pinned code. Perform durable updates in Nix.
 
 ## Sources and updates
 
-`sources.json` records the official AnkiWeb URL, archive SHA-256 and modification
+`sources.json` records the official source URL, archive SHA-256 and modification
 timestamp. `p=260902` requests the distribution for Anki 26.09.2; **it is not an
 immutable add-on version URL**. The initial archives match the installed code
 byte for byte. We use those distributions rather than upstream HEAD or a
 different nixpkgs revision, preserving bundled JavaScript and vendor files.
+
+Note Linker uses the upstream `v.2026.08.10` release asset after AnkiWeb replaced
+its distribution. That asset is byte-identical to the original pinned archive;
+the hash and modification timestamp remain unchanged.
 
 The Note Linker package applies one local rendering patch: markers inside
 `pre`, `code`, `script`, `style` and `textarea` remain literal. This prevents
