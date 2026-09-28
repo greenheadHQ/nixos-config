@@ -995,7 +995,9 @@ _pinning_mention_test_tokens() {
 }
 
 _pinning_codex_mention_table() {
-  local scan_file="$1" flavor="$2" cmd i
+  local scan_file="$1" flavor="$2" cmd i long_name
+  printf -v long_name '%300s' ''
+  long_name=${long_name// /A}
   local -a api_writes=(
     "gh api repos/o/r/issues/12/comments -f body='hi'"
     "gh api repos/o/r/issues/12/comments -F body=@/tmp/body.md"
@@ -1251,6 +1253,27 @@ _pinning_codex_mention_table() {
     "X='gh pr comment 12 --body x'; timeout -k 1 5 \$X"
     "Y='gh pr comment 12 --body x'; command -p \$Y"
     "X=x; \${X/x/gh api repos/o/r/issues/12/comments -f body=x -t} api"
+    # 이름에 gh가 든 변수라도 뒤 단어가 gh 명령이 아니면 값이 gh pr·gh api일 수 있다. zsh의 플래그는
+    # 겹치고 특수 매개변수에도 붙으며, bash 5의 time은 -- 를 받는다. \${ } 안 이름 바로 뒤의 패턴 치환은
+    # 첨자·위치 매개변수·zsh 플래그 뒤에서도 본다.
+    "GH_PR=\"gh pr\"; \$GH_PR comment 12 --body x"
+    "GH_API=\"gh api\"; \$GH_API repos/o/r/issues/12/comments -f body=x"
+    "GH_PR=\"gh pr\"; env GH_TOKEN=\"\$T\" \$GH_PR comment 12 --body x"
+    "set -- \"gh pr comment 12 --body x\"; \$=1"
+    "X=\"gh pr comment 12 --body x\"; \$~=X"
+    "X=\"gh pr comment 12 --body x\"; \"\${~=X}\""
+    "X=\"gh pr comment 12 --body x\"; time -- \$X"
+    "X=\"gh pr comment 12 --body x\"; time -p -- \$X"
+    "a=(x); \${a[0]/x/gh pr comment 12 --body} pr"
+    "set -- x; \${1/x/gh pr comment 12 --body} pr"
+    "X=x; \${=X/x/gh pr comment 12 --body} pr"
+    "X=x; \${=\${X}/x/gh pr comment 12 --body} pr"
+    "X=x; \${X/#x/gh pr comment 12 --body} pr"
+    "X=x; echo \${Y:-a}; \${X/x/gh pr comment 12 --body} pr"
+    "set -- x; \${@/x/gh pr comment 12 --body} pr"
+    "Y=x; X=Y; \${!X/x/gh pr comment 12 --body} pr"
+    # lexer는 \${ 뒤 256글자만 보므로, 그 안에서 닫히지 않는 긴 이름은 연산자가 있다고 본다.
+    "${long_name}=x; \${${long_name}/x/gh pr comment 12 --body} pr"
     # macOS 파일시스템은 대소문자를 가리지 않아 GH도 gh를 실행한다. 변수 기본값과 줄 이음 앞의 gh도 본다.
     "bash -c 'GH pr comment 12 --body x'"
     "echo 'GH pr comment 12 --body x' | bash"
@@ -1504,6 +1527,14 @@ _pinning_codex_mention_table() {
     "CLI=\$(command -v gh); \$CLI --repo o/r pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
     "env GH_PAGER=\"\${PAGER:-less -R}\" gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
     "\"\${GH:-/Applications/My Tools/gh}\" pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    # 경로를 이어 붙인 변수는 치환이 아니고, 이름에 gh가 든 변수 뒤에 gh의 다른 명령이 오면 인자가
+    # 변수여도 gh 조회다.
+    "\$ROOT/\"My Tools\"/gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "env GH_CONFIG_DIR=\$HOME/\"Library/Application Support/gh\" gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "\$BASE-\"v2 tools\"/gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "D=\${X:-/tmp}; \$ROOT/\"My Tools\"/gh pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "GH=\$(command -v gh); \"\$GH\" run view \"\$RUN_ID\" --log; \"\$GH\" pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
+    "GH=/opt/homebrew/bin/gh; \$GH repo view \"\$REPO\" --json name; \$GH pr view 12 --json comments --jq '.comments[].body | select(test(\"@codex\"))'"
     # 닫힌 백틱 치환 뒤 따옴표 속 백틱과 백틱 치환 바로 안 주석의 백틱은 판정 불확실이 아니다.
     "x=\`date\`; git commit -m 'docs: gh pr comment \`12\`'"
     "x=\`date # \`; git commit -m 'docs: gh pr comment 12'"
