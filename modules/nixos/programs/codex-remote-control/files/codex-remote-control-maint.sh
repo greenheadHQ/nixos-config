@@ -18,6 +18,7 @@ STATUS_FILE="$STATE_DIR/status.json"
 LOCK_FILE="$STATE_DIR/maintenance.lock"
 MAINT_LOCK_TIMEOUT_SECONDS="${MAINT_LOCK_TIMEOUT_SECONDS:-120}"
 ALERT_COOLDOWN_SECONDS="${ALERT_COOLDOWN_SECONDS:-1800}"
+ALERT_REPEAT_SECONDS="${ALERT_REPEAT_SECONDS:-21600}"
 PUSHOVER_CRED_FILE="${PUSHOVER_CRED_FILE:-}"
 SERVICE_LIB="${SERVICE_LIB:-}"
 CODEX_REMOTE_CONTROL_PS_FILE="${CODEX_REMOTE_CONTROL_PS_FILE:-}"
@@ -44,11 +45,10 @@ readonly RC_REMOTE_START_MALFORMED_JSON=51
 readonly RC_REMOTE_START_FAILED=52
 readonly RC_REMOTE_STOP_FAILED=53
 readonly RC_REMOTE_START_VERSION_DRIFT=54
-readonly RC_SOCKET_CLEANUP_REFUSED=60
+readonly RC_RESTART_REFUSED=60
 readonly RC_UNMANAGED_WITHOUT_STALE_PROOF=61
+readonly RC_UPDATE_DEFERRED=62
 readonly RC_UNMANAGED=75
-readonly SOCKET_CLEANUP_AFTER_VERIFIED_KILL="after-verified-kill"
-readonly SOCKET_CLEANUP_NO_PID_REQUIRED="no-pid-required"
 
 LAST_ACTION="$ACTION_NONE"
 LAST_REPAIR_REASON=""
@@ -414,8 +414,27 @@ parse_pid_line() {
   CMD_FIELD="$(sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+[^[:space:]]+[[:space:]]+//' <<<"$line")"
 }
 
+is_ssh_proxy_line() {
+  case "$1" in
+    *" app-server proxy" | *" app-server proxy "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+ssh_proxy_exists() {
+  collect_pid_evidence
+  local line
+  while IFS= read -r line; do
+    parse_pid_line "$line"
+    is_ssh_proxy_line "$CMD_FIELD" && return 0
+  done <<<"$PID_EVIDENCE"
+  return 1
+}
+
 is_app_server_line() {
   local cmd="$1"
+  # SSH proxy는 기존 소켓을 사용하는 클라이언트이며 소켓을 소유하는 서버가 아니다.
+  is_ssh_proxy_line "$cmd" && return 1
   case "$cmd" in
     *"app-server --listen unix://"* | *"codex app-server"*) return 0 ;;
     *) return 1 ;;
@@ -588,21 +607,15 @@ app_server_pid_exists() {
   return 1
 }
 
-cleanup_socket_files() {
-  : "${1:-$SOCKET_CLEANUP_NO_PID_REQUIRED}"
+check_restart_processes() {
   if app_server_pid_exists; then
-    LAST_REPAIR_REASON="refusing-socket-cleanup-while-app-server-pid-exists"
-    return "$RC_SOCKET_CLEANUP_REFUSED"
+    LAST_REPAIR_REASON="refusing-restart-while-app-server-pid-exists"
+    return "$RC_RESTART_REFUSED"
   fi
 
-  rm -f \
-    "$CODEX_HOME/app-server-control/app-server-control.sock" \
-    "$CODEX_HOME/app-server-control/desktop-ssh-websocket-v0.sock" \
-    "$CODEX_HOME/app-server-control/app-server-startup.lock" \
-    "$CODEX_HOME/app-server-daemon/app-server.pid.lock" \
-    "$CODEX_HOME/app-server-daemon/app-server-updater.pid.lock" \
-    "$CODEX_HOME/app-server-daemon/daemon.lock"
-  LAST_ACTION="cleaned-stale-app-server-sockets"
+  # Codex 0.158의 unix_socket.rs가 startup lock 안에서 stale socket을 정리한다.
+  # 여기서 socket/lock을 unlink하면 SSH 재연결이 방금 만든 소켓을 지우거나
+  # 다른 프로세스가 잡고 있는 flock inode를 우회할 수 있다. Codex에 위임한다.
 }
 
 repair_unmanaged_core() {
@@ -624,7 +637,7 @@ repair_unmanaged_core() {
     return "$RC_UNMANAGED_WITHOUT_STALE_PROOF"
   fi
 
-  cleanup_socket_files "$SOCKET_CLEANUP_AFTER_VERIFIED_KILL" || return $?
+  check_restart_processes || return $?
   LAST_REPAIR_REASON="killed-stale-unmanaged-app-server:$killed"
   LAST_ACTION="repaired-unmanaged-app-server"
 }
@@ -643,6 +656,13 @@ ensure_running_core() {
   local daemon_rc=0
   if capture_daemon_version; then
     if [ "$MANAGED_CODEX_VERSION" != "$DESIRED_VERSION" ] || [ "$APP_SERVER_VERSION" != "$DESIRED_VERSION" ]; then
+      # 연결된 SSH 클라이언트가 있으면 작업 중일 수 있다. remote-control start도
+      # bootstrap/settings 상태에 따라 재시작하므로 보류 경로에서는 호출하지 않는다.
+      if ssh_proxy_exists; then
+        LAST_ACTION="deferred-version-drift-ssh-connected"
+        LAST_REPAIR_REASON="version-update-deferred-ssh-connected"
+        return "$RC_UPDATE_DEFERRED"
+      fi
       LAST_REPAIR_REASON="daemon-version-drift:${MANAGED_CODEX_VERSION}/${APP_SERVER_VERSION}"
       local stop_rc=0
       remote_stop || stop_rc=$?
@@ -653,13 +673,13 @@ ensure_running_core() {
           return "$stop_rc"
         fi
       fi
-      cleanup_socket_files "$SOCKET_CLEANUP_NO_PID_REQUIRED" || {
-        local cleanup_rc=$?
-        [ "$cleanup_rc" -eq "$RC_SOCKET_CLEANUP_REFUSED" ] || return "$cleanup_rc"
+      check_restart_processes || {
+        local restart_rc=$?
+        [ "$restart_rc" -eq "$RC_RESTART_REFUSED" ] || return "$restart_rc"
         # `codex remote-control stop`은 app-server만 내리고 `app-server daemon pid-update-loop`
         # 보조 프로세스를 남긴다 (0.153.x 실측 2건, #1279). 방금 sync가 `current`를 새 release로
         # 옮겼으므로 잔존 loop의 실행 파일은 구 release다 — 기존 per-process stale proof로만
-        # 종료하고 소켓을 정리한다. proof가 없는 프로세스는 지금처럼 fail-closed로 남긴다.
+        # 종료한다. proof가 없는 프로세스는 지금처럼 fail-closed로 남긴다.
         repair_unmanaged_core || return $?
       }
       remote_start || {
@@ -829,7 +849,7 @@ capture_daemon_log_offset() {
 # 오도한다.
 evidence_relevant_for_reason() {
   case "${1%%:*}" in
-    remote-control-* | daemon-version-* | unmanaged-error-without-stale-pid-proof | stale-pid-* | refusing-socket-cleanup-while-app-server-pid-exists) return 0 ;;
+    remote-control-* | daemon-version-* | unmanaged-error-without-stale-pid-proof | stale-pid-* | refusing-restart-while-app-server-pid-exists) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -861,10 +881,15 @@ repair_reason_explain() {
         "실행 중 app-server 버전이 pin과 다름" \
         "maint가 재시작을 시도함. 반복되면 'codex remote-control stop' 후 'systemctl start codex-remote-control-ensure'"
       ;;
-    remote-control-start-unmanaged | remote-control-stop-unmanaged | unmanaged-error-without-stale-pid-proof | stale-pid-revalidation-failed | stale-pid-revalidation-failed-before-kill9 | refusing-socket-cleanup-while-app-server-pid-exists)
+    remote-control-start-unmanaged | remote-control-stop-unmanaged | unmanaged-error-without-stale-pid-proof | stale-pid-revalidation-failed | stale-pid-revalidation-failed-before-kill9 | refusing-restart-while-app-server-pid-exists)
       printf '%s\t%s' \
-        "관리 밖(수동 실행) app-server가 소켓/PID를 점유" \
-        "'pgrep -a -u greenhead codex'로 확인 후 수동 프로세스를 종료하고 'systemctl start codex-remote-control-ensure'"
+        "app-server의 관리 상태 또는 안전한 종료 근거를 확인할 수 없음" \
+        "SSH 연결과 실행 중 작업을 확인한 뒤 관리형 서버로 전환. 현재 PID를 일괄 종료하지 말 것"
+      ;;
+    version-update-deferred-ssh-connected)
+      printf '%s\t%s' \
+        "SSH 연결이 있어 Codex 버전 교체를 보류함" \
+        "작업 완료 후 Codex 앱의 SSH 연결을 해제하면 다음 점검에서 교체. 강제 종료하지 말 것"
       ;;
     remote-control-stop-failed)
       printf '%s\t%s' \
@@ -949,6 +974,7 @@ send_alerts() {
   now="$(date +%s)"
   local state_file="$STATE_DIR/last-health-state"
   local last_failure_file="$STATE_DIR/last-failure-alert"
+  local reason_file="$STATE_DIR/last-failure-reason"
   local previous="unknown"
   [ -f "$state_file" ] && previous="$(cat "$state_file" 2>/dev/null || echo unknown)"
 
@@ -963,9 +989,15 @@ send_alerts() {
 
   local last=0
   [ -f "$last_failure_file" ] && last="$(cat "$last_failure_file" 2>/dev/null || echo 0)"
-  if [ $((now - last)) -ge "$ALERT_COOLDOWN_SECONDS" ]; then
+  local reason="${LAST_REPAIR_REASON%%:*}" last_reason="" interval="$ALERT_COOLDOWN_SECONDS"
+  [ ! -f "$reason_file" ] || last_reason="$(cat "$reason_file")"
+  if [ "$previous" = "failed" ] && [ "$reason" = "$last_reason" ]; then
+    interval="$ALERT_REPEAT_SECONDS"
+  fi
+  if [ "$previous" != "failed" ] || [ $((now - last)) -ge "$interval" ]; then
     send_notification "Codex 원격 제어 실패 · ${ALERT_HOST}" "$(failure_alert_body "$exit_code")" 0
     echo "$now" >"$last_failure_file"
+    printf '%s\n' "$reason" >"$reason_file"
   fi
   echo "failed" >"$state_file"
 }
