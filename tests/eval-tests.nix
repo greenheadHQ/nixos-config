@@ -1568,6 +1568,15 @@ let
         svc.KillMode == "process" && !(svc.PrivateTmp or false);
     }
     {
+      name = "Test CRC2: Desktop SSH는 별도 app-server를 생성하지 않고 관리형 서버를 사용한다";
+      cond = nixosCfg.environment.variables.CODEX_SSH_SKIP_APP_SERVER_BOOT == "true";
+    }
+    {
+      name = "Test CRC3: 같은 Codex 장애의 재알림은 점검 주기보다 길어야 한다";
+      cond =
+        nixosCfg.systemd.services.codex-remote-control-ensure.environment.ALERT_REPEAT_SECONDS == "21600";
+    }
+    {
       name = "Test D28a: C 정책의 persistent additional working roots는 exact Workspace-only여야 함";
       cond = claudeSettings.permissions.additionalDirectories == expectedClaudeAdditionalDirectories;
     }
@@ -1879,6 +1888,9 @@ let
               (builtins.any (
                 package: (package.name or "") == "anki-host-managed-${name}"
               ) nixosCfg.environment.systemPackages) == (svc.environment ? ANKI_HOST_MANAGED_BUNDLE)
+            && builtins.any (
+              package: (package.name or "") == "anki-host-unused-tags-${name}"
+            ) nixosCfg.environment.systemPackages
           )
           [
             "main"

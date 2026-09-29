@@ -228,6 +228,14 @@ async def test_split_apps_metadata_and_full_oauth_flow(tmp_path, auth_method):
             assert AUTHORING_GUIDANCE not in listed["anki_find_notes"]["description"]
             assert listed["anki_add_notes"]["inputSchema"]["required"] == ["notes"]
             assert listed["anki_update_note_fields"]["inputSchema"]["required"] == ["note_id", "fields"]
+            history = listed["anki_recent_operations"]
+            assert history["annotations"]["readOnlyHint"] is True
+            assert "note_id" not in history["inputSchema"].get("required", [])
+            assert history["inputSchema"]["properties"]["note_id"]["anyOf"] == [
+                {"exclusiveMinimum": 0, "type": "integer"}, {"type": "null"},
+            ]
+            assert "undetermined" in history["description"]
+            assert "An add whose result is unknown" in history["description"]
             assert "anki://x-callback-url" not in CARD_QUALITY + REQUIRED_RULES + AUTHORING_GUIDANCE
             instructions = initialized.json()["result"]["instructions"]
             assert instructions.count(CARD_QUALITY) == 1

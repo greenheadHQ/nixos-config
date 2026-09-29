@@ -14,6 +14,7 @@ from typing import Any
 
 from .operations import OperationError, decode_media, filename
 from . import note_link_feedback
+from . import unused_tags
 
 
 # A small, documented subset of the legacy deck-config representation. Preset
@@ -236,7 +237,11 @@ class AnkiAdapter:
         snapshot: dict[str, Any] = {}
         warnings: list[str] = []
         summary: dict[str, Any] = {"notes": 0, "cards": 0, "new_notes": 0, "warnings": warnings}
-        if action == "add_notes":
+        if action == "remove_unused_tags":
+            snapshot = unused_tags.checked_snapshot(self.col, p["tags"], p["protected_tags"])
+            summary.update(tags=p["tags"], protected_tags=p["protected_tags"],
+                           registry_names=len(p["tags"]), scope="local-tag-registry")
+        elif action == "add_notes":
             models, decks = {}, {}
             anticipated_cards = 0
             for n in p["notes"]:
@@ -421,6 +426,8 @@ class AnkiAdapter:
         if self.managed_guard is not None:
             self.managed_guard(spec)
         action, p = spec["action"], spec["params"]
+        if action == "remove_unused_tags":
+            return unused_tags.apply(self.col, p["tags"], p["protected_tags"])
         ac = self.ac
         result: dict[str, Any] = {"state": "applied"}
         if action == "add_notes":

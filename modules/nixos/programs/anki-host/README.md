@@ -139,6 +139,9 @@ PYTHONPATH=modules/nixos/programs/anki-mcp/src nix shell .#ankiMcpTestEnv -c \
 | `expired` | 확인 기간이 지났다. 새 미리보기와 사용자 확인이 필요하다. |
 
 `anki_operation_status(operation_id)`와 `anki_recent_operations`로 작업을 찾는다.
+`anki_recent_operations(note_id=...)`는 해당 노트의 영수증을 최신순으로 간략히 반환한다. 복구점 등 상세는
+`anki_operation_status`로 확인한다. 노트 유형·덱 옵션 변경은 제외하며, 잘린 대상 ID 목록 때문에 판단할 수 없는
+영수증 수는 `undetermined`로 표시한다. 결과가 불명인 노트 추가는 새 노트 ID가 없어 조회되지 않을 수 있다.
 ID 없이 보낸 요청의 응답을 잃었으면 최근 작업부터 확인한다. `notification=unknown`은 알림 전달 여부 불명이며
 자동 재발송하지 않는다. 원장은 종료 시 본문·미디어·확인 토큰을 지우고 결과와 재사용 방지 기록을 보존한다.
 미완료 본문도 만료 정리 시 제거한다. 원장은 파일 0600·디렉터리 0700으로 생성하며, 원장 파일은 삭제하지 않고 무기한 보존한다.
@@ -166,6 +169,42 @@ AnkiWeb 동기화 완료는 다른 기기의 수신 완료를
 컬렉션과 전후 미디어 대기는 기존 변경 작업 예산 30분을 공유한다. 별도의 미디어 대기 시간을 더하지 않는다.
 시간 초과 시 성공 기준점을 갱신하지 않으며, 아직 실행 중인 callback의 lock은 완료될 때까지 유지한다.
 MCP의 결과 대기는 별도 3분이므로 호출이 먼저 끝날 수 있다. 이 경우 같은 요청 ID의 전달 상태를 다시 확인한다.
+
+### 빈 태그 등록 이름 관리
+
+노트에서 태그를 떼는 것과 태그 등록 목록의 빈 이름을 지우는 것은 별개다. `anki_remove_tags`는 노트의
+연결만 바꾼다. MiniPC의 root 전용 수동 명령 `anki-host-unused-tags-<instance>`는 사용하지 않는 이름을
+검사하고, 승인한 이름만 등록 목록에서 지운다. 인자 없이 실행하면 검사만 한다. 예약·자동 삭제는 하지 않는다.
+
+```bash
+sudo anki-host-unused-tags-main
+sudo anki-host-unused-tags-main inspect --protect marked --protect mcp::added --protect leech
+sudo anki-host-unused-tags-main preview --tags-file /root/selected-tags.json \
+  --protect-file /root/protected-tags.json --request-id REQUEST_ID
+sudo anki-host-unused-tags-main apply OPERATION_ID --preview-token PREVIEW_TOKEN --confirm
+sudo anki-host-unused-tags-main status OPERATION_ID
+```
+
+두 입력 파일은 태그 이름의 JSON 배열이며 root 소유 일반 파일, 권한 0600으로 준비한다. `--protect`는
+반복할 수 있고 `--protect-file`과 합쳐진다. 보존 이름은 해당 하위 이름까지 보호한다. 이름·개수와 입력
+파일은 개인 운영 자료이므로 공개 이슈·PR에 싣지 않는다. 검사 목록 전체를 자동으로 승인하지 않고,
+선택한 이름과 예외를 미리보기의 `summary`에서 확인한 뒤 실행한다.
+
+부모 이름에 직접 붙은 노트가 없어도 자식이 쓰이면 사용 중이다. 선택 이름이 사용 중이거나 없어졌거나,
+선택 밖 하위 이름·보존 예외를 함께 지우게 되면 작업 전체를 거절한다. 미리보기 뒤 등록 목록이나 노트의
+태그 연결이 바뀌어도 멈춘다. 적용 직전 같은 변경 잠금 안에서 다시 검사하며, 항상 HDD까지 검증된 복구점을
+만든 뒤 선택한 등록 이름만 삭제하고 전후 목록과 노트 태그 불변을 확인한다. 노트·카드·학습 기록을 고치는
+동작이 아니며, 노트 유형 변경·전체 Upload 승인 경로에도 들어가지 않는다.
+
+`state=applied`와 `result.verified=true`가 로컬 정리 성공이다. `partial`·`unknown`이면 새 요청으로 반복하지
+않고 같은 작업 번호의 영수증과 실제 목록부터 조사한다. 같은 요청 ID·인자의 미리보기나 같은 작업 번호의
+재호출은 기존 영수증을 돌려주며 삭제를 반복하지 않는다. 만료되거나 변경된 미리보기는 새 요청 ID로 다시
+검사·확인한다. 이 명령은 결과를 직접 출력하므로 별도 알림을 보내지 않고 `notification.state=disabled`다.
+
+태그 등록 이름의 삭제는 **일반 동기화로 다른 기기에 전파되지 않는다**. 이 작업의 `sync.state=disabled`는
+로컬 등록 목록만 정리했다는 뜻이다. 다른 기기와 동기화한 뒤 같은 검사를 다시 하여 이름이 돌아왔는지
+확인한다. Mac·iPhone의 목록 정리는 각각 별개이며, 전체 Download는 받은 컬렉션 파일의 목록으로 바꾼다.
+목록을 맞추려고 이 명령이 전체 Upload·Download를 선택하지는 않는다.
 
 ### ChatGPT Pro 계열에서 쓰기
 
