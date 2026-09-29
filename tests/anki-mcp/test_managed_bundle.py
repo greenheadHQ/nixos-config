@@ -17,7 +17,7 @@ def native():
         return dict(name=name, ord=ordinal, sticky=False, rtl=False, font='Arial',
                     size=20, description='', plainText=False, collapsed=False,
                     excludeFromSearch=False, id=100 + ordinal, tag=None, preventDeletion=False)
-    return dict(id=123, name='CS 재활 Basic', type=0, mod=10, usn=3, sortf=0,
+    return dict(id=123, name='학습 Basic', type=0, mod=10, usn=3, sortf=0,
                 did=None, flds=[field('Front', 0), field('Back', 1)],
                 tmpls=[dict(name='Card', ord=0, qfmt='{{Front}}\r\n', afmt='{{Back}}',
                             bqfmt='', bafmt='', did=None, bfont='', bsize=0, id=222)],

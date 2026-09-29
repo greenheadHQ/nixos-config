@@ -5,6 +5,7 @@
   addons ? import ./addons.nix { inherit pkgs; },
 }:
 let
+  managedTypes = import ./managed-types.nix { inherit pkgs; };
   python = pkgs.python3.withPackages (ps: [
     ps.pytest
     ps.httpx
@@ -17,6 +18,7 @@ pkgs.runCommand "anki-host-runtime-check"
     ANKI_HOST_RECOVERY_SOURCE = "${./files/recover-fields.py}";
     ANKI_NOTE_LINK_FIXTURES = "${../../../../tests/fixtures/anki-note-link}";
     ANKI_MCP_SOURCE = "${../anki-mcp/src}";
+    ANKI_MANAGED_SOURCE = "${managedTypes}";
     ANKI_EXPECTED_VERSION = pkgs.anki.version;
     ANKI_TEST_MODE = "1";
     QT_QPA_PLATFORM = "offscreen";

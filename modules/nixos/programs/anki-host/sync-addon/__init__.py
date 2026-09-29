@@ -625,7 +625,8 @@ def _managed_request(path, body):
     required, optional = required_optional[path]
     if not required <= body.keys() or body.keys() - required - optional:
         raise OperationError("managed-invalid-parameters")
-    name = body.get("model_name", "CS 재활 Basic")
+    from .managed_runtime import MODEL_NAME
+    name = body.get("model_name", MODEL_NAME)
     if not isinstance(name, str):
         raise OperationError("managed-invalid-model-name")
     managed = _managed()

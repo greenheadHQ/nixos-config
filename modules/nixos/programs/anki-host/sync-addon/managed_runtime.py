@@ -20,7 +20,7 @@ from .managed_bundle import build_bundle, load_bundle, read_assets
 from .managed_drift import ManagedTypeStore
 from .operations import OperationError, atomic_json, digest, identifier
 
-MODEL_NAME = "CS 재활 Basic"
+MODEL_NAME = "학습 Basic"
 GITHUB_REPOSITORY = "https://api.github.com/repos/greenheadHQ/nixos-config"
 VERSION_PATH = "modules/nixos/programs/anki-host/managed-types/version.json"
 
@@ -40,7 +40,7 @@ def notify_drift(credential_file: Path, incident: dict) -> dict:
     body = urllib.parse.urlencode({
         "token": values["PUSHOVER_TOKEN"], "user": values["PUSHOVER_USER"], "priority": "0",
         "title": "Anki 카드 형식 변경 확인 필요",
-        "message": "‘CS 재활 Basic’의 카드 형식이 마지막 검증본과 달라졌습니다. "
+        "message": f"‘{MODEL_NAME}’의 카드 형식이 마지막 검증본과 달라졌습니다. "
                    "이 유형의 AI 노트 추가·내용 수정은 확인할 때까지 보류됩니다. "
                    "Anki에서 복습은 계속할 수 있습니다. LLM에게 카드 형식 상태를 확인해 달라고 요청해 주세요.",
     }).encode()

@@ -18,7 +18,7 @@ from mcp.types import Tool
 from starlette.routing import Route
 from uvicorn.logging import AccessFormatter
 
-from anki_mcp.authoring import AUTHORING_GUIDANCE, CARD_QUALITY, REQUIRED_RULES
+from anki_mcp.authoring import AUTHORING_GUIDANCE, CARD_QUALITY, NEW_NOTE_HISTORY, NOTE_HISTORY_RULES, REQUIRED_RULES
 from anki_mcp.config import Settings
 from anki_mcp.metadata import export_catalog
 from anki_mcp.server import build, serve
@@ -255,6 +255,19 @@ async def test_split_apps_metadata_and_full_oauth_flow(tmp_path, auth_method):
             assert "Do not invent new tags" in listed["anki_add_tags"]["description"]
             new_note = listed["anki_add_notes"]["inputSchema"]["$defs"]["NewNote"]
             assert "do not invent new tags" in new_note["properties"]["tags"]["description"]
+            assert NEW_NOTE_HISTORY in new_note["properties"]["fields"]["description"]
+            single_fields = listed["anki_update_note_fields"]["inputSchema"]["properties"]["fields"]
+            bulk_note = listed["anki_update_notes_fields"]["inputSchema"]["$defs"]["NoteFieldUpdate"]
+            for fields in (single_fields, bulk_note["properties"]["fields"]):
+                assert NOTE_HISTORY_RULES in fields["description"]
+            assert "노트 변천사의 지킬 것·앞선 결정과 충돌하면 사용자에게 묻고" in CARD_QUALITY
+            assert "노트 변천사는 정리 대상이 아니다." in listed["anki_note_info"]["description"]
+            assert "검토 메모를 비우기 전에 계속 지킬 결정과 이유를 옮긴다." in listed["anki_note_info"]["description"]
+            assert "각각 5개 안팎" in AUTHORING_GUIDANCE
+            assert "전체 약 600자" in NOTE_HISTORY_RULES
+            assert "같은 호출에서" in NOTE_HISTORY_RULES
+            assert "출처·설명의 수정 기록" in NOTE_HISTORY_RULES
+            assert "칸이 없으면 기존 기록을 보존" in NOTE_HISTORY_RULES
             assert "no note uses anymore" in listed["anki_tags"]["description"]
             assert "새 태그를 만들어 붙이지 않는다" in REQUIRED_RULES
             assert "대화 자체는 출처가 아니다" in REQUIRED_RULES

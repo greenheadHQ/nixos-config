@@ -1,6 +1,9 @@
 """Real collection integration: explicit enrollment and locked mixed writes."""
 import hashlib
 import json
+import copy
+import os
+import warnings
 from pathlib import Path
 
 import pytest
@@ -120,7 +123,7 @@ def test_http_allowlist_and_strict_restore_payload(runtime):
     assert not r.helper.ACCESS.allowed('POST', '/managed/restore/apply', 'read')
     with pytest.raises(r.error, match='invalid-parameters'):
         r.helper._managed_request('/managed/restore/prepare', {'request_id': 'fixture-request',
-                                 'model_name': 'CS 재활 Basic', 'digest': '0' * 64})
+                                 'model_name': '학습 Basic', 'digest': '0' * 64})
 
 
 def test_sync_status_projection_is_serializable_inside_same_sync_result(runtime):
@@ -177,3 +180,101 @@ def test_broken_restore_journal_only_blocks_managed_type(runtime, tmp_path):
     with pytest.raises(r.error, match='managed-model-write-blocked'):
         r.ops.prepare('update_fields', {'note_id': nid, 'fields': {'Back': 'denied'}})
     assert r.ops.prepare('add_tags', {'note_ids': [nid], 'tags': ['allowed']})['state'] == 'prepared'
+
+
+def test_managed_source_rename_and_history_field_preserve_collection(runtime, tmp_path):
+    from anki_real_fixture.managed_bundle import build_bundle, diff_bundle, load_bundle
+    from anki_real_fixture.managed_drift import ManagedTypeStore
+    from anki_real_fixture.managed_runtime import ManagedRuntime, MODEL_NAME
+
+    r = runtime
+    source = Path(os.environ['ANKI_MANAGED_SOURCE'])
+    v2, assets = load_bundle(source)
+    old_name = 'old managed type'
+    v1_definition = copy.deepcopy(v2['definition'])
+    v1_definition['name'] = old_name
+    assert v1_definition['flds'].pop()['name'] == '노트 변천사'
+    model = r.col.models.new(old_name)
+    model.update(v1_definition)
+    r.col.models.add(model)
+    model_id = model['id']
+    r.col.models._clear_cache()
+    v1 = build_bundle(r.col.models.get(model_id), assets)
+    assert v1 == build_bundle(v1_definition, assets)
+    for name, data in assets.items():
+        assert r.col.media.write_data(name, data) == name
+    fields = {'질문': 'Synthetic question', '답': 'Synthetic answer', '맥락': 'Synthetic context',
+              '설명': 'Keep explanation', '출처': 'Keep reference', '검토 메모': 'Keep memo\n\nSecond paragraph'}
+    nid = add(r, model=old_name, fields=fields)
+    cid = r.col.get_note(nid).card_ids()[0]
+    r.apply('add_tags', {'note_ids': [nid], 'tags': ['marked', 'preserve']})
+    r.apply('set_due_date', {'card_ids': [cid], 'days': '3'})
+    r.col.set_user_flag_for_cards(4, [cid])
+    note_tags = list(r.col.get_note(nid).tags)
+    before_cards = r.col.db.all('select * from cards order by id')
+    before_reviews = r.col.db.all('select * from revlog order by id')
+    assert before_reviews
+
+    def backup(opid):
+        path = r.root / 'restore-points' / (opid + '.colpkg')
+        r.helper._export(str(path), False, False)
+        return {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'mirrored': True}
+
+    manager = ManagedRuntime(r.window, tmp_path / 'managed', source, instance='fixture',
+                             snapshot=r.helper._collection_identity, restore_point=backup,
+                             sync_status=lambda: {'result': 'success'}, ttl=600)
+    old_store = ManagedTypeStore(manager.root, instance='fixture', collection_binding=manager.binding,
+                                managed_specs=(old_name,), observe=manager.observe, last_sync=lambda: {})
+    baseline = {'model_id': model_id, 'model_name': old_name, 'bundle': v1, 'asset_bytes': assets}
+    v1_backup = backup('old-type-enrollment')
+    evidence = manager.adapter.verify_backup(v1_backup, baseline, manager.adapter.capture(baseline))
+    assert evidence['state'] == 'verified'
+    old_store.register_verified(old_name, model_id, v1, assets,
+                                evidence={'verification': evidence, 'backup': v1_backup},
+                                verify_registration=lambda *_: evidence['state'] == 'verified')
+    assert old_store.inspect(old_name)['status'] == 'normal'
+
+    model = r.col.models.get(model_id)
+    model['name'] = MODEL_NAME
+    r.col.models.update_dict(model)
+    r.col.models._clear_cache()
+    r.apply('model_field_add', {'model_name': MODEL_NAME, 'field_name': '노트 변천사'}, schema=True)
+    assert build_bundle(r.col.models.get(model_id), assets)['digest'] == v2['digest']
+    preview = manager.enrollment_prepare()
+    assert preview['model_id'] == model_id
+    assert preview['digest'] == v2['digest']
+    assert preview['verification']['state'] == 'verified'
+    manager.enrollment_apply(preview['operation_id'], preview['preview_token'], True)
+    check = manager.check()
+    assert check['status'] == 'normal'
+    assert check['changed_paths'] == []
+    note = r.col.get_note(nid)
+    assert note.mid == model_id and note.card_ids() == [cid]
+    assert note.tags == note_tags
+    assert dict(note.items()) == {**fields, '노트 변천사': ''}
+    assert r.col.db.all('select * from cards order by id') == before_cards
+    assert r.col.db.all('select * from revlog order by id') == before_reviews
+
+    # Observe rollback feasibility; a mismatch informs the operation window, not test success.
+    r.apply('model_field_remove', {'model_name': MODEL_NAME, 'field_name': '노트 변천사'}, schema=True)
+    model = r.col.models.get(model_id)
+    model['name'] = old_name
+    r.col.models.update_dict(model)
+    r.col.models._clear_cache()
+    rollback = build_bundle(r.col.models.get(model_id), assets)
+    paths = diff_bundle(v1, rollback)
+    warnings.warn('managed history rollback: ' + ('same v1 digest' if not paths else 'changed paths: ' + ', '.join(paths)))
+
+    # Field removal can fill an empty browser question format. Verify the
+    # separate model update used by the user's Browser Appearance correction.
+    model = r.col.models.get(model_id)
+    for template, original in zip(model['tmpls'], v1['definition']['tmpls'], strict=True):
+        template['bqfmt'] = original['bqfmt']
+    r.col.models.update_dict(model)
+    r.col.models._clear_cache()
+    assert build_bundle(r.col.models.get(model_id), assets)['digest'] == v1['digest']
+    note = r.col.get_note(nid)
+    assert note.mid == model_id and note.card_ids() == [cid]
+    assert dict(note.items()) == fields and note.tags == note_tags
+    assert r.col.db.all('select * from cards order by id') == before_cards
+    assert r.col.db.all('select * from revlog order by id') == before_reviews
