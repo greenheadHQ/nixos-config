@@ -396,7 +396,7 @@ test_codex_remote_control_repair_kills_proven_stale_unmanaged_process() {
 
   CODEX_REMOTE_CONTROL_PS_FILE="$ps_file" KILL_LOG="$kill_log" _codex_rc_env bash "$(_codex_rc_script)" repair-unmanaged
   assert_file_contains "$kill_log" "12345"
-  [ ! -e "$socket_file" ] || fail "socket should be removed after verified stale kill"
+  [ -e "$socket_file" ] || fail "Codex must own socket cleanup after verified stale kill"
 }
 
 test_codex_remote_control_repair_refuses_socket_cleanup_when_pid_remains() {
@@ -499,7 +499,7 @@ test_codex_remote_control_repair_kills_stale_deleted_managed_app_server() {
   CODEX_REMOTE_CONTROL_PS_FILE="$ps_file" CODEX_REMOTE_CONTROL_EXE_FILE="$exe_file" KILL_LOG="$kill_log" \
     _codex_rc_env bash "$(_codex_rc_script)" repair-unmanaged
   assert_file_contains "$kill_log" "4000136"
-  [ ! -e "$socket_file" ] || fail "socket should be removed after reaping a stale deleted managed app-server"
+  [ -e "$socket_file" ] || fail "socket cleanup must be left to Codex"
 }
 
 test_codex_remote_control_repair_kills_stale_superseded_managed_app_server() {
@@ -523,7 +523,7 @@ test_codex_remote_control_repair_kills_stale_superseded_managed_app_server() {
   CODEX_REMOTE_CONTROL_PS_FILE="$ps_file" CODEX_REMOTE_CONTROL_EXE_FILE="$exe_file" KILL_LOG="$kill_log" \
     _codex_rc_env bash "$(_codex_rc_script)" repair-unmanaged
   assert_file_contains "$kill_log" "4000200"
-  [ ! -e "$socket_file" ] || fail "socket should be removed after reaping a superseded managed app-server"
+  [ -e "$socket_file" ] || fail "socket cleanup must be left to Codex"
 }
 
 test_codex_remote_control_socket_cleanup_when_no_pid_after_drift() {
@@ -540,13 +540,13 @@ test_codex_remote_control_socket_cleanup_when_no_pid_after_drift() {
     CODEX_REMOTE_CONTROL_PS_FILE="$ps_file" \
     _codex_rc_env bash "$(_codex_rc_script)" ensure-running
   status="$(cat "$COD_RC_STATE/status.json")"
-  [ ! -e "$socket_file" ] || fail "socket should be removed when no app-server PID exists during drift restart"
+  [ -e "$socket_file" ] || fail "socket cleanup must be left to Codex during restart"
   jq -e '.lastAction == "restarted-version-drift" and .exitCode == 0' <<<"$status" >/dev/null \
     || fail "drift restart status not recorded: $status"
 }
 
 # 드리프트 재시작에서 `remote-control stop`이 남긴 구 release의 pid-update-loop는 stale proof로
-# 종료하고 소켓을 정리한 뒤 start까지 간다 (#1279 — 종전에는 exit 60에 고착).
+# 종료한 뒤 Codex start의 소켓 정리까지 간다 (#1279 — 종전에는 exit 60에 고착).
 test_codex_remote_control_drift_restart_reaps_stale_pid_update_loop() {
   local sandbox ps_file exe_file kill_log socket_file status user standalone_root old_release
   sandbox="$(new_sandbox)"
@@ -568,7 +568,7 @@ test_codex_remote_control_drift_restart_reaps_stale_pid_update_loop() {
     _codex_rc_env bash "$(_codex_rc_script)" ensure-running \
     || fail "drift restart must recover from a stale pid-update-loop leftover"
   assert_file_contains "$kill_log" "4000300"
-  [ ! -e "$socket_file" ] || fail "socket should be removed after reaping the stale loop"
+  [ -e "$socket_file" ] || fail "socket cleanup must be left to Codex after reaping the loop"
   grep -Fqx 'remote-control stop --json' "$COD_RC_LOG" || fail "drift path must stop the daemon first"
   grep -Fqx 'remote-control start --json' "$COD_RC_LOG" || fail "drift path must start the daemon after cleanup"
   status="$(cat "$COD_RC_STATE/status.json")"
@@ -602,7 +602,7 @@ test_codex_remote_control_drift_restart_keeps_failing_closed_without_stale_proof
   [ -e "$socket_file" ] || fail "socket must be preserved while an unproven app-server PID remains"
   assert_not_contains "$(cat "$COD_RC_LOG")" 'remote-control start --json'
   status="$(cat "$COD_RC_STATE/status.json")"
-  jq -e '.exitCode != 0 and (.lastRepairReason | test("stale-pid-proof|refusing-socket-cleanup"))' <<<"$status" >/dev/null \
+  jq -e '.exitCode != 0 and (.lastRepairReason | test("stale-pid-proof|refusing-restart"))' <<<"$status" >/dev/null \
     || fail "fail-closed status not recorded: $status"
 }
 
@@ -810,6 +810,99 @@ _codex_rc_call_fn() {
     bash -c 'set -uo pipefail; source <(sed "\$d" "$1"); shift; LAST_REPAIR_REASON="${T_REASON:-}"; START_STDERR="${T_STDERR:-}"; DAEMON_LOG_OFFSET="${T_OFFSET:-0}"; "$@"' _ "$(_codex_rc_script)" "$@"
 }
 
+test_codex_remote_control_proxy_is_not_a_server() {
+  local sandbox
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  if _codex_rc_call_fn is_app_server_line 'codex app-server proxy'; then
+    fail "SSH proxy is a client, not a socket-owning server"
+  fi
+  if _codex_rc_call_fn is_app_server_line '/nix/store/example/bin/codex app-server proxy --config foo=true'; then
+    fail "SSH proxy with options is still a client"
+  fi
+  if _codex_rc_call_fn is_app_server_line 'codex -c features.code_mode_host=true app-server proxy'; then
+    fail "SSH proxy with global options is still a client"
+  fi
+  _codex_rc_call_fn is_app_server_line 'codex -c features.code_mode_host=true app-server --listen unix://'
+  _codex_rc_call_fn is_app_server_line 'codex app-server daemon pid-update-loop'
+}
+
+test_codex_remote_control_drift_defers_with_ssh_proxy() {
+  local sandbox ps_file
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  ps_file="$sandbox/ps.txt"
+  printf '4000500 %s codex app-server proxy\n' "$(id -un)" > "$ps_file"
+  local rc=0
+  FAKE_DAEMON_JSON='{"status":"running","managedCodexVersion":"0.142.4","appServerVersion":"0.133.0"}' \
+    CODEX_REMOTE_CONTROL_PS_FILE="$ps_file" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running || rc=$?
+  [ "$rc" -eq 62 ] || fail "connected SSH must defer update explicitly (got $rc)"
+  assert_not_contains "$(cat "$COD_RC_LOG")" 'remote-control stop'
+  assert_not_contains "$(cat "$COD_RC_LOG")" 'remote-control start'
+  jq -e '.exitCode == 62 and .remoteControlEnabled == null and .appServerVersion == "0.133.0" and .lastAction == "deferred-version-drift-ssh-connected"' \
+    "$COD_RC_STATE/status.json" >/dev/null || fail "deferral must not claim remote-control health"
+
+  # SSH 연결이 끝난 다음 점검에서만 관리형 서버를 교체한다.
+  : > "$ps_file"
+  FAKE_DAEMON_JSON='{"status":"running","managedCodexVersion":"0.142.4","appServerVersion":"0.133.0"}' \
+    CODEX_REMOTE_CONTROL_PS_FILE="$ps_file" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running
+  assert_file_contains "$COD_RC_LOG" 'remote-control stop --json'
+  jq -e '.exitCode == 0 and .appServerVersion == "0.142.4" and .lastAction == "restarted-version-drift"' \
+    "$COD_RC_STATE/status.json" >/dev/null || fail "update must resume after SSH disconnects"
+}
+
+test_codex_remote_control_deferred_server_is_not_restarted_or_marked_healthy() {
+  local sandbox ps_file kill_log
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  ps_file="$sandbox/ps.txt"
+  kill_log="$sandbox/kill.log"
+  printf '4000500 %s codex app-server proxy\n4000501 %s codex app-server --listen unix://\n' "$(id -un)" "$(id -un)" > "$ps_file"
+  if FAKE_DAEMON_JSON='{"status":"running","managedCodexVersion":"0.142.4","appServerVersion":"0.133.0"}' \
+    FAKE_START_RC=1 FAKE_START_ERR='Error: app server is running but is not managed by codex app-server daemon' \
+    CODEX_REMOTE_CONTROL_PS_FILE="$ps_file" KILL_LOG="$kill_log" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running; then
+    fail "an unmanaged SSH server cannot be reported healthy by deferral"
+  fi
+  [ ! -e "$kill_log" ] || fail "deferral must not kill any process"
+  assert_not_contains "$(cat "$COD_RC_LOG")" 'remote-control stop'
+  assert_not_contains "$(cat "$COD_RC_LOG")" 'remote-control start'
+  jq -e '.exitCode == 62 and .remoteControlEnabled == null' "$COD_RC_STATE/status.json" >/dev/null
+}
+
+test_codex_remote_control_restart_preserves_codex_lock_inodes() {
+  local sandbox ps_file control daemon name
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  ps_file="$sandbox/ps.txt"
+  : > "$ps_file"
+  control="$COD_RC_HOME/.codex/app-server-control"
+  daemon="$COD_RC_HOME/.codex/app-server-daemon"
+  mkdir -p "$control" "$daemon"
+  for name in "$control/app-server-control.sock" "$control/app-server-startup.lock" "$daemon/daemon.lock" "$daemon/app-server.pid.lock" "$daemon/app-server-updater.pid.lock"; do
+    printf 'owned by Codex\n' > "$name"
+    ln "$name" "$name.witness"
+  done
+  FAKE_DAEMON_JSON='{"status":"running","managedCodexVersion":"0.133.0","appServerVersion":"0.133.0"}' \
+    CODEX_REMOTE_CONTROL_PS_FILE="$ps_file" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running
+  for name in "$control/app-server-control.sock" "$control/app-server-startup.lock" "$daemon/daemon.lock" "$daemon/app-server.pid.lock" "$daemon/app-server-updater.pid.lock"; do
+    [ "$name" -ef "$name.witness" ] || fail "maintenance unlinked a Codex-owned socket/lock inode: $name"
+  done
+}
+
+test_codex_remote_control_unmanaged_alert_does_not_blame_manual_launch() {
+  local sandbox body
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  body="$(T_REASON=unmanaged-error-without-stale-pid-proof _codex_rc_call_fn failure_alert_body 61)"
+  assert_not_contains "$body" '수동 실행'
+  assert_contains "$body" 'SSH'
+  assert_contains "$body" '작업'
+}
+
 _assert_valid_utf8() {
   printf '%s' "$1" | python3 -c 'import sys; sys.stdin.buffer.read().decode("utf-8")' 2>/dev/null \
     || fail "$2: not valid UTF-8"
@@ -879,4 +972,37 @@ test_codex_remote_control_alert_truncation_keeps_valid_utf8() {
   _assert_valid_utf8 "$body" "evidence line"
   [ "$(printf '%s' "$body" | grep -a '^app-server' | wc -c | tr -d ' ')" = $((12 + 7 + 231 + 1)) ] \
     || fail "evidence line must be 238 bytes of payload: $(printf '%s' "$body" | grep -a '^app-server' | wc -c)"
+}
+
+test_codex_remote_control_repeated_alerts_wait_six_hours() {
+  local sandbox
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  _codex_rc_make_alerting "$sandbox"
+  # 이전 실행에서 보낸 같은 장애는 다음 30분 점검에서 다시 알리지 않는다.
+  printf 'failed\n' > "$COD_RC_STATE/last-health-state"
+  printf 'daemon-version-malformed-json\n' > "$COD_RC_STATE/last-failure-reason"
+  printf '%s\n' "$(($(date +%s) - 1801))" > "$COD_RC_STATE/last-failure-alert"
+  local rc=0
+  FAKE_DAEMON_MALFORMED=1 ALERT_LOG="$COD_RC_ALERT_LOG" SERVICE_LIB="$COD_RC_SERVICE_LIB" PUSHOVER_CRED_FILE="$COD_RC_PUSHOVER_CRED" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running || rc=$?
+  [ "$rc" -eq 40 ] || fail "expected malformed JSON failure"
+  _codex_rc_assert_alert_count 'Codex 원격 제어 실패' 0
+  # 다른 원인은 기존 30분 쿨다운을 적용한다.
+  printf 'remote-control-start-failed\n' > "$COD_RC_STATE/last-failure-reason"
+  FAKE_DAEMON_MALFORMED=1 ALERT_LOG="$COD_RC_ALERT_LOG" SERVICE_LIB="$COD_RC_SERVICE_LIB" PUSHOVER_CRED_FILE="$COD_RC_PUSHOVER_CRED" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running || rc=$?
+  _codex_rc_assert_alert_count 'Codex 원격 제어 실패' 1
+  # 같은 장애도 6시간 뒤에는 다시 알린다.
+  printf '%s\n' "$(($(date +%s) - 21601))" > "$COD_RC_STATE/last-failure-alert"
+  FAKE_DAEMON_MALFORMED=1 ALERT_LOG="$COD_RC_ALERT_LOG" SERVICE_LIB="$COD_RC_SERVICE_LIB" PUSHOVER_CRED_FILE="$COD_RC_PUSHOVER_CRED" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running || rc=$?
+  _codex_rc_assert_alert_count 'Codex 원격 제어 실패' 2
+  # 복구 후 재발은 새 장애이므로 이전 시각 때문에 숨기지 않는다.
+  ALERT_LOG="$COD_RC_ALERT_LOG" SERVICE_LIB="$COD_RC_SERVICE_LIB" PUSHOVER_CRED_FILE="$COD_RC_PUSHOVER_CRED" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running
+  _codex_rc_assert_alert_count 'Codex 원격 제어 복구' 1
+  FAKE_DAEMON_MALFORMED=1 ALERT_LOG="$COD_RC_ALERT_LOG" SERVICE_LIB="$COD_RC_SERVICE_LIB" PUSHOVER_CRED_FILE="$COD_RC_PUSHOVER_CRED" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running || rc=$?
+  _codex_rc_assert_alert_count 'Codex 원격 제어 실패' 3
 }

@@ -207,6 +207,12 @@ run_test "claude remote-control ignores prompt token decoy" test_claude_remote_c
 run_test "claude remote-control interactive stop waits for parent lock release" test_claude_remote_control_interactive_stop_waits_for_parent_lock_release
 run_test "claude remote-control interactive stop preserves registration on lock release timeout" test_claude_remote_control_interactive_stop_preserves_registration_when_parent_lock_release_times_out
 if [ "$(uname -s)" = "Linux" ]; then
+  run_test "codex remote-control repeated alerts wait six hours" test_codex_remote_control_repeated_alerts_wait_six_hours
+  run_test "codex remote-control proxy is not a server" test_codex_remote_control_proxy_is_not_a_server
+  run_test "codex remote-control drift defers with ssh proxy" test_codex_remote_control_drift_defers_with_ssh_proxy
+  run_test "codex remote-control deferred unmanaged server stays unhealthy" test_codex_remote_control_deferred_server_is_not_restarted_or_marked_healthy
+  run_test "codex remote-control restart preserves codex lock inodes" test_codex_remote_control_restart_preserves_codex_lock_inodes
+  run_test "codex remote-control unmanaged alert does not blame manual launch" test_codex_remote_control_unmanaged_alert_does_not_blame_manual_launch
   run_test "codex remote-control probe parses daemon JSON" test_codex_remote_control_probe_parses_daemon_json
   run_test "codex remote-control probe marks malformed daemon JSON" test_codex_remote_control_probe_marks_malformed_daemon_json
   run_test "codex remote-control ensure-running rejects malformed daemon JSON" test_codex_remote_control_ensure_running_rejects_malformed_daemon_json
