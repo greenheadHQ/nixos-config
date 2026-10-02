@@ -52,6 +52,7 @@ class Access:
         if method == "POST" and path in ("/managed/restore/prepare", "/managed/restore/apply", "/managed/restore/delivery"):
             return role in ("operation", "schema")
         if method == "POST" and path in ("/managed/enrollment/prepare", "/managed/enrollment/apply", "/managed/notification/retry",
-                                         "/managed/restore/diagnose"):
+                                         "/managed/restore/diagnose", "/managed/update/prepare", "/managed/update/apply",
+                                         "/managed/update/status", "/managed/update/diagnose", "/managed/update/delivery"):
             return role == "schema"
         return False
