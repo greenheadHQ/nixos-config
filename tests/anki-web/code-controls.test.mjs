@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { block, css, harness, scope } from "./harness.mjs";
+import { block, css, harness, renderer, scope } from "./harness.mjs";
 
 const card = (content, { id = "1001", answer = false } = {}) =>
   `<main id="qa"><div class="anki-cid-copy" data-anki-cid="${id}"></div>${answer ? '<hr id="answer">' : ""}${scope(content)}</main>`;
@@ -70,7 +70,7 @@ test("controls follow the first expanded block and preserve scale when all code 
   assert.equal(scale(page), "90%");
   toggle(false);
   assert.equal(anchor(), "required");
-  document.querySelector(".anki-code-scope > pre").remove();
+  document.querySelector(".anki-code-scope > .anki-code-block > pre").remove();
   page.start();
   await page.flush();
   assert.equal(document.querySelector(".anki-code-controls"), null);
@@ -184,4 +184,233 @@ test("CSS refreshes in a reused reviewer and controls work even while highlighti
   await page.flush();
   assert.equal(page.document.querySelector("pre code").textContent, "const readable = 1;");
   assert.equal(page.document.querySelectorAll("#anki-code-style-v1").length, 1);
+});
+
+
+const copyButtons = page => [...page.document.querySelectorAll(".anki-code-copy button")];
+const copyState = page => page.document.querySelector(".anki-code-copy")?.dataset.state;
+function clipboard(page, writeText) {
+  Object.defineProperty(page.window, "isSecureContext", { configurable: true, value: true });
+  Object.defineProperty(page.window.navigator, "clipboard", { configurable: true, value: { writeText } });
+}
+function copyTimers(page) {
+  const pending = new Map();
+  const set = page.window.setTimeout.bind(page.window);
+  const clear = page.window.clearTimeout.bind(page.window);
+  let serial = 10000;
+  page.window.setTimeout = (callback, delay) => {
+    if (delay !== 1800) return set(callback, delay);
+    pending.set(++serial, callback);
+    return serial;
+  };
+  page.window.clearTimeout = id => {
+    if (!pending.delete(id)) clear(id);
+  };
+  return () => {
+    const callbacks = [...pending.values()];
+    pending.clear();
+    for (const callback of callbacks) callback();
+  };
+}
+
+test("each block gets its own copy control, including plain, large, hidden and folded code", async t => {
+  const page = await rendered(t, `${block("const highlighted = 1;")}<details><summary>참고</summary>${block("plain", "plaintext")}</details><div hidden>${block("hidden")}</div>${block("x".repeat(5000))}<p><code>inline</code></p>`);
+  assert.equal(copyButtons(page).length, 4);
+  assert.equal(page.document.querySelectorAll(".anki-code-block").length, 4);
+  for (const code of page.document.querySelectorAll("pre > code")) {
+    const shell = code.parentElement.parentElement;
+    assert.ok(shell.matches(".anki-code-block"));
+    assert.equal(shell.querySelectorAll(".anki-code-copy").length, 1);
+    assert.equal(code.querySelector("button"), null);
+  }
+  assert.equal(page.document.querySelector("p code").textContent, "inline");
+  page.document.querySelector("details").open = true;
+  page.document.querySelector("details").dispatchEvent(new page.window.Event("toggle"));
+  assert.equal(copyButtons(page).length, 4);
+});
+
+test("synchronous copy preserves code whitespace and never includes controls", async t => {
+  const text = "\tconst value = '< & >';\n\n  // 한글\n";
+  const page = await rendered(t, block(text));
+  const expire = copyTimers(page);
+  let received;
+  page.document.execCommand = name => {
+    assert.equal(name, "copy");
+    received = page.document.activeElement.value;
+    return true;
+  };
+  copyButtons(page)[0].click();
+  assert.equal(received, text);
+  assert.equal(copyState(page), "success");
+  assert.equal(page.document.querySelector("pre code").textContent, text);
+  assert.equal(copyButtons(page)[0].getAttribute("aria-label"), "코드 복사됨");
+  expire();
+  assert.equal(copyState(page), "ready");
+});
+
+test("copy follows visible BR, block and cloze text without exposing hidden answers", async t => {
+  const markup = '<pre><code>  first<br><span class="cloze" data-answer="secret attribute">[...]</span><span hidden>secret hidden</span><span style="display:none">secret display</span><span style="visibility:hidden">secret visibility</span><span style="opacity:0">secret opacity</span><span style="content-visibility:hidden">secret content</span><br><span>  last\n</span></code></pre>';
+  const page = await rendered(t, markup + '<pre><code><div>one</div><div>two</div></code></pre>');
+  const copied = [];
+  page.document.execCommand = () => { copied.push(page.document.activeElement.value); return true; };
+  copyButtons(page)[0].click();
+  copyButtons(page)[1].click();
+  assert.deepEqual(copied, ["  first\n[...]\n  last\n", "one\ntwo"]);
+  assert.ok(!copied.join("").includes("secret"));
+  assert.ok(page.document.querySelector(".cloze").hasAttribute("data-answer"), "source markup remains intact");
+});
+
+test("a hidden block or collapsed details cannot reveal its text through a programmatic copy", async t => {
+  const page = await rendered(t, `<details><summary>참고</summary>${block("hidden answer")}</details>${block("visible")}`);
+  let copied;
+  page.document.execCommand = () => { copied = page.document.activeElement.value; return true; };
+  copyButtons(page)[0].click();
+  assert.equal(copied, "");
+  const details = page.document.querySelector("details");
+  details.open = true;
+  copyButtons(page)[0].click();
+  assert.equal(copied, "hidden answer");
+});
+
+test("legacy failure falls through to writeText in the same click and waits for success", async t => {
+  const page = await rendered(t, block("line one\nline two\n"));
+  const order = [];
+  let finish;
+  page.document.execCommand = () => { order.push("legacy"); return false; };
+  clipboard(page, text => {
+    order.push(text);
+    return new Promise(resolve => { finish = resolve; });
+  });
+  copyButtons(page)[0].click();
+  copyButtons(page)[0].click();
+  assert.deepEqual(order, ["legacy", "line one\nline two\n"]);
+  assert.equal(copyState(page), "copying");
+  finish();
+  await page.flush();
+  assert.equal(copyState(page), "success");
+});
+
+test("CRLF text nodes bypass a normalizing textarea and reach writeText unchanged", async t => {
+  const page = await rendered(t, block("initial", "plaintext"));
+  const text = "first\r\n  second\r\n";
+  page.document.querySelector("code").textContent = text;
+  let copied;
+  page.document.execCommand = () => { assert.fail("textarea would change CRLF"); };
+  clipboard(page, value => { copied = value; return Promise.resolve(); });
+  copyButtons(page)[0].click();
+  await page.flush();
+  assert.equal(copied, text);
+  assert.equal(copyState(page), "success");
+});
+
+for (const mode of ["absent", "reject", "throw", "invalid"]) {
+  test(`failed clipboard (${mode}) shows selectable multiline code without claiming success`, async t => {
+    const text = "  first\n\tsecond\n";
+    const page = await rendered(t, block(text));
+    page.document.execCommand = () => false;
+    if (mode !== "absent") clipboard(page, () => {
+      if (mode === "throw") throw new Error("denied");
+      if (mode === "invalid") return undefined;
+      return Promise.reject(new Error("denied"));
+    });
+    copyButtons(page)[0].click();
+    await page.flush();
+    const input = page.document.querySelector(".anki-code-copy-manual textarea");
+    assert.equal(copyState(page), "manual");
+    assert.equal(input.closest(".anki-code-copy-manual").hidden, false);
+    assert.equal(input.value, text);
+    assert.equal(input.selectionStart, 0);
+    assert.equal(input.selectionEnd, text.length);
+    assert.equal(input.readOnly, true);
+    assert.equal(copyButtons(page)[0].getAttribute("aria-label"), "코드 복사");
+  });
+}
+
+test("a pending clipboard times out to manual copy and ignores its late success", async t => {
+  const page = await rendered(t);
+  const expire = copyTimers(page);
+  let finish;
+  page.document.execCommand = () => false;
+  clipboard(page, () => new Promise(resolve => { finish = resolve; }));
+  copyButtons(page)[0].click();
+  assert.equal(copyState(page), "copying");
+  expire();
+  assert.equal(copyState(page), "manual");
+  finish();
+  await page.flush();
+  assert.equal(copyState(page), "manual");
+});
+
+test("FrontSide clones and repeated scripts leave one live copy control per block", async t => {
+  const page = await rendered(t);
+  let calls = 0;
+  page.document.execCommand = () => { calls++; return true; };
+  const stale = copyButtons(page)[0];
+  const front = page.document.querySelector(".anki-code-scope").innerHTML;
+  await replace(page, front + block("answer"), { answer: true });
+  page.start();
+  page.start();
+  assert.equal(copyButtons(page).length, 2);
+  assert.equal(page.document.querySelectorAll(".anki-code-block").length, 2);
+  assert.equal(page.document.querySelectorAll(".anki-code-controls").length, 1);
+  stale.click();
+  assert.equal(calls, 0);
+  copyButtons(page)[1].click();
+  assert.equal(calls, 1);
+});
+
+test("old clipboard completion cannot update a new card or remounted controls", async t => {
+  const page = await rendered(t);
+  let finish;
+  page.document.execCommand = () => false;
+  clipboard(page, () => new Promise(resolve => { finish = resolve; }));
+  copyButtons(page)[0].click();
+  await replace(page, block("new card"), { id: "1002" });
+  finish();
+  await page.flush();
+  assert.equal(copyState(page), "ready");
+  assert.equal(page.document.querySelector(".anki-code-copy-manual").hidden, true);
+});
+
+test("copy controls stop review gestures while code keeps native scrolling and selection", async t => {
+  const page = await rendered(t);
+  page.document.execCommand = () => false;
+  copyButtons(page)[0].click();
+  for (const name of ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart", "touchend", "keydown", "keypress", "keyup", "click"]) {
+    let received = 0;
+    const listener = () => received++;
+    page.document.addEventListener(name, listener);
+    for (const target of [copyButtons(page)[0], page.document.querySelector(".anki-code-copy-manual textarea")]) {
+      target.dispatchEvent(new page.window.Event(name, { bubbles: true, cancelable: true }));
+      assert.equal(received, 0, name);
+    }
+    page.document.querySelector("pre").dispatchEvent(new page.window.Event(name, { bubbles: true }));
+    assert.equal(received, 1, `pre retains ${name}`);
+    page.document.removeEventListener(name, listener);
+  }
+});
+
+test("copy installs beside already-loaded V1 size controls without replacing their lifecycle", async t => {
+  const page = harness(card(block("const value = 1;")));
+  t.after(page.close);
+  const legacy = renderer.slice(0, renderer.indexOf("  // Copy has its own lifecycle:")) + "  window[CONTROLS].mount();\n})();";
+  page.window.eval(legacy);
+  const original = page.window.AnkiCodeControlsV1;
+  button(page, "larger").click();
+  page.start();
+  await page.flush();
+  assert.equal(page.window.AnkiCodeControlsV1, original);
+  assert.equal(scale(page), "110%");
+  assert.equal(copyButtons(page).length, 1);
+  button(page, "larger").click();
+  assert.equal(scale(page), "120%");
+});
+
+
+test("HTML editor blank lines and final BR lines are preserved when copying", async t => {
+  const page = await rendered(t, '<pre><code><div>one</div><div><br></div><div>two</div></code></pre><pre><code><div>one</div><div><br></div></code></pre>');
+  const copied = [];
+  page.document.execCommand = () => { copied.push(page.document.activeElement.value); return true; };
+  for (const button of copyButtons(page)) button.click();
+  assert.deepEqual(copied, ["one\n\ntwo", "one\n\n"]);
 });

@@ -38,7 +38,10 @@ test("all declared aliases work without detecting unspecified languages", async 
 test("inline code, unrelated cards, and contradictory language classes stay untouched", async t => {
   const html = `<div>${block("const outside = 1;")}</div>` + scope('<p><code class="language-js">const inline = 2;</code></p><pre><code class="language-js language-python">const ambiguous = 3;</code></pre>');
   const page = await rendered(t, html);
-  page.document.querySelector(".anki-code-controls").remove();
+  assert.equal(page.document.querySelectorAll(".anki-code-copy").length, 1,
+    "the ambiguous block still supports copying without being highlighted");
+  for (const control of page.document.querySelectorAll(".anki-code-controls, .anki-code-copy, .anki-code-copy-manual")) control.remove();
+  for (const shell of page.document.querySelectorAll(".anki-code-block")) shell.replaceWith(...shell.childNodes);
   assert.equal(page.document.body.innerHTML, html);
   assert.equal(page.document.querySelectorAll(".hljs").length, 0);
 });

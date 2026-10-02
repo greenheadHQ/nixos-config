@@ -89,9 +89,9 @@
       "tag": null
     },
     {
-      "collapsed": false,
+      "collapsed": true,
       "description": "",
-      "excludeFromSearch": false,
+      "excludeFromSearch": true,
       "font": "Arial",
       "name": "노트 변천사",
       "ord": 6,

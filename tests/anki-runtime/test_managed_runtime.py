@@ -188,8 +188,19 @@ def test_managed_source_rename_and_history_field_preserve_collection(runtime, tm
     from anki_real_fixture.managed_runtime import ManagedRuntime, MODEL_NAME
 
     r = runtime
-    source = Path(os.environ['ANKI_MANAGED_SOURCE'])
-    v2, assets = load_bundle(source)
+    current, assets = load_bundle(Path(os.environ['ANKI_MANAGED_SOURCE']))
+    # Keep the first maintenance window's field defaults explicit. Later
+    # presentation options must not change this field-add/rename contract.
+    v2_definition = copy.deepcopy(current['definition'])
+    history = v2_definition['flds'][-1]
+    assert history['name'] == '노트 변천사'
+    history.update(collapsed=False, excludeFromSearch=False)
+    v2 = build_bundle(v2_definition, assets)
+    source = tmp_path / 'v2-source'
+    (source / 'assets').mkdir(parents=True)
+    for name, data in assets.items():
+        (source / 'assets' / name).write_bytes(data)
+    (source / 'bundle.json').write_text(json.dumps(v2))
     old_name = 'old managed type'
     v1_definition = copy.deepcopy(v2['definition'])
     v1_definition['name'] = old_name
