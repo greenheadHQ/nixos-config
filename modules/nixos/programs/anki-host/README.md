@@ -103,6 +103,47 @@ PYTHONPATH=modules/nixos/programs/anki-mcp/src nix shell .#ankiMcpTestEnv -c \
 `chat-turn` 관측에서 빠져 있으면 누락으로 세지 않고, 관측됐으면 다른 도구처럼 비교한다.
 이 비교의 회귀 테스트와 인증된 ASGI 응답 대조는 기존 Anki MCP 테스트 및 required `check` CI에 포함된다.
 
+## 대화에서 Anki 카드 열기
+
+조회 결과에는 설정된 공개 MCP 주소의 `https://<public-host>/c/<card-id>` 링크가 붙는다.
+대화에서는 **반환된 URL을 그대로 Markdown 링크로 표시**한다. 주소를 조립·수정하거나 카드 필드에 저장하지 않는다.
+카드 안에서 노트를 연결하는 `[표시 제목|nid<13자리 note ID>]` 형식과 별개이며, 카드에 열기 링크 복사 버튼은 추가하지 않는다.
+
+| 조회 도구 | 추가 반환값 | 기존 값 |
+| --- | --- | --- |
+| `anki_find_cards` | 각 `cards[].cardUrl`: HTTPS 문자열, ID가 유효하지 않으면 `null` | `cardId`, `noteId`, 학습 상태와 본문 절단은 그대로 |
+| `anki_find_notes`, `anki_note_info` | 각 `notes[].cardLinks`: 모든 형제 카드의 `{cardId: "십진 문자열", cardUrl: "HTTPS URL"}` 배열 | 기존 `cards` 정수 배열, 필드와 태그는 그대로 |
+
+링크는 기존 `cardsInfo.cardId` 또는 `notesInfo.cards`로만 만든다. 새 조회·동기화는 하지 않으며,
+노트 ID를 카드 ID 대신 쓰지 않는다. 원본 ID가 정수이고 `1..9223372036854775807` 범위일 때만 링크를 만든다.
+문자열·불리언·실수·범위 밖 값은 변환하지 않고 링크에서 제외한다. 기존 응답의 ID 타입은 바꾸지 않으며,
+새 `cardLinks[].cardId`와 URL 안의 ID는 십진 문자열로 전달해 JavaScript 정수 정밀도 밖에서도 보존한다.
+
+인증 없는 `GET /c/<card-id>`는 ID와 기기별 열기 버튼만 표시한다. 카드 존재 여부·본문·덱·태그를 조회하지 않고,
+Anki·helper·동기화를 호출하지 않는다. 기존 공개 tunnel이 전달하며 새 도메인·Caddy 경로·외부 redirect 대상은 없다.
+`/mcp`의 OAuth와 tailnet 승인 앱은 그대로다. 선행 0, 부호, 공백, 추가 경로, query string과 범위 밖 ID는 거부한다.
+페이지는 `no-store`, `no-referrer`, `noindex`, `nosniff`와 hash 기반 CSP를 사용하며 외부 script·style을 로드하지 않는다.
+
+브라우저에서 iPhone·iPad면 AnkiMobile 검색으로, Mac이면 `hammerspoon://anki-browse`로 **한 번만** 이동을 시도한다.
+확인 창이나 성공 여부를 타이머로 추정해 다시 열지 않는다. 자동 이동을 막는 앱에서는 Safari·기본 브라우저로
+다시 열거나 보이는 버튼을 누른다. JavaScript가 없어도 양쪽 버튼과 `cid:<ID>` 검색어가 남는다.
+검색어 복사, 수동 Anki 검색, AnkiWeb 검색 페이지가 대안이다. 카드가 없으면 해당 기기의 동기화 상태를 직접 확인한다.
+
+Mac은 Hammerspoon과 AnkiConnect 설정이 필요하다. Hammerspoon이 꺼져 있으면 첫 URL 이벤트를 놓칠 수 있으므로
+Hammerspoon을 실행한 뒤 링크를 다시 누른다. Anki 실행만으로 프로필 준비를 판단하지 않고, 읽기 확인이 끝난 뒤
+탐색창 열기를 한 번 요청한다. 자동 동기화는 하지 않는다. 탐색창 요청이 대기 중이거나 결과가 불명일 때는
+Hammerspoon 재시작·reload·`nrs`로 중복 방지 상태를 없애지 않고 현재 Anki 상태부터 확인한다.
+Mac 선택 행이 있는 탐색창·편집창의 Computer Use 제한은 아래 안전 경계를 따른다.
+
+관측 로그 `anki_mcp.card_links`는 시각과 길이를 제한한 User-Agent만 기록한다. 기본 서버 access log에는
+IP와 요청 경로(카드 ID)가 남을 수 있으므로 공유할 때는 분리·가림 처리한다. 링크 미리보기·prefetch도 GET을
+만들 수 있어 **접속 로그만으로 앱 도착이나 사용자 클릭을 판정하지 않는다.** URL이 유효해도 기기에 카드가 있다는 뜻은 아니다.
+
+로컬 테스트·메타데이터 대조는 반환값과 안내·인증 경계를 확인한다. 실제 운영 주소에서 도구가 만든 링크의
+Mac·iPhone 도착과 ChatGPT·Claude 웹/Mac 앱/iOS 앱의 링크 표시·열기는 별도 검증한다.
+각 환경의 앱·브라우저 버전, 확인 창·버튼 횟수, 외부 브라우저 우회 여부를 기록하고 미시험 환경은 미시험으로 둔다.
+시험 메시지에 직접 넣은 URL의 성공은 도구 생성 링크의 검증을 대신하지 않는다.
+
 ## 변경 요청과 결과 확인
 
 1. `anki_status`, 검색·상세 조회로 현재 대상과 ID를 확인한다.

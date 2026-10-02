@@ -224,6 +224,10 @@ async def test_split_apps_metadata_and_full_oauth_flow(tmp_path, auth_method):
             assert "Without a choice, change neither" in listed["anki_remove_tags"]["description"]
             assert "Use a supplied cid:<ID> as the exact query" in listed["anki_find_cards"]["description"]
             assert "query 'tag:marked'. Collect all pages" in listed["anki_find_notes"]["description"]
+            for name in ("anki_find_cards", "anki_find_notes", "anki_note_info"):
+                assert "반환 열기 URL은 Markdown 링크로 그대로 표시." in listed[name]["description"][:2048]
+                assert "조립·수정·필드 저장 금지." in listed[name]["description"][:2048]
+                assert listed[name]["annotations"]["readOnlyHint"] is True
             assert listed["anki_set_card_flags"]["inputSchema"]["required"] == ["card_ids", "flag"]
             assert AUTHORING_GUIDANCE not in listed["anki_find_notes"]["description"]
             assert listed["anki_add_notes"]["inputSchema"]["required"] == ["notes"]
