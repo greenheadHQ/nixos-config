@@ -98,6 +98,9 @@ class ManagedRuntime:
         self.source_revision = source_revision
         self.restores = None
         self.restore_error = None
+        self.updates = None
+        self.update_error = None
+        self._publishing_update = None
         self.store = ManagedTypeStore(root, instance=instance, collection_binding=self.binding,
                                      managed_specs=(MODEL_NAME,), observe=self.observe,
                                      last_sync=sync_status,
@@ -111,6 +114,14 @@ class ManagedRuntime:
             # An unreadable restoration record cannot establish preservation,
             # but it must not disable unrelated types, tags or scheduling.
             self.restore_error = "managed-restore-journal-unavailable-operator-repair-required"
+        from .managed_update import AnkiUpdateAdapter, ManagedUpdate
+        try:
+            self.updates = ManagedUpdate(root / "updates", self.store, AnkiUpdateAdapter(window),
+                                         restore_point, snapshot, sync_status, source=source,
+                                         model_name=MODEL_NAME, publish=self._publish_update,
+                                         source_revision=source_revision, ttl=ttl)
+        except (OSError, ValueError, KeyError, TypeError):
+            self.update_error = "managed-update-journal-unavailable-operator-repair-required"
 
     def binding(self):
         col = self.window.col
@@ -122,8 +133,12 @@ class ManagedRuntime:
     def observe(self, name, model_id, names):
         if self.restore_error:
             raise OperationError(self.restore_error)
+        if self.update_error:
+            raise OperationError(self.update_error)
         if self.restores is not None and self.restores.has_pending(name):
             raise OperationError("managed-restore-unverified-read-status")
+        if self.updates is not None and self.updates.has_pending(name, exclude_operation_id=self._publishing_update):
+            raise OperationError("managed-update-unverified-read-status")
         self.window.col.models._clear_cache()
         model = self.window.col.models.get(model_id)
         if model is None or model["name"] != name:
@@ -131,6 +146,38 @@ class ManagedRuntime:
         assets = read_assets(self.window.col.media.dir(), names)
         return {"model_id": model["id"], "bundle": build_bundle(model, assets["files"]),
                 "asset_bytes": assets["files"], "missing": assets["missing"]}
+
+    def _publish_update(self, record, target):
+        """Publish only this root-confirmed operation after its exact postcheck.
+
+        The temporary exception permits register_verified's own readback under
+        the same mutation lock. It never marks the journal healthy or lets a
+        second operation bypass pending-state protection, including on restart.
+        """
+        if self._publishing_update is not None:
+            raise OperationError("managed-update-registration-in-progress")
+        evidence = {"verification": record["verification"], "backup": record["backup"],
+                    "source": {"git_revision": record["source_revision"],
+                               "repository": "https://github.com/greenheadHQ/nixos-config"},
+                    "operator_confirmed_at": record["confirmed_at"],
+                    "update_operation_id": record["operation_id"],
+                    "previous_baseline_record_id": record["authorization"]["record_id"]}
+        self._publishing_update = record["operation_id"]
+        try:
+            atomic_json(self.root / "protected-targets.json", {"model_ids": [target["model_id"]]})
+            return self.store.register_verified(MODEL_NAME, target["model_id"], target["bundle"], target["asset_bytes"],
+                       evidence=evidence,
+                       verify_registration=lambda *_: record["verification"].get("state") == "verified"
+                       and record["verification"].get("anki_version") == self.updates.adapter.version,
+                       previous_record_id=record["authorization"]["record_id"], registration_id=record["operation_id"])
+        finally:
+            self._publishing_update = None
+
+    def _require_no_pending_update(self):
+        if self.update_error:
+            raise OperationError(self.update_error)
+        if self.updates is not None and self.updates.has_pending(MODEL_NAME):
+            raise OperationError("managed-update-unverified-read-status")
 
     def check(self, name=MODEL_NAME, *, latest=False):
         result = self.store.inspect(name)
@@ -177,6 +224,7 @@ class ManagedRuntime:
 
     def enrollment_prepare(self):
         """Only the schema credential reaches this operator preview."""
+        self._require_no_pending_update()
         bundle, assets = load_bundle(self.source)
         col = self.window.col
         col.models._clear_cache()
@@ -206,6 +254,7 @@ class ManagedRuntime:
                 "verification": {key: evidence[key] for key in ("state", "anki_version", "preservation") if key in evidence}}
 
     def enrollment_apply(self, operation_id, preview_token, confirm):
+        self._require_no_pending_update()
         identifier(operation_id)
         record = self.store._read(self.root / ("enroll-" + operation_id + ".json"))
         if (confirm is not True or not isinstance(preview_token, str)

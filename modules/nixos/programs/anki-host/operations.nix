@@ -79,9 +79,13 @@ let
     name: inst:
     pkgs.writeShellApplication {
       name = "anki-host-managed-${name}";
-      runtimeInputs = [ pkgs.python3 ];
+      runtimeInputs = [
+        pkgs.python3
+        pkgs.systemd
+      ];
       runtimeEnv = {
         INSTANCE = name;
+        STATE_DIR = "${stateRoot}/${name}";
         HELPER_PORT = toString inst.helperPort;
         LOCAL_CREDENTIAL_ROOT = credentialRoot;
         HELPER_CURL_MAX_TIME = toString constants.ankiHost.helperCurlMaxTimeSecs;

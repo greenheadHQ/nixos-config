@@ -618,6 +618,11 @@ def _managed_request(path, body):
         "/managed/restore/diagnose": ({"request_id"}, set()),
         "/managed/enrollment/prepare": (set(), set()),
         "/managed/enrollment/apply": ({"operation_id", "preview_token", "confirm"}, set()),
+        "/managed/update/prepare": ({"operation_id", "devices_ready"}, set()),
+        "/managed/update/apply": ({"operation_id", "preview_token", "confirm"}, set()),
+        "/managed/update/status": ({"operation_id"}, set()),
+        "/managed/update/diagnose": ({"operation_id"}, set()),
+        "/managed/update/delivery": ({"operation_id"}, set()),
         "/managed/notification/retry": ({"incident_id"}, set()),
     }
     if path not in required_optional:
@@ -638,6 +643,20 @@ def _managed_request(path, body):
         return managed.store.history(name, limit=body.get("limit", 20), offset=body.get("offset", 0))
     if path.startswith("/managed/restore/") and managed.restores is None:
         raise OperationError("managed-restore-journal-unavailable-operator-repair-required")
+    if path in ("/managed/restore/prepare", "/managed/restore/apply", "/managed/restore/diagnose"):
+        managed._require_no_pending_update()
+    if path.startswith("/managed/update/"):
+        if managed.updates is None:
+            raise OperationError("managed-update-journal-unavailable-operator-repair-required")
+        if path == "/managed/update/prepare":
+            return managed.updates.prepare(body["operation_id"], body["devices_ready"])
+        if path == "/managed/update/apply":
+            return managed.updates.apply(body["operation_id"], body["preview_token"], body["confirm"])
+        if path == "/managed/update/status":
+            return managed.updates.status(body["operation_id"])
+        if path == "/managed/update/diagnose":
+            return managed.updates.diagnose(body["operation_id"])
+        return managed.updates.delivery(body["operation_id"])
     if path == "/managed/restore/prepare":
         return managed.restores.prepare(name, body["request_id"])
     if path == "/managed/restore/apply":

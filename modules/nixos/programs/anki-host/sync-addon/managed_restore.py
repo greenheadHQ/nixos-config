@@ -76,6 +76,10 @@ class AnkiRestoreAdapter:
         from anki.buildinfo import version
         return version
 
+    def materialize(self, current: dict, definition: dict) -> dict:
+        """The remote restore policy stays narrower than root-operated updates."""
+        return native_from_definition(current, definition)
+
     def capture(self, baseline: dict) -> dict:
         model = _native(self.col, baseline["model_id"])
         if model is None or model["name"] != baseline["model_name"]:
@@ -126,7 +130,7 @@ class AnkiRestoreAdapter:
                 original = _rows(trial)
                 if native != before["model"] or _preservation(original) != before["preservation"]:
                     _error("backup-state-mismatch")
-                candidate = native_from_definition(native, baseline["bundle"]["definition"])
+                candidate = self.materialize(native, baseline["bundle"]["definition"])
                 trial.models.update_dict(candidate)
                 after = _native(trial, baseline["model_id"])
                 if (_rows(trial) != original or _identities(after) != _identities(native)
@@ -191,7 +195,7 @@ class AnkiRestoreAdapter:
         native = _native(self.col, baseline["model_id"])
         if native != before["model"]:
             _error("native-model-changed-before-apply")
-        self.col.models.update_dict(native_from_definition(native, baseline["bundle"]["definition"]))
+        self.col.models.update_dict(self.materialize(native, baseline["bundle"]["definition"]))
         self.window.reset()
         after = _native(self.col, baseline["model_id"])
         if (canonical_model(after) != baseline["bundle"]["definition"]
