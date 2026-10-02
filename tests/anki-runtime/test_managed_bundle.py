@@ -84,3 +84,49 @@ def test_native_update_recomputes_generation_even_when_supplied_req_is_unchanged
     assert after['req'] != native['req']
     assert len(r.col.get_note(nid).card_ids()) == 2
     assert r.col.get_note(nid).card_ids() != before_cards
+
+
+def test_history_options_preserve_rows_and_explicit_reads(runtime):
+    r = runtime
+    field_name = '노트 변천사'
+    token = 'historyonlytoken'
+    value = f'<p>{token}</p><p>Keep the complete history.</p>'
+    model = copy.deepcopy(r.col.models.by_name('Basic'))
+    r.col.models.add_field(model, r.col.models.new_field(field_name))
+    r.col.models.update_dict(model)
+    r.col.models._clear_cache()
+    nid = add(r, fields={'Front': 'question', 'Back': 'answer', field_name: value})
+    control = add(r, fields={'Front': 'control', 'Back': token, field_name: ''})
+    ids = r.col.get_note(nid).card_ids()
+    r.apply('set_due_date', {'card_ids': ids, 'days': '3'})
+    r.col.set_user_flag_for_cards(4, ids)
+    r.apply('add_tags', {'note_ids': [nid], 'tags': ['marked', 'keep']})
+    before = rows(r)
+    assert before['revlog']
+    scm = r.col.db.scalar('select scm from col')
+    original = copy.deepcopy(r.col.models.by_name('Basic'))
+
+    def search(query):
+        return set(r.ac.findNotes(query=query))
+
+    assert search(token) == {nid, control}
+    assert search(f're:{token}') == {nid, control}
+    for enabled in (True, False):
+        candidate = copy.deepcopy(original)
+        history = next(f for f in candidate['flds'] if f['name'] == field_name)
+        history.update(collapsed=enabled, excludeFromSearch=enabled)
+        r.col.models.update_dict(candidate)
+        r.col.models._clear_cache()
+        observed = r.col.models.get(original['id'])
+        assert bundle.canonical_model(observed) == bundle.canonical_model(candidate)
+        assert [f['id'] for f in observed['flds']] == [f['id'] for f in original['flds']]
+        assert [t['id'] for t in observed['tmpls']] == [t['id'] for t in original['tmpls']]
+        assert r.col.db.scalar('select scm from col') == scm
+        assert rows(r) == before
+        expected = {control} if enabled else {nid, control}
+        assert search(token) == expected
+        assert search(f're:{token}') == expected
+        assert search(f'"{field_name}:*{token}*"') == {nid}
+        assert search(f'nid:{nid}') == {nid}
+        detail = r.ac.notesInfo(notes=[nid])[0]
+        assert detail['fields'][field_name]['value'] == value

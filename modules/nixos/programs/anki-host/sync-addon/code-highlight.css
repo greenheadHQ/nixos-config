@@ -135,3 +135,85 @@
 :is(.nightMode, .night_mode) .anki-code-scope .hljs-meta,
 :is(.nightMode, .night_mode) .anki-code-scope .hljs-symbol,
 :is(.nightMode, .night_mode) .anki-code-scope .hljs-bullet { color: #ffa657; }
+
+/* A separate grid row keeps the existing size toolbar above the block. The
+ * copy target is outside the scrolling pre and never covers its first line. */
+.anki-code-block {
+  display: grid;
+  grid-template-areas: "toolbar" "code" "manual";
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  margin: 16px 0;
+}
+.anki-code-block > .anki-code-controls { grid-area: toolbar; }
+.anki-code-scope .anki-code-block > pre {
+  grid-area: code;
+  margin: 0;
+  padding-top: 54px;
+}
+.anki-code-copy {
+  grid-area: code;
+  align-self: start;
+  justify-self: end;
+  z-index: 1;
+  margin: 4px 6px;
+  color: #57606a;
+}
+.anki-code-copy button {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.anki-code-copy button:hover,
+.anki-code-copy button:active { background: #e6ebf0; box-shadow: none; }
+.anki-code-copy button:focus-visible { outline: 2px solid #0969da !important; outline-offset: 1px; }
+.anki-code-copy__check,
+.anki-code-copy[data-state="success"] .anki-code-copy__icon { display: none; }
+.anki-code-copy[data-state="success"] .anki-code-copy__check { display: block; }
+.anki-code-copy [role="status"] {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+}
+.anki-code-copy-manual { grid-area: manual; min-width: 0; text-align: left; }
+.anki-code-copy-manual[hidden] { display: none; }
+.anki-code-copy-manual p { margin: 8px 0; font: 400 13px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; }
+.anki-code-copy-manual textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100px;
+  padding: 10px;
+  border: 1px solid #d8dee4;
+  border-radius: 6px;
+  background: #f6f8fa;
+  color: #24292f;
+  font: 400 16px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre;
+  overflow-wrap: normal;
+  user-select: text;
+  -webkit-user-select: text;
+}
+:is(.nightMode, .night_mode) .anki-code-copy { color: #8b949e; }
+:is(.nightMode, .night_mode) .anki-code-copy button:hover,
+:is(.nightMode, .night_mode) .anki-code-copy button:active { background: #30363d; }
+:is(.nightMode, .night_mode) .anki-code-copy button:focus-visible { outline-color: #79c0ff !important; }
+:is(.nightMode, .night_mode) .anki-code-copy-manual textarea { background: #161b22; color: #e6edf3; border-color: #30363d; }

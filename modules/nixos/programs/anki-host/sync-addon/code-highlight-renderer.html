@@ -81,6 +81,234 @@
     };
     window[CONTROLS] = { mount };
   }
+  // Copy has its own lifecycle: a reused WebView may still have the original
+  // size controls installed. Do not replace their toggle listener or scale.
+  const COPY = "AnkiCodeCopyV1";
+  if (!window[COPY]) {
+    let handles = [];
+    const events = ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart",
+      "touchend", "keydown", "keypress", "keyup", "click"];
+    const stop = event => event.stopPropagation();
+    const readText = code => {
+      // Keep text-node whitespace byte-for-byte. innerText alone would include
+      // opacity:0 answers; textContent alone would include hidden answers and
+      // lose BR/block boundaries. Never read cloze attributes or stored HTML.
+      const suppressed = node => {
+        const style = window.getComputedStyle(node);
+        return node.hidden || style.display === "none" || style.opacity === "0" ||
+          style.contentVisibility === "hidden";
+      };
+      for (let node = code; node; node = node.parentElement) {
+        if (suppressed(node)) return "";
+        if (node.tagName === "DETAILS" && !node.open) {
+          const summary = Array.from(node.children).find(child => child.tagName === "SUMMARY");
+          if (!summary?.contains(code)) return "";
+        }
+      }
+      const transparent = color => {
+        const value = (color || "").trim().toLowerCase();
+        if (value === "transparent") return true;
+        // Computed colors may retain Color 4 functions instead of rgba(). Only
+        // explicit numeric zero alpha is conclusive; unknown paint stays copied.
+        const alpha = value.match(/^(?:rgba|hsla)\([^,]+,[^,]+,[^,]+,\s*([^,()]+)\)$/)?.[1] ||
+          value.match(/^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*\/\s*([^/()]+)\)$/)?.[1];
+        return !!alpha && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?%?$/.test(alpha.trim()) &&
+          Number(alpha.trim().replace(/%$/, "")) === 0;
+      };
+      const visibleText = node => {
+        const style = window.getComputedStyle(node);
+        if (["hidden", "collapse"].includes(style.visibility) || parseFloat(style.fontSize) === 0) return false;
+        const property = name => style.getPropertyValue(name).trim();
+        const fill = property("-webkit-text-fill-color");
+        if (!transparent(!fill || fill === "currentcolor" ? style.color : fill)) return true;
+        // Transparent fill can still paint through shadow, stroke or clipped
+        // backgrounds. Decide per text node so descendants can restore styling.
+        const stroke = property("-webkit-text-stroke-width");
+        const noStroke = !stroke || parseFloat(stroke) === 0 || transparent(property("-webkit-text-stroke-color"));
+        const noShadow = !style.textShadow || style.textShadow === "none";
+        if (!noShadow || !noStroke) return true;
+        // background-clip is not inherited, but ancestor backgrounds can paint
+        // descendant glyphs. Keep uncertain paint instead of dropping text.
+        for (let ancestor = node; ancestor; ancestor = ancestor.parentElement) {
+          const paint = window.getComputedStyle(ancestor);
+          if (["background-clip", "-webkit-background-clip"].some(name => paint.getPropertyValue(name).includes("text"))) return true;
+        }
+        return false;
+      };
+      const fragments = [];
+      const blockDisplays = new Set(["block", "flow-root", "flex", "grid", "list-item",
+        "table", "table-row", "table-caption"]);
+      const visit = node => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          if (visibleText(node.parentElement)) fragments.push(node.nodeValue);
+          return;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE || suppressed(node) ||
+            ["SCRIPT", "STYLE", "TEMPLATE"].includes(node.tagName)) return;
+        const style = window.getComputedStyle(node);
+        if (node.tagName === "BR") {
+          if (!["hidden", "collapse"].includes(style.visibility)) fragments.push("\n");
+          return;
+        }
+        const boundary = node !== code && blockDisplays.has(style.display) ? (node.tagName === "P" ? 2 : 1) : 0;
+        if (boundary) fragments.push(boundary);
+        if (node.tagName === "DETAILS" && !node.open) {
+          const summary = Array.from(node.children).find(child => child.tagName === "SUMMARY");
+          if (summary) visit(summary);
+        } else for (const child of node.childNodes) visit(child);
+        if (boundary) fragments.push(boundary);
+      };
+      visit(code);
+      let text = "", boundary = 0;
+      for (const fragment of fragments) {
+        if (typeof fragment === "number") { boundary = Math.max(boundary, fragment); continue; }
+        if (!fragment) continue;
+        if (text && boundary) {
+          const existing = text.match(/\n*$/)?.[0].length || 0;
+          text += "\n".repeat(Math.max(0, boundary - existing));
+        }
+        text += fragment;
+        boundary = 0;
+      }
+      return text;
+    };
+    const attach = (root, code) => {
+      const pre = code.parentElement;
+      let shell = pre.parentElement;
+      if (!shell.classList.contains("anki-code-block")) {
+        shell = document.createElement("div");
+        shell.className = "anki-code-block";
+        pre.before(shell);
+        shell.append(pre);
+      }
+      const control = document.createElement("div");
+      control.className = "anki-code-copy";
+      control.innerHTML = '<button type="button" aria-label="코드 복사"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"><g class="anki-code-copy__icon"><rect x="7" y="7" width="9" height="10" rx="2"/><path d="M12 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></g><path class="anki-code-copy__check" d="m4 10 4 4 8-8"/></svg></button><span role="status" aria-live="polite" aria-atomic="true"></span>';
+      const panel = document.createElement("div");
+      panel.className = "anki-code-copy-manual";
+      panel.hidden = true;
+      panel.innerHTML = '<p>자동 복사가 지원되지 않습니다. 아래 코드를 선택하거나 길게 눌러 복사해 주세요.</p><textarea readonly rows="5" aria-label="복사할 코드" spellcheck="false" autocapitalize="off" autocorrect="off"></textarea>';
+      shell.append(control, panel);
+      const button = control.querySelector("button");
+      const status = control.querySelector('[role="status"]');
+      const input = panel.querySelector("textarea");
+      const cardId = root.querySelector("[data-anki-cid]")?.dataset.ankiCid;
+      const answer = !!root.querySelector("#answer");
+      let alive = true, pending = false, generation = 0, copyTimer = null, resetTimer = null;
+      const current = token => alive && generation === token && code.isConnected &&
+        control.isConnected && root.contains(code) && pre.contains(code) &&
+        (document.getElementById("qa") || document.body) === root &&
+        root.querySelector("[data-anki-cid]")?.dataset.ankiCid === cardId &&
+        !!root.querySelector("#answer") === answer;
+      const reset = () => {
+        control.dataset.state = "ready";
+        button.setAttribute("aria-label", "코드 복사");
+        status.textContent = "";
+      };
+      const settled = () => {
+        if (copyTimer !== null) clearTimeout(copyTimer);
+        copyTimer = null;
+        pending = false;
+        button.removeAttribute("aria-busy");
+      };
+      const manual = token => {
+        if (!current(token)) return;
+        settled();
+        control.dataset.state = "manual";
+        panel.hidden = false;
+        status.textContent = "자동 복사를 할 수 없습니다. 아래 코드를 직접 복사해 주세요.";
+        input.focus({ preventScroll: true });
+        input.select();
+        input.setSelectionRange(0, input.value.length);
+      };
+      const success = token => {
+        if (!current(token)) return;
+        settled();
+        control.dataset.state = "success";
+        panel.hidden = true;
+        button.setAttribute("aria-label", "코드 복사됨");
+        status.textContent = "코드를 복사했습니다.";
+        resetTimer = setTimeout(() => { if (current(token)) reset(); }, 1800);
+      };
+      const legacyCopy = payload => {
+        const temporary = document.createElement("textarea");
+        const previousFocus = document.activeElement;
+        temporary.value = payload;
+        // Textarea normalizes CRLF/CR. Use writeText instead if that would alter
+        // a programmatically supplied text node; never report a changed copy.
+        if (temporary.value !== payload) return false;
+        temporary.readOnly = true;
+        temporary.setAttribute("aria-hidden", "true");
+        temporary.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;font-size:16px;pointer-events:none;";
+        control.append(temporary);
+        try {
+          temporary.focus({ preventScroll: true });
+          temporary.select();
+          temporary.setSelectionRange(0, payload.length);
+          return typeof document.execCommand === "function" && document.execCommand("copy") === true;
+        } catch (_) {
+          return false;
+        } finally {
+          temporary.remove();
+          if (previousFocus?.isConnected && typeof previousFocus.focus === "function") previousFocus.focus({ preventScroll: true });
+        }
+      };
+      const copy = event => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (pending || !current(generation)) return;
+        if (resetTimer !== null) clearTimeout(resetTimer);
+        reset();
+        panel.hidden = true;
+        const payload = readText(code);
+        input.value = payload;
+        pending = true;
+        const token = ++generation;
+        control.dataset.state = "copying";
+        button.setAttribute("aria-busy", "true");
+        try {
+          // Keep both attempts in the user gesture. Qt may never settle the
+          // asynchronous API; a timeout exposes selectable code, not success.
+          if (legacyCopy(payload)) { success(token); return; }
+          if (window.isSecureContext && typeof window.navigator.clipboard?.writeText === "function") {
+            const result = window.navigator.clipboard.writeText(payload);
+            if (!result || typeof result.then !== "function") { manual(token); return; }
+            copyTimer = setTimeout(() => {
+              if (!current(token)) return;
+              manual(token);
+              generation++;
+            }, 1800);
+            result.then(() => success(token), () => manual(token));
+          } else manual(token);
+        } catch (_) { manual(token); }
+      };
+      for (const node of [control, panel]) {
+        for (const name of events) node.addEventListener(name, stop);
+      }
+      button.addEventListener("click", copy);
+      reset();
+      return () => {
+        alive = false;
+        generation++;
+        if (copyTimer !== null) clearTimeout(copyTimer);
+        if (resetTimer !== null) clearTimeout(resetTimer);
+        button.removeEventListener("click", copy);
+        for (const node of [control, panel]) {
+          for (const name of events) node.removeEventListener(name, stop);
+          node.remove();
+        }
+      };
+    };
+    const mount = () => {
+      for (const destroy of handles) destroy();
+      handles = [];
+      const root = document.getElementById("qa") || document.body;
+      // FrontSide can clone rendered controls without cloning listeners.
+      for (const duplicate of root.querySelectorAll(".anki-code-copy, .anki-code-copy-manual")) duplicate.remove();
+      for (const code of root.querySelectorAll(".anki-code-scope pre > code")) handles.push(attach(root, code));
+    };
+    window[COPY] = { mount };
+  }
   const KEY = "AnkiCodeHighlightV1";
   if (!window[KEY]) {
     const records = new WeakMap();
@@ -178,6 +406,7 @@
   }
   // A synced template can change while the reviewer WebView remains alive.
   if (style.textContent !== CSS) style.textContent = CSS;
+  window[COPY].mount();
   window[CONTROLS].mount();
   // Anki reuses its WebView, including globals, across question/answer/card changes.
   // Each script invocation gets a new generation; a pending old card cannot paint it.

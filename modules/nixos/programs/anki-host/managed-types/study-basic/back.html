@@ -114,7 +114,7 @@
 <script>
 (() => {
   const ASSET = "_anki-syntax-hljs-11.12.0-fd009500d0c826a5.min.js";
-  const CSS = "/* Scoped GitHub-inspired palette; app night mode is authoritative, not OS theme. */\n.anki-code-scope {\n  --anki-code-size: 17px;\n}\n.anki-code-scope pre {\n  box-sizing: border-box;\n  max-width: 100%;\n  min-width: 0;\n  overflow-x: auto;\n  white-space: pre;\n  overflow-wrap: normal;\n  word-break: normal;\n  tab-size: 4;\n  margin: 16px 0;\n  padding: 14px 16px;\n  border: 1px solid #d8dee4;\n  border-radius: 10px;\n  background: #f6f8fa;\n  color: #24292f;\n  text-align: left;\n  font: 400 17px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;\n  font-size: calc(var(--anki-code-size) * var(--anki-code-scale, 1));\n  -webkit-text-size-adjust: 100%;\n}\n.anki-code-controls {\n  box-sizing: border-box;\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  width: fit-content;\n  max-width: 100%;\n  margin: 10px 0 4px auto;\n  padding: 0;\n  gap: 2px;\n  border: 0;\n  background: transparent;\n  color: #57606a;\n  font: 400 11px/1 -apple-system, BlinkMacSystemFont, sans-serif;\n  -webkit-text-size-adjust: 100%;\n}\n.anki-code-controls + pre { margin-top: 0; }\n.anki-code-controls button {\n  appearance: none;\n  -webkit-appearance: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 28px;\n  min-height: 28px;\n  margin: 0;\n  padding: 0;\n  border: 0;\n  border-radius: 5px;\n  background: transparent;\n  box-shadow: none;\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  touch-action: manipulation;\n  -webkit-tap-highlight-color: transparent;\n  user-select: none;\n  -webkit-user-select: none;\n}\n.anki-code-controls button[data-action=\"smaller\"],\n.anki-code-controls button[data-action=\"larger\"] { font-size: 16px; }\n/* Keep the explicit accessible name while presenting a quiet reset icon. */\n.anki-code-controls button[data-action=\"reset\"] { font-size: 0; }\n.anki-code-controls button[data-action=\"reset\"]::before { content: \"\u21ba\"; font-size: 16px; }\n.anki-code-controls button:not(:disabled):hover,\n.anki-code-controls button:not(:disabled):active { background: #e6ebf0; }\n.anki-code-controls button:hover,\n.anki-code-controls button:active { box-shadow: none; }\n/* Desktop Anki suppresses button outlines with !important. Restore focus here. */\n.anki-code-controls button:focus-visible { outline: 2px solid #0969da !important; outline-offset: 1px; }\n.anki-code-controls button:disabled,\n.anki-code-controls button:disabled:hover { background: transparent; color: inherit; opacity: .4; cursor: default; }\n.anki-code-controls output {\n  min-width: 34px;\n  text-align: center;\n  font: inherit;\n  font-variant-numeric: tabular-nums;\n}\n@media (max-width: 600px) {\n  .anki-code-scope { --anki-code-size: 15px; }\n  .anki-code-scope pre { padding: 12px; }\n  .anki-code-controls button { min-width: 32px; min-height: 32px; }\n}\n.anki-code-scope pre > code {\n  display: block;\n  min-width: max-content;\n  padding: 0;\n  border: 0;\n  border-radius: 0;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  white-space: inherit;\n  overflow-wrap: inherit;\n  word-break: inherit;\n}\n.anki-code-scope .hljs-keyword, .anki-code-scope .hljs-selector-tag, .anki-code-scope .hljs-literal { color: #cf222e; }\n.anki-code-scope .hljs-title, .anki-code-scope .hljs-section { color: #8250df; }\n.anki-code-scope .hljs-string, .anki-code-scope .hljs-regexp { color: #0a3069; }\n.anki-code-scope .hljs-number, .anki-code-scope .hljs-attr, .anki-code-scope .hljs-variable, .anki-code-scope .hljs-type, .anki-code-scope .hljs-built_in { color: #0550ae; }\n.anki-code-scope .hljs-comment, .anki-code-scope .hljs-quote { color: #57606a; }\n.anki-code-scope .hljs-name, .anki-code-scope .hljs-selector-class, .anki-code-scope .hljs-selector-id { color: #116329; }\n.anki-code-scope .hljs-meta, .anki-code-scope .hljs-symbol, .anki-code-scope .hljs-bullet { color: #953800; }\n.anki-code-scope .hljs-emphasis { font-style: italic; }\n.anki-code-scope .hljs-strong { font-weight: 600; }\n:is(.nightMode, .night_mode) .anki-code-scope pre,\n.anki-code-scope:is(.nightMode, .night_mode) pre { background: #161b22; color: #e6edf3; border-color: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-controls {\n  color: #8b949e;\n}\n:is(.nightMode, .night_mode) .anki-code-controls button:not(:disabled):hover,\n:is(.nightMode, .night_mode) .anki-code-controls button:not(:disabled):active { background: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-controls button:focus-visible { outline-color: #79c0ff !important; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-keyword,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-tag,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-literal { color: #ff7b72; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-title,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-section { color: #d2a8ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-string,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-regexp { color: #a5d6ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-number,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-attr,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-variable,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-type,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-built_in { color: #79c0ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-comment,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-quote { color: #8b949e; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-name,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-class,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-id { color: #7ee787; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-meta,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-symbol,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-bullet { color: #ffa657; }\n";
+  const CSS = "/* Scoped GitHub-inspired palette; app night mode is authoritative, not OS theme. */\n.anki-code-scope {\n  --anki-code-size: 17px;\n}\n.anki-code-scope pre {\n  box-sizing: border-box;\n  max-width: 100%;\n  min-width: 0;\n  overflow-x: auto;\n  white-space: pre;\n  overflow-wrap: normal;\n  word-break: normal;\n  tab-size: 4;\n  margin: 16px 0;\n  padding: 14px 16px;\n  border: 1px solid #d8dee4;\n  border-radius: 10px;\n  background: #f6f8fa;\n  color: #24292f;\n  text-align: left;\n  font: 400 17px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;\n  font-size: calc(var(--anki-code-size) * var(--anki-code-scale, 1));\n  -webkit-text-size-adjust: 100%;\n}\n.anki-code-controls {\n  box-sizing: border-box;\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  width: fit-content;\n  max-width: 100%;\n  margin: 10px 0 4px auto;\n  padding: 0;\n  gap: 2px;\n  border: 0;\n  background: transparent;\n  color: #57606a;\n  font: 400 11px/1 -apple-system, BlinkMacSystemFont, sans-serif;\n  -webkit-text-size-adjust: 100%;\n}\n.anki-code-controls + pre { margin-top: 0; }\n.anki-code-controls button {\n  appearance: none;\n  -webkit-appearance: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 28px;\n  min-height: 28px;\n  margin: 0;\n  padding: 0;\n  border: 0;\n  border-radius: 5px;\n  background: transparent;\n  box-shadow: none;\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  touch-action: manipulation;\n  -webkit-tap-highlight-color: transparent;\n  user-select: none;\n  -webkit-user-select: none;\n}\n.anki-code-controls button[data-action=\"smaller\"],\n.anki-code-controls button[data-action=\"larger\"] { font-size: 16px; }\n/* Keep the explicit accessible name while presenting a quiet reset icon. */\n.anki-code-controls button[data-action=\"reset\"] { font-size: 0; }\n.anki-code-controls button[data-action=\"reset\"]::before { content: \"\u21ba\"; font-size: 16px; }\n.anki-code-controls button:not(:disabled):hover,\n.anki-code-controls button:not(:disabled):active { background: #e6ebf0; }\n.anki-code-controls button:hover,\n.anki-code-controls button:active { box-shadow: none; }\n/* Desktop Anki suppresses button outlines with !important. Restore focus here. */\n.anki-code-controls button:focus-visible { outline: 2px solid #0969da !important; outline-offset: 1px; }\n.anki-code-controls button:disabled,\n.anki-code-controls button:disabled:hover { background: transparent; color: inherit; opacity: .4; cursor: default; }\n.anki-code-controls output {\n  min-width: 34px;\n  text-align: center;\n  font: inherit;\n  font-variant-numeric: tabular-nums;\n}\n@media (max-width: 600px) {\n  .anki-code-scope { --anki-code-size: 15px; }\n  .anki-code-scope pre { padding: 12px; }\n  .anki-code-controls button { min-width: 32px; min-height: 32px; }\n}\n.anki-code-scope pre > code {\n  display: block;\n  min-width: max-content;\n  padding: 0;\n  border: 0;\n  border-radius: 0;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  white-space: inherit;\n  overflow-wrap: inherit;\n  word-break: inherit;\n}\n.anki-code-scope .hljs-keyword, .anki-code-scope .hljs-selector-tag, .anki-code-scope .hljs-literal { color: #cf222e; }\n.anki-code-scope .hljs-title, .anki-code-scope .hljs-section { color: #8250df; }\n.anki-code-scope .hljs-string, .anki-code-scope .hljs-regexp { color: #0a3069; }\n.anki-code-scope .hljs-number, .anki-code-scope .hljs-attr, .anki-code-scope .hljs-variable, .anki-code-scope .hljs-type, .anki-code-scope .hljs-built_in { color: #0550ae; }\n.anki-code-scope .hljs-comment, .anki-code-scope .hljs-quote { color: #57606a; }\n.anki-code-scope .hljs-name, .anki-code-scope .hljs-selector-class, .anki-code-scope .hljs-selector-id { color: #116329; }\n.anki-code-scope .hljs-meta, .anki-code-scope .hljs-symbol, .anki-code-scope .hljs-bullet { color: #953800; }\n.anki-code-scope .hljs-emphasis { font-style: italic; }\n.anki-code-scope .hljs-strong { font-weight: 600; }\n:is(.nightMode, .night_mode) .anki-code-scope pre,\n.anki-code-scope:is(.nightMode, .night_mode) pre { background: #161b22; color: #e6edf3; border-color: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-controls {\n  color: #8b949e;\n}\n:is(.nightMode, .night_mode) .anki-code-controls button:not(:disabled):hover,\n:is(.nightMode, .night_mode) .anki-code-controls button:not(:disabled):active { background: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-controls button:focus-visible { outline-color: #79c0ff !important; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-keyword,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-tag,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-literal { color: #ff7b72; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-title,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-section { color: #d2a8ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-string,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-regexp { color: #a5d6ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-number,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-attr,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-variable,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-type,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-built_in { color: #79c0ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-comment,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-quote { color: #8b949e; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-name,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-class,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-id { color: #7ee787; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-meta,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-symbol,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-bullet { color: #ffa657; }\n\n/* A separate grid row keeps the existing size toolbar above the block. The\n * copy target is outside the scrolling pre and never covers its first line. */\n.anki-code-block {\n  display: grid;\n  grid-template-areas: \"toolbar\" \"code\" \"manual\";\n  grid-template-columns: minmax(0, 1fr);\n  min-width: 0;\n  margin: 16px 0;\n}\n.anki-code-block > .anki-code-controls { grid-area: toolbar; }\n.anki-code-scope .anki-code-block > pre {\n  grid-area: code;\n  margin: 0;\n  padding-top: 54px;\n}\n.anki-code-copy {\n  grid-area: code;\n  align-self: start;\n  justify-self: end;\n  z-index: 1;\n  margin: 4px 6px;\n  color: #57606a;\n}\n.anki-code-copy button {\n  appearance: none;\n  -webkit-appearance: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 44px;\n  min-height: 44px;\n  margin: 0;\n  padding: 0;\n  border: 0;\n  border-radius: 6px;\n  background: transparent;\n  color: inherit;\n  box-shadow: none;\n  cursor: pointer;\n  touch-action: manipulation;\n  user-select: none;\n  -webkit-user-select: none;\n  -webkit-tap-highlight-color: transparent;\n}\n.anki-code-copy button:hover,\n.anki-code-copy button:active { background: #e6ebf0; box-shadow: none; }\n.anki-code-copy button:focus-visible { outline: 2px solid #0969da !important; outline-offset: 1px; }\n.anki-code-copy__check,\n.anki-code-copy[data-state=\"success\"] .anki-code-copy__icon { display: none; }\n.anki-code-copy[data-state=\"success\"] .anki-code-copy__check { display: block; }\n.anki-code-copy [role=\"status\"] {\n  position: absolute !important;\n  width: 1px !important;\n  height: 1px !important;\n  overflow: hidden !important;\n  clip: rect(0, 0, 0, 0) !important;\n  white-space: nowrap !important;\n}\n.anki-code-copy-manual { grid-area: manual; min-width: 0; text-align: left; }\n.anki-code-copy-manual[hidden] { display: none; }\n.anki-code-copy-manual p { margin: 8px 0; font: 400 13px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; }\n.anki-code-copy-manual textarea {\n  box-sizing: border-box;\n  width: 100%;\n  min-height: 100px;\n  padding: 10px;\n  border: 1px solid #d8dee4;\n  border-radius: 6px;\n  background: #f6f8fa;\n  color: #24292f;\n  font: 400 16px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;\n  white-space: pre;\n  overflow-wrap: normal;\n  user-select: text;\n  -webkit-user-select: text;\n}\n:is(.nightMode, .night_mode) .anki-code-copy { color: #8b949e; }\n:is(.nightMode, .night_mode) .anki-code-copy button:hover,\n:is(.nightMode, .night_mode) .anki-code-copy button:active { background: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-copy button:focus-visible { outline-color: #79c0ff !important; }\n:is(.nightMode, .night_mode) .anki-code-copy-manual textarea { background: #161b22; color: #e6edf3; border-color: #30363d; }\n";
   const CONTROLS = "AnkiCodeControlsV1";
   if (!window[CONTROLS]) {
     let cardId = null, answer = false, scale = 100;
@@ -192,6 +192,234 @@
       update();
     };
     window[CONTROLS] = { mount };
+  }
+  // Copy has its own lifecycle: a reused WebView may still have the original
+  // size controls installed. Do not replace their toggle listener or scale.
+  const COPY = "AnkiCodeCopyV1";
+  if (!window[COPY]) {
+    let handles = [];
+    const events = ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart",
+      "touchend", "keydown", "keypress", "keyup", "click"];
+    const stop = event => event.stopPropagation();
+    const readText = code => {
+      // Keep text-node whitespace byte-for-byte. innerText alone would include
+      // opacity:0 answers; textContent alone would include hidden answers and
+      // lose BR/block boundaries. Never read cloze attributes or stored HTML.
+      const suppressed = node => {
+        const style = window.getComputedStyle(node);
+        return node.hidden || style.display === "none" || style.opacity === "0" ||
+          style.contentVisibility === "hidden";
+      };
+      for (let node = code; node; node = node.parentElement) {
+        if (suppressed(node)) return "";
+        if (node.tagName === "DETAILS" && !node.open) {
+          const summary = Array.from(node.children).find(child => child.tagName === "SUMMARY");
+          if (!summary?.contains(code)) return "";
+        }
+      }
+      const transparent = color => {
+        const value = (color || "").trim().toLowerCase();
+        if (value === "transparent") return true;
+        // Computed colors may retain Color 4 functions instead of rgba(). Only
+        // explicit numeric zero alpha is conclusive; unknown paint stays copied.
+        const alpha = value.match(/^(?:rgba|hsla)\([^,]+,[^,]+,[^,]+,\s*([^,()]+)\)$/)?.[1] ||
+          value.match(/^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*\/\s*([^/()]+)\)$/)?.[1];
+        return !!alpha && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?%?$/.test(alpha.trim()) &&
+          Number(alpha.trim().replace(/%$/, "")) === 0;
+      };
+      const visibleText = node => {
+        const style = window.getComputedStyle(node);
+        if (["hidden", "collapse"].includes(style.visibility) || parseFloat(style.fontSize) === 0) return false;
+        const property = name => style.getPropertyValue(name).trim();
+        const fill = property("-webkit-text-fill-color");
+        if (!transparent(!fill || fill === "currentcolor" ? style.color : fill)) return true;
+        // Transparent fill can still paint through shadow, stroke or clipped
+        // backgrounds. Decide per text node so descendants can restore styling.
+        const stroke = property("-webkit-text-stroke-width");
+        const noStroke = !stroke || parseFloat(stroke) === 0 || transparent(property("-webkit-text-stroke-color"));
+        const noShadow = !style.textShadow || style.textShadow === "none";
+        if (!noShadow || !noStroke) return true;
+        // background-clip is not inherited, but ancestor backgrounds can paint
+        // descendant glyphs. Keep uncertain paint instead of dropping text.
+        for (let ancestor = node; ancestor; ancestor = ancestor.parentElement) {
+          const paint = window.getComputedStyle(ancestor);
+          if (["background-clip", "-webkit-background-clip"].some(name => paint.getPropertyValue(name).includes("text"))) return true;
+        }
+        return false;
+      };
+      const fragments = [];
+      const blockDisplays = new Set(["block", "flow-root", "flex", "grid", "list-item",
+        "table", "table-row", "table-caption"]);
+      const visit = node => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          if (visibleText(node.parentElement)) fragments.push(node.nodeValue);
+          return;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE || suppressed(node) ||
+            ["SCRIPT", "STYLE", "TEMPLATE"].includes(node.tagName)) return;
+        const style = window.getComputedStyle(node);
+        if (node.tagName === "BR") {
+          if (!["hidden", "collapse"].includes(style.visibility)) fragments.push("\n");
+          return;
+        }
+        const boundary = node !== code && blockDisplays.has(style.display) ? (node.tagName === "P" ? 2 : 1) : 0;
+        if (boundary) fragments.push(boundary);
+        if (node.tagName === "DETAILS" && !node.open) {
+          const summary = Array.from(node.children).find(child => child.tagName === "SUMMARY");
+          if (summary) visit(summary);
+        } else for (const child of node.childNodes) visit(child);
+        if (boundary) fragments.push(boundary);
+      };
+      visit(code);
+      let text = "", boundary = 0;
+      for (const fragment of fragments) {
+        if (typeof fragment === "number") { boundary = Math.max(boundary, fragment); continue; }
+        if (!fragment) continue;
+        if (text && boundary) {
+          const existing = text.match(/\n*$/)?.[0].length || 0;
+          text += "\n".repeat(Math.max(0, boundary - existing));
+        }
+        text += fragment;
+        boundary = 0;
+      }
+      return text;
+    };
+    const attach = (root, code) => {
+      const pre = code.parentElement;
+      let shell = pre.parentElement;
+      if (!shell.classList.contains("anki-code-block")) {
+        shell = document.createElement("div");
+        shell.className = "anki-code-block";
+        pre.before(shell);
+        shell.append(pre);
+      }
+      const control = document.createElement("div");
+      control.className = "anki-code-copy";
+      control.innerHTML = '<button type="button" aria-label="코드 복사"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"><g class="anki-code-copy__icon"><rect x="7" y="7" width="9" height="10" rx="2"/><path d="M12 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></g><path class="anki-code-copy__check" d="m4 10 4 4 8-8"/></svg></button><span role="status" aria-live="polite" aria-atomic="true"></span>';
+      const panel = document.createElement("div");
+      panel.className = "anki-code-copy-manual";
+      panel.hidden = true;
+      panel.innerHTML = '<p>자동 복사가 지원되지 않습니다. 아래 코드를 선택하거나 길게 눌러 복사해 주세요.</p><textarea readonly rows="5" aria-label="복사할 코드" spellcheck="false" autocapitalize="off" autocorrect="off"></textarea>';
+      shell.append(control, panel);
+      const button = control.querySelector("button");
+      const status = control.querySelector('[role="status"]');
+      const input = panel.querySelector("textarea");
+      const cardId = root.querySelector("[data-anki-cid]")?.dataset.ankiCid;
+      const answer = !!root.querySelector("#answer");
+      let alive = true, pending = false, generation = 0, copyTimer = null, resetTimer = null;
+      const current = token => alive && generation === token && code.isConnected &&
+        control.isConnected && root.contains(code) && pre.contains(code) &&
+        (document.getElementById("qa") || document.body) === root &&
+        root.querySelector("[data-anki-cid]")?.dataset.ankiCid === cardId &&
+        !!root.querySelector("#answer") === answer;
+      const reset = () => {
+        control.dataset.state = "ready";
+        button.setAttribute("aria-label", "코드 복사");
+        status.textContent = "";
+      };
+      const settled = () => {
+        if (copyTimer !== null) clearTimeout(copyTimer);
+        copyTimer = null;
+        pending = false;
+        button.removeAttribute("aria-busy");
+      };
+      const manual = token => {
+        if (!current(token)) return;
+        settled();
+        control.dataset.state = "manual";
+        panel.hidden = false;
+        status.textContent = "자동 복사를 할 수 없습니다. 아래 코드를 직접 복사해 주세요.";
+        input.focus({ preventScroll: true });
+        input.select();
+        input.setSelectionRange(0, input.value.length);
+      };
+      const success = token => {
+        if (!current(token)) return;
+        settled();
+        control.dataset.state = "success";
+        panel.hidden = true;
+        button.setAttribute("aria-label", "코드 복사됨");
+        status.textContent = "코드를 복사했습니다.";
+        resetTimer = setTimeout(() => { if (current(token)) reset(); }, 1800);
+      };
+      const legacyCopy = payload => {
+        const temporary = document.createElement("textarea");
+        const previousFocus = document.activeElement;
+        temporary.value = payload;
+        // Textarea normalizes CRLF/CR. Use writeText instead if that would alter
+        // a programmatically supplied text node; never report a changed copy.
+        if (temporary.value !== payload) return false;
+        temporary.readOnly = true;
+        temporary.setAttribute("aria-hidden", "true");
+        temporary.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;font-size:16px;pointer-events:none;";
+        control.append(temporary);
+        try {
+          temporary.focus({ preventScroll: true });
+          temporary.select();
+          temporary.setSelectionRange(0, payload.length);
+          return typeof document.execCommand === "function" && document.execCommand("copy") === true;
+        } catch (_) {
+          return false;
+        } finally {
+          temporary.remove();
+          if (previousFocus?.isConnected && typeof previousFocus.focus === "function") previousFocus.focus({ preventScroll: true });
+        }
+      };
+      const copy = event => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (pending || !current(generation)) return;
+        if (resetTimer !== null) clearTimeout(resetTimer);
+        reset();
+        panel.hidden = true;
+        const payload = readText(code);
+        input.value = payload;
+        pending = true;
+        const token = ++generation;
+        control.dataset.state = "copying";
+        button.setAttribute("aria-busy", "true");
+        try {
+          // Keep both attempts in the user gesture. Qt may never settle the
+          // asynchronous API; a timeout exposes selectable code, not success.
+          if (legacyCopy(payload)) { success(token); return; }
+          if (window.isSecureContext && typeof window.navigator.clipboard?.writeText === "function") {
+            const result = window.navigator.clipboard.writeText(payload);
+            if (!result || typeof result.then !== "function") { manual(token); return; }
+            copyTimer = setTimeout(() => {
+              if (!current(token)) return;
+              manual(token);
+              generation++;
+            }, 1800);
+            result.then(() => success(token), () => manual(token));
+          } else manual(token);
+        } catch (_) { manual(token); }
+      };
+      for (const node of [control, panel]) {
+        for (const name of events) node.addEventListener(name, stop);
+      }
+      button.addEventListener("click", copy);
+      reset();
+      return () => {
+        alive = false;
+        generation++;
+        if (copyTimer !== null) clearTimeout(copyTimer);
+        if (resetTimer !== null) clearTimeout(resetTimer);
+        button.removeEventListener("click", copy);
+        for (const node of [control, panel]) {
+          for (const name of events) node.removeEventListener(name, stop);
+          node.remove();
+        }
+      };
+    };
+    const mount = () => {
+      for (const destroy of handles) destroy();
+      handles = [];
+      const root = document.getElementById("qa") || document.body;
+      // FrontSide can clone rendered controls without cloning listeners.
+      for (const duplicate of root.querySelectorAll(".anki-code-copy, .anki-code-copy-manual")) duplicate.remove();
+      for (const code of root.querySelectorAll(".anki-code-scope pre > code")) handles.push(attach(root, code));
+    };
+    window[COPY] = { mount };
   }
   const KEY = "AnkiCodeHighlightV1";
   if (!window[KEY]) {
@@ -290,6 +518,7 @@
   }
   // A synced template can change while the reviewer WebView remains alive.
   if (style.textContent !== CSS) style.textContent = CSS;
+  window[COPY].mount();
   window[CONTROLS].mount();
   // Anki reuses its WebView, including globals, across question/answer/card changes.
   // Each script invocation gets a new generation; a pending old card cannot paint it.

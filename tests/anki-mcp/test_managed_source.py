@@ -37,6 +37,9 @@ def test_git_source_has_full_ordered_definition_and_no_operational_identity():
     definition = bundle["definition"]
     assert definition["name"] == "학습 Basic"
     assert [field["name"] for field in definition["flds"]] == ["질문", "답", "맥락", "설명", "출처", "검토 메모", "노트 변천사"]
+    history = definition["flds"][-1]
+    assert history["collapsed"] is True
+    assert history["excludeFromSearch"] is True
     assert definition["req"] == [[0, "any", [0, 2]]]
     assert len(definition["tmpls"]) == 1
     assert len(assets) == 1
