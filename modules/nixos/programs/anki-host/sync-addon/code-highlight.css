@@ -136,27 +136,33 @@
 :is(.nightMode, .night_mode) .anki-code-scope .hljs-symbol,
 :is(.nightMode, .night_mode) .anki-code-scope .hljs-bullet { color: #ffa657; }
 
-/* A separate grid row keeps the existing size toolbar above the block. The
- * copy target is outside the scrolling pre and never covers its first line. */
+/* Keep the existing sibling DOM: the size controller anchors its toolbar to
+ * pre. Both controls share an external row without covering scrollable code. */
 .anki-code-block {
   display: grid;
-  grid-template-areas: "toolbar" "code" "manual";
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "toolbar copy" "code code" "manual manual";
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 4px;
   min-width: 0;
   margin: 16px 0;
 }
-.anki-code-block > .anki-code-controls { grid-area: toolbar; }
+.anki-code-block > .anki-code-controls {
+  grid-area: toolbar;
+  align-self: center;
+  justify-self: end;
+  margin: 0;
+  padding-right: 6px;
+  border-right: 1px solid #d8dee4;
+}
 .anki-code-scope .anki-code-block > pre {
   grid-area: code;
   margin: 0;
-  padding-top: 54px;
 }
 .anki-code-copy {
-  grid-area: code;
-  align-self: start;
+  grid-area: copy;
+  align-self: center;
   justify-self: end;
-  z-index: 1;
-  margin: 4px 6px;
+  margin: 0;
   color: #57606a;
 }
 .anki-code-copy button {
@@ -213,6 +219,7 @@
   -webkit-user-select: text;
 }
 :is(.nightMode, .night_mode) .anki-code-copy { color: #8b949e; }
+:is(.nightMode, .night_mode) .anki-code-block > .anki-code-controls { border-color: #30363d; }
 :is(.nightMode, .night_mode) .anki-code-copy button:hover,
 :is(.nightMode, .night_mode) .anki-code-copy button:active { background: #30363d; }
 :is(.nightMode, .night_mode) .anki-code-copy button:focus-visible { outline-color: #79c0ff !important; }
