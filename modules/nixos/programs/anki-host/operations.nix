@@ -88,6 +88,19 @@ let
       };
       text = ''exec python3 ${./files/managed-host.py} "$@"'';
     };
+  unusedTagsCommand =
+    name: inst:
+    pkgs.writeShellApplication {
+      name = "anki-host-unused-tags-${name}";
+      runtimeInputs = [ pkgs.python3 ];
+      runtimeEnv = {
+        INSTANCE = name;
+        HELPER_PORT = toString inst.helperPort;
+        LOCAL_CREDENTIAL_ROOT = credentialRoot;
+        HELPER_CURL_MAX_TIME = toString constants.ankiHost.helperCurlMaxTimeSecs;
+      };
+      text = ''exec python3 ${./files/unused-tags-host.py} "$@"'';
+    };
 in
 {
   config = lib.mkIf cfg.enable {
@@ -100,7 +113,8 @@ in
       (lib.mapAttrsToList approveCommand (lib.filterAttrs (_: inst: inst.sync.enable) cfg.instances))
       # Match the managed bundle's scope in default.nix. The import-only lab has
       # no managed baseline workflow, so do not install a command that always fails.
-      ++ (lib.mapAttrsToList managedCommand (lib.filterAttrs (_: inst: inst.sync.enable) cfg.instances));
+      ++ (lib.mapAttrsToList managedCommand (lib.filterAttrs (_: inst: inst.sync.enable) cfg.instances))
+      ++ (lib.mapAttrsToList unusedTagsCommand cfg.instances);
     security.polkit.enable = true;
     security.polkit.extraConfig = lib.concatStringsSep "\n" (
       lib.mapAttrsToList (name: _: ''

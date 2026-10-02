@@ -16,7 +16,7 @@ from .helper import Helper, HelperRejected, HelperUnavailable
 from .syncstatus import SyncNow
 
 
-DEFAULT_MODEL = "CS 재활 Basic"
+DEFAULT_MODEL = "학습 Basic"
 PREVIEW_NEXT_STEP = (
     "Show the concrete preview and obtain the user's confirmation. Repeat the same request_id "
     "and preview_token with confirm=true. This dialogue confirmation is not independent human authentication."

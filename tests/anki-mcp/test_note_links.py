@@ -27,7 +27,7 @@ RENDERER = (SOURCE / "note-link-renderer.html").read_text(encoding="utf-8")
 def _model(back='{{FrontSide}}<hr><div class="explanation">{{설명}}</div>'):
     return {
         "id": 1787809609173,
-        "name": "CS 재활 Basic",
+        "name": "학습 Basic",
         "type": 0,
         "flds": [
             {"name": "질문", "ord": 0},

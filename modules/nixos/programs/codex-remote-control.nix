@@ -51,6 +51,10 @@ let
 in
 {
   config = lib.mkIf cfg.enable {
+    # Desktop SSH는 기존 관리형 데몬의 proxy만 사용한다. 앱의 fallback nohup 서버가
+    # 버전 교체 중 동일 소켓을 먼저 잡으면 mobile remote-control은 unmanaged로 실패한다.
+    environment.variables.CODEX_SSH_SKIP_APP_SERVER_BOOT = "true";
+
     age.secrets.pushover-system-monitor = {
       file = ../../../secrets/pushover-system-monitor.age;
       owner = "root";
@@ -121,6 +125,7 @@ in
         STANDALONE_PACKAGE = "${standalonePackage}";
         SERVICE_LIB = "${serviceLib}";
         ALERT_COOLDOWN_SECONDS = "1800";
+        ALERT_REPEAT_SECONDS = "21600";
         # writeShellApplication prepends its runtime inputs; this tail lets `command -v codex`
         # resolve to the Nix-managed user profile after stale ~/.local/bin shadows are removed.
         PATH = lib.mkForce "/etc/profiles/per-user/${username}/bin:/run/current-system/sw/bin";

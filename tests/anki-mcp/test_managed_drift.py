@@ -10,7 +10,7 @@ from anki_host_fixture.managed_bundle import build_bundle
 from anki_host_fixture.managed_drift import ManagedDriftError, ManagedTypeStore
 
 
-NAME = "CS 재활 Basic"
+NAME = "학습 Basic"
 
 
 def native():

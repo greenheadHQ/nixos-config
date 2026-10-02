@@ -277,8 +277,23 @@ ChatGPT mobile Codex sync를 위한 app-server는 일반 CLI와 별도의 standa
 - `~/.local/bin/codex`가 standalone을 가리키는 symlink이면 PATH shadow 회귀이므로 제거 대상이다.
 - `update-codex`가 갱신하는 platform asset hash 하나가 CLI 설치와 standalone payload 양쪽을 커버한다.
 - timer는 `codex doctor`를 실행하지 않는다. 대신 `ensure-running`이 pinned standalone 동기화,
-  ChatGPT auth 확인, daemon/start 상태 확인, 버전 drift 재시작, stale socket 정리, 그리고 같은 사용자 +
+  ChatGPT auth 확인, daemon/start 상태 확인, 버전 drift 재시작, 그리고 같은 사용자 +
   legacy app-server per-process 증거가 있는 경우에만 stale PID repair를 수행한다.
+- Desktop SSH는 `CODEX_SSH_SKIP_APP_SERVER_BOOT=true`인 login shell에서 기존 관리형 서버의
+  proxy로만 연결한다. 앱이 독립 `nohup ... app-server --listen unix://`를 띄우면 mobile
+  remote-control의 관리 계약과 충돌한다. 앱 업데이트 후에는 SSH 재연결 전후 서버 PID와
+  `/proc/<pid>/exe`가 유지되는지 확인한다. 이 환경변수가 적용된 호스트에서 관리형 서버가
+  내려가 있으면 SSH 연결은 자동으로 별도 서버를 만들지 않으므로 ensure를 먼저 복구한다.
+- SSH proxy가 연결된 동안 버전 교체는 exit 62 / `version-update-deferred-ssh-connected`로
+  보류한다. 이때 `remoteControlEnabled: null`은 미확인이지 disabled 판정이 아니다.
+  `remote-control start`도 상태에 따라 서버를 재시작하므로 보류 경로에서는 호출하지 않는다.
+  작업 완료 후 SSH 연결을 해제하면 다음 점검에서 교체한다. proxy 유무 확인 뒤 새 연결이
+  들어오는 경합까지 원자적으로 막지는 않으므로 계획된 교체는 연결을 해제한 상태에서 한다.
+- proxy는 소켓 소유 서버가 아니지만 `pid-update-loop`는 기존 stale proof 보호 대상이다.
+  socket/daemon/PID lock 파일은 직접 삭제하지 않는다. Codex가 startup lock 아래에서 stale
+  socket을 정리한다. 외부에서 lock을 unlink하면 살아 있는 flock inode를 우회할 수 있다.
+- 같은 원인 코드의 지속 장애는 최초 통지 후 6시간마다 재알림한다. 원인이 바뀌면 기존
+  30분 쿨다운을 적용하고, 복구와 복구 후 재발은 바로 알린다.
 
 운영 확인:
 
@@ -295,8 +310,25 @@ private /tmp와 함께 데몬 소켓이 지워진다 (eval Test CRC1이 고정).
 
 증상 `remote-control-start-failed` + stderr `app server did not become ready on …sock`이 반복되고,
 `pgrep -a -u "$(id -u)" -f 'codex app-server'`에 데몬이 살아 있는데 symlink 대상이 없으면(`ls -L`가 실패)
-소켓을 잃은 데몬이다. `ensure-running`은 이 상태를 stale로 판정하지 않으므로(PID 존재 시 소켓 정리 거부)
-그 PID를 `kill -TERM`한 뒤 `sudo systemctl start codex-remote-control-ensure.service`로 재기동한다.
+소켓을 잃은 데몬이다. `ensure-running`은 이 상태를 stale로 판정하지 않는다. 실행 중 작업이
+없음을 확인하고 해당 PID의 출처를 다시 확인한 뒤 `kill -TERM`하고 ensure로 재기동한다.
+
+`unmanaged-error-without-stale-pid-proof` / exit 61은 수동 실행의 증거가 아니다. Desktop SSH가
+자동으로 만든 서버도 해당한다. 기존 서버를 관리형으로 입양하는 기능은 없으므로 1회 전환한다:
+
+1. 수정본을 `nrs`로 적용하고 새 SSH login shell에서
+   `printenv CODEX_SSH_SKIP_APP_SERVER_BOOT`가 `true`인지 확인한다.
+2. timer를 잠시 멈추고 실행 중 대화가 없는지 확인한다. 필요하면 Desktop SSH 연결도 해제한다.
+   읽기 전용 `thread/loaded/list` + `thread/read`의 `thread.status`를 사용한다.
+3. `ss -xlpn`, `/proc/<pid>/exe`, `/proc/<pid>/cmdline`로 socket 소유 프로세스를 다시 특정하고
+   그 PID에만 TERM을 보낸다. 출처가 불명확하거나 작업 중이면 중단한다. `pkill codex` 금지.
+4. `sudo systemctl start codex-remote-control-ensure.service` 후 `status.json`의 exit 0,
+   `remoteControlEnabled: true`와 실제 `remoteControl/status/read`의 `connected`를 확인한다.
+5. SSH 재연결 뒤에도 같은 관리형 PID가 사용되고 2회차 ensure도 성공하면 timer를 재개한다.
+
+Codex의 자체 socket cleanup 근거:
+[`unix_socket.rs` (0.158.0)](https://github.com/openai/codex/blob/rust-v0.158.0/codex-rs/app-server-transport/src/transport/unix_socket.rs).
+`daemon version`의 `running` 및 버전 일치만으로 관리형 서버라고 판정하지 않는다.
 
 ## 참고 문서
 

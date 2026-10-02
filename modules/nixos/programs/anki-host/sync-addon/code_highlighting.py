@@ -14,7 +14,7 @@ import re
 from . import note_links
 
 
-MODEL_NAME = "CS 재활 Basic"
+MODEL_NAME = "학습 Basic"
 MARKER = "anki-code-highlight-v1"
 SCOPE_CLASS = "anki-code-scope"
 # Exact mobile adapters from the note-link and code-highlighting rollouts.

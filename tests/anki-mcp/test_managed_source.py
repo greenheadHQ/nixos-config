@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import unicodedata
 
 import pytest
 
@@ -34,8 +35,8 @@ def refresh(root):
 def test_git_source_has_full_ordered_definition_and_no_operational_identity():
     bundle, assets = load_checked_source(HOST)
     definition = bundle["definition"]
-    assert definition["name"] == "CS 재활 Basic"
-    assert [field["name"] for field in definition["flds"]] == ["질문", "답", "맥락", "설명", "출처", "검토 메모"]
+    assert definition["name"] == "학습 Basic"
+    assert [field["name"] for field in definition["flds"]] == ["질문", "답", "맥락", "설명", "출처", "검토 메모", "노트 변천사"]
     assert definition["req"] == [[0, "any", [0, 2]]]
     assert len(definition["tmpls"]) == 1
     assert len(assets) == 1
@@ -45,6 +46,18 @@ def test_git_source_has_full_ordered_definition_and_no_operational_identity():
     for key, name in (("qfmt", "front.html"), ("afmt", "back.html")):
         assert definition["tmpls"][0][key] == (HOST / SOURCE_DIR / name).read_bytes().decode("utf-8")
     assert generated_version(HOST) == json.loads((HOST / VERSION_PATH).read_bytes())
+
+
+def test_managed_name_agrees_across_mcp_addon_and_source():
+    from anki_mcp.managed import DEFAULT_MODEL
+    from anki_host_fixture.code_highlighting import MODEL_NAME as highlight_name
+    from anki_host_fixture.managed_runtime import MODEL_NAME as runtime_name
+    from anki_host_fixture.managed_source import MODEL_NAME as source_name
+
+    definition = load_checked_source(HOST)[0]['definition']
+    assert {DEFAULT_MODEL, highlight_name, runtime_name, source_name, definition['name']} == {'학습 Basic'}
+    assert all(unicodedata.is_normalized('NFC', name)
+               for name in [definition['name'], *[field['name'] for field in definition['flds']]])
 
 
 def test_build_round_trip_preserves_definition_and_actual_asset_bytes(source, tmp_path):

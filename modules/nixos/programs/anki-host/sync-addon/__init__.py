@@ -41,6 +41,7 @@ from .operations import Operations, OperationError, digest, filename, identifier
 from .schema import SchemaOperations
 from .managed_bundle import ManagedBundleError
 from .managed_drift import ManagedDriftError
+from . import unused_tags
 
 ADDON_VERSION = os.environ.get("ANKI_HOST_ADDON_VERSION") or "unknown"
 BIND = "127.0.0.1"
@@ -624,7 +625,8 @@ def _managed_request(path, body):
     required, optional = required_optional[path]
     if not required <= body.keys() or body.keys() - required - optional:
         raise OperationError("managed-invalid-parameters")
-    name = body.get("model_name", "CS 재활 Basic")
+    from .managed_runtime import MODEL_NAME
+    name = body.get("model_name", MODEL_NAME)
     if not isinstance(name, str):
         raise OperationError("managed-invalid-model-name")
     managed = _managed()
@@ -725,6 +727,23 @@ def _deck_options(name: str) -> dict[str, Any]:
     result = AnkiAdapter(aqt.mw, MEDIA_LIMIT).deck_options(name)
     result.pop("config")
     return result
+
+
+def _unused_tags_request(path: str, body: dict[str, Any]) -> dict[str, Any]:
+    if path == "/tags/unused/inspect":
+        if set(body) - {"protected_tags"}:
+            raise OperationError("invalid-unused-tags-request")
+        return unused_tags.inspect(AnkiAdapter(aqt.mw, MEDIA_LIMIT).col, body.get("protected_tags", []))
+    ops = _ops()
+    if path == "/tags/unused/prepare":
+        if "tags" not in body or set(body) - {"tags", "protected_tags", "request_id"}:
+            raise OperationError("invalid-unused-tags-request")
+        return ops.prepare("remove_unused_tags", {"tags": body["tags"], "protected_tags": body.get("protected_tags", [])},
+                           body.get("request_id"), operator_authorized=True)
+    if (set(body) != {"operation_id", "preview_token", "confirm"}
+            or ops.status(body["operation_id"])["action"] != "remove_unused_tags"):
+        raise OperationError("invalid-unused-tags-request")
+    return ops.apply(body["operation_id"], body["preview_token"], body["confirm"], operator_authorized=True)
 
 
 def _media(body: dict[str, Any]) -> dict[str, Any]:
@@ -842,6 +861,8 @@ class _Handler(BaseHTTPRequestHandler):
                 if _operations is None:
                     raise OperationError("collection-not-ready")
                 result = _operations.history(body.get("limit", 20), body.get("offset", 0), body.get("note_id"))
+            elif path in ("/tags/unused/inspect", "/tags/unused/prepare", "/tags/unused/apply") and self.command == "POST":
+                result = _mutating("unused-tags", _unused_tags_request, path, body)
             elif path == "/operations/delivery" and self.command == "POST":
                 result = _mutating("delivery", lambda: _ops().record_delivery(body["operation_id"], body["kind"], body["receipt"]))
             elif path == "/schema/inspect" and self.command == "POST":

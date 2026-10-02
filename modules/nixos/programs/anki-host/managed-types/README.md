@@ -1,10 +1,10 @@
 # 관리 대상 노트 유형 원장
 
-초기 대상은 **CS 재활 Basic** 한 가지다. 이 디렉터리는 검토할 수 있는
+초기 대상은 **학습 Basic** 한 가지다. 이 디렉터리는 검토할 수 있는
 내용 원본이며, 실행 중인 Anki를 읽어 자동으로 갱신하지 않는다.
 `KaTeX and Markdown Cloze`를 비롯한 다른 유형은 관리 대상이 아니다.
 
-- `cs-rehab-basic/model.json`: 필드와 템플릿의 순서·설정, 카드 생성 조건,
+- `study-basic/model.json`: 필드와 템플릿의 순서·설정, 카드 생성 조건,
   LaTeX 설정. HTML/CSS의 `{ "file": "…" }` 참조만 빌드 시 치환한다.
 - `front.html`, `back.html`, `style.css`: 전체 앞면·뒷면·스타일의 정확한 UTF-8
   원문. 줄바꿈을 정규화하지 않는다.
