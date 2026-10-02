@@ -217,12 +217,42 @@
           if (!summary?.contains(code)) return "";
         }
       }
+      const transparent = color => {
+        const value = (color || "").trim().toLowerCase();
+        if (value === "transparent") return true;
+        // Computed colors may retain Color 4 functions instead of rgba(). Only
+        // explicit numeric zero alpha is conclusive; unknown paint stays copied.
+        const alpha = value.match(/^(?:rgba|hsla)\([^,]+,[^,]+,[^,]+,\s*([^,()]+)\)$/)?.[1] ||
+          value.match(/^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*\/\s*([^/()]+)\)$/)?.[1];
+        return !!alpha && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?%?$/.test(alpha.trim()) &&
+          Number(alpha.trim().replace(/%$/, "")) === 0;
+      };
+      const visibleText = node => {
+        const style = window.getComputedStyle(node);
+        if (["hidden", "collapse"].includes(style.visibility) || parseFloat(style.fontSize) === 0) return false;
+        const property = name => style.getPropertyValue(name).trim();
+        const fill = property("-webkit-text-fill-color");
+        if (!transparent(!fill || fill === "currentcolor" ? style.color : fill)) return true;
+        // Transparent fill can still paint through shadow, stroke or clipped
+        // backgrounds. Decide per text node so descendants can restore styling.
+        const stroke = property("-webkit-text-stroke-width");
+        const noStroke = !stroke || parseFloat(stroke) === 0 || transparent(property("-webkit-text-stroke-color"));
+        const noShadow = !style.textShadow || style.textShadow === "none";
+        if (!noShadow || !noStroke) return true;
+        // background-clip is not inherited, but ancestor backgrounds can paint
+        // descendant glyphs. Keep uncertain paint instead of dropping text.
+        for (let ancestor = node; ancestor; ancestor = ancestor.parentElement) {
+          const paint = window.getComputedStyle(ancestor);
+          if (["background-clip", "-webkit-background-clip"].some(name => paint.getPropertyValue(name).includes("text"))) return true;
+        }
+        return false;
+      };
       const fragments = [];
       const blockDisplays = new Set(["block", "flow-root", "flex", "grid", "list-item",
         "table", "table-row", "table-caption"]);
       const visit = node => {
         if (node.nodeType === Node.TEXT_NODE) {
-          if (!["hidden", "collapse"].includes(window.getComputedStyle(node.parentElement).visibility)) fragments.push(node.nodeValue);
+          if (visibleText(node.parentElement)) fragments.push(node.nodeValue);
           return;
         }
         if (node.nodeType !== Node.ELEMENT_NODE || suppressed(node) ||

@@ -260,6 +260,48 @@ test("copy follows visible BR, block and cloze text without exposing hidden answ
   assert.ok(page.document.querySelector(".cloze").hasAttribute("data-answer"), "source markup remains intact");
 });
 
+test("copy omits unpainted text while preserving shadows, strokes and descendant overrides", async t => {
+  const cases = [
+    ["transparent", "color:transparent", "secret", ""],
+    ["rgba zero", "color:rgba(20,30,40,0)", "secret", ""],
+    ["Color 4 zero", "color:color(display-p3 1 0 0 / 0)", "secret", ""],
+    ["lab zero", "color:lab(50% 20 30 / 0%)", "secret", ""],
+    ["zero size", "font-size:0", "secret", ""],
+    ["restored color", "color:transparent", 'secret<span style="color:black">visible</span>', "visible"],
+    ["restored size", "font-size:0", 'secret<span style="font-size:16px">visible</span>', "visible"],
+    ["text shadow", "color:transparent;text-shadow:0 0 1px black", "visible", "visible"],
+    ["text stroke", "color:transparent;-webkit-text-stroke-width:1px;-webkit-text-stroke-color:black", "visible", "visible"],
+    ["transparent fill", "-webkit-text-fill-color:transparent", "secret", ""],
+    ["opaque fill", "color:transparent;-webkit-text-fill-color:black", "visible", "visible"],
+    ["clipped background", "color:transparent;background-clip:text;background-image:linear-gradient(red,blue)", "visible", "visible"],
+    ["ancestor clipped background", "color:transparent;background-clip:text;background-image:linear-gradient(red,blue)", "<span>visible</span>", "visible"],
+    ["partial alpha", "color:rgba(0,0,0,0.1)", "visible", "visible"],
+    ["opaque zero channels", "color:rgb(0,0,0)", "visible", "visible"],
+  ];
+  const page = await rendered(t, cases.map(([, style, content]) =>
+    `<pre><code>before [<span style="${style}">${content}</span>] after\n</code></pre>`).join(""));
+  // JSDOM resolves even text-shadow:none to a bare current color. Use these
+  // fixtures' declared shadows; actual paint is also checked in Chromium.
+  const getStyle = page.window.getComputedStyle.bind(page.window);
+  page.window.getComputedStyle = node => {
+    const style = getStyle(node);
+    let source = node;
+    while (source && !source.style.textShadow) source = source.parentElement;
+    Object.defineProperty(style, "textShadow", { value: source?.style.textShadow || "none" });
+    return style;
+  };
+  const original = [...page.document.querySelectorAll("pre > code")].map(code => code.innerHTML);
+  let copied;
+  page.document.execCommand = () => { copied = page.document.activeElement.value; return true; };
+  for (const [index, [name, , , expected]] of cases.entries()) {
+    copyButtons(page)[index].click();
+    const style = page.window.getComputedStyle(page.document.querySelectorAll("pre > code > span")[index]);
+    const paint = ["color", "font-size", "-webkit-text-fill-color", "text-shadow", "-webkit-text-stroke-width", "-webkit-text-stroke-color", "background-clip", "-webkit-background-clip"].map(property => [property, style.getPropertyValue(property)]);
+    assert.equal(copied, `before [${expected}] after\n`, `${name}: ${JSON.stringify(paint)}`);
+  }
+  assert.deepEqual([...page.document.querySelectorAll("pre > code")].map(code => code.innerHTML), original);
+});
+
 test("a hidden block or collapsed details cannot reveal its text through a programmatic copy", async t => {
   const page = await rendered(t, `<details><summary>참고</summary>${block("hidden answer")}</details>${block("visible")}`);
   let copied;
