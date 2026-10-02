@@ -874,7 +874,8 @@ GitHub 최신본 확인 실패는 별도 상태로 보여 주며, 최신본을 �
 
 `nrs`가 코드를 배포했다는 이유만으로 현재 앱 상태를 승인된 기준으로 등록하지 않는다.
 운영자는 공개 가능한 Git 원본과 실제 적용본의 일치, 백업, 같은 Anki 버전의 격리 복사본 검증 결과를 확인한 뒤 등록한다.
-원본과 현재 상태가 다르면 먼저 원인을 검토한다. 새 버전의 최초 적용이나 앱 변경의 Git 반영은 별도 검토·적용 절차다.
+원본과 현재 상태가 다르면 먼저 원인을 검토한다. 등록된 정상 기준에서 새 원장을 적용할 때는 아래 `update` 절차를 쓴다.
+최초 등록과 앱 변경의 Git 반영은 현재 적용본을 검증하는 별도 절차다.
 
 ```bash
 sudo anki-host-managed-main inspect
@@ -886,8 +887,9 @@ sudo anki-host-managed-main inspect
 
 현재 관리 원장은 동기화 인스턴스인 `main`에만 설정하며, import 전용 `lab`에는 관리 명령을 설치하지 않는다.
 `anki-host-managed-main`은 root 전용이며 wrapper가 지정한 인스턴스·loopback·역할 키만 쓴다.
-`inspect`는 읽기 키, 등록·통지 재시도·복구 진단은 schema 키를 사용한다. 임의 URL·파일·원문·digest 입력이나
-일반 schema 승인, 서비스 실행, 전체 Upload/Download를 받는 인자는 없다. 키와 상세 비공개 결과를 로그·PR에 복사하지 않는다.
+`inspect`는 읽기 키, 등록·원장 적용·통지 재시도·진단은 schema 키를 사용한다. 임의 URL·파일·원문·digest 입력이나
+일반 schema 승인, 임의 서비스 실행, 전체 Upload/Download를 받는 인자는 없다. 원장 적용 명령만 해당 인스턴스의
+고정된 일반 동기화 서비스를 실행한다. 키와 상세 비공개 결과를 로그·PR에 복사하지 않는다.
 
 ```bash
 sudo anki-host-managed-main retry-notification <incident_id>
@@ -899,27 +901,45 @@ sudo anki-host-managed-main diagnose-restore <request_id>
 
 ### 원장 변경을 운영에 반영
 
-새 원장 버전은 `nrs` 배포만으로 적용되지 않는다. 앞뒷면은 구조 변경(`model_template_update`)으로,
-CSS는 `anki_update_model_css`로 적용한다. 구조 변경 도구는 CSS를 받지 않는다. 등록 미리보기는 운영 모델이
-배포된 원장과 bytes 단위로 같을 때만 준비되므로, 원장 파일 전체를 그대로 전달한다.
+새 원장 버전은 `nrs` 배포만으로 적용되지 않는다. root 전용 명령은 **배포된 원장만** 읽어 적용하고,
+읽기 재검증에 성공하면 같은 작업에서 새 기준으로 등록한다. 원문을 MCP 인자로 옮겨 적거나 적용 후 별도 등록하지 않는다.
+기존 기준이 `normal`일 때만 시작하며, 앱 쪽 변경으로 생긴 `drift`는 먼저 복구하거나 검토해 Git에 반영한다.
 
-1. PR 머지 후 MiniPC와 Mac에서 `nrs`를 실행한다. 이 상태는 업데이트 대기다.
-2. 앞뒷면이 바뀌면 위 [구조 변경과 승인 Upload](#구조-변경과-승인-upload)의 사전 동기화와 복습·편집 중지를 먼저 한다.
-   CSS도 바뀌었으면 같은 작업 창에서 함께 끝낸다.
-3. CSS가 바뀌었으면 `anki_update_model_css`로 `style.css` 전체를 적용한다. 20장 초과는 미리보기 확인과 복구점을 거친다.
-   뒤따르는 일반 동기화의 관리 검사가 drift를 기록하므로 알림 한 번과 MCP 쓰기 차단이 생긴다. 재등록 전까지의 예상 상태다.
-4. 앞뒷면이 바뀌었으면 직전 `anki_model_info` 값을 `expected_*`로 묶어 `anki_prepare_model_change`로 준비하고 root 승인으로 적용한다.
-   바뀌지 않은 면도 원장 전체를 그대로 전달한다.
-5. `inspect` → `enrollment-preview` → `register` → `inspect`로 새 버전을 기준으로 등록하고 `status=normal`, `changed_paths=[]`를 확인한다.
-   등록 후 일치하면 미해결 drift 사건은 해결 처리된다.
-6. 재등록 전에 되돌려야 하면 아래 제한 복구로 이전 기준을 복원한다. 재등록 뒤에는 원장을 되돌리는 변경으로 같은 절차를 반복한다.
+범위는 앞뒷면·CSS·등록 JS/CSS 자산과 `노트 변천사` 필드의 `collapsed`·`excludeFromSearch` 두 옵션이다.
+모델 이름·ID, 필드 이름·순서·개수·그 밖의 옵션, 템플릿 이름·순서·개수, 탐색기 형식과 카드 생성 조건(`req`)은 유지한다.
+필드 추가·삭제·이름 변경 등은 아래 별도 작업 창을 따른다. 일반 MCP 제한 복구의 허용 범위는 넓어지지 않는다.
 
-3·4단계의 MCP 도구는 원문 전체를 인자로 받는다. 배포된 원장을 가리켜 적용하는 방법은 없다.
-CSS처럼 짧은 원문은 그대로 옮겨도 되지만, 현재 앞뒷면은 수십 KB이고 escape된 CSS 문자열을 포함한다.
-LLM이 이를 4단계 인자로 옮겨 적으면 기대값 불일치로 준비가 거절되거나, 원장과 다른 템플릿이 적용되어
-등록 미리보기가 거절될 위험이 크다. 배포된 원장을 그대로 적용하는 운영자 명령은 #1428에서 다루며,
-그 전까지 큰 템플릿 변경은 적용 방법을 운영자와 먼저 정한다. #1426에서 root 스크립트가 서비스 키로
-헬퍼를 직접 호출한 방식은 운영자가 승인한 예외 조치였으며 이 절차의 일부가 아니다.
+1. 검토한 PR을 머지하고 `nrs`로 배포한다. `inspect`에서 현재 기준은 `normal`, 배포 원장은 업데이트 대기인지 확인한다.
+2. Mac·iPhone 등 관련 기기 모두 새 동기화에 성공한 뒤 복습·편집을 멈춘다. 이 사실을 확인한 운영자가
+   `update-preview --devices-ready`를 실행한다. 명령은 호스트의 새 일반 동기화를 먼저 완료한다.
+3. 미리보기의 대상·이전/새 digest·변경 항목·복구점·보존 검증을 검토한다. `.colpkg`의 HDD 미러와 자산의
+   직전 bytes/부재 상태를 보관하며, 같은 Anki 버전의 격리 복사본에서 노트·카드·복습 기록·필드 내용·일정·태그·깃발을 검증한다.
+4. 승인한 미리보기의 같은 operation ID·토큰으로 `update --confirm`을 실행한다. 기존 기준·컬렉션·배포 원장·백업이
+   달라졌거나 사전 동기화부터 10분이 지났으면 적용하지 않는다. 적용 후 실제 bytes와 보존 결과를 재확인한 뒤 기준을 등록한다.
+5. 반환된 `state=applied`, `registered=true`와 `sync.state=synced`를 각각 확인하고, `inspect`의 `normal`도 확인한다.
+   이어 각 기기에서 동기화하고 화면·기록 보존을 확인한 뒤 복습을 재개한다. 호스트 성공은 기기 수신 증거가 아니다.
+
+```bash
+sudo anki-host-managed-main inspect
+sudo anki-host-managed-main update-preview --devices-ready
+# 구체적 미리보기를 검토·승인한 뒤, 적용과 새 기준 등록을 함께 실행
+sudo anki-host-managed-main update <operation_id> --preview-token <preview_token> --confirm
+sudo anki-host-managed-main update-status <operation_id>
+sudo anki-host-managed-main inspect
+```
+
+미리보기는 적용 전에 operation ID를 출력한다. 응답이 유실되면 그 ID의 `update-status`부터 조회한다.
+`prepared`는 미적용이며 만료·내용 변경 시 새 미리보기가 필요하다. `partial`/`unknown`은 새 ID로 반복하지 않고
+`diagnose-update <operation_id>`로 조사한다. 진단은 모델·자산을 다시 쓰지 않으며, 이미 승인한 내용의 적용과 보존이
+정확히 확인될 때에만 미완료 기준 등록을 마친다. 결과가 불명확한 동안 MCP 쓰기·새 등록·제한 복구는 차단된다.
+
+적용 뒤 동기화는 **일반 동기화만** 시도한다. 전체 Upload/Download가 필요하거나 미디어 전달이 확인되지 않으면
+로컬 적용·등록 결과를 유지하고 `sync.state=blocked` 또는 `pending`으로 보고한다. 종료 코드 1을 미적용으로 오해하지 않는다.
+`applied`·등록 완료 뒤에는 같은 `update` 명령으로 전달만 다시 시도할 수 있다. 전체 Upload가 필요한 경우 이 명령으로는
+진행할 수 없으며, 작업 범위와 기기 상태를 따로 검토·승인한다. 기기 전달 확인은 항상 별도로 남긴다.
+
+새 기준 등록 후 이전 내용으로 돌아가려면 원장을 되돌린 변경을 검토·배포하고 같은 절차로 적용한다.
+원장에서 빠진 자산은 컬렉션 미디어에서 자동 삭제하지 않는다.
 
 ### 관리 유형 이름 변경
 

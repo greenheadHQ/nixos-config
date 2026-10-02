@@ -91,6 +91,65 @@ def test_http_denies_missing_and_wrong_roles_before_dispatch(runtime):
         thread.join(timeout=2)
 
 
+@pytest.mark.parametrize("action", ["prepare", "apply", "status", "diagnose", "delivery"])
+def test_managed_source_update_requires_schema_role(credentials, action):
+    access = Access(str(credentials))
+    path = "/managed/update/" + action
+    for role in (None, "read", "operation", "maintenance", "schema"):
+        assert access.allowed("POST", path, role) is (role == "schema")
+        assert not access.allowed("GET", path, role)
+
+
+@pytest.mark.parametrize("extra", ["source", "path", "model_name", "digest", "definition", "assets", "approval", "mode"])
+def test_managed_source_update_rejects_target_and_sync_overrides_before_runtime(runtime, monkeypatch, extra):
+    monkeypatch.setattr(runtime, "_managed", lambda: pytest.fail("invalid request reached runtime"))
+    for action, payload in (
+            ("prepare", {"operation_id": "a" * 32, "devices_ready": True}),
+            ("apply", {"operation_id": "a" * 32, "preview_token": "b" * 64, "confirm": True}),
+            ("status", {"operation_id": "a" * 32}),
+            ("diagnose", {"operation_id": "a" * 32}),
+            ("delivery", {"operation_id": "a" * 32})):
+        with pytest.raises(runtime.OperationError, match="managed-invalid-parameters"):
+            runtime._managed_request("/managed/update/" + action, {**payload, extra: "untrusted"})
+
+
+def test_managed_source_update_dispatch_is_exact_and_missing_journal_blocks(runtime, monkeypatch):
+    calls = []
+    updates = types.SimpleNamespace(**{name: lambda *args, action=name: calls.append((action, args)) or {"state": action}
+                                      for name in ("prepare", "apply", "status", "diagnose", "delivery")})
+    managed = types.SimpleNamespace(updates=updates)
+    monkeypatch.setattr(runtime, "_managed", lambda: managed)
+    oid, token = "a" * 32, "b" * 64
+    cases = [("prepare", {"operation_id": oid, "devices_ready": True}, (oid, True)),
+             ("apply", {"operation_id": oid, "preview_token": token, "confirm": True}, (oid, token, True)),
+             *[(action, {"operation_id": oid}, (oid,)) for action in ("status", "diagnose", "delivery")]]
+    for action, payload, args in cases:
+        assert runtime._managed_request("/managed/update/" + action, payload) == {"state": action}
+        assert calls[-1] == (action, args)
+    managed.updates = None
+    for action, payload, _ in cases:
+        with pytest.raises(runtime.OperationError, match="managed-update-journal-unavailable"):
+            runtime._managed_request("/managed/update/" + action, payload)
+
+
+def test_pending_source_update_blocks_restore_writes_but_allows_receipt(runtime, monkeypatch):
+    def blocked():
+        raise runtime.OperationError("managed-update-unresolved-update-inspect-original-operation")
+    restores = types.SimpleNamespace(prepare=lambda *_: pytest.fail("restore prepare reached"),
+                                     apply=lambda *_: pytest.fail("restore apply reached"),
+                                     diagnose=lambda *_: pytest.fail("restore diagnose reached"),
+                                     status=lambda request: {"request_id": request, "state": "unknown"})
+    monkeypatch.setattr(runtime, "_managed", lambda: types.SimpleNamespace(
+        restores=restores, _require_no_pending_update=blocked))
+    for action, payload in [("prepare", {"request_id": "old-request", "model_name": "학습 Basic"}),
+                            ("apply", {"request_id": "old-request", "preview_token": "b" * 64, "confirm": True}),
+                            ("diagnose", {"request_id": "old-request"})]:
+        with pytest.raises(runtime.OperationError, match="unresolved-update"):
+            runtime._managed_request("/managed/restore/" + action, payload)
+    assert runtime._managed_request("/managed/restore/status", {"request_id": "old-request"}) == {
+        "request_id": "old-request", "state": "unknown"}
+
+
 def test_operation_status_distinguishes_unready_missing_and_existing(runtime, monkeypatch):
     server = runtime._Server(("127.0.0.1", 0), runtime._Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)

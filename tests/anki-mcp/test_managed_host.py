@@ -24,7 +24,9 @@ def environment(host, monkeypatch, tmp_path):
     monkeypatch.setenv("HELPER_PORT", "19001")
     monkeypatch.setenv("HELPER_CURL_MAX_TIME", "120")
     monkeypatch.setenv("LOCAL_CREDENTIAL_ROOT", str(tmp_path))
+    monkeypatch.setenv("STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setattr(host.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(host.time, "time", lambda: 1000)
 
 
 @pytest.mark.parametrize("argv,path,payload,role", [
@@ -34,6 +36,8 @@ def environment(host, monkeypatch, tmp_path):
      {"operation_id": "a" * 32, "preview_token": "b" * 64, "confirm": True}, "schema"),
     (["retry-notification", "c" * 32], "/managed/notification/retry", {"incident_id": "c" * 32}, "schema"),
     (["diagnose-restore", "restore001"], "/managed/restore/diagnose", {"request_id": "restore001"}, "schema"),
+    (["update-status", "a" * 32], "/managed/update/status", {"operation_id": "a" * 32}, "schema"),
+    (["diagnose-update", "a" * 32], "/managed/update/diagnose", {"operation_id": "a" * 32}, "schema"),
 ])
 def test_exact_root_command_routes(host, monkeypatch, tmp_path, capsys, argv, path, payload, role):
     environment(host, monkeypatch, tmp_path)
@@ -42,14 +46,14 @@ def test_exact_root_command_routes(host, monkeypatch, tmp_path, capsys, argv, pa
 
     def call(actual_path, actual_payload, **kwargs):
         calls.append((actual_path, actual_payload, kwargs))
-        return {"status": "fixture-result"}
+        return receipt() if actual_path.startswith("/managed/update/") else {"status": "fixture-result"}
 
     monkeypatch.setattr(host, "helper", call)
     host.main(argv)
     assert reads == [tmp_path / "test" / role]
     assert calls == [(path, payload, {"key": "d" * 64, "port": 19001, "timeout": 120})]
     output = capsys.readouterr()
-    assert json.loads(output.out) == {"status": "fixture-result"}
+    assert json.loads(output.out) == (receipt() if path.startswith("/managed/update/") else {"status": "fixture-result"})
     assert "d" * 64 not in output.out + output.err
 
 
@@ -57,6 +61,9 @@ def test_exact_root_command_routes(host, monkeypatch, tmp_path, capsys, argv, pa
     ["inspect"], ["enrollment-preview"],
     ["register", "a" * 32, "--preview-token", "b" * 64, "--confirm"],
     ["retry-notification", "a" * 32], ["diagnose-restore", "restore001"],
+    ["update-preview", "--devices-ready"],
+    ["update", "a" * 32, "--preview-token", "b" * 64, "--confirm"],
+    ["update-status", "a" * 32], ["diagnose-update", "a" * 32],
 ])
 def test_non_root_never_reads_credentials_or_sends_request(host, monkeypatch, argv):
     monkeypatch.setattr(host.os, "geteuid", lambda: 1000)
@@ -78,6 +85,15 @@ def test_non_root_never_reads_credentials_or_sends_request(host, monkeypatch, ar
     ["full-upload"], ["inspect", "--url", "https://example.invalid"],
     ["enrollment-preview", "--model", "Other"], ["retry-notification", "../escape"],
     ["diagnose-restore", "short"], ["diagnose-restore", "restore001", "--confirm"],
+    ["update-preview"], ["update-preview", "--devices-rea"],
+    ["update-preview", "--devices-ready", "--operation-id", "a" * 32],
+    ["update-preview", "--devices-ready", "--url", "https://example.invalid"],
+    ["update", "a" * 32, "--confirm"],
+    ["update", "a" * 32, "--preview-token", "b" * 64],
+    ["update", "a" * 32, "--preview-token", "b" * 64, "--confirm", "--full-upload"],
+    ["update", "a" * 32, "--preview-token", "b" * 64, "--confirm", "--digest", "c" * 64],
+    ["update", "a" * 32, "--preview-token", "b" * 64, "--confirm", "--source", "/tmp/model.json"],
+    ["update-status", "../escape"], ["diagnose-update", "a" * 32, "--confirm"],
 ])
 def test_unknown_or_incomplete_commands_fail_before_credentials(host, monkeypatch, argv):
     monkeypatch.setattr(host, "read_credential", lambda _path: pytest.fail("unexpected credential read"))
@@ -178,3 +194,181 @@ def test_malformed_helper_results_are_not_success(host, monkeypatch, response):
         SimpleNamespace(open=lambda *_args, **_kwargs: io.BytesIO(json.dumps(response).encode())))
     with pytest.raises(ValueError, match="helper-request-failed"):
         host.helper("/managed/check", {}, key="a" * 64, port=19001, timeout=1)
+
+
+def receipt(state="prepared", registered=False, sync="pending"):
+    return {"operation_id": "a" * 32, "state": state, "registered": registered, "sync": {"state": sync}}
+
+
+def sync_status(tmp_path, **changes):
+    state = tmp_path / "state"
+    state.mkdir(exist_ok=True)
+    value = {"runId": "new", "runStartedAt": "1970-01-01T00:16:41.123456789+00:00",
+             "result": "success", "mode": "normal", "sync": {"action": "normal"}}
+    value.update(changes)
+    (state / "sync-status.json").write_text(json.dumps(value))
+
+
+def test_update_preview_syncs_before_prepare_and_prints_recovery_id(host, monkeypatch, tmp_path, capsys):
+    environment(host, monkeypatch, tmp_path)
+    sync_status(tmp_path, runId="old")
+    events = []
+    monkeypatch.setattr(host, "read_credential", lambda path: "d" * 64)
+    monkeypatch.setattr(host.secrets, "token_hex", lambda size: "a" * 32 if size == 16 else pytest.fail("wrong id size"))
+
+    def start(argv, **kwargs):
+        assert argv == ["systemctl", "start", "anki-host-sync-test.service"]
+        assert kwargs == {"check": True, "capture_output": True}
+        events.append("sync")
+        sync_status(tmp_path)
+
+    expected = receipt() | {"preview_token": "b" * 64, "summary": {"changed_items": ["css"]},
+                            "backup": {"sha256": "e" * 64, "mirrored": True},
+                            "verification": {"state": "verified"}, "expires_at": 1600}
+
+    def call(path, payload, **kwargs):
+        assert events == ["sync"]
+        assert path == "/managed/update/prepare"
+        assert payload == {"operation_id": "a" * 32, "devices_ready": True}
+        assert kwargs == {"key": "d" * 64, "port": 19001, "timeout": 120}
+        output = capsys.readouterr()
+        assert output.out == "" and output.err == "operation_id: " + "a" * 32 + "\n"
+        events.append("prepare")
+        return expected
+
+    monkeypatch.setattr(host.subprocess, "run", start)
+    monkeypatch.setattr(host, "helper", call)
+    host.main(["update-preview", "--devices-ready"])
+    assert json.loads(capsys.readouterr().out) == expected
+    assert events == ["sync", "prepare"]
+
+
+@pytest.mark.parametrize("changes", [{"runId": "old"}, {"runId": ""}, {"result": "error"},
+    {"mode": "approved-schema"}, {"sync": {"action": "full-download"}},
+    {"sync": {"action": "full-sync-required"}}, {"result": "busy-deferred"}, {"sync": []},
+    {"runStartedAt": "1970-01-01T00:16:39+00:00"}, {"runStartedAt": "1970-01-01T00:16:41"},
+    {"runStartedAt": None}, {"runId": 123}])
+def test_preview_refuses_stale_failed_or_non_normal_sync(host, monkeypatch, tmp_path, changes):
+    environment(host, monkeypatch, tmp_path)
+    sync_status(tmp_path, runId="old")
+    monkeypatch.setattr(host, "read_credential", lambda path: "d" * 64)
+    monkeypatch.setattr(host.subprocess, "run", lambda *_a, **_kw: sync_status(tmp_path, **changes))
+    monkeypatch.setattr(host, "helper", lambda *_a, **_kw: pytest.fail("prepare before fresh normal sync"))
+    with pytest.raises(host.CommandError, match="fresh-normal-sync-required"):
+        host.main(["update-preview", "--devices-ready"])
+
+
+def test_lost_preview_response_leaves_operation_id_without_retry(host, monkeypatch, tmp_path, capsys):
+    environment(host, monkeypatch, tmp_path)
+    calls = []
+    monkeypatch.setattr(host, "read_credential", lambda path: "d" * 64)
+    monkeypatch.setattr(host, "normal_sync", lambda *_a: None)
+    monkeypatch.setattr(host.secrets, "token_hex", lambda _size: "a" * 32)
+
+    def lose(path, payload, **kwargs):
+        calls.append(path)
+        raise host.urllib.error.URLError("private response text")
+
+    monkeypatch.setattr(host, "helper", lose)
+    with pytest.raises(host.urllib.error.URLError):
+        host.main(["update-preview", "--devices-ready"])
+    assert calls == ["/managed/update/prepare"]
+    output = capsys.readouterr()
+    assert output.out == "" and output.err == "operation_id: " + "a" * 32 + "\n"
+
+
+@pytest.mark.parametrize("state,registered", [("prepared", False), ("partial", False), ("unknown", False),
+    ("expired", False), ("not-applied", False), ("applied", False)])
+def test_update_without_verified_registration_never_syncs(host, monkeypatch, tmp_path, capsys, state, registered):
+    environment(host, monkeypatch, tmp_path)
+    monkeypatch.setattr(host, "read_credential", lambda path: "d" * 64)
+    monkeypatch.setattr(host.subprocess, "run", lambda *_a, **_kw: pytest.fail("unverified update synced"))
+    calls = []
+    result = receipt(state, registered)
+
+    def call(path, payload, **kwargs):
+        calls.append(path)
+        assert path == "/managed/update/apply"
+        assert payload == {"operation_id": "a" * 32, "preview_token": "b" * 64, "confirm": True}
+        return result
+
+    monkeypatch.setattr(host, "helper", call)
+    with pytest.raises(SystemExit) as error:
+        host.main(["update", "a" * 32, "--preview-token", "b" * 64, "--confirm"])
+    assert error.value.code == 1
+    assert calls == ["/managed/update/apply"]
+    assert json.loads(capsys.readouterr().out) == result
+
+
+@pytest.mark.parametrize("failure,delivery", [(None, "synced"), (None, "pending"),
+    ("process", "blocked"), ("timeout", "pending"), ("stale", "pending"), (None, "lost")])
+def test_applied_update_checks_delivery_even_when_sync_fails(host, monkeypatch, tmp_path, capsys, failure, delivery):
+    environment(host, monkeypatch, tmp_path)
+    sync_status(tmp_path, runId="old")
+    monkeypatch.setattr(host, "read_credential", lambda path: "d" * 64)
+    events = []
+    applied = receipt("applied", True)
+
+    def start(argv, **kwargs):
+        assert argv == ["systemctl", "start", "anki-host-sync-test.service"]
+        assert kwargs == {"check": True, "capture_output": True}
+        events.append("normal-sync")
+        if failure == "process":
+            raise host.subprocess.CalledProcessError(1, argv, output=b"private body")
+        if failure == "timeout":
+            raise host.subprocess.TimeoutExpired(argv, 1, output=b"private body")
+        sync_status(tmp_path, runId="old" if failure == "stale" else "new")
+
+    def call(path, payload, **kwargs):
+        events.append(path)
+        if path == "/managed/update/apply":
+            return applied.copy()
+        assert path == "/managed/update/delivery" and payload == {"operation_id": "a" * 32}
+        if delivery == "lost":
+            raise host.urllib.error.URLError("private response text")
+        return receipt("applied", True, delivery)
+
+    monkeypatch.setattr(host.subprocess, "run", start)
+    monkeypatch.setattr(host, "helper", call)
+    argv = ["update", "a" * 32, "--preview-token", "b" * 64, "--confirm"]
+    if delivery == "synced":
+        host.main(argv)
+    else:
+        with pytest.raises(SystemExit) as error:
+            host.main(argv)
+        assert error.value.code == 1
+    assert events == ["/managed/update/apply", "normal-sync", "/managed/update/delivery"]
+    output = capsys.readouterr()
+    assert json.loads(output.out) == (applied if delivery == "lost" else receipt("applied", True, delivery))
+    assert "private" not in output.out + output.err and "d" * 64 not in output.out + output.err
+
+
+@pytest.mark.parametrize("error_code,expected", [("busy", "busy"),
+    ("managed-update-stale-preview-reprepare", "managed-update-stale-preview-reprepare"),
+    ("managed-update-stale-preview-reprepare: private note", "helper-request-failed"),
+    ("private note contents", "helper-request-failed"),
+    ("busy\nsecret", "helper-request-failed"), (["busy"], "helper-request-failed")])
+def test_http_errors_expose_only_exact_public_codes(host, monkeypatch, error_code, expected):
+    def request(*_a, **_kw):
+        body = io.BytesIO(json.dumps({"ok": False, "error": error_code, "private": "a" * 64}).encode())
+        raise host.urllib.error.HTTPError("http://127.0.0.1:19001", 400, "private reason", {}, body)
+    monkeypatch.setattr(host.urllib.request, "build_opener", lambda *_handlers: SimpleNamespace(open=request))
+    with pytest.raises(host.CommandError) as error:
+        host.helper("/managed/update/status", {"operation_id": "b" * 32}, key="a" * 64, port=19001, timeout=1)
+    assert str(error.value) == expected
+
+
+@pytest.mark.parametrize("change", [{"operation_id": "c" * 32}, {"state": "applying"},
+    {"registered": "true"}, {"sync": []}, {"sync": {"state": "unknown"}}])
+def test_update_result_requires_matching_operation_and_known_states(host, change):
+    with pytest.raises(host.CommandError, match="helper-request-failed"):
+        host.update_result(receipt() | change, "a" * 32)
+
+
+def test_update_result_filters_error_details_in_successful_transport(host):
+    value = receipt("unknown") | {"error": "private note body"}
+    value["sync"]["error"] = "managed-update-delivery-unconfirmed"
+    result = host.update_result(value, "a" * 32)
+    assert result["error"] == "helper-request-failed"
+    assert result["sync"]["error"] == "managed-update-delivery-unconfirmed"
+    assert value["error"] == "private note body"

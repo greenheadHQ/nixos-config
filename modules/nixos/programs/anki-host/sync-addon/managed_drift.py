@@ -196,8 +196,19 @@ class ManagedTypeStore:
 
     def register_verified(self, model_name: str, model_id: int, bundle: dict[str, Any],
                           asset_bytes: dict[str, bytes], *, evidence: dict[str, Any],
-                          verify_registration: Callable[..., bool]) -> dict[str, Any]:
+                          verify_registration: Callable[..., bool],
+                          previous_record_id: str | None = None,
+                          registration_id: str | None = None) -> dict[str, Any]:
         """Operator entry; a hash match alone never creates restore authority."""
+        # A root update binds the old authority and publishes once under its
+        # durable operation ID. Ordinary enrollment keeps its existing contract.
+        if (previous_record_id is None) != (registration_id is None):
+            raise ManagedDriftError("managed-registration-transition-incomplete")
+        if registration_id is not None:
+            _identifier(previous_record_id)
+            _identifier(registration_id)
+            if registration_id == previous_record_id:
+                raise ManagedDriftError("managed-registration-transition-invalid")
         if model_name not in self.managed or type(model_id) is not int or model_id <= 0:
             raise ManagedDriftError("managed-registration-target-invalid")
         validate_bundle(bundle, asset_bytes)
@@ -214,6 +225,15 @@ class ManagedTypeStore:
                 previous = self._baseline(model_name, state)
                 if previous["model_id"] != model_id:
                     raise ManagedDriftError("managed-registration-rebinding-forbidden")
+            if registration_id is not None:
+                active_id = state["baselines"].get(model_name)
+                if active_id not in (previous_record_id, registration_id):
+                    raise ManagedDriftError("managed-registration-baseline-changed")
+                if active_id == registration_id and (
+                    previous["bundle"] != bundle or previous["asset_bytes"] != asset_bytes
+                    or previous["evidence"] != evidence
+                ):
+                    raise ManagedDriftError("managed-registration-operation-mismatch")
             if verify_registration(model_name, model_id, bundle, asset_bytes, evidence) is not True:
                 raise ManagedDriftError("managed-registration-not-verified")
             current = self._observed(model_name, model_id, bundle)
@@ -221,14 +241,29 @@ class ManagedTypeStore:
                 raise ManagedDriftError("managed-registration-readback-mismatch")
             if binding != self.collection_binding():
                 raise ManagedDriftError("managed-collection-binding-changed")
-            record_id = uuid.uuid4().hex
+            if registration_id is not None and state["baselines"].get(model_name) == registration_id:
+                return {"record_id": registration_id, "model_name": model_name,
+                        "model_id": model_id, "digest": bundle["digest"]}
+            record_id = registration_id or uuid.uuid4().hex
             record = {"version": 1, "record_id": record_id, "model_name": model_name,
                       "model_id": model_id, "instance": self.instance, "binding": binding,
                       "bundle": copy.deepcopy(bundle), "assets_base64": self._encode_assets(asset_bytes),
                       "evidence": copy.deepcopy(evidence), "operator_verified": True,
                       "applied_verified_at": self.clock()}
             record["record_checksum"] = _digest(record)
-            self._write(self.root / "baselines" / (record_id + ".json"), record)
+            record_path = self.root / "baselines" / (record_id + ".json")
+            if registration_id is not None and record_path.exists():
+                saved = self._read(record_path)
+                checksum = saved.get("record_checksum")
+                if checksum != _digest({key: value for key, value in saved.items() if key != "record_checksum"}):
+                    raise ManagedDriftError("managed-registration-operation-mismatch")
+                if any(saved.get(key) != value for key, value in record.items()
+                       if key not in ("applied_verified_at", "record_checksum")):
+                    raise ManagedDriftError("managed-registration-operation-mismatch")
+                # Publication may have stopped after the private record write.
+                # Retain that first verified time instead of creating authority again.
+                record = saved
+            self._write(record_path, record)
             state["baselines"][model_name] = record_id
             self._save_state(state)
             return {"record_id": record_id, "model_name": model_name,
