@@ -60,6 +60,9 @@
   };
 
   # ═══════════════════════════════════════════════════════════════
+  # Mac AnkiConnect — 카드 링크가 여는 로컬 데스크톱 앱 (headless 인스턴스와 별개)
+  ankiDesktop.ankiConnectPort = 8765;
+
   # headless Anki 인스턴스 — 타임아웃 사다리 단일 소스 (안쪽 < 바깥쪽이어야 원인 구분이 가능하다)
   #   애드온 메인 스레드 작업(helperMainTimeoutSecs) < 스크립트 curl(helperCurlMaxTimeSecs)
   #   < systemd TimeoutStartSec(sync.nix·backup.nix가 재시도 횟수·대기 예산을 곱해 계산)

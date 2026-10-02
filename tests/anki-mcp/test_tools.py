@@ -157,6 +157,26 @@ async def test_find_notes_paginates_and_truncates(tmp_path):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("name,params,actions", [
+    ("anki_find_notes", {"query": "deck:A", "limit": 1}, ["findNotes", "notesInfo"]),
+    ("anki_note_info", {"note_ids": [1]}, ["notesInfo"]),
+])
+async def test_note_tools_return_all_sibling_links_without_extra_requests(tmp_path, name, params, actions):
+    fake = FakeAnki()
+    fake.notes[1]["cards"] = [10, 9007199254740993, 9223372036854775807, "11", True, 0]
+    result = await make_mcp(fake, tmp_path).call_tool(name, params)
+    structured = result[1] if isinstance(result, tuple) else result
+    note = structured["notes"][0]
+    assert note["noteId"] == 1 and note["cards"] == fake.notes[1]["cards"]
+    assert note["cardLinks"] == [
+        {"cardId": str(cid), "cardUrl": f"https://anki.example/c/{cid}"}
+        for cid in fake.notes[1]["cards"][:3]
+    ]
+    assert [action for action, _ in fake.calls] == actions
+    assert fake.operation_calls == []
+
+
+@pytest.mark.anyio
 async def test_card_reviews_sends_integer_ids_and_returns_revlog_objects(tmp_path):
     fake = FakeAnki()
     mcp = make_mcp(fake, tmp_path)
@@ -286,6 +306,10 @@ async def test_flag_search_preserves_query_and_returns_current_user_flag(tmp_pat
     structured = result[1] if isinstance(result, tuple) else result
     assert ("findCards", {"query": "flag:4"}) in fake.calls
     assert structured["cards"][0]["flag"] == 4
+    assert structured["cards"][0]["cardId"] == 10
+    assert structured["cards"][0]["cardUrl"] == "https://anki.example/c/10"
+    assert [action for action, _ in fake.calls] == ["findCards", "cardsInfo"]
+    assert fake.operation_calls == []
 
 
 @pytest.mark.anyio
