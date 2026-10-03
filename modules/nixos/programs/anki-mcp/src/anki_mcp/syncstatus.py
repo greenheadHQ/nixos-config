@@ -86,14 +86,30 @@ def summarize(state: dict[str, Any] | None) -> dict[str, Any]:
     """상태 사본을 도구 응답용으로 요약한다 — 어휘는 anki-host-sync.sh 상단 표."""
     if not state:
         return {"available": False}
-    sync = state.get("sync") or {}
-    before = sync.get("before") or {}
-    after = sync.get("after") or {}
+
+    def section(value: Any) -> dict[str, Any]:
+        return value if isinstance(value, dict) else {}
+
+    def count(value: Any) -> int | None:
+        # Counts are nonnegative integers. Do not turn booleans/fractions into
+        # plausible values or let one malformed counter hide the whole attempt.
+        if type(value) is int:
+            return value if value >= 0 else None
+        if isinstance(value, str):
+            try:
+                parsed = int(value)
+            except ValueError:
+                return None
+            return parsed if parsed >= 0 else None
+        return None
+
+    sync = section(state.get("sync"))
+    before = section(sync.get("before"))
+    after = section(sync.get("after"))
 
     def delta(key: str) -> int | None:
-        if key in before and key in after:
-            return int(after[key]) - int(before[key])
-        return None
+        previous, current = count(before.get(key)), count(after.get(key))
+        return current - previous if previous is not None and current is not None else None
 
     return {
         "available": True,
@@ -106,9 +122,9 @@ def summarize(state: dict[str, Any] | None) -> dict[str, Any]:
         "lastSuccessAt": state.get("lastSuccessAt"),
         "lastSuccessCounts": state.get("lastSuccessCounts"),
         "action": sync.get("action"),
-        "media_state": (sync.get("media") or {}).get("state"),
+        "media_state": section(sync.get("media")).get("state"),
         "required": sync.get("required"),
-        "counts_after": {k: after.get(k) for k in ("notes", "cards", "revlog", "today_reviews")} if after else None,
+        "counts_after": {k: count(after.get(k)) for k in ("notes", "cards", "revlog", "today_reviews")} if after else None,
         "delta": {k: delta(k) for k in ("notes", "cards", "revlog")} if before and after else None,
     }
 
