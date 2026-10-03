@@ -47,7 +47,7 @@ def checked_tree(root):
 
 def relative_file(name):
     path = Path(name)
-    if not name or path.is_absolute() or ".." in path.parts or str(path) != name:
+    if not name or not path.parts or path.is_absolute() or ".." in path.parts or str(path) != name:
         raise ValueError(f"Invalid managed path: {name}")
     if path.parts[0] == "user_files" or name == "meta.json":
         raise ValueError(f"Runtime file cannot be managed as code: {name}")
@@ -60,6 +60,8 @@ def validate_record(record):
     for addon_id, item in record.items():
         if not re.fullmatch(r"[0-9]+", addon_id):
             raise ValueError(f"Invalid AnkiWeb ID: {addon_id}")
+        if not isinstance(item["files"], list):
+            raise ValueError("Invalid managed files")
         for name in item["files"]:
             relative_file(name)
         if not isinstance(item["config_keys"], list):

@@ -409,7 +409,9 @@ class BackupInventoryTest(unittest.TestCase):
         backup, addon = self.snapshot()
         for path, content in [(addon / "meta.json", 'fixture-secret-content'),
                               (addon / "meta.json", '["fixture-secret-content"]'),
-                              (backup / m.MARKER, '{"fixture-secret-content": {}}')]:
+                              (backup / m.MARKER, '{"fixture-secret-content": {}}'),
+                              (backup / m.MARKER, '{"123": {"files": ["."], "config_keys": []}}'),
+                              (backup / m.MARKER, '{"123": {"files": "abc", "config_keys": []}}')]:
             with self.subTest(path=path.name, content=content):
                 path.write_text(content)
                 result, output, errors = self.cli()
