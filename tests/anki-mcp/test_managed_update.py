@@ -9,6 +9,7 @@ import pytest
 
 from anki_host_fixture.managed_bundle import build_bundle, canonical_model, native_from_definition
 from anki_host_fixture.managed_drift import ManagedDriftError, ManagedTypeStore
+from anki_host_fixture.managed_runtime import ManagedRuntime
 from anki_host_fixture.managed_update import ManagedUpdate, native_from_update
 from anki_host_fixture.operations import OperationError, digest
 from test_managed_drift import NAME, native
@@ -99,6 +100,10 @@ class Runtime:
         self.store = ManagedTypeStore(tmp_path / "store", instance="fixture", collection_binding=lambda: self.binding,
                                       managed_specs=(NAME,), observe=self.observe, notify=lambda event: self.sent.append(event),
                                       clock=lambda: self.time)
+        # Exercise production publication/evidence wiring without importing Qt.
+        self.manager = object.__new__(ManagedRuntime)
+        self.manager.root, self.manager.store = tmp_path, self.store
+        self.manager._publishing_update = None
         original_assets = {"_managed.js": self.adapter.assets["_managed.js"]}
         self.original = build_bundle(self.adapter.model, original_assets)
         self.initial = self.store.register_verified(NAME, 123, self.original, original_assets,
@@ -143,20 +148,19 @@ class Runtime:
             raise KeyboardInterrupt if self.publish_crash else RuntimeError("injected-before-publication")
         self.publishing = record["operation_id"]
         try:
-            result = self.store.register_verified(NAME, target["model_id"], target["bundle"], target["asset_bytes"],
-                         evidence={"verification": record["verification"], "update_operation_id": record["operation_id"],
-                                   "confirmed_at": record["confirmed_at"]},
-                         verify_registration=lambda *_: True,
-                         previous_record_id=record["authorization"]["record_id"], registration_id=record["operation_id"])
+            result = self.manager._publish_update(record, target)
         finally:
             self.publishing = None
         if self.publish_stage == "after":
             raise KeyboardInterrupt if self.publish_crash else RuntimeError("injected-after-publication")
         return result
 
-    def new_engine(self):
-        return ManagedUpdate(self.root / "updates", self.store, self.adapter, self.backup, self.snapshot, lambda: self.sync,
-                             source=self.source, model_name=NAME, publish=self.publish, clock=lambda: self.time)
+    def new_engine(self, source_revision="unknown"):
+        engine = ManagedUpdate(self.root / "updates", self.store, self.adapter, self.backup, self.snapshot, lambda: self.sync,
+                               source=self.source, model_name=NAME, publish=self.publish, clock=lambda: self.time,
+                               source_revision=source_revision)
+        self.manager.source_revision, self.manager.updates = source_revision, engine
+        return engine
 
     def prepare(self, operation_id=OP):
         return self.engine.prepare(operation_id, True)
@@ -334,11 +338,26 @@ def test_apply_and_registration_are_one_operation_without_drift_or_data_changes(
     assert result["sync"]["state"] == "pending" and not result["client_delivery_confirmed"]
     baseline = r.store.get_baseline(NAME)
     assert baseline["record_id"] == OP and baseline["bundle"] == r.candidate
+    assert baseline["evidence"]["source"]["git_revision"] == "unknown"
     assert r.store.inspect(NAME)["status"] == "normal" and r.sent == []
     assert r.adapter.rows == before and r.adapter.assets["personal.png"] == b"private personal media"
     assert not r.engine.has_pending(NAME)
     r.time += 1000
     assert r.apply(preview) == result and r.prepare() == result and r.adapter.calls == 1
+
+
+def test_prepared_update_preserves_recorded_revision_after_restart_without_sha(runtime):
+    r = runtime
+    old_revision = "a" * 40
+    r.engine = r.new_engine(source_revision=old_revision)
+    preview = r.prepare()
+    prepared = copy.deepcopy(r.engine._read(OP))
+    r.engine = r.new_engine()
+    assert r.manager.source_revision == "unknown"
+    assert r.engine._read(OP) == prepared
+    assert r.apply(preview)["state"] == "applied"
+    assert r.store.get_baseline(NAME)["evidence"]["source"]["git_revision"] == old_revision
+    assert r.adapter.calls == 1
 
 
 @pytest.mark.parametrize("stage", ["before-asset", "before-registration", "after-asset", "after-model"])
@@ -358,26 +377,49 @@ def test_partial_unknown_stay_blocked_and_diagnosis_never_reapplies(runtime, sta
     assert r.adapter.calls == 1
 
 
-@pytest.mark.parametrize("stage", ["before", "after"])
+@pytest.mark.parametrize("stage", ["before", "pointer", "after"])
 @pytest.mark.parametrize("crash", [False, True])
-def test_baseline_publication_interruption_is_diagnosed_once_without_reapplication(runtime, stage, crash):
+def test_baseline_publication_interruption_is_diagnosed_once_without_reapplication(runtime, stage, crash, monkeypatch):
     r = runtime
+    old_revision = "a" * 40
+    r.engine = r.new_engine(source_revision=old_revision)
     preview = r.prepare()
     r.publish_stage, r.publish_crash = stage, crash
+    save_state = r.store._save_state
+    if stage == "pointer":
+        def interrupted_pointer_write(state):
+            if state["baselines"].get(NAME) == OP:
+                raise KeyboardInterrupt if crash else RuntimeError("injected-before-baseline-pointer")
+            save_state(state)
+        monkeypatch.setattr(r.store, "_save_state", interrupted_pointer_write)
     if crash:
         with pytest.raises(KeyboardInterrupt):
             r.apply(preview)
     else:
         assert r.apply(preview)["state"] == "partial"
+    published = r.store.get_baseline(NAME)
+    baseline_path = r.store.root / "baselines" / (OP + ".json")
+    saved_baseline = r.store._read(baseline_path) if baseline_path.exists() else None
+    if stage == "pointer":
+        assert published["record_id"] == r.initial["record_id"]
+        assert saved_baseline["evidence"]["source"]["git_revision"] == old_revision
     r.engine = r.new_engine()
+    assert r.manager.source_revision == "unknown"
+    assert r.engine._read(OP)["source_revision"] == old_revision
     assert r.engine.status(OP)["state"] in ("unknown", "partial")
     assert r.store.inspect(NAME)["status"] == "unavailable"
     assert r.apply(preview)["state"] in ("unknown", "partial") and r.adapter.calls == 1
     r.publish_stage = None
+    monkeypatch.setattr(r.store, "_save_state", save_state)
     r.time += 1000  # Finishing an already confirmed local result is not a new mutation approval.
     outcome = r.engine.diagnose(OP)
     assert outcome["state"] == "applied" and outcome["registered"]
     assert r.store.get_baseline(NAME)["record_id"] == OP
+    evidence = r.store.get_baseline(NAME)["evidence"]
+    assert evidence["source"]["git_revision"] == old_revision
+    if saved_baseline is not None:
+        # Includes the evidence, checksum and first applied_verified_at time.
+        assert r.store._read(baseline_path) == saved_baseline
     assert len(list((r.store.root / "baselines").glob("*.json"))) == 2
     assert r.adapter.calls == 1 and r.store.inspect(NAME)["status"] == "normal"
 

@@ -873,6 +873,10 @@ sudo anki-host-recover-fields --instance main \
 - root→일반 sync 셸 fixture는 실제 JSON/파일/lock과 chown 호출을 검사하지만 실제 Linux UID 전환을 대신하지 않는다.
 - 배포 시 `nrs`를 사용한다. 새 로컬 키가 필요한 모든 consumer가 함께 전환돼야 한다.
   lab 합성 데이터로 생성·이동·일정·삭제·복구점/HDD·재시작 후 중복 방지를 확인한 뒤 main에서 읽기와 허가받은 작은 변경을 확인한다.
+- `anki-host-main`에는 저장소 Git SHA를 환경 변수로 주입하지 않는다. 실행 bytes·서비스 설정·전이 의존성이 같고
+  Git revision만 바뀐 배포는 SHA만으로 main 재시작을 유발하지 않는다. helper·Anki package·관리 bundle·서비스 설정이나
+  전이 의존성이 바뀌면 재시작될 수 있다. SHA 환경 변수를 제거하는 최초 배포도 서비스 설정 변경이므로 재시작될 수 있으며,
+  특정 배포의 재시작 여부는 실제 서비스 상태와 로그로 확인한다.
 - 스킬 투영 변경 후 `nrs`와 `./scripts/ai/verify-ai-compat.sh`의 런타임 검증을 완료한다.
   임시 실컬렉션 테스트는 AnkiWeb Upload나 iPhone ChatGPT→AnkiMobile 경로 검증을 대신하지 않는다.
 - 옛 **Anki Plugin Lab 등록 제거**와 MiniPC `lab` 데이터/서비스 폐기는 다른 작업이다. 2026-09-11 운영자는 향후 시험을 위해 lab 유지를 선택했다. 미로그인·sync 비활성 경계를 유지하고, 삭제는 향후 별도 결정 후 처리한다.
@@ -910,6 +914,9 @@ AnkiMobile의 접힘 표시와 검색 반영은 기기에서 별도로 확인한
 버전은 canonical schema 버전과 관리 내용의 **bundle digest**로 식별한다. Git SHA는 출처이며 권한이나 내용 버전이 아니다.
 같은 내용을 squash/rebase하거나 무관한 파일을 바꿔도 업데이트로 판단하지 않는다. 운영 모델 ID·시각은 digest에서 제외하고,
 인스턴스·컬렉션·실제 모델 ID 바인딩은 따로 검증한다. 이름이 같은 유형을 삭제 후 재생성해도 자동 채택하지 않는다.
+SHA 환경 변수를 제거한 helper가 새로 준비한 작업과 등록본의 Git SHA는 `unknown`이다. 기존 등록본과 기존 작업 원장의
+SHA는 보존하며 재개·등록 때 현재 배포 revision으로 덮어쓰지 않는다. SHA가 없어도 bundle digest·실제 bytes의 일치와
+백업·데이터 보존 검증을 기준으로 등록·복구·쓰기 보호를 유지한다.
 비교·복구 기준은 **마지막으로 적용하고 검증한 등록본**이다. 최신 main에 다른 내용이 있어도 `업데이트 대기`일 뿐 drift는 아니다.
 정의와 자산 bytes를 비공개 호스트 저장소에 보존하므로 GitHub 장애가 로컬 기준 자체를 무효화하지 않는다.
 GitHub 최신본 확인 실패는 별도 상태로 보여 주며, 최신본을 자동 설치하거나 앱 내용을 Git 기준으로 자동 채택하지 않는다.

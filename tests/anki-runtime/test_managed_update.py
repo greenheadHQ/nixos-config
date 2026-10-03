@@ -113,13 +113,13 @@ def managed_update(runtime, tmp_path, request):
         backups.append(path)
         return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "mirrored": True}
 
-    def new_manager():
+    def new_manager(source_revision="unknown"):
         return runtime_module.ManagedRuntime(
             r.window, tmp_path / "managed", source, instance="fixture",
             snapshot=r.helper._collection_identity, restore_point=backup,
-            sync_status=lambda: copy.deepcopy(sync), ttl=600, source_revision="synthetic-revision")
+            sync_status=lambda: copy.deepcopy(sync), ttl=600, source_revision=source_revision)
 
-    manager = new_manager()
+    manager = new_manager(source_revision="synthetic-revision")
     preview = manager.enrollment_prepare()
     manager.enrollment_apply(preview["operation_id"], preview["preview_token"], True)
     assert manager.check()["status"] == "normal"
@@ -369,6 +369,8 @@ def test_source_update_uncertain_outcome_survives_restart_and_blocks_writes_and_
     assert s.manager.store.get_baseline(NAME)["record_id"] == s.original_baseline["record_id"]
     s.manager = s.new_manager()
     s.updates = s.manager.updates
+    assert s.manager.source_revision == "unknown"
+    assert s.updates._read(OPERATION)["source_revision"] == "synthetic-revision"
     assert s.updates.status(OPERATION)["state"] in ("partial", "unknown")
     s.r.adapter.managed_guard = s.manager.guard
     assert s.manager.check()["write_blocked"]
@@ -386,6 +388,7 @@ def test_source_update_uncertain_outcome_survives_restart_and_blocks_writes_and_
         diagnosed = s.updates.diagnose(OPERATION)
         assert diagnosed["state"] == "applied", diagnosed
         assert s.manager.store.get_baseline(NAME)["bundle"] == s.target_bundle
+        assert s.manager.store.get_baseline(NAME)["evidence"]["source"]["git_revision"] == "synthetic-revision"
         assert s.manager.check()["status"] == "normal"
         assert_unchanged(s, before)
 

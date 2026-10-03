@@ -68,6 +68,8 @@ description: |
 - 초기 관리 대상은 `학습 Basic` 하나다. 다른 유형은 `unmanaged`이고 자동 등록하지 않는다.
   `anki_managed_model_check`로 마지막 적용·검증본과 현재 호스트의 차이를 확인한다. `업데이트 대기`는 Git의 새 내용이며
   drift와 다르다. Git SHA는 출처, bundle digest는 내용 버전이다. 같은 bytes의 재커밋이나 무관한 변경은 새 버전이 아니다.
+  SHA 환경 변수를 제거한 helper의 새 작업·등록본은 Git SHA를 `unknown`으로 기록한다. 기존 기록·작업의 SHA는
+  재개·등록 때도 보존한다. digest·실제 bytes 일치와 백업·데이터 보존 검증에 따른 쓰기 보호는 유지한다.
 - 최초 등록 전이나 `drift`/`unavailable` 상태에서는 해당 유형의 MCP 노트 추가·필드 쓰기가 차단된다.
   서버는 실제 쓰기 직전 lock 안에서 모델과 자산을 다시 검사한다. 차단 대상이 섞인 일괄 요청은 전체 거절되므로
   다른 유형을 먼저 처리하려면 분리한다. 기준 삭제·임의 등록으로 보호를 우회하지 않는다. 읽기와 앱 복습은 계속 가능하다.
@@ -107,4 +109,7 @@ description: |
 일반 sync가 막히면 먼저 영수증과 서비스 로그를 조사하고 `sync-status.json` 삭제로 급감 게이트를 해제하지 않는다.
 
 운영 적용은 `nrs` 경로를 따른다. 검증은 README의 격리 테스트와 배포 후 lab/main 확인을 구분해 보고한다.
+`anki-host-main`의 실행 bytes·서비스 설정·전이 의존성이 같고 Git revision만 바뀌면 SHA만으로 재시작을 유발하지 않는다.
+helper·Anki package·관리 bundle·서비스 설정·전이 의존성 변경이나 SHA 환경 변수를 제거하는 최초 배포는 재시작될 수 있다.
+특정 배포의 재시작 여부는 실제 서비스 상태와 로그로 확인한다.
 Plugin Lab 등록 제거는 MiniPC lab 컬렉션 폐기 승인이 아니다.
