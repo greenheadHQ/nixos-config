@@ -26,6 +26,45 @@ def test_summarize_reports_delta():
     assert summarize(None) == {"available": False}
 
 
+@pytest.mark.parametrize("sync", ["broken", ["broken"], True, 1])
+def test_summarize_preserves_attempt_when_sync_structure_is_invalid(sync):
+    result = summarize({"result": "error", "runId": "attempt", "sync": sync})
+    assert result["available"] is True
+    assert result["result"] == "error" and result["runId"] == "attempt"
+    assert result["action"] is None and result["media_state"] is None
+    assert result["counts_after"] is None and result["delta"] is None
+
+
+@pytest.mark.parametrize("key", ["before", "after", "media"])
+def test_summarize_tolerates_invalid_nested_sections(key):
+    sync = {"action": "normal", "before": {"notes": 1}, "after": {"notes": 2},
+            "media": {"state": "synced"}, key: ["broken"]}
+    result = summarize({"result": "error", "sync": sync})
+    assert result["result"] == "error" and result["action"] == "normal"
+    assert result["media_state"] == (None if key == "media" else "synced")
+    assert result["counts_after"] == (None if key == "after" else {
+        "notes": 2, "cards": None, "revlog": None, "today_reviews": None})
+    assert result["delta"] == (None if key in ("before", "after") else {
+        "notes": 1, "cards": None, "revlog": None})
+
+
+@pytest.mark.parametrize("invalid", ["unknown", {}, [], True, 1.5, -1, "-1"])
+def test_summarize_invalid_count_is_unknown_without_hiding_valid_changes(invalid):
+    result = summarize({"result": "success", "sync": {
+        "before": {"notes": 10, "cards": "12", "revlog": 100},
+        "after": {"notes": invalid, "cards": "11", "revlog": 103}}})
+    assert result["counts_after"] == {
+        "notes": None, "cards": 11, "revlog": 103, "today_reviews": None}
+    assert result["delta"] == {"notes": None, "cards": -1, "revlog": 3}
+
+
+def test_summarize_invalid_before_count_only_hides_its_delta():
+    result = summarize({"sync": {
+        "before": {"notes": "unknown", "cards": 1}, "after": {"notes": 2, "cards": 3}}})
+    assert result["counts_after"]["notes"] == 2
+    assert result["delta"] == {"notes": None, "cards": 2, "revlog": None}
+
+
 class FakeSystemd:
     """systemctl show/start를 흉내 낸다. start 뒤 n번째 폴링에서 새 회차 결과를 상태 파일에 쓴다."""
 
@@ -131,6 +170,32 @@ def normal(path, run_id, started, *, result="success", mode="normal", action="no
     _write(path, result=result, runId=run_id, mode=mode,
            runStartedAt=datetime.fromtimestamp(started, timezone.utc).isoformat(timespec="microseconds"),
            sync={"action": action, "required": "NO_CHANGES"})
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("broken", ["counts", "sync"])
+async def test_fresh_sync_tolerates_bad_optional_metadata_without_inventing_success(tmp_path, broken):
+    path, clock = tmp_path / "main.json", Clock()
+    normal(path, "old", 900)
+
+    def land():
+        normal(path, "new", 1000.6)
+        state = json.loads(path.read_text())
+        if broken == "counts":
+            state["sync"].update(before={"notes": "broken"}, after={"notes": 2})
+        else:
+            state["sync"] = ["broken"]
+        path.write_text(json.dumps(state))
+
+    systemd = FakeSystemd(path, on_start=land)
+    syncer = SyncNow(str(path), "u.service", 10, runner=systemd, sleep=clock.sleep,
+                     monotonic=clock, wall_clock=clock)
+    result = await syncer.run_fresh(after=1000.5)
+    assert result["outcome"] == ("synced" if broken == "counts" else "blocked")
+    assert result["status"]["runId"] == "new"
+    assert result["status"]["delta"] == ({"notes": None, "cards": None, "revlog": None}
+                                           if broken == "counts" else None)
+    assert systemd.started == 1
 
 
 @pytest.mark.anyio
