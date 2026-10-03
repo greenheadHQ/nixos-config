@@ -48,8 +48,8 @@ def _quiet_backend():
 
 
 def _extract(package: Path, directory: Path, note_ids: list[int]) -> list[dict]:
-    # collection.anki2 is a dummy in modern packages. The official importer
-    # handles legacy .anki21 and zstd .anki21b without manual schema assumptions.
+    # collection.anki2 is a dummy in modern packages. Use the official importer
+    # for zstd .anki21b and its media rather than assuming a SQLite schema.
     with _quiet_backend():
         from anki._backend import RustBackend
         from anki.collection import Collection

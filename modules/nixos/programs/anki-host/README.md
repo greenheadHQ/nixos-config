@@ -839,6 +839,10 @@ MCP의 상태/최근 작업 응답을 우선 사용한다. 로그에 키·본문
 | Anki 자체 자동 백업 | `<state>/<instance>/Anki2/<instance>/backups/`. Anki가 5분마다 생성 여부를 확인하고 컬렉션의 `get_preferences().backups` 간격·일/주/월 정책을 적용한다. `prefs21.db`의 구형 `numBackups` 값은 26.08에서 이 정책을 정하지 않는다. |
 | 일일 미디어 포함 백업 | `<state>/<instance>/backups/` 최신 2개, HDD `<mediaData>/backups/anki-host/<instance>/` 기본 14일. 기본 04:15에 최대 5분 지연을 더해 생성한다. |
 
+일일 백업과 작업 복구점은 신형 `.colpkg`(`legacy: false`)로 생성한다. 백업·필드 회수의 지원·검증 범위도
+신형 패키지이며, `legacy`는 내보내기 형식 옵션으로 Anki 앱의 버전을 뜻하지 않는다. 기존 백업을 일괄
+변환하거나 삭제하지 않으며 일일 백업의 기존 보존 정책은 유지한다.
+
 2026-09-19 운영 백업 사본에서 확인한 자체 백업 설정은 최소 10분, 일/주/월 각각 30개였다.
 이는 고정 10분 주기나 최근 30개라는 뜻이 아니다. 변경된 컬렉션만 백업하며 오늘·어제의 사본은 모두 유지하고,
 그보다 오래된 서로 다른 날짜·주·월의 대표 사본을 순차적으로 남긴다. 실제 설정은 이후 변경될 수 있다.
@@ -872,6 +876,8 @@ sudo anki-host-recover-fields --instance main \
 - `nix develop --command bash tests/run-eval-tests.sh`: 일반/no-IFD 모듈·권한·상수 배선 검사.
 - `tests/anki-runtime/`: Anki/aqt 26.8 환경에서 `ANKICONNECT_SOURCE`를 실제 빌드한 애드온 디렉터리로
   지정해 pytest 실행. 합성 임시 컬렉션과 실제 AnkiConnect/Rust backend를 사용한다. GUI 콜백은 대체하고 포트·계정은 열지 않는다.
+  `test_field_recovery.py`는 신형 패키지의 미디어 포함·제외 필드 회수와 이미지·음성 bytes, 노트·카드·복습 기록의
+  격리 복원을 확인한다. 필드 회수는 미디어를 포함한 임시 사본을 폐기하며, 미디어를 운영 컬렉션으로 복원하지 않는다.
 - root→일반 sync 셸 fixture는 실제 JSON/파일/lock과 chown 호출을 검사하지만 실제 Linux UID 전환을 대신하지 않는다.
 - 배포 시 `nrs`를 사용한다. 새 로컬 키가 필요한 모든 consumer가 함께 전환돼야 한다.
   lab 합성 데이터로 생성·이동·일정·삭제·복구점/HDD·재시작 후 중복 방지를 확인한 뒤 main에서 읽기와 허가받은 작은 변경을 확인한다.
