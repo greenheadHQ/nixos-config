@@ -1480,6 +1480,10 @@ let
       cond = extraCommandsAllowed;
     }
     {
+      name = "Test 6j: 역방향 경로 검사가 strict여야 함 (input 업데이트 시 기본값 완화 방지)";
+      cond = fw.checkReversePath == true;
+    }
+    {
       # Opus 피드백: useRoutingFeatures = "both"이면 exit node 활성화 가능
       # "server"는 subnet router만 허용 (exit node 비활성화)
       name = "Test 7a: Tailscale useRoutingFeatures가 server이어야 함 (exit node 방지)";
