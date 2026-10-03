@@ -422,6 +422,21 @@ class BackupInventoryTest(unittest.TestCase):
                 m.write_json(addon / "meta.json", {})
                 m.write_json(backup / m.MARKER, {})
 
+    def test_malformed_ownership_lists_are_refused(self):
+        backup, _ = self.snapshot()
+        for field in ("files", "config_keys"):
+            for value in (None, {}, "not-a-list", [{}], [None], [True], [1], ["valid", {}]):
+                with self.subTest(field=field, value=value):
+                    record = {"123": {"files": ["__init__.py"], "config_keys": ["setting"]}}
+                    record["123"][field] = value
+                    m.write_json(backup / m.MARKER, record)
+                    result, output, errors = self.cli()
+                    self.assertEqual(result, 1)
+                    self.assertEqual(output, "")
+                    self.assertIn("Cannot list add-on backups", errors)
+        for keys in ([], ["setting", "한글 설정"]):
+            m.validate_record({"123": {"files": ["__init__.py"], "config_keys": keys}})
+
     def test_symlinked_snapshot_or_metadata_is_refused_without_following_it(self):
         backup, addon = self.snapshot()
         outside = self.root / "outside.json"

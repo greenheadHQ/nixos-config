@@ -64,7 +64,8 @@ def validate_record(record):
             raise ValueError("Invalid managed files")
         for name in item["files"]:
             relative_file(name)
-        if not isinstance(item["config_keys"], list):
+        if (not isinstance(item["config_keys"], list)
+                or any(not isinstance(key, str) for key in item["config_keys"])):
             raise ValueError("Invalid config keys")
 
 
