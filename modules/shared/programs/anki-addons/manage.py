@@ -85,7 +85,9 @@ def running_anki():
     # On macOS, comm is truncated to 16 columns unless it is the LAST column.
     # Read args separately for Python launchers; never split a full executable
     # path on spaces or match arbitrary test-runner arguments mentioning Anki.
-    ps = "/bin/ps" if Path("/bin/ps").exists() else "/usr/bin/ps"
+    ps = "/bin/ps" if Path("/bin/ps").exists() else shutil.which("ps")
+    if ps is None:
+        raise RuntimeError("Cannot check running Anki: ps is not available")
     output = subprocess.check_output(
         [ps, "-axww", "-o", "uid=,pid=,comm="], text=True
     )

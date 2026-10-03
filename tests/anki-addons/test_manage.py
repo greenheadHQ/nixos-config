@@ -257,10 +257,21 @@ class AddonsTest(unittest.TestCase):
     def test_cli_defers_for_real_named_process_without_creating_base(self):
         # Exercise ps/CLI together, always against a disposable base. Never use
         # the installed wrapper's live default directory to test deferral.
-        # Symlink, not copy: macOS 27 SIGKILLs copies of Apple platform binaries,
-        # while ps still reports the process under the link name "Anki".
         binary = self.root / "Anki"
-        binary.symlink_to("/bin/sleep")
+        if sys.platform == "darwin":
+            # macOS 27 SIGKILLs copies of Apple platform binaries; ps still
+            # reports the process under this symlink's name.
+            binary.symlink_to("/bin/sleep")
+        else:
+            # NixOS has no /bin/sleep and coreutils' multicall binary rejects
+            # an unknown argv[0]. Compile a real process named Anki instead.
+            compiler = shutil.which("cc")
+            self.assertIsNotNone(compiler, "cc must be available in the test runtime")
+            subprocess.run(
+                [compiler, "-x", "c", "-", "-o", str(binary)],
+                input="#include <unistd.h>\nint main(void) { sleep(30); return 0; }\n",
+                text=True, capture_output=True, check=True, timeout=30,
+            )
         proc = subprocess.Popen([str(binary), "30"])
         try:
             manifest = self.root / "manifest.json"
@@ -277,6 +288,14 @@ class AddonsTest(unittest.TestCase):
         finally:
             proc.terminate()
             proc.wait(timeout=5)
+
+    def test_process_detection_fails_closed_without_ps(self):
+        self.closed.stop()
+        with patch.object(m.Path, "exists", return_value=False), \
+                patch.object(m.shutil, "which", return_value=None):
+            with self.assertRaisesRegex(RuntimeError, "ps is not available"):
+                m.require_closed()
+        self.closed.start()
 
     def test_process_detection_avoids_test_runner_false_positive(self):
         uid = os.getuid()

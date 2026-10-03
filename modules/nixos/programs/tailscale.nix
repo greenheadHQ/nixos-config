@@ -89,6 +89,8 @@ in
 
   networking.firewall = {
     enable = true;
+    # nixpkgs의 loose 기본값으로 업데이트돼도 기존 strict 검사를 유지한다.
+    checkReversePath = true;
     trustedInterfaces = [ "tailscale0" ];
     allowedUDPPorts = [ config.services.tailscale.port ];
   };

@@ -33,8 +33,6 @@
     agenix = {
       url = "github:ryantm/agenix";
       inputs.nixpkgs.follows = "nixpkgs";
-      inputs.darwin.follows = "nix-darwin";
-      inputs.home-manager.follows = "home-manager";
     };
 
     # opnix: 1Password Service Account 기반 secret materialization (PRD #780 Phase 3)
