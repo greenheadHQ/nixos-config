@@ -264,6 +264,7 @@ async def test_split_apps_metadata_and_full_oauth_flow(tmp_path, auth_method):
             bulk_note = listed["anki_update_notes_fields"]["inputSchema"]["$defs"]["NoteFieldUpdate"]
             for fields in (single_fields, bulk_note["properties"]["fields"]):
                 assert NOTE_HISTORY_RULES in fields["description"]
+                assert "시간에 민감한 출처의 자료 대조일은 출처에만 보존하고 변천사로 옮기지 않는다." in fields["description"]
             assert "노트 변천사의 지킬 것·앞선 결정과 충돌하면 사용자에게 묻고" in CARD_QUALITY
             assert "노트 변천사는 정리 대상이 아니다." in listed["anki_note_info"]["description"]
             assert "검토 메모를 비우기 전에 계속 지킬 결정과 이유를 옮긴다." in listed["anki_note_info"]["description"]
