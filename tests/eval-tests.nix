@@ -17,6 +17,20 @@ let
   nixosCfg = flake.nixosConfigurations.greenhead-minipc.config;
   nixosBase = flake.nixosConfigurations.greenhead-minipc;
 
+  # Pushover 전송 helper는 service-lib 자체에 store 경로를 주입한다. 플랫폼별 소비자가
+  # 별도로 PUSHOVER_LIB를 설정하지 않아도 같은 stdin-config 전송 경로를 사용해야 한다.
+  serviceLibFor = pkgs: import ../modules/nixos/lib/service-lib.nix { inherit pkgs; };
+  serviceLibHasPushover =
+    pkgs:
+    let
+      serviceLib = serviceLibFor pkgs;
+      pushoverLib = pkgs.writeText "pushover.sh" (
+        builtins.readFile ../modules/shared/scripts/lib/pushover.sh
+      );
+    in
+    nixpkgsLib.hasInfix (builtins.unsafeDiscardStringContext (toString pushoverLib)) serviceLib.drvAttrs.text
+    && !(nixpkgsLib.hasInfix "@pushoverLib@" serviceLib.drvAttrs.text);
+
   # 옵션 타입이 특정 값을 거부/허용하는지 evalModules 레벨에서 확인하는 헬퍼.
   # extendModules로 실 config 위에 해당 leaf만 오버라이드해 강제 평가한다 —
   # lazy evaluation이라 다른 옵션은 재평가되지 않고, 오버라이드한 leaf의 타입 체크만 트리거된다.
@@ -1309,6 +1323,38 @@ let
 
   # 테스트 리스트: { name, cond } 형태 — 순서대로 평가
   tests = [
+    {
+      name = "Test PH1: NixOS service-lib의 stdin-config Pushover helper와 strict 소비자 배선";
+      cond =
+        serviceLibHasPushover nixosBase.pkgs
+        &&
+          builtins.all
+            (
+              name:
+              nixosCfg.systemd.services.${name}.environment.SERVICE_LIB == toString (serviceLibFor nixosBase.pkgs)
+            )
+            [
+              "temp-monitor"
+              "pushover-purge-reminder"
+              "karakeep-fallback-sync"
+              "claude-rc-ensure"
+              "codex-remote-control-ensure"
+            ];
+    }
+    {
+      name = "Test PH2: 두 Darwin 호스트의 Claude RC도 공용 service-lib Pushover helper 사용";
+      cond = builtins.all (
+        name:
+        let
+          host = darwinCfgs.${name};
+          home = builtins.head (builtins.attrValues host.config.home-manager.users);
+        in
+        serviceLibHasPushover host.pkgs
+        &&
+          home.launchd.agents.claude-rc-ensure.config.EnvironmentVariables.SERVICE_LIB
+          == toString (serviceLibFor host.pkgs)
+      ) expectedDarwinHosts;
+    }
     {
       name = "Test 0: minipcTailscaleIP(${minipcTailscaleIP})가 Tailscale CGNAT 범위(100.64-127.x.x.x)이어야 함";
       cond = isTailscaleCGNAT;
