@@ -41,8 +41,11 @@ assert_line_count() {
   local path="$1"
   local needle="$2"
   local expected="$3"
-  local actual
-  actual=$(grep -Fxc "$needle" "$path")
+  local actual grep_status=0
+  # grep의 rc1은 정상적인 0건 계수다. 조건 문맥에서 상태를 받아 errexit로 진단을 잃지
+  # 않되, 읽기/실행 오류(rc2 이상)를 0건으로 삼켜 기대0이 통과하지 않게 한다.
+  actual=$(grep -Fxc "$needle" "$path") || grep_status=$?
+  [[ "$grep_status" -le 1 ]] || fail "could not count exact lines in $path (grep exit: $grep_status)"
   [[ "$actual" == "$expected" ]] || fail "expected $path to contain $expected occurrences of: $needle (actual: $actual)"
 }
 new_sandbox() {
