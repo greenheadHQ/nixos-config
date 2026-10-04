@@ -1,15 +1,73 @@
 import asyncio
 import json
+import os
+import signal
 import subprocess
+import sys
 from datetime import datetime, timezone
 
 import pytest
 
-from anki_mcp.syncstatus import SyncNow, UnitState, classify, summarize
+from anki_mcp.syncstatus import SyncNow, UnitState, classify, run_cmd, summarize
 
 
 def _write(path, **fields):
     path.write_text(json.dumps(fields))
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("returncode", [0, 7])
+async def test_command_preserves_exit_status_and_drains_both_output_streams(returncode):
+    result = await run_cmd([
+        sys.executable, "-c",
+        "import sys; sys.stdout.write('x' * 131072); "
+        "sys.stderr.write('y' * 131072); sys.exit(int(sys.argv[1]))", str(returncode),
+    ])
+    assert result == (returncode, "x" * 131072, "y" * 131072)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("cancellation", ["deadline", "caller"])
+async def test_command_cancellation_kills_and_reaps_the_running_process(tmp_path, cancellation):
+    ready = tmp_path / "child.pid"
+    task = asyncio.create_task(run_cmd([
+        sys.executable, "-c",
+        "import os, pathlib, signal, sys, time; "
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)",
+        str(ready),
+    ]))
+
+    async def started():
+        while True:
+            try:
+                return int(ready.read_text())
+            except (FileNotFoundError, ValueError):
+                await asyncio.sleep(0.005)
+
+    pid = None
+    try:
+        pid = await asyncio.wait_for(started(), timeout=5)
+        if cancellation == "deadline":
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(task, timeout=0.01)
+        else:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        # A cancelled await alone is insufficient: the real command must no
+        # longer be running or left as an unreaped child when control returns.
+        with pytest.raises(ProcessLookupError):
+            os.kill(pid, 0)
+    finally:
+        if pid is not None:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
 
 def test_classify_distinguishes_running_and_stale():

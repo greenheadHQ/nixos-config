@@ -26,11 +26,22 @@ CmdRunner = Callable[[list[str]], Awaitable[tuple[int, str, str]]]
 
 
 async def run_cmd(argv: list[str]) -> tuple[int, str, str]:
-    def _run() -> tuple[int, str, str]:
-        proc = subprocess.run(argv, capture_output=True, text=True, timeout=30)
-        return proc.returncode, proc.stdout, proc.stderr
-
-    return await asyncio.to_thread(_run)
+    proc = await asyncio.create_subprocess_exec(
+        *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    try:
+        out, err = await asyncio.wait_for(proc.communicate(), timeout=30)
+    except BaseException:
+        # Cancelling a worker thread leaves its command running. Own the child
+        # here so a deadline or caller cancellation also kills and reaps it.
+        # A sync job already accepted by systemd remains independent.
+        if proc.returncode is None:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+        await proc.communicate()
+        raise
+    return proc.returncode, out.decode(errors="replace"), err.decode(errors="replace")
 
 
 def read_status(path: str) -> dict[str, Any] | None:
