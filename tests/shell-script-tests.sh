@@ -35,6 +35,13 @@ run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
 run_test "wt wrapper ignores runtime HOME for real script" test_wt_wrapper_ignores_runtime_home_for_real_script
 run_test "managed plugin skill helper rejects duplicate matches" test_managed_plugin_skill_link_requires_single_match
 run_test "rebuild-common exports public API" test_rebuild_common_exports_public_api
+run_test "nrs-lock status without lock" test_nrs_lock_status_without_lock
+run_test "nrs-lock retains stopped process before timeout" test_nrs_lock_status_retains_stopped_process_before_timeout
+run_test "nrs-lock stale after timeout with stopped process" test_nrs_lock_status_stale_after_timeout_with_stopped_process
+run_test "nrs-lock status matches acquire timeout boundary" test_nrs_lock_status_matches_acquire_timeout_boundary
+run_test "nrs-lock retains running process after timeout" test_nrs_lock_status_retains_running_process_after_timeout
+run_test "nrs-lock stale when worktree is missing" test_nrs_lock_status_stale_when_worktree_is_missing
+run_test "nrs cross-worktree lock guidance preserves lock" test_nrs_cross_worktree_lock_guidance_preserves_lock
 run_test "release_rebuild_lock preserves caller stderr" test_release_rebuild_lock_preserves_caller_stderr
 run_test "release_rebuild_lock_on_failure preserves caller stderr" test_release_rebuild_lock_on_failure_preserves_caller_stderr
 run_test "release_rebuild_lock without hold is a no-op" test_release_rebuild_lock_without_hold_is_noop
@@ -98,6 +105,9 @@ run_test "wt plugin manifest cleanup uses stable canonical target" test_wt_plugi
 run_test "wt plugin manifest GC removes unmarked orphan worktree entries" test_wt_plugin_manifest_gc_removes_unmarked_orphan_worktree_entries
 run_test "wt plugin manifest GC skips targets outside worktree base" test_wt_plugin_manifest_gc_skips_targets_outside_worktree_base
 run_test "wt plugin manifest GC keeps entries when path check fails" test_wt_plugin_manifest_gc_keeps_entries_when_path_check_fails
+run_test "wt plugin manifest GC supports nested targets" test_wt_plugin_manifest_gc_supports_nested_targets
+run_test "wt plugin manifest GC backups never overwrite collisions" test_wt_plugin_manifest_gc_backups_never_overwrite_collisions
+run_test "wt plugin manifest GC keeps orphans when backup fails" test_wt_plugin_manifest_gc_keeps_orphans_when_backup_fails
 run_test "wt cleanup removes exact Claude local plugin manifest entries" test_wt_cleanup_removes_exact_claude_local_plugin_manifest_entries
 run_test "wt cleanup stops when plugin manifest cleanup fails" test_wt_cleanup_stops_when_plugin_manifest_cleanup_fails
 run_test "wt plugin manifest missing and invalid inputs are safe" test_wt_plugin_manifest_missing_and_invalid_are_safe
@@ -315,6 +325,12 @@ run_test "missing wt Python helpers fail state changes" test_missing_wt_python_h
 run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_python_helpers_fail_cleanup_state_changes
 run_test "codex trust write failure returns warning" test_codex_trust_write_failure_returns_warning
 run_test "fixture git setup ignores host global hooks" test_fixture_git_is_hermetic_against_global_hooks
+run_test "line-count assertion preserves exact line counts" test_assert_line_count_preserves_exact_line_counts
+run_test "line-count assertion accepts zero matches" test_assert_line_count_accepts_zero_matches
+run_test "line-count assertion reports zero-match mismatch" test_assert_line_count_reports_zero_match_mismatch
+run_test "line-count assertion rejects missing and unreadable files" test_assert_line_count_rejects_file_errors
+run_test "line-count assertion rejects grep error with zero output" test_assert_line_count_rejects_grep_error_with_zero_output
+run_test "line-count assertion keeps sequential and parallel diagnostics" test_assert_line_count_harness_diagnostics
 run_test "suite definitions match aggregator registrations" test_suite_function_registration_parity
 run_test "nix sources use stdenv.hostPlatform predicates" test_nix_sources_use_host_platform_predicates
 run_test "deprecated stdenv predicate scan detects regression" test_deprecated_stdenv_predicate_scan_detects_regression
@@ -484,6 +500,9 @@ run_test "fragile-hardcoding-guard empty and malformed input noop" test_fragile_
 run_test "nrs-session-cleanup empty malformed and nonrepo noop" test_nrs_session_cleanup_hook_empty_malformed_and_nonrepo_input_noop
 run_test "plans-gc removes old transient buffer" test_plans_gc_hook_removes_old_transient_buffer
 run_test "plans-gc empty and malformed input noop" test_plans_gc_hook_empty_and_malformed_input_noop
+run_test "plans-gc preserves source for unsafe trash root" test_plans_gc_hook_preserves_source_for_unsafe_trash_root
+run_test "plans-gc preserves source for unsafe date destination" test_plans_gc_hook_preserves_source_for_unsafe_date_destination
+run_test "plans-gc preserves existing trash entries" test_plans_gc_hook_preserves_existing_trash_entries
 run_test "plans-gc retires slug buffers and preserves docs" test_plans_gc_hook_removes_slug_buffers_and_preserves_docs
 run_test "record-last-session normal input writes marker" test_record_last_session_hook_normal_input_writes_marker
 run_test "record-last-session empty malformed and subagent noop" test_record_last_session_hook_empty_malformed_and_subagent_noop
