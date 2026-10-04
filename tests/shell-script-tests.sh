@@ -459,6 +459,10 @@ run_test "upload-immich rejects malformed check ids" test_upload_immich_rejects_
 run_test "upload-immich rechecks before deleting duplicates" test_upload_immich_rechecks_before_deleting_duplicates
 run_test "karakeep fallback-sync success removes only matched queue URL" test_karakeep_fallback_sync_success_removes_only_matched_queue_url
 run_test "karakeep fallback-sync query-only difference is held" test_karakeep_fallback_sync_query_only_difference_is_held
+run_test "karakeep fallback-sync different fragments are held" test_karakeep_fallback_sync_different_fragments_are_held
+run_test "karakeep fallback-sync missing fragment is held" test_karakeep_fallback_sync_missing_fragment_is_held
+run_test "karakeep fallback-sync selects exact fragment among variants" test_karakeep_fallback_sync_selects_exact_fragment_among_variants
+run_test "karakeep fallback-sync fragment preserves path and query rules" test_karakeep_fallback_sync_fragment_preserves_path_and_query_rules
 run_test "karakeep fallback-sync upload failure preserves queue" test_karakeep_fallback_sync_upload_failure_preserves_queue_and_records_notify_state
 run_test "karakeep fallback-sync GC removes expired state" test_karakeep_fallback_sync_gc_removes_only_expired_state_entries
 run_test "karakeep fallback-sync unmatched notification is deduplicated" test_karakeep_fallback_sync_unmatched_notification_is_deduplicated
@@ -479,6 +483,7 @@ run_test "karakeep fallback-sync unreadable queue is a match error" test_karakee
 run_test "karakeep fallback-sync comment open inside saved comment is text" test_karakeep_fallback_sync_comment_open_inside_saved_comment_is_text
 run_test "karakeep fallback-sync skips saved comment without url" test_karakeep_fallback_sync_skips_saved_comment_without_url
 run_test "karakeep fallback-sync upload failure notify key keeps query" test_karakeep_fallback_sync_upload_failure_notify_key_keeps_query
+run_test "karakeep fallback-sync upload failure notify key keeps fragment" test_karakeep_fallback_sync_upload_failure_notify_key_keeps_fragment
 run_test "karakeep fallback-sync processed state matches exact hash" test_karakeep_fallback_sync_processed_state_matches_exact_hash
 run_test "karakeep fallback-sync reads identifier tags spanning lines" test_karakeep_fallback_sync_reads_identifier_tags_spanning_lines
 run_test "karakeep fallback-sync flatten error is a match error" test_karakeep_fallback_sync_flatten_error_is_a_match_error
