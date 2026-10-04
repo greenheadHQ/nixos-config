@@ -326,6 +326,10 @@ run_test "verify-ai-compat host-state positive fixture" test_verify_ai_compat_ho
 run_test "verify-ai-compat host-state detects non-executable hook" test_verify_ai_compat_host_state_detects_non_executable_hook
 run_test "verify-ai-compat host-state detects bad symlink targets" test_verify_ai_compat_host_state_detects_bad_symlink_targets
 run_test "verify-ai-compat host-state detects removed oracle reference" test_verify_ai_compat_host_state_detects_removed_oracle_reference
+run_test "verify-ai-compat oracle accepts large use-site" test_verify_ai_compat_oracle_accepts_large_use_site
+run_test "verify-ai-compat oracle detects removed assignment" test_verify_ai_compat_oracle_detects_removed_assignment
+run_test "verify-ai-compat oracle checks large declaration list" test_verify_ai_compat_oracle_checks_large_declaration_list
+run_test "verify-ai-compat oracle detects undeclared use-site" test_verify_ai_compat_oracle_detects_undeclared_use_site
 run_test "verify-ai-compat retired ref scan covers modes/scripts/tests" test_verify_ai_compat_retired_ref_scan_covers_modes_scripts_and_tests
 run_test "verify-ai-compat retired ref scan honors line exclusions" test_verify_ai_compat_retired_ref_scan_honors_exclusions
 run_test "verify-ai-compat retired ref scan detects stale exclusion" test_verify_ai_compat_retired_ref_scan_detects_stale_exclusion

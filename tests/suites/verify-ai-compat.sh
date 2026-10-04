@@ -193,7 +193,7 @@ test_verify_ai_compat_host_state_detects_bad_symlink_targets() {
   assert_contains "$output" "resolved target rejects foreign prefix"
 }
 
-_verify_ai_compat_removed_oracle_reference_check() {
+_verify_ai_compat_oracle_check() {
   verify_used_by_oracle "$REPO_ROOT/modules/shared/programs/claude/files/lib/demo-lib.sh" "demo-lib.sh"
 }
 
@@ -205,10 +205,92 @@ test_verify_ai_compat_host_state_detects_removed_oracle_reference() {
   mkdir -p "$home_dir"
   _verify_ai_compat_make_oracle_fixture "$repo_root" removed
 
-  output="$(_verify_ai_compat_with_stubbed_gate "$home_dir" "$repo_root" _verify_ai_compat_removed_oracle_reference_check)"
+  output="$(_verify_ai_compat_with_stubbed_gate "$home_dir" "$repo_root" _verify_ai_compat_oracle_check)"
   _verify_ai_compat_assert_error_count "$output" 1
   assert_contains "$output" "USED-BY oracle: demo-lib.sh"
   assert_contains "$output" "실제 source 패턴 미발견"
+}
+
+test_verify_ai_compat_oracle_accepts_large_use_site() {
+  local sandbox home_dir repo_root hook_path output match_position
+  sandbox="$(new_sandbox)"
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  _verify_ai_compat_make_oracle_fixture "$repo_root" present
+  hook_path="$repo_root/modules/shared/programs/claude/files/hooks/demo-hook.sh"
+
+  # 파이프 버퍼보다 큰 본문을 남겨 grep -q의 조기 종료 뒤에도 writer가 쓰도록 한다.
+  # 할당이 끝에 있으면 첫 검사는 끝까지 읽고 두 번째 source 검사만 조기 종료한다.
+  for match_position in assignment-first assignment-last; do
+    {
+      [[ "$match_position" != assignment-first ]] || printf '%s\n' 'DEMO_LIB="demo-lib.sh"'
+      printf '%s\n' 'load_demo() { . "$DEMO_LIB"; }'
+      awk 'BEGIN { for (i = 0; i < 20000; i++) print "payload=abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz" }'
+      [[ "$match_position" != assignment-last ]] || printf '%s\n' 'DEMO_LIB="demo-lib.sh"'
+      printf '%s\n' 'load_demo'
+    } > "$hook_path"
+
+    output="$(_verify_ai_compat_with_stubbed_gate "$home_dir" "$repo_root" _verify_ai_compat_oracle_check)"
+    _verify_ai_compat_assert_error_count "$output" 0
+    assert_contains "$output" "USED-BY oracle 통과: demo-lib.sh"
+  done
+}
+
+test_verify_ai_compat_oracle_detects_removed_assignment() {
+  local sandbox home_dir repo_root hook_path output
+  sandbox="$(new_sandbox)"
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  _verify_ai_compat_make_oracle_fixture "$repo_root" present
+  hook_path="$repo_root/modules/shared/programs/claude/files/hooks/demo-hook.sh"
+  printf '%s\n' '. "$DEMO_LIB"' > "$hook_path"
+
+  output="$(_verify_ai_compat_with_stubbed_gate "$home_dir" "$repo_root" _verify_ai_compat_oracle_check)"
+  _verify_ai_compat_assert_error_count "$output" 1
+  assert_contains "$output" "실제 source 패턴 미발견"
+}
+
+test_verify_ai_compat_oracle_checks_large_declaration_list() {
+  local sandbox home_dir repo_root lib_path output declared_path padding i
+  sandbox="$(new_sandbox)"
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  _verify_ai_compat_make_oracle_fixture "$repo_root" present
+  lib_path="$repo_root/modules/shared/programs/claude/files/lib/demo-lib.sh"
+  padding="$(printf '%0220d' 0)"
+
+  # 존재하지 않는 선언은 forward 검사에서 예상한 150개 오류만 내며, 본문 grep을 피한다.
+  # 약 139KB 목록의 첫 항목에 일치해도 backward 검사에서 거짓 오류가 추가되면 안 된다.
+  # 짧은 경로/저장소 상대 경로를 각각 넣어 두 membership 검사 모두 조기 종료시킨다.
+  for declared_path in claude/files/hooks/demo-hook.sh modules/shared/programs/claude/files/hooks/demo-hook.sh; do
+    {
+      printf '# USED-BY:\n# %s   # via $DEMO_LIB\n' "$declared_path"
+      for ((i = 0; i < 150; i++)); do
+        printf '# scripts/%s/%s/%s/%s/missing-%s.sh   # via $DEMO_LIB\n' \
+          "$padding" "$padding" "$padding" "$padding" "$i"
+      done
+      printf '#\n'
+    } > "$lib_path"
+
+    output="$(_verify_ai_compat_with_stubbed_gate "$home_dir" "$repo_root" _verify_ai_compat_oracle_check)"
+    _verify_ai_compat_assert_error_count "$output" 150
+    assert_contains "$output" "선언된 use-site 미존재"
+    assert_not_contains "$output" "backward check 실패"
+  done
+}
+
+test_verify_ai_compat_oracle_detects_undeclared_use_site() {
+  local sandbox home_dir repo_root hook_path output
+  sandbox="$(new_sandbox)"
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  _verify_ai_compat_make_oracle_fixture "$repo_root" present
+  hook_path="$repo_root/modules/shared/programs/claude/files/hooks/demo-hook.sh"
+  cp "$hook_path" "$repo_root/scripts/undeclared.sh"
+
+  output="$(_verify_ai_compat_with_stubbed_gate "$home_dir" "$repo_root" _verify_ai_compat_oracle_check)"
+  _verify_ai_compat_assert_error_count "$output" 1
+  assert_contains "$output" "scripts/undeclared.sh 가 lib 을 source 하지만 USED-BY 헤더에 미선언"
 }
 
 # ─── retired 스킬 잔존 참조 스캔 범위 ───
