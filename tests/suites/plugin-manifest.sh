@@ -1064,3 +1064,291 @@ assert os.path.join(wt_base, "live-unmarked") in paths, paths
 assert os.path.join(wt_base, "gone-sibling") in paths, paths
 PY
 }
+
+test_wt_plugin_manifest_gc_supports_nested_targets() {
+  local sandbox
+  sandbox=$(new_sandbox)
+  "${WT_PYTHON:-python3}" - "$REPO_ROOT/modules/shared/scripts/lib/wt/plugin-manifest.py" "$sandbox" <<'PY'
+import contextlib
+import importlib.util
+import io
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location("plugin_manifest", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+sandbox = Path(sys.argv[2]).resolve()
+base = sandbox / "repo/.claude/worktrees"
+base.mkdir(parents=True)
+(base / "live").mkdir()
+alias = sandbox / "repo-alias"
+alias.symlink_to(sandbox / "repo", target_is_directory=True)
+manifest = sandbox / "installed_plugins.json"
+target = base / "feat/target"
+unknown = base / "unknown"
+original_presence = module.path_presence
+
+
+def presence(path):
+    if path == unknown:
+        return module.PRESENCE_UNKNOWN, "fixture cannot inspect path"
+    return original_presence(path)
+
+
+def local(path, install, managed=False):
+    entry = {"scope": "local", "projectPath": str(path), "installPath": install}
+    if managed:
+        entry["metadata"] = {"wtManaged": {"version": 1}}
+    return entry
+
+
+entries = [
+    local(target, "/tmp/target-managed", managed=True),
+    local(target, "/tmp/target-manual"),
+    local(base / "orphan-flat", "/tmp/flat"),
+    local(base / "feat/orphan-deep", "/tmp/deep"),
+    local(base / "live", "/tmp/live"),
+    local(unknown, "/tmp/unknown"),
+    local(sandbox / "outside", "/tmp/outside"),
+    {"scope": "user", "projectPath": str(base / "user"), "installPath": "/tmp/user"},
+]
+expected = [entry for entry in entries if entry["installPath"] not in {
+    "/tmp/target-managed", "/tmp/flat", "/tmp/deep"
+}]
+# 별칭 base도 resolve해서 같은 범위로 판정하고, 대상 자신의 수동 등록은 보존한다.
+for literal_target in (target, alias / ".claude/worktrees/feat/target"):
+    manifest.write_text(json.dumps({"plugins": {"example@demo": entries}}) + "\n")
+    output = io.StringIO()
+    argv = ["remove-local", "--manifest", str(manifest), "--target-root", str(literal_target)]
+    if literal_target == target:
+        argv.extend(["--target-root-before-removal", str(target)])
+    with patch.object(module, "path_presence", side_effect=presence), contextlib.redirect_stderr(output):
+        assert module.main(argv) == 0
+    assert "removed 2 orphan worktree entries" in output.getvalue(), output.getvalue()
+    assert "cannot check worktree path" in output.getvalue(), output.getvalue()
+    assert json.loads(manifest.read_text())["plugins"]["example@demo"] == expected
+
+# 이름 안의 base 문자열과 실제 중첩 저장소는 명시한 base로 구분한다.
+inner_base = base / "live/.claude/worktrees"
+inner_target = inner_base / "feat/target"
+assert module.orphan_gc_base(str(inner_target)) is None
+assert module.orphan_gc_base(str(inner_target), str(inner_base)) == str(inner_base)
+assert module.orphan_gc_base(str(inner_target), str(base)) == str(base)
+assert module.orphan_gc_base(str(base)) is None
+assert module.orphan_gc_base(str(sandbox / "outside/target")) is None
+
+target = base / "archive/.claude/worktrees/topic"
+inner_orphan = target.parent / "gone-inner"
+outer_orphan = base / "gone-outer"
+entries = [
+    local(target, "/tmp/target-managed", managed=True),
+    local(target, "/tmp/target-manual"),
+    local(outer_orphan, "/tmp/outer"),
+    local(inner_orphan, "/tmp/inner"),
+    local(base / "live", "/tmp/live"),
+    local(sandbox / "outside", "/tmp/outside"),
+]
+for explicit_base, removed, warning in (
+    (str(base), {"/tmp/target-managed", "/tmp/outer", "/tmp/inner"}, ""),
+    (str(target.parent), {"/tmp/target-managed", "/tmp/inner"}, ""),
+    (None, {"/tmp/target-managed"}, "ambiguous worktree base"),
+    (str(sandbox / "other/.claude/worktrees"), {"/tmp/target-managed"}, "outside worktree base"),
+    (str(sandbox), {"/tmp/target-managed"}, "invalid worktree base"),
+):
+    manifest.write_text(json.dumps({"plugins": {"example@demo": entries}}) + "\n")
+    argv = ["remove-local", "--manifest", str(manifest), "--target-root", str(target),
+            "--target-root-before-removal", str(target)]
+    if explicit_base is not None:
+        argv.extend(["--worktree-base", explicit_base])
+    output = io.StringIO()
+    with contextlib.redirect_stderr(output):
+        assert module.main(argv) == 0
+    assert json.loads(manifest.read_text())["plugins"]["example@demo"] == [
+        entry for entry in entries if entry["installPath"] not in removed
+    ]
+    if warning:
+        assert warning in output.getvalue(), output.getvalue()
+
+# 삭제 뒤 같은 위치가 다른 프로젝트의 symlink가 되어도 기록한 target를 다시 resolve하지 않는다.
+target.parent.mkdir(parents=True)
+outside_live = sandbox / "outside-live"
+outside_live.mkdir()
+target.symlink_to(outside_live, target_is_directory=True)
+manifest.write_text(json.dumps({"plugins": {"example@demo": entries}}) + "\n")
+assert module.main([
+    "remove-local", "--manifest", str(manifest), "--target-root", str(target),
+    "--target-root-before-removal", str(target), "--worktree-base", str(base),
+]) == 0
+assert json.loads(manifest.read_text())["plugins"]["example@demo"] == [
+    entry for entry in entries if entry["installPath"] not in {
+        "/tmp/target-managed", "/tmp/outer", "/tmp/inner"
+    }
+]
+target.unlink()
+
+# 실제 shell 어댑터가 별칭 repo의 base를 명시하며 canonical target는 그대로 넘긴다.
+fixture_home = sandbox / "home"
+adapter_manifest = fixture_home / ".claude/plugins/installed_plugins.json"
+adapter_manifest.parent.mkdir(parents=True)
+adapter_manifest.write_text(json.dumps({"plugins": {"example@demo": entries}}) + "\n")
+helper = Path(sys.argv[1]).resolve()
+env = dict(os.environ, HOME=str(fixture_home), WT_LIB_DIR=str(helper.parent), WT_PYTHON=sys.executable)
+env.pop("BASH_ENV", None)
+env.pop("ENV", None)
+result = subprocess.run([
+    "bash", "--noprofile", "--norc", "-c",
+    'set -euo pipefail; source "$1"; _wt_remove_claude_local_plugins_for_worktree "$2" "$3" "$4"',
+    "fixture", str(helper.with_name("bootstrap.sh")),
+    str(alias / ".claude/worktrees/archive/.claude/worktrees/topic"), str(target), str(alias),
+], env=env, capture_output=True, text=True)
+assert result.returncode == 0, result.stderr
+assert json.loads(adapter_manifest.read_text())["plugins"]["example@demo"] == [
+    entry for entry in entries if entry["installPath"] not in {
+        "/tmp/target-managed", "/tmp/outer", "/tmp/inner"
+    }
+]
+PY
+}
+
+test_wt_plugin_manifest_gc_backups_never_overwrite_collisions() {
+  local sandbox
+  sandbox=$(new_sandbox)
+  "${WT_PYTHON:-python3}" - "$REPO_ROOT/modules/shared/scripts/lib/wt/plugin-manifest.py" "$sandbox" <<'PY'
+import contextlib
+import importlib.util
+import io
+import json
+from pathlib import Path
+import stat
+import sys
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location("plugin_manifest", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+sandbox = Path(sys.argv[2]).resolve()
+base = sandbox / "repo/.claude/worktrees"
+base.mkdir(parents=True)
+manifest = sandbox / "installed_plugins.json"
+candidate = manifest.with_name(manifest.name + ".bak-gc-fixed")
+candidate.write_bytes(b"existing backup sentinel\n")
+linked = candidate.with_name(candidate.name + ".1")
+external = sandbox / "external-backup"
+external.write_bytes(b"symlink target sentinel\n")
+linked.symlink_to(external)
+dangling = candidate.with_name(candidate.name + ".2")
+dangling.symlink_to(sandbox / "missing-target")
+collisions = {candidate, linked, dangling}
+snapshots = []
+backups = []
+
+for label in ("first", "second"):
+    target = base / ("target-" + label)
+    payload = {
+        "plugins": {
+            "example@demo": [
+                {"scope": "local", "projectPath": str(target), "installPath": "/tmp/target",
+                 "metadata": {"wtManaged": {"version": 1}}},
+                {"scope": "local", "projectPath": str(base / ("orphan-" + label)),
+                 "installPath": "/tmp/orphan"},
+            ]
+        },
+        "fixture": label,
+    }
+    before = (json.dumps(payload, indent=2) + "\n").encode()
+    manifest.write_bytes(before)
+    manifest.chmod(0o644)
+    output = io.StringIO()
+    # 후보를 고정해 같은 초의 연속 GC를 결정적으로 재현한다.
+    with patch.object(module, "backup_path_for_gc", return_value=candidate), contextlib.redirect_stderr(output):
+        assert module.main([
+            "remove-local", "--manifest", str(manifest), "--target-root", str(target),
+            "--target-root-before-removal", str(target),
+        ]) == 0
+    assert "removed 1 orphan worktree entries" in output.getvalue(), output.getvalue()
+    assert json.loads(manifest.read_bytes())["plugins"] == {}
+    created = set(sandbox.glob(manifest.name + ".bak-gc-*")) - collisions - set(backups)
+    assert len(created) == 1, created
+    backup = created.pop()
+    assert backup.is_file() and not backup.is_symlink(), backup
+    assert stat.S_IMODE(backup.stat().st_mode) == 0o600
+    backups.append(backup)
+    snapshots.append(before)
+    for saved_backup, saved_snapshot in zip(backups, snapshots):
+        assert saved_backup.read_bytes() == saved_snapshot, saved_backup
+    assert candidate.read_bytes() == b"existing backup sentinel\n"
+    assert linked.is_symlink() and linked.readlink() == external
+    assert external.read_bytes() == b"symlink target sentinel\n"
+    assert dangling.is_symlink() and dangling.readlink() == sandbox / "missing-target"
+    assert not (sandbox / "missing-target").exists()
+
+assert backups[0] != backups[1]
+PY
+}
+
+test_wt_plugin_manifest_gc_keeps_orphans_when_backup_fails() {
+  local sandbox
+  sandbox=$(new_sandbox)
+  "${WT_PYTHON:-python3}" - "$REPO_ROOT/modules/shared/scripts/lib/wt/plugin-manifest.py" "$sandbox" <<'PY'
+import contextlib
+import importlib.util
+import io
+import json
+from pathlib import Path
+import sys
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location("plugin_manifest", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+sandbox = Path(sys.argv[2]).resolve()
+base = sandbox / "repo/.claude/worktrees"
+base.mkdir(parents=True)
+target = base / "target"
+manifest = sandbox / "installed_plugins.json"
+orphan = {"scope": "local", "projectPath": str(base / "orphan"), "installPath": "/tmp/orphan"}
+managed = {"scope": "local", "projectPath": str(target), "installPath": "/tmp/managed",
+           "metadata": {"wtManaged": {"version": 1}}}
+payload = {"plugins": {"example@demo": [managed, orphan]}}
+
+# 존재하지 않는 목적지 부모라 backup 생성이 실패하지만 대상의 managed 제거는 계속한다.
+candidate = sandbox / "missing-parent/backup"
+manifest.write_text(json.dumps(payload) + "\n")
+output = io.StringIO()
+with patch.object(module, "backup_path_for_gc", return_value=candidate), contextlib.redirect_stderr(output):
+    assert module.main([
+        "remove-local", "--manifest", str(manifest), "--target-root", str(target),
+        "--target-root-before-removal", str(target),
+    ]) == 0
+assert "cannot write plugin manifest backup; keeping orphan entries" in output.getvalue()
+assert "removed 1 orphan" not in output.getvalue()
+assert json.loads(manifest.read_text())["plugins"]["example@demo"] == [orphan]
+assert not candidate.exists()
+
+# 쓰기 도중 실패도 완성된 백업으로 취급하지 않는다.
+candidate = sandbox / "partial-backup"
+manifest.write_text(json.dumps(payload) + "\n")
+
+
+def fail_copy(source, destination):
+    destination.write(b"partial")
+    raise OSError("fixture backup write failure")
+
+
+output = io.StringIO()
+with patch.object(module, "backup_path_for_gc", return_value=candidate), \
+        patch.object(module.shutil, "copyfileobj", side_effect=fail_copy), contextlib.redirect_stderr(output):
+    assert module.main([
+        "remove-local", "--manifest", str(manifest), "--target-root", str(target),
+        "--target-root-before-removal", str(target),
+    ]) == 0
+assert "fixture backup write failure" in output.getvalue(), output.getvalue()
+assert json.loads(manifest.read_text())["plugins"]["example@demo"] == [orphan]
+assert not candidate.exists(), "partial failed backup must be removed"
+PY
+}

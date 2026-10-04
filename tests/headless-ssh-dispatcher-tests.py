@@ -32,7 +32,7 @@ SYSTEM_SSH = Path("/usr/bin/ssh")
 LEGACY_MANIFEST_ONLY = frozenset({"1", "2"})
 
 _USAGE_FLAG_CLUSTER = re.compile(r"-([A-Za-z0-9]+)\Z")
-_USAGE_FLAG_WITH_VALUE = re.compile(r"-([A-Za-z0-9])\s+\S", re.DOTALL)
+_USAGE_FLAG_WITH_VALUE = re.compile(r"-([A-Za-z0-9])\s+\S+", re.DOTALL)
 
 
 def load_dispatcher_module():
@@ -562,7 +562,7 @@ def parse_ssh_usage_arity(usage: str) -> dict[str, int]:
             for option in cluster.group(1):
                 _record_usage_arity(arity, option, 0, stripped)
             continue
-        valued = _USAGE_FLAG_WITH_VALUE.match(stripped)
+        valued = _USAGE_FLAG_WITH_VALUE.fullmatch(stripped)
         if valued is not None:
             saw_valued = True
             _record_usage_arity(arity, valued.group(1), 1, stripped)
@@ -635,6 +635,9 @@ class ManifestDriftTests(unittest.TestCase):
             "0-arity 묶음 없음": "usage: ssh [-o option] destination\n",
             "1-arity 묶음 없음": "usage: ssh [-46AaCf] destination\n",
             "해석 불가 묶음": "usage: ssh [-46A] [--long-option=value] destination\n",
+            "값 뒤 short option": "usage: ssh [-46A] [-B bind_interface -X value] destination\n",
+            "값 뒤 long option": "usage: ssh [-46A] [-B bind_interface --new-option value] destination\n",
+            "값 뒤 일반 token": "usage: ssh [-46A] [-B bind_interface extra] destination\n",
             "닫히지 않은 괄호": "usage: ssh [-46A] [-B bind_interface destination\n",
             "상충 arity": "usage: ssh [-46A] [-A value] destination\n",
         }
