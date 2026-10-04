@@ -14,6 +14,10 @@ IMMICH_CREDENTIALS="$HOME/.config/immich/api-key"
 PUSHOVER_CREDENTIALS="$HOME/.config/pushover/immich"
 PUSHOVER_HELPER="$HOME/.local/lib/pushover.sh"
 
+# launchd 밖에서 직접 실행해도 background에서 누락 도구를 설치하지 않는다 (#1485).
+# Node 설치는 운영자가 mise install로 수행하고 activation에서는 mise를 실행하지 않는다.
+export MISE_EXEC_AUTO_INSTALL=false
+
 CURRENT_UID=$(/usr/bin/id -u)
 CURRENT_PID="$$"
 CURRENT_PROC_START=""
@@ -44,6 +48,28 @@ log_warn() {
 
 log_error() {
     echo "[$(/bin/date '+%Y-%m-%d %H:%M:%S')] ERROR: $1" >&2
+}
+
+require_immich_runtime() {
+    local tool node_path
+
+    for tool in mise bun; do
+        if ! command -v "$tool" >/dev/null 2>&1; then
+            log_error "환경 오류: ${tool} 실행 도구 없음; Nix 설정을 적용한 뒤 재시도 (원본 보존)"
+            return 1
+        fi
+    done
+
+    # exec만 검사하면 미설치 mise Node 대신 PATH의 다른 Node로 실행될 수 있다.
+    # 먼저 mise가 선택한 설치 경로를 확인해 그 fallback을 막는다.
+    if ! node_path=$(mise which node 2>/dev/null) || [ ! -x "$node_path" ]; then
+        log_error "환경 오류: mise Node 런타임 없음; mise 설정을 확인하고 mise install 후 재시도 (원본 보존)"
+        return 1
+    fi
+    if ! mise exec -- node --version >/dev/null 2>&1; then
+        log_error "환경 오류: mise Node 런타임 실행 불가; mise 설정·설치를 확인한 뒤 재시도 (원본 보존)"
+        return 1
+    fi
 }
 
 is_media_ext() {
@@ -787,6 +813,10 @@ if [ ! -f "$PUSHOVER_CREDENTIALS" ]; then
     exit 0
 fi
 
+# 파일 업로드·서버 확인보다 먼저 런타임을 검사한다. 부재/미설치 때 원본과 sidecar를
+# 이동하거나 지우지 않으며 자동 설치나 서버 요청도 하지 않는다.
+require_immich_runtime || exit 1
+
 source "$IMMICH_CREDENTIALS"
 source "$PUSHOVER_CREDENTIALS"
 
@@ -820,7 +850,7 @@ log "업로드 시작: ${media_count}개 (${readable_size})"
 #   있지만 .xmp는 저장되지 않았을 수 있다.
 # - 인자 길이: 목록을 인자로 넘기므로 ARG_MAX(macOS 1MiB, 경로 길이에 따라 대략 1만 개)를
 #   넘으면 실행 자체가 실패한다(126). 그때는 원본을 모두 남기고 실패로 알린다.
-upload_output=$(bun x @immich/cli@3 upload \
+upload_output=$(mise exec -- bun x @immich/cli@3 upload \
     --album-name "Desktop Upload" \
     --delete \
     --concurrency 2 \
