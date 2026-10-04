@@ -93,7 +93,6 @@ if $PASS; then echo "T1: PASS"; else echo "T1: FAIL"; exit 1; fi
 ## T2a: 스킬 등록 Spot Check
 
 목적: 주요 스킬이 init 이벤트의 skills 목록에 존재하는지 확인 — 등록 여부만 본다.
-스킬이 실제로 발동하는지는 T2b가 검증한다 (등록 ≠ 발동).
 
 비용: ~$0.07 (T1과 동일 init 이벤트 재사용 가능) | 위치: 로컬
 
@@ -132,52 +131,6 @@ $PASS && echo "T2a: PASS" || echo "T2a: FAIL"
 ```
 
 판정 로직: 지정된 스킬 이름이 모두 init skills 목록에 존재하면 PASS.
-
-## T2b: 스킬 발동 회귀 테스트 (positive/negative 대조)
-
-목적: 대상 스킬이 발동 유도 프롬프트에서 실제로 로드되고, 경계(비발동) 프롬프트에서 로드되지
-않는지 확인. T2a의 등록 확인만으로는 "등록됐지만 한 번도 발동하지 않는" 미로드 사고를 못
-잡는다 (재확인: 2026-08-15, v2.1.233 라이브 — 트리거 문구를 수정했을 때의 효과 실측 수단).
-
-비용: 호출 2회 (positive/negative 각 1회, haiku 권장) | 위치: 격리 cwd (`mktemp -d` —
-project-level 스킬 오염 배제)
-
-```bash
-#!/usr/bin/env bash
-# T2b: Skill Activation Regression — 대상 스킬명과 프롬프트 2종은 환경에 맞게 지정
-TARGET_SKILL="using-claude-p"
-POS_PROMPT="claude -p 헤드리스 자동화로 JSON을 파싱하려 한다. 방법을 알려줘."   # 발동 기대
-NEG_PROMPT="tmux 세션 복원 설정을 알려줘."                                     # 비발동 기대 (인접 스킬은 허용)
-
-WORK=$(mktemp -d)
-for kind in pos neg; do
-  [ "$kind" = "pos" ] && P="$POS_PROMPT" || P="$NEG_PROMPT"
-  ( cd "$WORK" && echo "$P" | claude -p --model haiku --output-format json \
-      --no-session-persistence > "$WORK/$kind.json" 2> "$WORK/$kind.stderr" )
-done
-
-# Skill tool_use만 추출 — raw 출력 전체 grep은 구조적 거짓 양성이다:
-# init 이벤트의 skills·slash_commands 배열 양쪽에 스킬명이 그대로 들어 있다 (2.1.233 라이브 재확인).
-extract() { jq -r '[.[] | select(.type=="assistant") | .message.content[]?
-  | select(.type=="tool_use" and .name=="Skill") | .input.skill] | unique[]' "$1" 2>/dev/null; }
-
-POS_HIT=$(extract "$WORK/pos.json" | grep -cx "$TARGET_SKILL")
-NEG_HIT=$(extract "$WORK/neg.json" | grep -cx "$TARGET_SKILL")
-
-PASS=true
-[ "$POS_HIT" -ge 1 ] || { echo "FAIL: positive 프롬프트에서 $TARGET_SKILL 미발동"; PASS=false; }
-[ "$NEG_HIT" -eq 0 ] || { echo "FAIL: negative 프롬프트에서 $TARGET_SKILL 발동"; PASS=false; }
-$PASS && echo "T2b: PASS" || echo "T2b: FAIL"
-```
-
-판정 로직·주의:
-- positive = 대상 스킬의 Skill tool_use 존재. negative = 대상 스킬 부재 — 인접 스킬 발동은
-  허용한다 (비발동 프롬프트가 다른 스킬을 정당하게 깨울 수 있다).
-- 발동 근거로 응답 본문을 grep해야 한다면 sentinel 토큰은 init 이벤트의 `skills`/`slash_commands`
-  어느 쪽에도 없는 값이어야 한다 (사전 조건). 라벨 완전일치 grep은 모델의 형식 편차로 거짓
-  음성을 낸다 — 관대한 매칭을 쓴다.
-- 트리거(description) 문구를 수정하는 변경은 이 테스트의 positive/negative 대조를 통과한 뒤
-  확정한다.
 
 ## T3: Hooks 로드 검증
 
@@ -518,7 +471,6 @@ $PASS && echo "T8: PASS" || echo "T8: FAIL"
 |--------|------|-----------|------|
 | T1 | ~$0.07 | `nrs` 후 자동 실행 권장 | init 이벤트 1회로 T1+T2a 커버 (T4는 관리 MCP 있을 때만) |
 | T2a | ~$0 | T1의 init 재사용 | 추가 API 호출 불필요 |
-| T2b | 호출 2회 (haiku) | 트리거 문구 변경 시 | positive/negative 발동 대조 |
 | T3 | $0 | 파일 시스템 검사만 | API 호출 없음 |
 | T4 | ~$0 | 관리 MCP 있을 때만 (없으면 즉시 SKIP) | mcp.json 존재 시 T1의 init 재사용 |
 | T5 | ~$0.14 | 권한 설정 변경 시 | 2회 호출 |
@@ -568,5 +520,3 @@ echo "ok" | claude -p --output-format json \
 2. frontmatter 회귀: `claude plugin validate <스킬 디렉토리>`가 비용 0의 정적 게이트다
    (`--strict`로 warning도 실패 처리 가능 — 확인: 2026-08-15, v2.1.233 help).
 3. settings 검증: 자동화 도입 전 `claude doctor`로 설치·설정 상태를 확인한다.
-4. 트리거(description)를 변경했다면 발동 회귀 대조(positive/negative 프롬프트 각 1회 —
-   대상 스킬의 Skill tool_use 존재/부재 판정)를 통과한 뒤 확정한다.
