@@ -20,6 +20,29 @@
 | `completed` | 모든 instance 처리가 성공함. 각 `instances[].action`에서 세부 결과 확인 |
 | `failed` | 하나 이상의 instance 처리가 실패함. 각 failure action과 exact lock/process identity 확인 |
 
+### 반복되는 lifecycle lock timeout (macOS)
+
+`claude-rc ls`에서 서버가 살아 있어도 점검용 Bash 자식이 `ensure.lock`을 계속 열고 있으면
+이후 ensure는 잠금 대기 120초 뒤 실패하고, 실패 알림은 기본 30분 간격으로 반복된다.
+`desired=unknown`은 잠금을 얻기 전이라 launcher 버전을 아직 조회하지 못했다는 뜻이다.
+
+- `lsof ~/.local/state/claude-rc/ensure.lock`과 각 PID의 부모·시작 시각·argv를 함께 확인한다.
+  fd 9를 닫고 callback을 실행해도 Bash의 복원용 fd 10이 shell 자식에 남을 수 있다.
+- Bash 5.3 patch 15의 Darwin heredoc/파이프 정지는
+  [GNU patch 16](https://ftp.gnu.org/gnu/bash/bash-5.3-patches/bash53-016)에서 수정됐다.
+  `libraries/claude-rc-shell.nix`는 해당 pin의 Darwin Claude RC 두 CLI에만 패치를 적용한다.
+  `tests/run-claude-rc-runtime-tests.sh`는 실제 패키지의 metadata/lock 경로에 제한된 파이프
+  조건을 주입한다. 시스템 전체 파이프 자원을 고갈시키는 재현은 하지 않는다.
+- launchd는 ensure 종료 시 같은 그룹에 남은 자식을 정리한다. native launch-group
+  supervisor가 별도 그룹으로 넘긴 bridge는 유지된다. 기존 `AbandonProcessGroup=true`는
+  double-fork 구현의 보호였고, `setpgid`를 보장하는 supervisor로 바뀐 뒤에는 필요 없다.
+- 남아 있는 프로세스가 실제 ensure의 고아 Bash인지 확인한 뒤 그 PID만 정리한다. 서버
+  PID나 그룹 전체를 무조건 종료하지 않는다. `ensure.lock` 파일을 삭제하면 기존 보유자와
+  새 점검이 서로 다른 inode를 잠그게 되므로 잠금 파일 삭제로 복구하지 않는다.
+- 복구 뒤에는 다음 periodic ensure의 `exitCode=0`·`action=completed`, 인스턴스별 실행
+  상태와 기존 bridge PID 유지, lifecycle lock 해제를 함께 확인한다. 버전 drift의
+  `deferred-restart-confirmation`은 정상 보류이며 서버 재시작 승인을 뜻하지 않는다.
+
 ### Status publication failure
 
 `status-write-failed`는 `status.json.action` 값이 아니다. final status 게시 자체가 실패한 뒤에만 정해지는

@@ -846,7 +846,7 @@ let
               agent.enable
               && agent.config.RunAtLoad
               && agent.config.StartInterval == 60
-              && agent.config.AbandonProcessGroup
+              && !agent.config.AbandonProcessGroup
               && agent.config.EnvironmentVariables.CLAUDE_RC_DRIFT_POLICY == "defer"
             );
         }

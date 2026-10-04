@@ -327,6 +327,9 @@
             ];
           };
         }
+        // nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+          claudeRcRuntimeCheck = import ./tests/claude-rc-runtime-check.nix { inherit pkgs; };
+        }
       );
     };
 }
