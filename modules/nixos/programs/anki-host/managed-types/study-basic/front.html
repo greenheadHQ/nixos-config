@@ -1593,13 +1593,13 @@ AnkiCidCopyV2.mount(document.getElementById("qa") || document.body);
 .anki-scratchpad__tools svg { position:relative; z-index:1; width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; pointer-events:none; }
 .anki-scratchpad__value { appearance:none; -webkit-appearance:none; box-sizing:border-box; flex:1 1 auto; min-height:0; width:100%; margin:0; padding:8px 12px; border:0; border-radius:0; background:var(--sp-bg); color:inherit; font:calc(17px * var(--anki-text-scale,1))/1.55 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; resize:none; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; text-align:left; user-select:text; -webkit-user-select:text; }
 .anki-scratchpad__status { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
-html.anki-scratchpad-open:not(.anki-scratchpad-mobile) { overflow:hidden!important; }
+html.anki-scratchpad-open { overflow:hidden!important; }
 html.anki-scratchpad-open:not(.anki-scratchpad-mobile) body { box-sizing:border-box; display:flex; flex-direction:column; height:var(--sp-view-height); width:var(--sp-view-width); max-width:none; margin:0 0 0 var(--sp-view-left)!important; padding:var(--sp-view-top) 0 0!important; overflow:hidden; }
 html.anki-scratchpad-open:not(.anki-scratchpad-mobile) #qa, html.anki-scratchpad-open:not(.anki-scratchpad-mobile) .anki-scratchpad-reader { box-sizing:border-box; flex:1 1 0; min-height:0; align-self:center; width:min(100%,var(--anki-card-width,720px)); margin:0!important; padding:var(--anki-card-padding,24px); overflow:auto!important; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
 html.anki-scratchpad-open:not(.anki-scratchpad-mobile) .anki-scratchpad { position:relative; flex:0 0 var(--sp-panel-height); }
-/* AnkiMobile owns document scrolling and keyboard panning. Reserve space for
-   the fixed pad without resizing/reparenting the native document scroller. */
-html.anki-scratchpad-open.anki-scratchpad-mobile body { padding-bottom:calc(var(--anki-card-padding,24px) + var(--sp-panel-height))!important; }
+/* Keep the native card DOM in place, but scroll it inside a fixed pane so
+   keyboard document panning cannot move the question being read. */
+html.anki-scratchpad-open.anki-scratchpad-mobile body { position:fixed; top:0; left:0; right:0; box-sizing:border-box; width:min(var(--sp-view-width),var(--anki-card-width,720px)); max-width:none; height:calc(var(--sp-view-height) - var(--sp-panel-height)); margin:0 auto!important; padding:var(--anki-card-padding,24px)!important; overflow:auto!important; overscroll-behavior:contain; }
 html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16px * var(--anki-text-scale,1))); }
 :is(.nightMode,.night_mode,.night-mode) .anki-scratchpad, body:is(.nightMode,.night_mode,.night-mode) ~ .anki-scratchpad { --sp-bg:#1f2933; --sp-text:#e5e7eb; --sp-border:#46515d; --sp-button-border:#53677d; --sp-button-bg:#293746; --sp-button-hover:#324153; --sp-button-active:#3b4c60; --sp-icon:#d6e0ec; --sp-muted:#aab4c0; --sp-focus:#99b1c6; }
 </style>
@@ -1617,8 +1617,12 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
     const mobile = () => page.classList.contains("iphone") || page.classList.contains("ipad")
       || document.body?.classList.contains("iphone") || document.body?.classList.contains("ipad");
     const viewport = () => {
-      if (mobile()) return { left:0, top:0, width:window.innerWidth, height:window.innerHeight };
       const view = window.visualViewport;
+      // AnkiMobile pans innerHeight independently of keyboard space, and a
+      // scrolled document can report a visual viewport taller than the view.
+      // Use visible size, bounded by the actual layout viewport.
+      if (mobile()) return { left:0, top:0, width:view?.width || window.innerWidth,
+        height:Math.min(view?.height || window.innerHeight, page.clientHeight || Infinity) };
       return { left:view?.offsetLeft || 0, top:view?.offsetTop || 0,
         width:view?.width || window.innerWidth, height:view?.height || window.innerHeight };
     };
@@ -1631,11 +1635,11 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
     const layout = () => {
       frame = null;
       if (!live() || !ui?.isConnected) return;
-      const nativeScroll = mobile();
+      const mobilePane = mobile();
       const view = viewport();
-      const geometry = [nativeScroll, opened, opened ? false : !!value, ratio, ...Object.values(view)].join("|");
-      // Typing/focus/blur do not resize the panel. In particular, leave iOS
-      // keyboard animation and document panning out of this layout loop.
+      const geometry = [mobilePane, opened, opened ? false : !!value, ratio, ...Object.values(view)].join("|");
+      // Only a visible size or preference change updates geometry. Focus,
+      // typing and native document panning leave the reading position alone.
       if (geometry === lastLayout) return;
       lastLayout = geometry;
       ui.style.left = opened ? "0px" : `${view.left}px`;
@@ -1645,7 +1649,7 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       if (opened) {
         const height = Math.min(view.height * 0.65, Math.max(112, view.height * ratio));
         ui.style.height = `${height}px`;
-        if (nativeScroll) ui.style.bottom = "0px";
+        if (mobilePane) ui.style.top = `${view.height - height}px`;
         for (const [name, amount] of Object.entries({
           "view-left":view.left, "view-top":view.top, "view-width":view.width,
           "view-height":view.height + view.top, "panel-height":height,
@@ -1686,10 +1690,10 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
     const open = (focus = true) => {
       if (!live()) return;
       if (!opened) {
-        if (!mobile()) normalScroll = window.scrollY;
+        normalScroll = window.scrollY;
         opened = true;
         update();
-        if (!mobile()) reader.scrollTop = normalScroll;
+        reader.scrollTop = normalScroll;
       }
       if (focus) focusInput();
     };
@@ -1700,10 +1704,10 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       endInput();
       opened = false;
       update();
-      if (!mobile()) {
-        window.scrollTo(0, scroll);
-        launch.focus({ preventScroll:true });
-      }
+      // Transfer once between the pane and normal document scrolling. Do
+      // not repeatedly restore window scroll during keyboard animations.
+      window.scrollTo(0, scroll);
+      if (!mobile()) launch.focus({ preventScroll:true });
     };
     const suspend = () => {
       endInput();
@@ -1798,13 +1802,12 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       });
     };
     const mount = () => {
-      let nextReader = document.getElementById("qa");
-      const content = nextReader || document.body;
+      const content = document.getElementById("qa") || document.body;
+      let nextReader = mobile() ? document.body : document.getElementById("qa");
       const marker = content?.querySelector("[data-anki-scratchpad-card]");
       const host = marker && content.querySelector("[data-anki-cid]");
       const nextId = host?.dataset.ankiCid;
       if (!/^[1-9][0-9]*$/.test(nextId || "")) { suspend(); return; }
-      if (!nextReader && mobile()) nextReader = document.body;
       if (!nextReader) {
         nextReader = document.querySelector(".anki-scratchpad-reader");
         if (!nextReader) {
@@ -1826,7 +1829,7 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       handle.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
       update();
       // Match the native question reset inside the split's scroll container.
-      if (changed && !answer && opened && !mobile()) reader.scrollTop = 0;
+      if (changed && !answer && opened) reader.scrollTop = 0;
     };
     // Capture only the dedicated chord and focused scratchpad input. Existing
     // toolbar controls stop bubbling; unrelated reviewer keys remain untouched.
@@ -1847,10 +1850,8 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
     // preserving the session's open/closed and size preferences.
     window.addEventListener("pagehide", reset);
     window.addEventListener("resize", scheduleLayout);
-    if (!mobile()) {
-      window.visualViewport?.addEventListener("resize", scheduleLayout);
-      window.visualViewport?.addEventListener("scroll", scheduleLayout);
-    }
+    window.visualViewport?.addEventListener("resize", scheduleLayout);
+    if (!mobile()) window.visualViewport?.addEventListener("scroll", scheduleLayout);
     const observer = new MutationObserver(() => {
       const content = document.getElementById("qa") || document.body;
       const nextAnchor = content?.querySelector("[data-anki-scratchpad-card]");
@@ -1890,13 +1891,13 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
 .anki-scratchpad__tools svg { position:relative; z-index:1; width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; pointer-events:none; }
 .anki-scratchpad__value { appearance:none; -webkit-appearance:none; box-sizing:border-box; flex:1 1 auto; min-height:0; width:100%; margin:0; padding:8px 12px; border:0; border-radius:0; background:var(--sp-bg); color:inherit; font:calc(17px * var(--anki-text-scale,1))/1.55 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; resize:none; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; text-align:left; user-select:text; -webkit-user-select:text; }
 .anki-scratchpad__status { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
-html.anki-scratchpad-open:not(.anki-scratchpad-mobile) { overflow:hidden!important; }
+html.anki-scratchpad-open { overflow:hidden!important; }
 html.anki-scratchpad-open:not(.anki-scratchpad-mobile) body { box-sizing:border-box; display:flex; flex-direction:column; height:var(--sp-view-height); width:var(--sp-view-width); max-width:none; margin:0 0 0 var(--sp-view-left)!important; padding:var(--sp-view-top) 0 0!important; overflow:hidden; }
 html.anki-scratchpad-open:not(.anki-scratchpad-mobile) #qa, html.anki-scratchpad-open:not(.anki-scratchpad-mobile) .anki-scratchpad-reader { box-sizing:border-box; flex:1 1 0; min-height:0; align-self:center; width:min(100%,var(--anki-card-width,720px)); margin:0!important; padding:var(--anki-card-padding,24px); overflow:auto!important; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
 html.anki-scratchpad-open:not(.anki-scratchpad-mobile) .anki-scratchpad { position:relative; flex:0 0 var(--sp-panel-height); }
-/* AnkiMobile owns document scrolling and keyboard panning. Reserve space for
-   the fixed pad without resizing/reparenting the native document scroller. */
-html.anki-scratchpad-open.anki-scratchpad-mobile body { padding-bottom:calc(var(--anki-card-padding,24px) + var(--sp-panel-height))!important; }
+/* Keep the native card DOM in place, but scroll it inside a fixed pane so
+   keyboard document panning cannot move the question being read. */
+html.anki-scratchpad-open.anki-scratchpad-mobile body { position:fixed; top:0; left:0; right:0; box-sizing:border-box; width:min(var(--sp-view-width),var(--anki-card-width,720px)); max-width:none; height:calc(var(--sp-view-height) - var(--sp-panel-height)); margin:0 auto!important; padding:var(--anki-card-padding,24px)!important; overflow:auto!important; overscroll-behavior:contain; }
 html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16px * var(--anki-text-scale,1))); }
 :is(.nightMode,.night_mode,.night-mode) .anki-scratchpad, body:is(.nightMode,.night_mode,.night-mode) ~ .anki-scratchpad { --sp-bg:#1f2933; --sp-text:#e5e7eb; --sp-border:#46515d; --sp-button-border:#53677d; --sp-button-bg:#293746; --sp-button-hover:#324153; --sp-button-active:#3b4c60; --sp-icon:#d6e0ec; --sp-muted:#aab4c0; --sp-focus:#99b1c6; }
 </style>
@@ -1914,8 +1915,12 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
     const mobile = () => page.classList.contains("iphone") || page.classList.contains("ipad")
       || document.body?.classList.contains("iphone") || document.body?.classList.contains("ipad");
     const viewport = () => {
-      if (mobile()) return { left:0, top:0, width:window.innerWidth, height:window.innerHeight };
       const view = window.visualViewport;
+      // AnkiMobile pans innerHeight independently of keyboard space, and a
+      // scrolled document can report a visual viewport taller than the view.
+      // Use visible size, bounded by the actual layout viewport.
+      if (mobile()) return { left:0, top:0, width:view?.width || window.innerWidth,
+        height:Math.min(view?.height || window.innerHeight, page.clientHeight || Infinity) };
       return { left:view?.offsetLeft || 0, top:view?.offsetTop || 0,
         width:view?.width || window.innerWidth, height:view?.height || window.innerHeight };
     };
@@ -1928,11 +1933,11 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
     const layout = () => {
       frame = null;
       if (!live() || !ui?.isConnected) return;
-      const nativeScroll = mobile();
+      const mobilePane = mobile();
       const view = viewport();
-      const geometry = [nativeScroll, opened, opened ? false : !!value, ratio, ...Object.values(view)].join("|");
-      // Typing/focus/blur do not resize the panel. In particular, leave iOS
-      // keyboard animation and document panning out of this layout loop.
+      const geometry = [mobilePane, opened, opened ? false : !!value, ratio, ...Object.values(view)].join("|");
+      // Only a visible size or preference change updates geometry. Focus,
+      // typing and native document panning leave the reading position alone.
       if (geometry === lastLayout) return;
       lastLayout = geometry;
       ui.style.left = opened ? "0px" : `${view.left}px`;
@@ -1942,7 +1947,7 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       if (opened) {
         const height = Math.min(view.height * 0.65, Math.max(112, view.height * ratio));
         ui.style.height = `${height}px`;
-        if (nativeScroll) ui.style.bottom = "0px";
+        if (mobilePane) ui.style.top = `${view.height - height}px`;
         for (const [name, amount] of Object.entries({
           "view-left":view.left, "view-top":view.top, "view-width":view.width,
           "view-height":view.height + view.top, "panel-height":height,
@@ -1983,10 +1988,10 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
     const open = (focus = true) => {
       if (!live()) return;
       if (!opened) {
-        if (!mobile()) normalScroll = window.scrollY;
+        normalScroll = window.scrollY;
         opened = true;
         update();
-        if (!mobile()) reader.scrollTop = normalScroll;
+        reader.scrollTop = normalScroll;
       }
       if (focus) focusInput();
     };
@@ -1997,10 +2002,10 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       endInput();
       opened = false;
       update();
-      if (!mobile()) {
-        window.scrollTo(0, scroll);
-        launch.focus({ preventScroll:true });
-      }
+      // Transfer once between the pane and normal document scrolling. Do
+      // not repeatedly restore window scroll during keyboard animations.
+      window.scrollTo(0, scroll);
+      if (!mobile()) launch.focus({ preventScroll:true });
     };
     const suspend = () => {
       endInput();
@@ -2095,13 +2100,12 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       });
     };
     const mount = () => {
-      let nextReader = document.getElementById("qa");
-      const content = nextReader || document.body;
+      const content = document.getElementById("qa") || document.body;
+      let nextReader = mobile() ? document.body : document.getElementById("qa");
       const marker = content?.querySelector("[data-anki-scratchpad-card]");
       const host = marker && content.querySelector("[data-anki-cid]");
       const nextId = host?.dataset.ankiCid;
       if (!/^[1-9][0-9]*$/.test(nextId || "")) { suspend(); return; }
-      if (!nextReader && mobile()) nextReader = document.body;
       if (!nextReader) {
         nextReader = document.querySelector(".anki-scratchpad-reader");
         if (!nextReader) {
@@ -2123,7 +2127,7 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       handle.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
       update();
       // Match the native question reset inside the split's scroll container.
-      if (changed && !answer && opened && !mobile()) reader.scrollTop = 0;
+      if (changed && !answer && opened) reader.scrollTop = 0;
     };
     // Capture only the dedicated chord and focused scratchpad input. Existing
     // toolbar controls stop bubbling; unrelated reviewer keys remain untouched.
@@ -2144,10 +2148,8 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
     // preserving the session's open/closed and size preferences.
     window.addEventListener("pagehide", reset);
     window.addEventListener("resize", scheduleLayout);
-    if (!mobile()) {
-      window.visualViewport?.addEventListener("resize", scheduleLayout);
-      window.visualViewport?.addEventListener("scroll", scheduleLayout);
-    }
+    window.visualViewport?.addEventListener("resize", scheduleLayout);
+    if (!mobile()) window.visualViewport?.addEventListener("scroll", scheduleLayout);
     const observer = new MutationObserver(() => {
       const content = document.getElementById("qa") || document.body;
       const nextAnchor = content?.querySelector("[data-anki-scratchpad-card]");

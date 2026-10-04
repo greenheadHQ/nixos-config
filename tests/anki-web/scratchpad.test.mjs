@@ -343,52 +343,95 @@ test("desktop viewport resize uses the visible space and preserves session size 
   } finally { h.close(); }
 });
 
-test("mobile open/close, focus, answer and next-card transitions do not write native scroll positions", async () => {
+test("mobile transfers the reading position only when opening/collapsing, and resets new questions", async () => {
   for (const qa of [false, true]) {
-    const h = harness(qa ? `<div id="qa">${card()}</div>` : card(), {mobile:true,preload:false});
+    const h=setup({mobile:true,qa});
     try {
       const calls=[];
-      for (const name of ["scrollTo","scrollBy"]) h.window[name]=(...args)=>calls.push([name,...args]);
-      for (const name of ["scrollTo","scrollBy","scrollIntoView"]) h.window.Element.prototype[name]=(...args)=>calls.push([name,...args]);
-      Object.defineProperty(h.window.Element.prototype,"scrollTop",{configurable:true,get:()=>150,set:value=>calls.push(["scrollTop",value])});
-      h.window.eval(scratchpadScript);
-      const input=h.document.querySelector("textarea");
-      input.focus();input.value="한글\n회상";input.dispatchEvent(new h.window.Event("input",{bubbles:true}));
-      h.document.querySelector('[data-action="blur"]').click();
-      h.document.querySelector('[data-action="collapse"]').click();
-      const options=[];const focus=input.focus.bind(input);
-      input.focus=(...args)=>{options.push(args);focus(...args);};
-      h.document.querySelector('.anki-scratchpad__launch').click();
-      assert.deepEqual(options,[[]],"mobile focus uses the platform's normal panning");
-      (h.document.getElementById("qa")||h.document.body).innerHTML=card("123456789",true);
-      h.window.eval(scratchpadScript);await h.flush();
-      (h.document.getElementById("qa")||h.document.body).innerHTML=card("123456790");
-      h.window.eval(scratchpadScript);await h.flush();
-      assert.deepEqual(calls,[],"scratchpad never sets document/reader scrolling on mobile");
+      h.window.scrollTo=(...args)=>calls.push(args);
+      h.document.body.scrollTop=150;
+      h.input().focus();h.write("한글\n회상");h.action("blur");
+      assert.deepEqual(calls,[],"editing does not fight native keyboard scrolling");
+      assert.equal(h.document.body.scrollTop,150);
+      h.action("collapse");
+      assert.deepEqual(calls,[[0,150]],"collapse transfers the pane's reading position once");
+      Object.defineProperty(h.window,"scrollY",{value:150,configurable:true});
+      h.open();
+      assert.equal(h.document.body.scrollTop,150,"reopen resumes the same reading position");
+      await h.render("123456789",true);
+      assert.equal(h.document.body.scrollTop,150,"answer rendering leaves native anchor scrolling available");
+      await h.render("123456790");
+      assert.equal(h.document.body.scrollTop,0,"a new question starts at the top");
+      assert.deepEqual(calls,[[0,150]],"keyboard/card transitions do not write document scrolling");
     } finally {h.close();}
   }
 });
 
-test("mobile typing, focus and visual viewport panning do not rewrite layout geometry", async () => {
-  const h=setup({mobile:true,qa:false});
+test("mobile keyboard resize preserves reading position and ignores native pan height changes", async () => {
+  const h=harness(card(),{mobile:true,preload:false});
   try {
-    const style=h.document.documentElement.style;
-    const initial=style.cssText;
+    const view=new h.window.EventTarget();
+    Object.assign(view,{width:430,height:715,offsetLeft:0,offsetTop:0});
+    Object.defineProperty(h.window,"visualViewport",{value:view,configurable:true});
+    h.window.scrollTo=()=>assert.fail("no document scrolling during keyboard resize");
+    h.window.eval(scratchpadScript);
+    const ui=h.document.querySelector('.anki-scratchpad'),input=ui.querySelector('textarea');
+    h.document.body.scrollTop=150;
+    const initial=ui.style.height;
+    assert.ok(Math.abs(parseFloat(initial)-715/3)<0.1);
+    input.focus();input.value="첫 줄\n둘째 줄";input.dispatchEvent(new h.window.Event('input',{bubbles:true}));
+    assert.equal(ui.style.height,initial,"focus and typing alone leave geometry unchanged");
+    view.height=438;view.offsetTop=277;
+    view.dispatchEvent(new h.window.Event('resize'));
+    await new Promise(resolve=>h.window.setTimeout(resolve,25));
+    assert.ok(Math.abs(parseFloat(ui.style.height)-146)<0.1,"use the space above the keyboard");
+    assert.equal(h.document.body.scrollTop,150);
+    const style=h.document.documentElement.style,geometry=style.cssText;
     let writes=0;const set=style.setProperty.bind(style);
     style.setProperty=(...args)=>{writes++;set(...args);};
-    const view=new h.window.EventTarget();
-    Object.assign(view,{width:300,height:360,offsetLeft:30,offsetTop:80});
-    Object.defineProperty(h.window,"visualViewport",{value:view,configurable:true});
-    h.input().focus();h.write("첫 줄\n둘째 줄");h.action("blur");
-    view.dispatchEvent(new h.window.Event("resize"));view.dispatchEvent(new h.window.Event("scroll"));
-    await new Promise(resolve=>h.window.setTimeout(resolve,25));
-    assert.equal(writes,0,"no geometry writes during keyboard focus/typing/panning");
-    assert.equal(style.cssText,initial);
-    assert.equal(h.document.querySelector('.anki-scratchpad-reader'),null);
+    for(const height of [715,438,715]){
+      Object.defineProperty(h.window,'innerHeight',{value:height,configurable:true});
+      view.dispatchEvent(new h.window.Event('scroll'));
+      h.window.dispatchEvent(new h.window.Event('resize'));
+      await new Promise(resolve=>h.window.setTimeout(resolve,25));
+    }
+    input.blur();
+    assert.equal(writes,0,"stable visible space does not trigger pan-driven layout writes");
+    assert.equal(style.cssText,geometry);
+    assert.equal(h.document.body.scrollTop,150);
+    assert.equal(h.document.querySelector('.anki-scratchpad-reader'),null,"keep the native card DOM in place");
   } finally {h.close();}
 });
 
-test("mobile resizing uses the same document coordinates as the fixed panel during keyboard panning", () => {
+test("mobile collapsed launcher stays inside the layout viewport when native scrolling inflates visible height", async () => {
+  const h=setup({mobile:true,qa:false});
+  try {
+    const view=new h.window.EventTarget();
+    Object.assign(view,{width:430,height:715,offsetTop:0,offsetLeft:0});
+    Object.defineProperty(h.window,"visualViewport",{value:view,configurable:true});
+    Object.defineProperty(h.document.documentElement,"clientHeight",{value:715,configurable:true});
+    const launch=h.ui().querySelector('.anki-scratchpad__launch');
+    Object.defineProperty(launch,"offsetHeight",{value:44,configurable:true});
+    h.document.body.scrollTop=1052;
+    h.action("collapse");
+    assert.equal(h.ui().style.top,"659px");
+    // Physical AnkiMobile: collapsing a long answer reported VV/innerHeight
+    // 829 while the actual layout viewport remained 715px tall.
+    view.height=829;
+    Object.defineProperty(h.window,"innerHeight",{value:829,configurable:true});
+    h.window.dispatchEvent(new h.window.Event('resize'));
+    await new Promise(resolve=>h.window.setTimeout(resolve,25));
+    assert.equal(h.ui().style.top,"659px","the launcher remains above the native footer");
+    h.open();
+    assert.ok(Math.abs(parseFloat(h.ui().style.height)-715/3)<0.1);
+    view.height=438;
+    h.window.dispatchEvent(new h.window.Event('resize'));
+    await new Promise(resolve=>h.window.setTimeout(resolve,25));
+    assert.equal(h.ui().style.height,"146px","the keyboard still reduces the available space");
+  } finally {h.close();}
+});
+
+test("mobile resizing measures touch movement against the visible space above the keyboard", () => {
   const h=setup({mobile:true,qa:false});
   try {
     Object.defineProperty(h.window,"innerHeight",{value:844,configurable:true});
@@ -403,9 +446,9 @@ test("mobile resizing uses the same document coordinates as the fixed panel duri
     }
     assert.equal(handle.getAttribute("aria-valuenow"),"33");
     const move=new h.window.Event("pointermove",{bubbles:true,cancelable:true});
-    Object.defineProperties(move,{pointerId:{value:1},clientY:{value:79-84.4}});
+    Object.defineProperties(move,{pointerId:{value:1},clientY:{value:79-36}});
     handle.dispatchEvent(move);
     assert.equal(handle.getAttribute("aria-valuenow"),"43");
-    assert.ok(Math.abs(parseFloat(h.ui().style.height)-365.7333333333333)<0.1);
+    assert.ok(Math.abs(parseFloat(h.ui().style.height)-156)<0.1);
   } finally {h.close();}
 });

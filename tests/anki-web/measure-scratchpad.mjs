@@ -119,8 +119,8 @@ try {
       }, { question,explanation,script });
       const independent = await page.evaluate(mobile => {
         const qa=document.querySelector("#qa"),input=document.querySelector("textarea");
-        const old=mobile?scrollY:qa.scrollTop;input.scrollTop=input.scrollHeight;
-        return { before:old,after:mobile?scrollY:qa.scrollTop,input:input.scrollTop,answer:document.querySelector("#answer").getBoundingClientRect().top };
+        const old=mobile?document.body.scrollTop:qa.scrollTop;input.scrollTop=input.scrollHeight;
+        return { before:old,after:mobile?document.body.scrollTop:qa.scrollTop,input:input.scrollTop,answer:document.querySelector("#answer").getBoundingClientRect().top };
       },mobile);
       if(mobile) assert.ok(Math.abs((await inspect()).panel.bottom-height)<1,"long answers cannot move the fixed pad below the screen");
       assert.ok(independent.before>0,"native answer scroll works inside reader");
@@ -153,24 +153,73 @@ try {
   assert.ok(Math.abs(offset.y+offset.height-380)<1,"pad ends above synthetic keyboard");
   reports.push({ syntheticVisualViewport:true,offset });
   await page.close();
-  const phone=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
-  await phone.setContent(`<html class="iphone"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}\n${fragmentCSS}</style></head><body class="card">${question}</body></html>`);
-  const native=()=>phone.evaluate(()=>({width:getComputedStyle(document.body).width,height:getComputedStyle(document.body).height,
-    left:getComputedStyle(document.body).marginLeft,top:getComputedStyle(document.body).paddingTop,
-    overflow:getComputedStyle(document.documentElement).overflow,bodyOverflow:getComputedStyle(document.body).overflow}));
-  await phone.evaluate(script);
-  const beforePan=await native();
-  const pan=await phone.evaluate(async()=>{
-    const vv=new EventTarget();Object.assign(vv,{width:300,height:360,offsetLeft:30,offsetTop:80});
+  const phone=await browser.newPage({viewport:{width:430,height:715},isMobile:true,hasTouch:true});
+  const context=Array.from({length:50},(_,i)=>'<p class="context-line">Synthetic context '+i+'</p>').join("");
+  await phone.setContent('<!doctype html><html class="iphone"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{transform:translateZ(0)}'+css+'\n'+fragmentCSS+'</style></head><body class="card">'+question+context+'<hr id="answer"><p>Answer anchor</p></body></html>');
+  await phone.evaluate(()=>{
+    const vv=new EventTarget();Object.assign(vv,{width:430,height:715,offsetLeft:0,offsetTop:0});
     Object.defineProperty(window,"visualViewport",{value:vv,configurable:true});
-    document.querySelector('textarea').focus();
-    vv.dispatchEvent(new Event('resize'));vv.dispatchEvent(new Event('scroll'));
-    await new Promise(resolve=>requestAnimationFrame(resolve));
-    return {wrapper:!!document.querySelector('.anki-scratchpad-reader'),padding:getComputedStyle(document.body).paddingLeft};
+    // Force a real outer-document pan even when the product locks overflow.
+    // Dispatching viewport events alone cannot catch the reading-position bug.
+    const spacer=document.createElement("div");spacer.style.height="2400px";
+    spacer.dataset.nativePanSimulator="true";document.documentElement.append(spacer);
   });
-  assert.deepEqual(await native(),beforePan,"mobile focus/pan does not resize or lock document scrolling");
-  assert.equal(pan.wrapper,false,"native mobile document is not reparented into a scroller");
-  reports.push({mobileNativePan:true,beforePan,pan});
+  await phone.evaluate(script);
+  const reading=()=>phone.evaluate(()=>({
+    marker:document.querySelectorAll('.context-line')[12].getBoundingClientRect().top,
+    reader:document.body.scrollTop,outer:scrollY,
+    pad:document.querySelector('.anki-scratchpad__panel').getBoundingClientRect().toJSON(),
+    geometry:document.documentElement.style.cssText,
+  }));
+  await phone.evaluate(()=>{const marker=document.querySelectorAll('.context-line')[12];document.body.scrollTop=marker.offsetTop-80;});
+  const beforeKeyboard=await reading();
+  await phone.evaluate(async()=>{
+    document.querySelector('textarea').focus();
+    visualViewport.height=438;visualViewport.offsetTop=277;
+    visualViewport.dispatchEvent(new Event('resize'));
+    window.scrollTo(0,277);
+    await new Promise(resolve=>requestAnimationFrame(resolve));
+  });
+  const withKeyboard=await reading();
+  assert.equal(withKeyboard.outer,277,"native-pan simulator actually moves the outer document");
+  assert.equal(withKeyboard.marker,beforeKeyboard.marker,"keyboard pan preserves the visible reading marker");
+  assert.equal(withKeyboard.reader,beforeKeyboard.reader,"keyboard resize preserves the question scroll position");
+  assert.ok(Math.abs(withKeyboard.pad.height-146)<1,"keyboard uses the chosen one-third ratio");
+  assert.ok(Math.abs(withKeyboard.pad.bottom-438)<1,"pad stays above the keyboard");
+  await phone.evaluate(async()=>{
+    for(const height of [438,715,438]){
+      Object.defineProperty(window,'innerHeight',{value:height,configurable:true});
+      dispatchEvent(new Event('resize'));visualViewport.dispatchEvent(new Event('scroll'));
+      await new Promise(resolve=>requestAnimationFrame(resolve));
+    }
+  });
+  assert.deepEqual(await reading(),withKeyboard,"native pan does not jitter the split geometry or reading position");
+  await phone.evaluate(()=>document.getElementById('answer').scrollIntoView());
+  const anchored=await reading();
+  assert.ok(anchored.reader>withKeyboard.reader,"answer anchor scrolls the question pane");
+  assert.equal(anchored.outer,withKeyboard.outer,"answer anchor does not move the outer document");
+  await phone.evaluate(async()=>{
+    document.querySelector('textarea').blur();
+    visualViewport.height=715;visualViewport.offsetTop=0;
+    visualViewport.dispatchEvent(new Event('resize'));
+    await new Promise(resolve=>requestAnimationFrame(resolve));
+    document.querySelector('[data-action="collapse"]').click();
+    // Real AnkiMobile can inflate VV/innerHeight after transferring a long
+    // answer to document scrolling while clientHeight stays at 715px.
+    visualViewport.height=829;
+    Object.defineProperty(window,'innerHeight',{value:829,configurable:true});
+    visualViewport.dispatchEvent(new Event('resize'));
+    await new Promise(resolve=>requestAnimationFrame(resolve));
+  });
+  assert.equal(await phone.evaluate(()=>document.documentElement.clientHeight),715,
+    "the native-pan fixture retains the measured layout viewport height");
+  const collapsedLauncher=await phone.locator('.anki-scratchpad__launch').boundingBox();
+  assert.ok(collapsedLauncher.y>=0 && collapsedLauncher.y+collapsedLauncher.height<=715-11,
+    "collapsed launcher stays inside the real view after native document scrolling");
+  await phone.locator('.anki-scratchpad__launch').click();
+  const reopened=await reading();
+  assert.ok(Math.abs(reopened.pad.bottom-715)<1,"reopening also ignores the inflated visual viewport");
+  reports.push({mobileManagedReading:true,beforeKeyboard,withKeyboard,anchored,collapsedLauncher,reopened});
   await phone.close();
   await writeFile(resolve(output,"measurements.json"),JSON.stringify(reports,null,2)+"\n");
   console.log(`PASS: ${reports.length} geometry cases; screenshots and measurements: ${output}`);
