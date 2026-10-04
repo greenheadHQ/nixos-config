@@ -206,7 +206,7 @@ _handle_existing_worktree() {
 
       local canonical_worktree_dir
       canonical_worktree_dir="$(cd "$worktree_dir" && pwd -P)" || canonical_worktree_dir="$worktree_dir"
-      _wt_remove_claude_local_plugins_for_worktree "$worktree_dir" "$canonical_worktree_dir" \
+      _wt_remove_claude_local_plugins_for_worktree "$worktree_dir" "$canonical_worktree_dir" "$git_root" \
         || _die "Claude local plugin manifest cleanup 실패 — 재생성 중단"
       # Codex trust는 해제하지 않는다 — 바로 아래 _bootstrap_worktree가 같은 경로를
       # 다시 trust하므로 지웠다 쓰는 왕복만 늘어난다. 등록이 남아 stale이 되는 경로는
