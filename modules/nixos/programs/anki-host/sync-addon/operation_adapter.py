@@ -14,6 +14,7 @@ from typing import Any
 from .operations import OperationError, decode_media, filename
 from . import note_link_feedback
 from . import unused_tags
+from . import difficulty
 
 
 # A small, documented subset of the legacy deck-config representation. Preset
@@ -367,6 +368,14 @@ class AnkiAdapter:
                 warnings.append("Updating fields may activate templates or cloze deletions and generate new cards.")
         if card_ids:
             cards = self._cards(card_ids)
+            if action == "reassess_difficulty":
+                for card in cards:
+                    if card.note().note_type()["name"] != difficulty.MODEL_NAME:
+                        raise OperationError("unmanaged-difficulty-card")
+                    try:
+                        difficulty.reassessed_data(card.custom_data, difficulty.review_rows(self.col, card.id))
+                    except difficulty.DifficultyError as error:
+                        raise OperationError(str(error)) from error
             note_ids = sorted(set(note_ids) | {c.nid for c in cards})
             snapshot["cards"] = self._rows("cards", "id", card_ids)
             snapshot["reviews"] = self._rows("revlog", "cid", card_ids)
@@ -379,6 +388,8 @@ class AnkiAdapter:
         summary["ids_truncated"] = len(note_ids) > 100 or len(card_ids) > 100
         if action == "set_card_flags":
             summary["flag"] = p["flag"]
+        if action == "reassess_difficulty":
+            summary["scope"] = "card-difficulty-reassessment-anchor"
         if action in ("delete_notes", "delete_decks"):
             # Compatibility: this is the pre-deletion scope, never a deleted-row
             # count. Anki retains revlog entries after removing their cards.
@@ -519,6 +530,14 @@ class AnkiAdapter:
             if any(card.user_flag() != p["flag"] for card in self._cards(p["card_ids"])):
                 raise OperationError("flag-readback-mismatch")
             result.update(card_ids=p["card_ids"], flag=p["flag"])
+        elif action == "reassess_difficulty":
+            entry = self.col.add_custom_undo_entry("점검 후보 재평가")
+            try:
+                for cid in p["card_ids"]:
+                    difficulty.reassess_card(self.col, cid)
+            finally:
+                self.col.merge_undo_entries(entry)
+            result.update(card_ids=p["card_ids"], scope="card-difficulty-reassessment-anchor")
         elif action == "forget_cards":
             ac.forgetCards(cards=p["card_ids"])
         elif action == "store_media":

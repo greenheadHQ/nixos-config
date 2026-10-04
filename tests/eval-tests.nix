@@ -2253,9 +2253,12 @@ let
         home.programs.ankiAddons.enable == enabled
         && !home.programs.anki.enable
         && (home.home.activation ? ankiAddons) == enabled
-        && builtins.length (builtins.attrNames home.programs.ankiAddons.addons) == 10
+        && builtins.length (builtins.attrNames home.programs.ankiAddons.addons) == 11
         && home.programs.ankiAddons.addons."24411424".config."reviewer delete note" == "<nop>"
         && home.programs.ankiAddons.addons."24411424".config."window_browser delete" == "<nop>"
+        && home.programs.ankiAddons.addons."nixos-difficulty-badge".enabled
+        && home.programs.ankiAddons.addons."nixos-difficulty-badge".package.source.name == "점검 후보"
+        && !(home.programs.ankiAddons.addons."nixos-difficulty-badge".package.source ? url)
       ) expectedDarwinHosts;
     }
   ];

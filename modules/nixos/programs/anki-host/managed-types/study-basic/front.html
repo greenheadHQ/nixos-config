@@ -1,4 +1,483 @@
 <div class="rehab-card" data-anki-scratchpad-card>
+{{#질문}}<!-- anki-difficulty-badge-v1 -->
+<style>
+.anki-difficulty-badge {
+  --difficulty-text: #715300;
+  --difficulty-pill: #fff2ba;
+  --difficulty-border: #e7ca65;
+  --difficulty-panel: #fffaf0;
+  --difficulty-focus: #896600;
+  margin: 0 0 8px;
+  color: var(--difficulty-text);
+  text-align: left;
+  font: 400 13px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+.anki-difficulty-badge[hidden], .anki-difficulty-badge__evidence[hidden] { display: none !important; }
+.anki-difficulty-badge__button {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.anki-difficulty-badge__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--difficulty-border);
+  border-radius: 999px;
+  background: var(--difficulty-pill);
+  font-weight: 600;
+}
+.anki-difficulty-badge__button:hover, .anki-difficulty-badge__button:active { background: transparent; box-shadow: none; }
+.anki-difficulty-badge__button:focus-visible { outline: 2px solid var(--difficulty-focus) !important; outline-offset: 2px; }
+.anki-difficulty-badge__evidence {
+  box-sizing: border-box;
+  max-width: 100%;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--difficulty-border);
+  border-radius: 8px;
+  background: var(--difficulty-panel);
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.anki-difficulty-badge__evidence p { margin: 4px 0; }
+.anki-difficulty-badge__evidence ul { margin: 6px 0; padding-left: 20px; }
+.anki-difficulty-badge__evidence li + li { margin-top: 8px; }
+.anki-difficulty-badge__period { display: block; font-size: 12px; }
+:is(.nightMode, .night_mode, .night-mode) .anki-difficulty-badge,
+.anki-difficulty-badge:is(.nightMode, .night_mode, .night-mode) {
+  --difficulty-text: #f1d77b;
+  --difficulty-pill: #443917;
+  --difficulty-border: #806b2a;
+  --difficulty-panel: #292719;
+  --difficulty-focus: #f1d77b;
+}
+</style>
+<div class="anki-difficulty-badge" data-anki-difficulty-card="{{CardID}}" hidden></div>
+<script>
+(() => {
+  const KEY = "AnkiDifficultyBadgeV1";
+  const SELECTOR = "[data-anki-difficulty-card]";
+  if (!window[KEY]) {
+    let view = null, latestCard = null, latestAt = 0;
+    const validId = value => typeof value === "string" && /^[1-9][0-9]*$/.test(value);
+    const integer = value => Number.isSafeInteger(value) && value >= 0;
+    const timestamp = value => integer(value) && value > 0 && value <= 8640000000000000;
+    const currentScope = () => document.getElementById("qa") || document.body;
+    const rootsIn = scope => scope ? [
+      ...(scope.matches?.(SELECTOR) ? [scope] : []), ...scope.querySelectorAll(SELECTOR)
+    ] : [];
+    const validate = payload => {
+      if (!payload || payload.schema_version !== 1 || !validId(payload.card_id) ||
+          !timestamp(payload.generated_at) || payload.source !== "local" ||
+          !Array.isArray(payload.signals) || payload.signals.length > 2) return null;
+      const kinds = new Set();
+      const signals = [];
+      for (const signal of payload.signals) {
+        if (!signal || !["review", "learning"].includes(signal.kind) || kinds.has(signal.kind) ||
+            !integer(signal.samples) || signal.samples === 0 ||
+            (signal.kind === "review" && signal.samples > 5) ||
+            !integer(signal.again) || !integer(signal.hard) ||
+            signal.again + signal.hard > signal.samples ||
+            !timestamp(signal.first_review_at) || !timestamp(signal.last_review_at) ||
+            signal.first_review_at > signal.last_review_at ||
+            signal.last_review_at > payload.generated_at ||
+            !(signal.late_days_estimate === null || integer(signal.late_days_estimate))) return null;
+        kinds.add(signal.kind);
+        signals.push({ kind: signal.kind, samples: signal.samples, again: signal.again,
+          hard: signal.hard, first_review_at: signal.first_review_at,
+          last_review_at: signal.last_review_at, late_days_estimate: signal.late_days_estimate });
+      }
+      return { card_id: payload.card_id, generated_at: payload.generated_at, signals };
+    };
+    const clear = () => {
+      if (!view) return;
+      view.destroy();
+      view.root.replaceChildren();
+      view.root.hidden = true;
+      view = null;
+    };
+    const element = (tag, text, className) => {
+      const node = document.createElement(tag);
+      if (text !== undefined) node.textContent = text;
+      if (className) node.className = className;
+      return node;
+    };
+    const date = value => new Date(value).toLocaleDateString("ko-KR", {
+      year: "numeric", month: "numeric", day: "numeric"
+    });
+    const mount = (scope = currentScope(), payload = window.AnkiDifficultyCurrent) => {
+      const roots = rootsIn(scope);
+      const root = roots[roots.length - 1];
+      const id = root?.getAttribute("data-anki-difficulty-card");
+      const data = validate(payload);
+      const answer = !!scope?.querySelector("#answer");
+      const expanded = !!view && view.id === id && view.expanded && !(view.answer && !answer);
+      const oldAt = id === latestCard ? latestAt : 0;
+      clear();
+      // FrontSide can clone rendered markup without its event listeners.
+      for (const duplicate of roots.slice(0, -1)) duplicate.remove();
+      if (root) { root.replaceChildren(); root.hidden = true; }
+      if (!root || !validId(id) || !data || data.card_id !== id || data.generated_at < oldAt) {
+        latestCard = validId(id) ? id : null;
+        latestAt = oldAt;
+        // A persistent WebView must not reuse another card's local payload.
+        if (window.AnkiDifficultyCurrent === payload) window.AnkiDifficultyCurrent = null;
+        return false;
+      }
+      latestCard = id;
+      latestAt = data.generated_at;
+      if (!data.signals.length) return false;
+      root.classList.add("anki-difficulty-badge");
+      const button = element("button", undefined, "anki-difficulty-badge__button");
+      button.type = "button";
+      button.id = `anki-difficulty-button-v1-${id}`;
+      button.setAttribute("aria-label", "점검 후보: 학습 기록 보기");
+      const label = element("span", "점검 후보", "anki-difficulty-badge__label");
+      const arrow = element("span", "▾");
+      arrow.setAttribute("aria-hidden", "true");
+      label.append(arrow);
+      button.append(label);
+      const panel = element("div", undefined, "anki-difficulty-badge__evidence");
+      panel.id = `anki-difficulty-evidence-v1-${id}`;
+      panel.setAttribute("role", "region");
+      panel.setAttribute("aria-labelledby", button.id);
+      button.setAttribute("aria-controls", panel.id);
+      panel.append(element("p", "이 카드에 기록된 평가를 바탕으로 표시한 점검 후보입니다."));
+      const list = element("ul");
+      for (const signal of data.signals) {
+        const item = element("li");
+        const kind = signal.kind === "review" ? "최근 복습" : "학습·재학습";
+        item.append(element("span", `${kind} ${signal.samples}회: 다시 ${signal.again}회, 어려움 ${signal.hard}회`));
+        item.append(element("span", `기록 기간: ${date(signal.first_review_at)} ~ ${date(signal.last_review_at)}`,
+          "anki-difficulty-badge__period"));
+        if (signal.late_days_estimate !== null) item.append(element("span",
+          `기록된 간격 기준 지연 추정: ${signal.late_days_estimate}일`, "anki-difficulty-badge__period"));
+        list.append(item);
+      }
+      panel.append(list, element("p", `기록 기준: ${date(data.generated_at)}`, "anki-difficulty-badge__period"));
+      const record = { root, id, answer, expanded, destroy: () => {} };
+      const live = () => view === record && root.isConnected &&
+        root.getAttribute("data-anki-difficulty-card") === id;
+      const update = () => {
+        panel.hidden = !record.expanded;
+        button.setAttribute("aria-expanded", String(record.expanded));
+        arrow.textContent = record.expanded ? "▴" : "▾";
+      };
+      const stop = event => event.stopPropagation();
+      const keydown = event => {
+        event.stopPropagation();
+        if (!live()) return;
+        if (event.key === "Escape" && record.expanded) {
+          event.preventDefault();
+          record.expanded = false;
+          update();
+          button.focus({ preventScroll: true });
+        } else if (event.target === button && ["Enter", " "].includes(event.key)) {
+          event.preventDefault();
+          record.expanded = !record.expanded;
+          update();
+        }
+      };
+      const click = event => {
+        event.stopPropagation();
+        if (!live() || !button.contains(event.target)) return;
+        record.expanded = !record.expanded;
+        update();
+      };
+      const blocked = ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart", "touchend",
+        "touchmove", "keypress", "keyup", "dblclick"];
+      for (const name of blocked) root.addEventListener(name, stop);
+      root.addEventListener("keydown", keydown);
+      root.addEventListener("click", click);
+      record.destroy = () => {
+        for (const name of blocked) root.removeEventListener(name, stop);
+        root.removeEventListener("keydown", keydown);
+        root.removeEventListener("click", click);
+      };
+      root.append(button, panel);
+      view = record;
+      root.hidden = false;
+      update();
+      return true;
+    };
+    const render = payload => {
+      const scope = currentScope();
+      const roots = rootsIn(scope);
+      const id = roots[roots.length - 1]?.getAttribute("data-anki-difficulty-card");
+      // Ignore late delivery for a different card, or an older version of this
+      // card's evidence; it must not overwrite or clear the current display.
+      if (payload && validId(payload.card_id) && payload.card_id !== id) return false;
+      if (payload?.card_id === latestCard && timestamp(payload.generated_at) && payload.generated_at < latestAt) return false;
+      window.AnkiDifficultyCurrent = payload;
+      return mount(scope, payload);
+    };
+    window[KEY] = { mount, render };
+  }
+  window[KEY].mount();
+})();
+</script>
+{{/질문}}{{^질문}}{{#맥락}}<!-- anki-difficulty-badge-v1 -->
+<style>
+.anki-difficulty-badge {
+  --difficulty-text: #715300;
+  --difficulty-pill: #fff2ba;
+  --difficulty-border: #e7ca65;
+  --difficulty-panel: #fffaf0;
+  --difficulty-focus: #896600;
+  margin: 0 0 8px;
+  color: var(--difficulty-text);
+  text-align: left;
+  font: 400 13px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+.anki-difficulty-badge[hidden], .anki-difficulty-badge__evidence[hidden] { display: none !important; }
+.anki-difficulty-badge__button {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.anki-difficulty-badge__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--difficulty-border);
+  border-radius: 999px;
+  background: var(--difficulty-pill);
+  font-weight: 600;
+}
+.anki-difficulty-badge__button:hover, .anki-difficulty-badge__button:active { background: transparent; box-shadow: none; }
+.anki-difficulty-badge__button:focus-visible { outline: 2px solid var(--difficulty-focus) !important; outline-offset: 2px; }
+.anki-difficulty-badge__evidence {
+  box-sizing: border-box;
+  max-width: 100%;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--difficulty-border);
+  border-radius: 8px;
+  background: var(--difficulty-panel);
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.anki-difficulty-badge__evidence p { margin: 4px 0; }
+.anki-difficulty-badge__evidence ul { margin: 6px 0; padding-left: 20px; }
+.anki-difficulty-badge__evidence li + li { margin-top: 8px; }
+.anki-difficulty-badge__period { display: block; font-size: 12px; }
+:is(.nightMode, .night_mode, .night-mode) .anki-difficulty-badge,
+.anki-difficulty-badge:is(.nightMode, .night_mode, .night-mode) {
+  --difficulty-text: #f1d77b;
+  --difficulty-pill: #443917;
+  --difficulty-border: #806b2a;
+  --difficulty-panel: #292719;
+  --difficulty-focus: #f1d77b;
+}
+</style>
+<div class="anki-difficulty-badge" data-anki-difficulty-card="{{CardID}}" hidden></div>
+<script>
+(() => {
+  const KEY = "AnkiDifficultyBadgeV1";
+  const SELECTOR = "[data-anki-difficulty-card]";
+  if (!window[KEY]) {
+    let view = null, latestCard = null, latestAt = 0;
+    const validId = value => typeof value === "string" && /^[1-9][0-9]*$/.test(value);
+    const integer = value => Number.isSafeInteger(value) && value >= 0;
+    const timestamp = value => integer(value) && value > 0 && value <= 8640000000000000;
+    const currentScope = () => document.getElementById("qa") || document.body;
+    const rootsIn = scope => scope ? [
+      ...(scope.matches?.(SELECTOR) ? [scope] : []), ...scope.querySelectorAll(SELECTOR)
+    ] : [];
+    const validate = payload => {
+      if (!payload || payload.schema_version !== 1 || !validId(payload.card_id) ||
+          !timestamp(payload.generated_at) || payload.source !== "local" ||
+          !Array.isArray(payload.signals) || payload.signals.length > 2) return null;
+      const kinds = new Set();
+      const signals = [];
+      for (const signal of payload.signals) {
+        if (!signal || !["review", "learning"].includes(signal.kind) || kinds.has(signal.kind) ||
+            !integer(signal.samples) || signal.samples === 0 ||
+            (signal.kind === "review" && signal.samples > 5) ||
+            !integer(signal.again) || !integer(signal.hard) ||
+            signal.again + signal.hard > signal.samples ||
+            !timestamp(signal.first_review_at) || !timestamp(signal.last_review_at) ||
+            signal.first_review_at > signal.last_review_at ||
+            signal.last_review_at > payload.generated_at ||
+            !(signal.late_days_estimate === null || integer(signal.late_days_estimate))) return null;
+        kinds.add(signal.kind);
+        signals.push({ kind: signal.kind, samples: signal.samples, again: signal.again,
+          hard: signal.hard, first_review_at: signal.first_review_at,
+          last_review_at: signal.last_review_at, late_days_estimate: signal.late_days_estimate });
+      }
+      return { card_id: payload.card_id, generated_at: payload.generated_at, signals };
+    };
+    const clear = () => {
+      if (!view) return;
+      view.destroy();
+      view.root.replaceChildren();
+      view.root.hidden = true;
+      view = null;
+    };
+    const element = (tag, text, className) => {
+      const node = document.createElement(tag);
+      if (text !== undefined) node.textContent = text;
+      if (className) node.className = className;
+      return node;
+    };
+    const date = value => new Date(value).toLocaleDateString("ko-KR", {
+      year: "numeric", month: "numeric", day: "numeric"
+    });
+    const mount = (scope = currentScope(), payload = window.AnkiDifficultyCurrent) => {
+      const roots = rootsIn(scope);
+      const root = roots[roots.length - 1];
+      const id = root?.getAttribute("data-anki-difficulty-card");
+      const data = validate(payload);
+      const answer = !!scope?.querySelector("#answer");
+      const expanded = !!view && view.id === id && view.expanded && !(view.answer && !answer);
+      const oldAt = id === latestCard ? latestAt : 0;
+      clear();
+      // FrontSide can clone rendered markup without its event listeners.
+      for (const duplicate of roots.slice(0, -1)) duplicate.remove();
+      if (root) { root.replaceChildren(); root.hidden = true; }
+      if (!root || !validId(id) || !data || data.card_id !== id || data.generated_at < oldAt) {
+        latestCard = validId(id) ? id : null;
+        latestAt = oldAt;
+        // A persistent WebView must not reuse another card's local payload.
+        if (window.AnkiDifficultyCurrent === payload) window.AnkiDifficultyCurrent = null;
+        return false;
+      }
+      latestCard = id;
+      latestAt = data.generated_at;
+      if (!data.signals.length) return false;
+      root.classList.add("anki-difficulty-badge");
+      const button = element("button", undefined, "anki-difficulty-badge__button");
+      button.type = "button";
+      button.id = `anki-difficulty-button-v1-${id}`;
+      button.setAttribute("aria-label", "점검 후보: 학습 기록 보기");
+      const label = element("span", "점검 후보", "anki-difficulty-badge__label");
+      const arrow = element("span", "▾");
+      arrow.setAttribute("aria-hidden", "true");
+      label.append(arrow);
+      button.append(label);
+      const panel = element("div", undefined, "anki-difficulty-badge__evidence");
+      panel.id = `anki-difficulty-evidence-v1-${id}`;
+      panel.setAttribute("role", "region");
+      panel.setAttribute("aria-labelledby", button.id);
+      button.setAttribute("aria-controls", panel.id);
+      panel.append(element("p", "이 카드에 기록된 평가를 바탕으로 표시한 점검 후보입니다."));
+      const list = element("ul");
+      for (const signal of data.signals) {
+        const item = element("li");
+        const kind = signal.kind === "review" ? "최근 복습" : "학습·재학습";
+        item.append(element("span", `${kind} ${signal.samples}회: 다시 ${signal.again}회, 어려움 ${signal.hard}회`));
+        item.append(element("span", `기록 기간: ${date(signal.first_review_at)} ~ ${date(signal.last_review_at)}`,
+          "anki-difficulty-badge__period"));
+        if (signal.late_days_estimate !== null) item.append(element("span",
+          `기록된 간격 기준 지연 추정: ${signal.late_days_estimate}일`, "anki-difficulty-badge__period"));
+        list.append(item);
+      }
+      panel.append(list, element("p", `기록 기준: ${date(data.generated_at)}`, "anki-difficulty-badge__period"));
+      const record = { root, id, answer, expanded, destroy: () => {} };
+      const live = () => view === record && root.isConnected &&
+        root.getAttribute("data-anki-difficulty-card") === id;
+      const update = () => {
+        panel.hidden = !record.expanded;
+        button.setAttribute("aria-expanded", String(record.expanded));
+        arrow.textContent = record.expanded ? "▴" : "▾";
+      };
+      const stop = event => event.stopPropagation();
+      const keydown = event => {
+        event.stopPropagation();
+        if (!live()) return;
+        if (event.key === "Escape" && record.expanded) {
+          event.preventDefault();
+          record.expanded = false;
+          update();
+          button.focus({ preventScroll: true });
+        } else if (event.target === button && ["Enter", " "].includes(event.key)) {
+          event.preventDefault();
+          record.expanded = !record.expanded;
+          update();
+        }
+      };
+      const click = event => {
+        event.stopPropagation();
+        if (!live() || !button.contains(event.target)) return;
+        record.expanded = !record.expanded;
+        update();
+      };
+      const blocked = ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart", "touchend",
+        "touchmove", "keypress", "keyup", "dblclick"];
+      for (const name of blocked) root.addEventListener(name, stop);
+      root.addEventListener("keydown", keydown);
+      root.addEventListener("click", click);
+      record.destroy = () => {
+        for (const name of blocked) root.removeEventListener(name, stop);
+        root.removeEventListener("keydown", keydown);
+        root.removeEventListener("click", click);
+      };
+      root.append(button, panel);
+      view = record;
+      root.hidden = false;
+      update();
+      return true;
+    };
+    const render = payload => {
+      const scope = currentScope();
+      const roots = rootsIn(scope);
+      const id = roots[roots.length - 1]?.getAttribute("data-anki-difficulty-card");
+      // Ignore late delivery for a different card, or an older version of this
+      // card's evidence; it must not overwrite or clear the current display.
+      if (payload && validId(payload.card_id) && payload.card_id !== id) return false;
+      if (payload?.card_id === latestCard && timestamp(payload.generated_at) && payload.generated_at < latestAt) return false;
+      window.AnkiDifficultyCurrent = payload;
+      return mount(scope, payload);
+    };
+    window[KEY] = { mount, render };
+  }
+  window[KEY].mount();
+})();
+</script>
+{{/맥락}}{{/질문}}
   {{#맥락}}<div class="context">{{맥락}}</div>{{/맥락}}
   <div class="question anki-code-scope">{{질문}}</div>
 </div>{{#질문}}<style>

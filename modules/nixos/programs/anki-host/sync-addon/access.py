@@ -37,7 +37,7 @@ class Access:
             return False
         if method == "GET" and path in ("/status", "/status/full"):
             return True
-        if method == "POST" and path in ("/operations/status", "/operations/history", "/deck-options", "/model-info", "/media"):
+        if method == "POST" and path in ("/operations/status", "/operations/history", "/deck-options", "/model-info", "/media", "/difficulty/query"):
             return role in ("read", "operation", "schema")
         if method == "POST" and path in ("/operations/prepare", "/operations/apply", "/operations/delivery"):
             return role in ("operation", "schema")

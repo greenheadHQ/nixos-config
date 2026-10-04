@@ -489,6 +489,30 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         return await operations.run("set_card_flags", {"card_ids": card_ids, "flag": flag},
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
 
+    @mcp.tool(name="anki_card_difficulty", annotations=READ_ONLY)
+    async def anki_card_difficulty(
+        card_ids: Annotated[list[Annotated[int, Field(strict=True, gt=0)]], Field(min_length=1, max_length=100)],
+    ) -> dict[str, Any]:
+        """Read inspection-candidate evidence for 학습 Basic cards from the host's synced review history.
+        Again and Hard are separate signals; this does not measure motivation. Unuploaded device answers
+        may be absent. No edits, tags or scheduling changes. Includes freshness for that limitation."""
+        freshness = read_freshness(deps.sync_status_file)
+        result = await deps.helper.post("/difficulty/query", {"card_ids": card_ids})
+        return {**result, "freshness": freshness}
+
+    @mcp.tool(name="anki_reassess_difficulty", annotations=UPDATE)
+    async def anki_reassess_difficulty(
+        card_ids: Annotated[list[Annotated[int, Field(strict=True, gt=0)]], Field(min_length=1, max_length=100)],
+        request_id: str | None = None, preview_token: str | None = None, confirm: bool = False,
+    ) -> dict[str, Any]:
+        """Start a fresh difficulty assessment for these 학습 Basic cards after the user chooses reassessment.
+        During note inspection/editing, explain why and ask before calling; ordinary edits do not reset it.
+        Writes only a small card custom-data anchor, preserving siblings, notes, flags, scheduling and logs.
+        Rejects insufficient custom-data capacity. More than 20 cards requires preview/confirmation and a
+        restore point. Reuse request_id for retries; inspect the receipt after a lost response."""
+        return await operations.run("reassess_difficulty", {"card_ids": card_ids},
+                                    request_id=request_id, preview_token=preview_token, confirm=confirm)
+
     @mcp.tool(name="anki_delete_decks", annotations=DESTRUCTIVE)
     async def anki_delete_decks(deck_names: list[str], request_id: str | None = None,
                                 preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:

@@ -235,6 +235,49 @@ class AddonsTest(unittest.TestCase):
             self.apply()
         self.assertEqual((self.manager.base / "collection.anki2").read_bytes(), b"do not touch")
 
+    def test_local_package_apply_upgrade_removal_and_restore(self):
+        self.seed()
+        local_id = "nixos-difficulty-badge"
+        self.manifest[local_id] = dict(self.manifest["123"], name="점검 후보")
+        self.apply()
+        local = self.manager.target / local_id
+        self.assertEqual((local / "__init__.py").read_text(), "version = 1\n")
+        self.assertFalse(m.read_json(local / "meta.json")["update_enabled"])
+        (local / "user_files").mkdir()
+        (local / "user_files/state.json").write_text("keep")
+        (local / "runtime.json").write_text("unknown")
+        (self.source / "__init__.py").write_text("version = 2\n")
+        self.apply()
+        self.assertEqual((local / "__init__.py").read_text(), "version = 2\n")
+        self.assertEqual((local / "user_files/state.json").read_text(), "keep")
+        self.assertEqual((local / "runtime.json").read_text(), "unknown")
+        before = m.fingerprint(self.manager.target)
+        del self.manifest[local_id]
+        self.apply()
+        self.assertFalse(local.exists())
+        backup = next(p for p in self.manager.state.iterdir()
+                      if p.is_dir() and m.fingerprint(p) == before)
+        inventory = self.manager.list_backups()
+        snapshot = next(item for item in inventory["backups"] if item["id"] == backup.name)
+        self.assertTrue(next(item for item in snapshot["addons"]
+                             if item["id"] == local_id)["managed"])
+        with self.manager.lock():
+            self.manager.restore(backup.name)
+        self.assertEqual(m.fingerprint(self.manager.target), before)
+        self.assertEqual((self.manager.base / "collection.anki2").read_bytes(), b"do not touch")
+
+    def test_local_allowlist_does_not_accept_other_names_or_paths(self):
+        self.seed()
+        before = m.fingerprint(self.manager.target)
+        for invalid in ("nixos-other", "nixos-difficulty-badge/child", "../nixos-difficulty-badge",
+                        "/nixos-difficulty-badge", ".", "", "nixos-difficulty-badge\\\\child", 123, None):
+            with self.subTest(addon_id=invalid):
+                with self.assertRaises(ValueError):
+                    self.apply({invalid: self.manifest["123"]})
+                with self.assertRaises(ValueError):
+                    m.validate_record({invalid: {"files": [], "config_keys": []}})
+                self.assertEqual(m.fingerprint(self.manager.target), before)
+
     def test_symlink_rejected_without_touching_destination(self):
         addon = self.seed()
         outside = self.root / "outside"

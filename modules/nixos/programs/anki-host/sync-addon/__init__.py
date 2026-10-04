@@ -923,6 +923,21 @@ class _Handler(BaseHTTPRequestHandler):
                 result = _mutating("deck-options", _deck_options, str(body["deck_name"]))
             elif path == "/model-info" and self.command == "POST":
                 result = _mutating("model-info", lambda: AnkiAdapter(aqt.mw, MEDIA_LIMIT).model_info(str(body["model_name"])))
+            elif path == "/difficulty/query" and self.command == "POST":
+                from . import difficulty
+                from .operations import ids
+                if set(body) != {"card_ids"}:
+                    raise OperationError("invalid-difficulty-query")
+                card_ids = ids(body["card_ids"])
+                if len(card_ids) > 100:
+                    raise OperationError("difficulty-query-too-many-cards")
+                def query():
+                    try:
+                        return {"cards": [difficulty.card_payload(aqt.mw.col, cid, now=int(time.time() * 1000))
+                                          for cid in card_ids]}
+                    except difficulty.DifficultyError as error:
+                        raise OperationError(str(error)) from error
+                result = _mutating("difficulty-query", query)
             elif path == "/media" and self.command == "POST":
                 result = _mutating("media", _media, body)
             elif path.startswith("/managed/") and self.command == "POST":

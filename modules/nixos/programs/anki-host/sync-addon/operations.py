@@ -106,6 +106,7 @@ PARAMETERS = {
     "delete_decks": ({"deck_names"}, set()),
     "suspend_cards": ({"card_ids", "suspended"}, set()),
     "set_card_flags": ({"card_ids", "flag"}, set()),
+    "reassess_difficulty": ({"card_ids"}, set()),
     "set_due_date": ({"card_ids", "days"}, set()),
     "forget_cards": ({"card_ids"}, set()),
     "store_media": ({"filename", "data"}, set()),
