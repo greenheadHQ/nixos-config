@@ -246,6 +246,153 @@ test_rebuild_common_exports_public_api() {
   assert_contains "$output" "repair_codex_config_drift_no_changes"
 }
 
+# #1266: 실제 /tmp/nrs-state 대신 합성 JSON만 읽는다. PID 생존 여부와 TTL은
+# 안내의 전제이며, 종료 PID 자체는 성공 적용이나 stale 상태의 증거가 아니다.
+write_nrs_lock_guidance_fixture() {
+  local lock_file="$1" owner_worktree="$2" timestamp="$3" owner_pid="$4"
+  jq -n --arg w "$owner_worktree" --arg b fixture-owner \
+    --argjson t "$timestamp" --argjson p "$owner_pid" \
+    '{worktree: $w, branch: $b, timestamp: $t, pid: $p}' > "$lock_file"
+}
+
+read_nrs_lock_guidance_fixture() {
+  local lock_file="$1" output
+  cp "$lock_file" "$lock_file.before"
+  output=$(NRS_LOCK_FILE="$lock_file" bash "$REPO_ROOT/modules/shared/scripts/nrs-lock.sh" status)
+  cmp -s "$lock_file.before" "$lock_file" || fail "status changed fixture lock bytes"
+  printf '%s\n' "$output"
+}
+
+test_nrs_lock_status_without_lock() {
+  local sandbox output
+  sandbox=$(TMPDIR=/tmp new_sandbox)
+  output=$(NRS_LOCK_FILE="$sandbox/nrs-state" bash "$REPO_ROOT/modules/shared/scripts/nrs-lock.sh" status)
+  assert_contains "$output" "No active lock"
+  [[ ! -e "$sandbox/nrs-state" ]] || fail "status created a fixture lock"
+}
+
+test_nrs_lock_status_retains_stopped_process_before_timeout() {
+  local sandbox output now dead_pid=99999999
+  sandbox=$(TMPDIR=/tmp new_sandbox)
+  mkdir -p "$sandbox/owner"
+  ! kill -0 "$dead_pid" 2>/dev/null || fail "fixture PID unexpectedly alive"
+  now=$(date +%s)
+  write_nrs_lock_guidance_fixture "$sandbox/nrs-state" "$sandbox/owner" "$((now - 60))" "$dead_pid"
+  output=$(read_nrs_lock_guidance_fixture "$sandbox/nrs-state")
+  assert_contains "$output" "Process:  STOPPED"
+  assert_contains "$output" "Status:   RETAINED"
+  assert_contains "$output" "protects against applying a different worktree"
+  assert_contains "$output" "does not confirm a successful switch"
+  assert_contains "$output" "intentional follow-up"
+  assert_contains "$output" "nrs-lock unlock"
+  assert_not_contains "$output" "NOT RUNNING"
+  assert_not_contains "$output" "STALE"
+  assert_not_contains "$output" "will be auto-cleaned"
+}
+
+test_nrs_lock_status_stale_after_timeout_with_stopped_process() {
+  local sandbox output now dead_pid=99999999
+  sandbox=$(TMPDIR=/tmp new_sandbox)
+  mkdir -p "$sandbox/owner"
+  ! kill -0 "$dead_pid" 2>/dev/null || fail "fixture PID unexpectedly alive"
+  now=$(date +%s)
+  write_nrs_lock_guidance_fixture "$sandbox/nrs-state" "$sandbox/owner" "$((now - 1860))" "$dead_pid"
+  output=$(read_nrs_lock_guidance_fixture "$sandbox/nrs-state")
+  assert_contains "$output" "Process:  STOPPED"
+  assert_contains "$output" "Status:   STALE"
+  assert_contains "$output" "will be auto-cleaned on next nrs run"
+  assert_not_contains "$output" "Status:   RETAINED"
+  assert_not_contains "$output" "successful switch"
+}
+
+test_nrs_lock_status_matches_acquire_timeout_boundary() {
+  local sandbox output now rc=0 dead_pid=99999999
+  sandbox=$(TMPDIR=/tmp new_sandbox)
+  mkdir -p "$sandbox/owner" "$sandbox/bin"
+  ! kill -0 "$dead_pid" 2>/dev/null || fail "fixture PID unexpectedly alive"
+  now=$(date +%s)
+  cat > "$sandbox/bin/date" <<'EOF'
+#!/usr/bin/env bash
+[[ "$*" == +%s ]] || exit 64
+printf '%s\n' "$NRS_TEST_NOW"
+EOF
+  chmod +x "$sandbox/bin/date"
+  write_nrs_lock_guidance_fixture "$sandbox/nrs-state" "$sandbox/owner" "$((now - 1800))" "$dead_pid"
+  NRS_LOCK_FILE="$sandbox/nrs-state" NRS_TEST_NOW="$now" PATH="$sandbox/bin:$PATH" \
+    bash -c 'source "$1"; is_stale_lock' -- "$REPO_ROOT/modules/shared/scripts/lib/rebuild/locks.sh" || rc=$?
+  [[ "$rc" == 1 ]] || fail "expected acquire's stale check to retain the lock exactly at timeout"
+  output=$(NRS_TEST_NOW="$now" PATH="$sandbox/bin:$PATH" read_nrs_lock_guidance_fixture "$sandbox/nrs-state")
+  assert_contains "$output" "Status:   RETAINED"
+  assert_not_contains "$output" "STALE"
+}
+
+test_nrs_lock_status_retains_running_process_after_timeout() {
+  local sandbox output now
+  sandbox=$(TMPDIR=/tmp new_sandbox)
+  mkdir -p "$sandbox/owner"
+  now=$(date +%s)
+  write_nrs_lock_guidance_fixture "$sandbox/nrs-state" "$sandbox/owner" "$((now - 1860))" "$$"
+  output=$(read_nrs_lock_guidance_fixture "$sandbox/nrs-state")
+  assert_contains "$output" "Process:  RUNNING"
+  assert_contains "$output" "Status:   RETAINED"
+  assert_contains "$output" "Wait for the process to finish"
+  assert_not_contains "$output" "STALE"
+  assert_not_contains "$output" "will be cleaned"
+  assert_not_contains "$output" "will be auto-cleaned"
+  assert_not_contains "$output" "nrs-lock unlock"
+}
+
+test_nrs_lock_status_stale_when_worktree_is_missing() {
+  local sandbox output now dead_pid=99999999
+  sandbox=$(TMPDIR=/tmp new_sandbox)
+  ! kill -0 "$dead_pid" 2>/dev/null || fail "fixture PID unexpectedly alive"
+  now=$(date +%s)
+  write_nrs_lock_guidance_fixture "$sandbox/nrs-state" "$sandbox/missing" "$((now - 60))" "$dead_pid"
+  output=$(read_nrs_lock_guidance_fixture "$sandbox/nrs-state")
+  assert_contains "$output" "Worktree: MISSING"
+  assert_contains "$output" "Status:   STALE"
+  assert_contains "$output" "will be auto-cleaned on next nrs run"
+  assert_not_contains "$output" "Status:   RETAINED"
+}
+
+test_nrs_cross_worktree_lock_guidance_preserves_lock() {
+  local sandbox output now owner_pid age rc dead_pid=99999999
+  sandbox=$(TMPDIR=/tmp new_sandbox)
+  mkdir -p "$sandbox/owner" "$sandbox/next" "$sandbox/main"
+  ! kill -0 "$dead_pid" 2>/dev/null || fail "fixture PID unexpectedly alive"
+  now=$(date +%s)
+  # 종료 PID의 TTL 내 보존과 live PID의 TTL 전후 보존 모두 차단 정책을 유지한다.
+  for owner_pid in "$dead_pid" "$$"; do
+    for age in 60 1860; do
+      [[ "$owner_pid" != "$dead_pid" || "$age" == 60 ]] || continue
+      write_nrs_lock_guidance_fixture "$sandbox/nrs-state" "$sandbox/owner" "$((now - age))" "$owner_pid"
+      cp "$sandbox/nrs-state" "$sandbox/nrs-state.before"
+      rc=0
+      output=$(
+        NRS_LOCK_FILE="$sandbox/nrs-state" FLAKE_PATH="$sandbox/next" MAIN_FLAKE_PATH="$sandbox/main" \
+          bash -c '
+            set -euo pipefail
+            log_error() { printf "%s\n" "$*"; }
+            source "$1"
+            acquire_nrs_lock
+          ' -- "$REPO_ROOT/modules/shared/scripts/lib/rebuild/locks.sh" 2>&1
+      ) || rc=$?
+      [[ "$rc" == 1 ]] || fail "expected cross-worktree lock to block with rc 1 (actual: $rc)"
+      cmp -s "$sandbox/nrs-state.before" "$sandbox/nrs-state" || fail "blocked acquire changed fixture lock bytes"
+      assert_contains "$output" "fixture-owner"
+      assert_contains "$output" "$sandbox/owner"
+      assert_contains "$output" "protects against applying a different worktree"
+      assert_contains "$output" "Requested worktree: $sandbox/next"
+      assert_contains "$output" "nrs-lock status"
+      assert_contains "$output" "If its process is running, wait for it to finish"
+      assert_contains "$output" "After confirming it has stopped"
+      assert_contains "$output" "intentional follow-up"
+      assert_contains "$output" "nrs-lock unlock"
+      assert_not_contains "$output" "force release"
+    done
+  done
+}
+
 # ─────────────────────────────────────────────────────────────────────────
 # #1380: release_rebuild_lock 이 fd 200 을 닫으면서 명령 없는 `exec ... 2>/dev/null`
 # 로 호출 셸의 표준 오류까지 영구적으로 /dev/null 로 돌려버리던 결함의 회귀 테스트.

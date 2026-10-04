@@ -35,6 +35,13 @@ run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
 run_test "wt wrapper ignores runtime HOME for real script" test_wt_wrapper_ignores_runtime_home_for_real_script
 run_test "managed plugin skill helper rejects duplicate matches" test_managed_plugin_skill_link_requires_single_match
 run_test "rebuild-common exports public API" test_rebuild_common_exports_public_api
+run_test "nrs-lock status without lock" test_nrs_lock_status_without_lock
+run_test "nrs-lock retains stopped process before timeout" test_nrs_lock_status_retains_stopped_process_before_timeout
+run_test "nrs-lock stale after timeout with stopped process" test_nrs_lock_status_stale_after_timeout_with_stopped_process
+run_test "nrs-lock status matches acquire timeout boundary" test_nrs_lock_status_matches_acquire_timeout_boundary
+run_test "nrs-lock retains running process after timeout" test_nrs_lock_status_retains_running_process_after_timeout
+run_test "nrs-lock stale when worktree is missing" test_nrs_lock_status_stale_when_worktree_is_missing
+run_test "nrs cross-worktree lock guidance preserves lock" test_nrs_cross_worktree_lock_guidance_preserves_lock
 run_test "release_rebuild_lock preserves caller stderr" test_release_rebuild_lock_preserves_caller_stderr
 run_test "release_rebuild_lock_on_failure preserves caller stderr" test_release_rebuild_lock_on_failure_preserves_caller_stderr
 run_test "release_rebuild_lock without hold is a no-op" test_release_rebuild_lock_without_hold_is_noop
