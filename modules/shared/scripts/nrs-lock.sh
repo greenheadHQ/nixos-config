@@ -29,7 +29,7 @@ cmd_status() {
     local expiry=$(( lock_ts + NRS_LOCK_TIMEOUT_MINUTES * 60 ))
     local remaining=$(( expiry - now ))
 
-    echo "Lock active:"
+    echo "Lock recorded:"
     echo "  Branch:   $lock_branch"
     echo "  Worktree: $lock_worktree"
     echo "  PID:      $lock_pid"
@@ -43,31 +43,46 @@ cmd_status() {
     if (( remaining > 0 )); then
         local remain_min=$(( remaining / 60 ))
         if (( remaining < 3600 )); then
-            echo "  Expires:  in ${remain_min}m"
+            echo "  Timeout:  in ${remain_min}m"
         else
-            echo "  Expires:  in $(( remaining / 3600 ))h $(( remain_min % 60 ))m"
+            echo "  Timeout:  in $(( remaining / 3600 ))h $(( remain_min % 60 ))m"
         fi
     else
-        echo -e "  ${YELLOW}Expired:   $(( -remaining / 60 ))m ago (will be cleaned on next nrs run)${NC}"
+        echo "  Timeout:  $(( -remaining / 60 ))m ago"
     fi
 
     # Stale 진단 정보
-    local stale=false
+    local stale=false process_running=false
     if [[ "$lock_worktree" != "?" && ! -d "$lock_worktree" ]]; then
         echo -e "  ${YELLOW}Worktree: MISSING${NC}"
         stale=true
     fi
-    if [[ "$lock_pid" != "?" ]] && ! kill -0 "$lock_pid" 2>/dev/null; then
-        echo -e "  ${YELLOW}Process:  NOT RUNNING${NC}"
+    if [[ "$lock_pid" != "?" ]]; then
+        if kill -0 "$lock_pid" 2>/dev/null; then
+            process_running=true
+            echo "  Process:  RUNNING"
+        else
+            echo "  Process:  STOPPED"
+        fi
     fi
-    if (( remaining <= 0 )); then
+    # lib/rebuild/locks.sh와 같은 경계: 만료 시각이 아니라 그 시각을 초과한 뒤 stale 판정.
+    if (( remaining < 0 )); then
         # PID가 살아있으면 타임아웃 초과해도 stale 아님 (장시간 빌드)
-        if [[ "$lock_pid" == "?" ]] || ! kill -0 "$lock_pid" 2>/dev/null; then
+        if [[ "$process_running" != true ]]; then
             stale=true
         fi
     fi
     if [[ "$stale" == true ]]; then
         echo -e "  ${YELLOW}Status:   STALE (will be auto-cleaned on next nrs run)${NC}"
+    else
+        echo "  Status:   RETAINED (protects against applying a different worktree)"
+        if [[ "$process_running" == true ]]; then
+            echo "  Wait for the process to finish; a running PID keeps this lock valid past the timeout."
+        else
+            echo "  A stopped process alone does not confirm a successful switch."
+            echo "  After confirming it has stopped, use 'nrs-lock unlock' only for an intentional follow-up"
+            echo "  applying another worktree."
+        fi
     fi
 }
 

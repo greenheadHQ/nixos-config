@@ -11,6 +11,10 @@
 
 let
   cfg = config.homeserver.reverseProxy;
+  immichCfg = config.homeserver.immich;
+  uptimeKumaCfg = config.homeserver.uptimeKuma;
+  copypartyCfg = config.homeserver.copyparty;
+  karakeepCfg = config.homeserver.karakeep;
   singlefileBridgeCfg = config.homeserver.karakeepSinglefileBridge;
   inherit (constants.network) minipcTailscaleIP;
   inherit (constants.domain) base subdomains;
@@ -87,7 +91,7 @@ in
         listenAddresses = [ minipcTailscaleIP ];
         extraConfig = ''
           ${securityHeaders}
-          reverse_proxy localhost:${toString constants.network.ports.immich}
+          reverse_proxy localhost:${toString immichCfg.port}
         '';
       };
 
@@ -95,7 +99,7 @@ in
         listenAddresses = [ minipcTailscaleIP ];
         extraConfig = ''
           ${securityHeaders}
-          reverse_proxy localhost:${toString constants.network.ports.uptimeKuma}
+          reverse_proxy localhost:${toString uptimeKumaCfg.port}
         '';
       };
 
@@ -103,7 +107,7 @@ in
         listenAddresses = [ minipcTailscaleIP ];
         extraConfig = ''
           ${securityHeaders}
-          reverse_proxy localhost:${toString constants.network.ports.copyparty}
+          reverse_proxy localhost:${toString copypartyCfg.port}
         '';
       };
 
@@ -118,7 +122,7 @@ in
               # 이전에는 vhost 전체 제거였음. ref: https://github.com/karakeep-app/karakeep/issues/1977
               header -Content-Security-Policy
               header -Content-Security-Policy-Report-Only
-              reverse_proxy localhost:${toString constants.network.ports.karakeep}
+              reverse_proxy localhost:${toString karakeepCfg.port}
             }
             ${
               if singlefileBridgeCfg.enable then
@@ -132,7 +136,7 @@ in
                 ""
             }
             handle {
-              reverse_proxy localhost:${toString constants.network.ports.karakeep}
+              reverse_proxy localhost:${toString karakeepCfg.port}
             }
           }
         '';
