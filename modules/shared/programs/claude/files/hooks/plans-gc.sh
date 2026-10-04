@@ -63,15 +63,18 @@ PLANS_DIR="$GIT_TOPLEVEL/.claude/plans"
 TRASH_ROOT="$PLANS_DIR/.trash"
 
 # 되돌릴 수 없는 rm 대신 날짜별 trash로 옮긴다. 같은 이름이 이미 있으면 번호를 붙여
-# 덮어쓰지 않는다. 옮기지 못하면(권한 등) 원본을 그대로 둔다.
+# 덮어쓰지 않는다. trash/날짜 목적지는 실제 디렉터리만 허용하며, 링크거나 옮기지
+# 못하면(권한, 일반 파일 등) 원본을 그대로 둔다.
 retire_buffer() {
   local src="$1" day dest base n
   day=$(date +%Y-%m-%d)
   dest="$TRASH_ROOT/$day"
+  [[ ! -L "$TRASH_ROOT" && ! -L "$dest" ]] || return 1
   mkdir -p "$dest" 2>/dev/null || return 1
+  [[ -d "$TRASH_ROOT" && ! -L "$TRASH_ROOT" && -d "$dest" && ! -L "$dest" ]] || return 1
   base="${src##*/}"
   n=1
-  while [[ -e "$dest/$base" ]]; do
+  while [[ -e "$dest/$base" || -L "$dest/$base" ]]; do
     base="${src##*/}.$n"
     n=$((n + 1))
   done
@@ -94,7 +97,7 @@ while IFS= read -r f; do
 done < <(find "$PLANS_DIR" -maxdepth 1 -type f -name '*-*.md' -mtime +"$GC_AGE_DAYS" 2>/dev/null)
 
 # 유예를 넘긴 trash 날짜 디렉토리 만료
-if [[ -d "$TRASH_ROOT" ]]; then
+if [[ -d "$TRASH_ROOT" && ! -L "$TRASH_ROOT" ]]; then
   find "$TRASH_ROOT" -mindepth 1 -maxdepth 1 -type d -mtime +"$TRASH_KEEP_DAYS" \
     -exec rm -rf {} + 2>/dev/null
 fi
