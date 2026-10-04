@@ -92,20 +92,22 @@ Pre-commit Hooks와의 관계:
 
 lefthook을 사용하여 커밋 전 자동 검사를 수행합니다. 민감 정보 유출, 포맷 오류, 쉘 스크립트 문제를 커밋 단계에서 차단합니다.
 
-구성 요소:
+각 hook의 실행 명령과 파일 조건은 [lefthook.yml](../../../../lefthook.yml)에서 확인한다.
 
-| Stage | Hook | 도구 | 기능 |
-|-------|------|------|------|
-| pre-commit | ai-skills-consistency | `bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/warn-skill-consistency.sh` | staged snapshot 기준 AI 스킬 문서 일관성 검사 |
-| pre-commit | gitleaks | `bash ./scripts/ai/run-gitleaks-staged-policy.sh` | staged policy 기준 민감 정보(API 키, 비밀번호 등) 커밋 차단 |
-| pre-commit | nixfmt | `nixfmt --check` | Nix 파일 포맷 검사 |
-| pre-commit | shellcheck | `shellcheck -S warning` | Shell 스크립트 린팅 (warning 이상) |
-| pre-commit | eval-tests | `bash ./scripts/ai/run-staged-snapshot.sh -- bash ./tests/run-eval-tests.sh` | staged snapshot 기준 NixOS 설정 E2E 보안 검증 (~1.2s) |
-| pre-commit | skill-noise-check | `bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/check-skill-noise.sh` | staged snapshot 기준 shared skill markdown noise 검사 |
-| pre-commit | local-skill-noise-check | `bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/check-skill-noise.sh .claude/skills` | staged snapshot 기준 local skill markdown noise 검사 |
-| pre-push | flake-check | `nix flake check --no-build --all-systems` | Flake 평가 오류 검사 |
+- whole-repo / whole-corpus pre-commit hook은 [run-staged-snapshot.sh](../../../../scripts/ai/run-staged-snapshot.sh)를 통해 staged index snapshot을 검사한다. 직접 스크립트 실행은 이 경로와 다르다.
+- `gitleaks`는 [전용 runner](../../../../scripts/ai/run-gitleaks-staged-policy.sh)가 복사한 index와 staged `.gitleaks.toml` / `.gitleaksignore`를 사용한다.
+- [hook 설치 스크립트](../../../../scripts/ai/install-lefthook-hooks.sh)는 메인 저장소의 기본 hooks 경로와 worktree별 hooks 경로에 guard를 설치한다. guard는 hook 설정의 index/working-tree drift와 지원하지 않는 Lefthook 설정 병합·환경변수를 차단한다. `--no-auto-install` 플래그는 Lefthook의 자동 재설치가 guard를 덮어쓰는 것을 막고, self-check는 guard·플래그의 유실을 검사한다. 설치 경로와 회귀 배경은 해당 스크립트 주석에 있다.
+- [commit-msg 검사](../../../../scripts/ai/commit-msg-pinning.sh)는 일시적인 리뷰·세션 표기를 경고하고, Claude 세션 URL은 커밋을 차단한다. 도구 실행 전·후 guard와의 관계는 [Codex hook fixture 문서](../../../../tests/fixtures/codex-hooks/README.md)에 있다.
+- pre-push는 [test-runtime-profile.sh](../../../../scripts/ai/test-runtime-profile.sh)가 준비하는 worktree별 runtime을 사용한다. profile이 없거나 낡았으면 common-dir lock 아래에서 검증·준비한 뒤 실행한다.
+- [스킬 일관성 검사](../../../../scripts/ai/warn-skill-consistency.sh)는 일반 변경에서는 경고하고, 스킬·Codex 관련 변경에서는 커밋을 차단한다. 대상 경로와 우회 옵션은 스크립트에서 확인한다. Codex 스킬 노출·정책 변경 뒤에는 `nrs`와 `scripts/ai/verify-ai-compat.sh`로 적용 상태를 확인한다.
 
-상세 hook 정책은 repo 루트 `README.md`와 `lefthook.yml`을 기준으로 한다. 직접 스크립트 실행은 installed pre-commit staged snapshot 경로와 동일하지 않다.
+`git commit --no-verify`와 `LEFTHOOK=0`은 로컬 hook을 실행하지 않는다. 또한 pre-push 검사는 변경 파일 조건에 따라 일부만 실행한다. 전체 검증은 다음 명령을 사용한다.
+
+```bash
+nix develop --command bash tests/run-all-tests.sh
+```
+
+[CI](../../../../.github/workflows/check.yml)도 같은 runner를 실행하며, 환경이나 도구가 없어 생기는 `SKIP:`을 실패로 처리한다. 검사 목록은 [runner](../../../../tests/run-all-tests.sh)에서 확인한다.
 
 사용법:
 
@@ -190,7 +192,7 @@ lefthook run pre-commit
 - direnv 환경이 활성화되지 않은 상태에서 커밋 시 hook이 실패함
   - 해결: `direnv allow` 실행 또는 `nix develop` 진입
 - 새 스크립트 추가 시 `shellcheck -S warning`으로 사전 검사 권장
-- eval-tests는 working tree 전체를 평가 (staged 파일만이 아님)
+- eval-tests 직접 실행은 working tree를 평가하고, pre-commit 경로는 staged index snapshot을 평가한다.
 
 ## Flake/Nix 기본값
 

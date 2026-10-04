@@ -91,7 +91,7 @@ cd ~/Workspace/nixos-config  # 자동 활성화 (이후 이탈 시 자동 해제
 
 ## Pre-commit Hooks (lefthook)
 
-Hook 상세 목록과 staged snapshot 정책은 repo 루트의 `README.md`와 `lefthook.yml`을 기준으로 확인한다.
+Hook 실행 명령과 조건은 `lefthook.yml`, staged snapshot과 설치 정책은 [references/features.md](references/features.md#pre-commit-hooks)에서 확인한다.
 
 요약:
 - whole-repo / whole-corpus pre-commit hook은 staged index snapshot에서 실행된다.
