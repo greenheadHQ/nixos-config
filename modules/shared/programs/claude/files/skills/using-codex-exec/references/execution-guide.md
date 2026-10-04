@@ -26,17 +26,17 @@ PROMPT
 # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
 rm -f /tmp/result.md   # 이전 실행의 non-empty 잔존 결과로 인한 오판 방지
 set -o pipefail
-cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
+cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 CODEX_EXEC_REQUIRE_NONEMPTY=/tmp/result.md codex-exec-supervised \
   -s workspace-write -o /tmp/result.md - \
   > /tmp/stdout.log 2> /tmp/stderr.log
 # PIPESTATUS는 다음 명령에서 리셋되므로 배열을 먼저 스냅샷한다. cat 실패(프롬프트 파일 부재)도 판정에 포함.
 pipe_rcs=("${PIPESTATUS[@]}")   # zsh는 ("${pipestatus[@]}") — 인덱스가 1부터
-[ "${pipe_rcs[0]}" -eq 0 ] && [ "${pipe_rcs[1]}" -eq 0 ] && test -s /tmp/result.md
-# 판정은 rc + 결과 파일이 정본이다. 위가 실패했을 때만 /tmp/stderr.log를 원인 분류에 사용한다
+[ "${pipe_rcs[0]}" -eq 0 ] && [ "${pipe_rcs[1]}" -eq 0 ]
+# wrapper rc에는 결과 파일 검증이 포함된다. 위가 실패했을 때만 /tmp/stderr.log를 원인 분류에 사용한다
 # (성공 계약 조건 3; ANSI·프롬프트 에코 함정과 분류 절차는 known-issues.md §0-1).
 ```
 
-위의 `test -s` 빈 결과 검증은 wrapper에 위임할 수도 있다 (opt-in, issue #1228):
+이 문서의 exec·review·resume 예시는 빈 결과 검증을 wrapper에 위임한다 (issue #1228).
 `CODEX_EXEC_REQUIRE_NONEMPTY=<결과 파일 절대경로>`를 설정하면 codex가 exit 0인데 그 경로가
 non-empty regular file이 아닐 때 wrapper가 rc 3 + stderr 식별자
 `codex-exec-supervised: empty output`으로 실패한다.
@@ -47,6 +47,10 @@ non-empty regular file이 아닐 때 wrapper가 rc 3 + stderr 식별자
   이번 실행이 아무것도 안 써도 통과한다 (위 예시의 `rm -f /tmp/result.md`가 그 역할).
 - timeout rc(124/137)와 codex 오류 rc는 덮어쓰지 않는다 — 검사는 codex rc 0일 때만 수행된다.
 - 값은 절대경로만 허용 (빈 값·상대경로는 invalid env 규약대로 exit 127).
+
+이 변수를 지원하지 않는 구 wrapper 또는 위임할 수 없는 환경에서는 변수 없이 호출하고,
+각 예시의 rc 검사에 `test -f <결과 파일> && test -s <결과 파일>`을 추가해 직접 확인한다.
+이 fallback도 실행 전 `rm -f` 초기화와 resume의 session id·응답 context 검사를 유지한다.
 
 wrapper 계약 요약 — wrapper에는 자체 `--help`가 없고(`--help`는 codex exec로 passthrough)
 배포 경로는 nix shim이므로, 정본은 저장소 스크립트(`modules/shared/scripts/codex-exec-supervised.sh`)
@@ -80,13 +84,13 @@ env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write "git diff 기준으로 �
 rm -f /tmp/review.md   # 이전 실행의 잔존 결과로 인한 오판 방지
 
 # 셋 중 하나를 선택:
-env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --base main \
+env CODEX_PROGRAMMATIC=1 CODEX_EXEC_REQUIRE_NONEMPTY=/tmp/review.md codex-exec-supervised review --base main \
   -o /tmp/review.md > /tmp/review-stdout.log 2> /tmp/review-stderr.log
-# env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --uncommitted ... (동일 형태)
-# env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --commit <sha> ... (동일 형태)
+# env CODEX_PROGRAMMATIC=1 CODEX_EXEC_REQUIRE_NONEMPTY=/tmp/review.md codex-exec-supervised review --uncommitted ... (동일 형태)
+# env CODEX_PROGRAMMATIC=1 CODEX_EXEC_REQUIRE_NONEMPTY=/tmp/review.md codex-exec-supervised review --commit <sha> ... (동일 형태)
 
 review_rc=$?
-[ "$review_rc" -eq 0 ] && test -s /tmp/review.md
+[ "$review_rc" -eq 0 ]
 # 실패 시에만 /tmp/review-stderr.log로 원인을 분류한다 (성공 계약 조건 3, known-issues.md §0-1).
 ```
 
@@ -131,7 +135,7 @@ Claude Code/headless의 programmatic 재개는 supervised 경로를 사용한다
 ```bash
 SESSION="<session-id>"   # 재개할 세션 id
 rm -f /tmp/resume-result.md
-env CODEX_PROGRAMMATIC=1 codex-exec-supervised resume "$SESSION" \
+env CODEX_PROGRAMMATIC=1 CODEX_EXEC_REQUIRE_NONEMPTY=/tmp/resume-result.md codex-exec-supervised resume "$SESSION" \
   -o /tmp/resume-result.md > /tmp/resume-stdout.log 2> /tmp/resume-stderr.log
 resume_rc=$?
 
@@ -145,8 +149,7 @@ sed $'s/\x1b\\[[0-9;]*m//g' /tmp/resume-stderr.log > /tmp/resume-stderr.plain
 banner_session=$(sed -n 's/.*session id:[[:space:]]*\([^[:space:]]*\).*/\1/p' \
   /tmp/resume-stderr.plain | head -1)
 [ "$resume_rc" -eq 0 ] \
-  && [ "$banner_session" = "$SESSION" ] \
-  && test -s /tmp/resume-result.md
+  && [ "$banner_session" = "$SESSION" ]
 # 위 판정 실패, 또는 응답(/tmp/resume-result.md)이 원 세션의 context를 잇지 않으면 재개 실패로 처리한다.
 # --json 사용 시 stderr 배너 자체가 사라진다 — stdout의 thread.started 이벤트 `thread_id`를 비교한다.
 ```
