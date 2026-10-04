@@ -393,8 +393,8 @@ test_add_host_secret_guide_workdir_has_rules_file() {
       || fail "[$kind] 안내된 작업 위치($workdir)에 명시할 secrets.nix가 없음"
     cmp -s "$_add_host_rules" "$workdir/secrets.nix" \
       || fail "[$kind] 안내된 작업 위치의 secrets.nix가 합성 규칙 파일과 다름"
-    # shellcheck disable=SC2016  # 마법사가 실행하지 않고 출력해야 할 사용자 명령이다.
-    printf -v setup '    cd %q\n    nix develop\n    agenix_bin="$(command -v agenix)"\n    cd secrets' "$repo"
+    setup="$(_secrets_docs_external_agenix_setup "$REPO_ROOT/.claude/skills/managing-secrets/references/workflows.md" | sed 's/^/    /')"
+    printf -v setup '    cd %q\n    nix develop\n%s\n    cd secrets' "$repo" "$setup"
     assert_contains "$(cat "$_add_host_stdout")" "$setup"
     assert_not_contains "$(cat "$_add_host_stdout")" 'nix run github:ryantm/agenix'
   done

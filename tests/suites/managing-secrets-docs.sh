@@ -100,6 +100,71 @@ _secrets_docs_rekey_all_lines() {
   grep -nE '(agenix|"\$agenix_bin")([[:space:]]+--)?([[:space:]]+[^[:space:]`]+)*[[:space:]]+(-r|--rekey)([[:space:]`]|$)' || true
 }
 
+# 문서의 외부 CLI 선택·검증 블록은 마법사의 출력과도 같아야 한다.
+_secrets_docs_external_agenix_setup() {
+  awk '/^if ! agenix_bin=/ { on = 1 } on { print } on && /^fi$/ { exit }' "$1"
+}
+
+# alias·함수(자식 Bash의 builtin/type을 가릴 exported 함수 포함)는 선택에 영향을 주지 않고,
+# lookup의 BASH_ENV도 읽지 않아야 한다. -p는 함수 import를 끄며 권한을 올리지 않는다. suite에서는
+# 합성 실행 파일만 호출한다. agenix가 PATH에 없을 때는 후속 CLI 실행 전에 종료한다.
+_secrets_docs_assert_external_agenix_lookup() {
+  local wf="$1" setup sandbox bin bash_bin env_bin kind rc
+  setup="$(_secrets_docs_external_agenix_setup "$wf")"
+  [[ -n "$setup" ]] || fail "외부 agenix 경로를 선택·검증하는 블록이 없음"
+  assert_contains "$setup" "command env -u BASH_ENV bash --noprofile --norc -p -c 'builtin type -P agenix'"
+  assert_contains "$setup" '[ "${agenix_bin#/}" = "$agenix_bin" ] || [ ! -x "$agenix_bin" ]'
+  assert_contains "$(cat "$wf")" $'nix develop\nif ! agenix_bin='
+  assert_contains "$(cat "$wf")" $'fi\ncd secrets'
+  assert_not_contains "$(cat "$wf")" 'AGENIX_RULES="$PWD/secrets.nix" agenix'
+  assert_not_contains "$(cat "$wf")" 'EDITOR=: agenix'
+  bash_bin="$(builtin type -P bash)"
+  env_bin="$(builtin type -P env)"
+  for kind in alias function builtin type missing; do
+    sandbox="$(new_sandbox)"
+    bin="$sandbox/bin"
+    mkdir -p "$bin"
+    ln -s "$bash_bin" "$bin/bash"
+    ln -s "$env_bin" "$bin/env"
+    printf '%s\n' "$setup" > "$sandbox/setup.sh"
+    cat > "$sandbox/startup.sh" <<'BASH_ENV'
+printf '%s\n' loaded > "$LOOKUP_STARTUP"
+BASH_ENV
+    cat > "$bin/agenix" <<'CLI'
+#!/usr/bin/env bash
+printf '%s\n' "$0" > "$LOOKUP_LOG"
+CLI
+    chmod +x "$bin/agenix"
+    cp "$bin/agenix" "$bin/spoof-agenix"
+    [[ "$kind" != missing ]] || rm "$bin/agenix"
+    cat > "$sandbox/run.sh" <<'RUN'
+set -euo pipefail
+export PATH="$1" LOOKUP_LOG="$2" LOOKUP_STARTUP="$3" LOOKUP_SPOOF="$1/spoof-agenix"
+case "$4" in
+  alias) shopt -s expand_aliases; alias agenix='printf shadow >&2; false' ;;
+  function) agenix() { printf shadow >&2; return 77; } ;;
+  builtin) builtin() { printf '%s\n' "$LOOKUP_SPOOF"; }; export -f builtin ;;
+  type) type() { printf '%s\n' "$LOOKUP_SPOOF"; }; export -f type ;;
+esac
+export BASH_ENV="$5"
+source "$6"
+unset BASH_ENV
+"$agenix_bin"
+RUN
+    rc=0
+    BASH_ENV='' "$bash_bin" --noprofile --norc "$sandbox/run.sh" "$bin" "$sandbox/cli.log" \
+      "$sandbox/startup.log" "$kind" "$sandbox/startup.sh" "$sandbox/setup.sh" \
+      > "$sandbox/stdout" 2> "$sandbox/stderr" || rc=$?
+    [[ ! -e "$sandbox/startup.log" ]] || fail "[$kind] 외부 CLI lookup이 BASH_ENV를 읽음"
+    if [[ "$kind" == missing ]]; then
+      [[ "$rc" -eq 1 && ! -e "$sandbox/cli.log" ]] || fail "CLI 누락 시 후속 실행 전에 종료하지 않음"
+    else
+      [[ "$rc" -eq 0 ]] || fail "[$kind] 외부 CLI lookup 실패: $(cat "$sandbox/stderr")"
+      [[ "$(cat "$sandbox/cli.log")" == "$bin/agenix" ]] || fail "[$kind] alias·함수 대신 선택한 CLI를 실행하지 않음"
+    fi
+  done
+}
+
 # 전체 재암호화 명령은 사용 조건("…때만") 문장 한 곳에만 둘 수 있다. 입력은 표준입력으로 받는다.
 _secrets_docs_assert_rekey_all_conditional() {
   local where="$1" lines count
@@ -119,7 +184,7 @@ _secrets_docs_assert_rekey_all_conditional() {
 #   - 복호화 확인도 호스트 키 sudo 변형을 함께 낸다. 사용자 키 명령은 권한 상승 없이 둔다.
 _secrets_docs_assert_value_check_steps() {
   local where="$1" text enc_line verify_line bytes_cmd compare_line first between
-  local user_bytes_cmd='AGENIX_RULES="$PWD/secrets.nix" agenix -d <name>.age -i <identity> | wc -c'
+  local user_bytes_cmd='AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -d <name>.age -i <identity> | wc -c'
   local host_bytes_cmd='sudo AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c'
   local host_dec_cmd='test -f <name>.age && sudo AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -d <name>.age -i /etc/ssh/ssh_host_ed25519_key >/dev/null'
   text="$(cat)"
@@ -154,7 +219,7 @@ _secrets_docs_assert_value_check_steps() {
 _secrets_docs_assert_byte_counts_need_decrypt_success() {
   local where="$1" line cmd count=0
   local re='test -f <name>\.age && (.*) >/dev/null && (.*) \| wc -c'
-  local user_re='^AGENIX_RULES="\$PWD/secrets\.nix" agenix -d <name>\.age -i [^ ]+$'
+  local user_re='^AGENIX_RULES="\$PWD/secrets\.nix" "\$agenix_bin" -d <name>\.age -i [^ ]+$'
   local host_re='^sudo AGENIX_RULES="\$PWD/secrets\.nix" "\$agenix_bin" -d <name>\.age -i [^ ]+$'
   while IFS= read -r line; do
     [[ "$line" == *'| wc -c'* ]] || continue
@@ -187,7 +252,7 @@ _secrets_docs_assert_new_host_check_step() {
   step="$(sed -n "$verify_line,\$p" <<< "$text")"
 
   # shellcheck disable=SC2088  # 안내 문구에 그대로 나오는 리터럴 경로다(확장하지 않음).
-  grep -qF -- 'test -f <name>.age && AGENIX_RULES="$PWD/secrets.nix" agenix -d <name>.age -i ~/.ssh/id_ed25519 >/dev/null && AGENIX_RULES="$PWD/secrets.nix" agenix -d <name>.age -i ~/.ssh/id_ed25519 | wc -c' <<< "$step" \
+  grep -qF -- 'test -f <name>.age && AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -d <name>.age -i ~/.ssh/id_ed25519 >/dev/null && AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -d <name>.age -i ~/.ssh/id_ed25519 | wc -c' <<< "$step" \
     || fail "$where: 새 호스트 확인에 새 호스트 사용자 키(~/.ssh/id_ed25519) 복호화 명령이 없음"
   grep -qF -- 'test -f <name>.age && sudo AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -d <name>.age -i /etc/ssh/ssh_host_ed25519_key >/dev/null && sudo AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c' <<< "$step" \
     || fail "$where: 새 호스트 확인에 호스트 키(sudo) 복호화 명령이 없음"
@@ -375,10 +440,10 @@ test_managing_secrets_host_add_workflow_checks_recipients_per_target() {
     _secrets_docs_assert_group_row "$rules" "$group" "$row"
   done <<< "$groups"
 
-  assert_contains "$(cat "$wf")" $'nix develop\nagenix_bin="$(command -v agenix)"\ncd secrets'
+  _secrets_docs_assert_external_agenix_lookup "$wf"
   assert_not_contains "$(cat "$wf")" 'nix run github:ryantm/agenix'
-  assert_contains "$(cat "$REPO_ROOT/.claude/skills/managing-minipc/references/host-prerequisites.md")" 'cd secrets && AGENIX_RULES="$PWD/secrets.nix" agenix -e <name>.age'
-  assert_contains "$(head -n 8 "$rules")" 'AGENIX_RULES="$PWD/secrets.nix" agenix -e new-secret.age'
+  assert_contains "$(cat "$REPO_ROOT/.claude/skills/managing-minipc/references/host-prerequisites.md")" 'AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -e <name>.age'
+  assert_contains "$(head -n 8 "$rules")" 'AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -e new-secret.age'
   # 줄 번호 조회는 못 찾아도 빈 값으로 두고 아래 단정이 이유를 출력하게 한다(pipefail로 조용히 끝나지 않게).
   pub_line="$(grep -nF -m1 '`publicKeys` 확인' <<< "$section" | cut -d: -f1 || true)"
   dec_line="$(grep -nF -m1 -- '-d <name>.age -i <identity>' <<< "$section" | cut -d: -f1 || true)"
