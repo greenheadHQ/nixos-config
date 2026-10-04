@@ -121,6 +121,89 @@ test_plans_gc_hook_empty_and_malformed_input_noop() {
   [ -f "$keep" ] || fail "expected plans-gc malformed JSON not to remove files"
 }
 
+_chra_plans_gc_preserves_unsafe_destination() {
+  local level="$1" kind sandbox home repo plans day dest external input out link
+  day=$(date +%Y-%m-%d)
+  for kind in symlink dangling file; do
+    sandbox=$(new_sandbox)
+    home="$sandbox/home"
+    repo="$sandbox/repo"
+    plans="$repo/.claude/plans"
+    external="$sandbox/external"
+    mkdir -p "$home" "$plans" "$external/expired"
+    _chra_git_init "$repo"
+    _chra_make_old_file "$plans/demo-1a2b3c4d.md"
+    printf '%s\n' "external sentinel" > "$external/sentinel"
+    printf '%s\n' "expired sentinel" > "$external/expired/sentinel"
+    _chra_backdate "$external/expired" 40
+
+    dest="$plans/.trash"
+    link="../../../external"
+    if [[ "$level" == date ]]; then
+      mkdir -p "$dest"
+      dest="$dest/$day"
+      link="../../../../external"
+    fi
+    case "$kind" in
+      symlink) ln -s "$link" "$dest" ;;
+      dangling)
+        link="${link%external}missing"
+        ln -s "$link" "$dest"
+        ;;
+      file) printf '%s\n' "destination sentinel" > "$dest" ;;
+    esac
+
+    input=$(jq -n --arg cwd "$repo" '{cwd:$cwd}')
+    out=$(_chra_run_hook "plans-gc.sh" "$input" HOME="$home")
+    [[ -z "$out" ]] || fail "expected $level $kind destination to quietly noop, got: $out"
+    [ -f "$plans/demo-1a2b3c4d.md" ] || \
+      fail "expected plans-gc to preserve source at $level $kind destination"
+    assert_file_contains "$plans/demo-1a2b3c4d.md" "old transient buffer"
+    if [[ "$kind" == file ]]; then
+      assert_file_contains "$dest" "destination sentinel"
+    else
+      [[ -L "$dest" && "$(readlink "$dest")" == "$link" ]] || \
+        fail "expected plans-gc to preserve $level $kind destination link"
+    fi
+    assert_file_contains "$external/sentinel" "external sentinel"
+    assert_file_contains "$external/expired/sentinel" "expired sentinel"
+    [[ ! -e "$external/demo-1a2b3c4d.md" && ! -e "$external/$day" ]] || \
+      fail "expected plans-gc not to move source through $level $kind destination"
+    [[ ! -e "$sandbox/missing" ]] || fail "expected plans-gc not to create dangling link target"
+  done
+}
+
+test_plans_gc_hook_preserves_source_for_unsafe_trash_root() {
+  _chra_plans_gc_preserves_unsafe_destination trash
+}
+
+test_plans_gc_hook_preserves_source_for_unsafe_date_destination() {
+  _chra_plans_gc_preserves_unsafe_destination date
+}
+
+test_plans_gc_hook_preserves_existing_trash_entries() {
+  local sandbox home repo plans dest input out
+  sandbox=$(new_sandbox)
+  home="$sandbox/home"
+  repo="$sandbox/repo"
+  plans="$repo/.claude/plans"
+  dest="$plans/.trash/$(date +%Y-%m-%d)"
+  mkdir -p "$home" "$dest"
+  _chra_git_init "$repo"
+  _chra_make_old_file "$plans/demo-1a2b3c4d.md"
+  printf '%s\n' "previously retired buffer" > "$dest/demo-1a2b3c4d.md"
+  ln -s missing "$dest/demo-1a2b3c4d.md.1"
+
+  input=$(jq -n --arg cwd "$repo" '{cwd:$cwd}')
+  out=$(_chra_run_hook "plans-gc.sh" "$input" HOME="$home")
+  [[ -z "$out" ]] || fail "expected plans-gc collision run to produce no stdout, got: $out"
+  [ ! -e "$plans/demo-1a2b3c4d.md" ] || fail "expected plans-gc to retire old buffer"
+  assert_file_contains "$dest/demo-1a2b3c4d.md" "previously retired buffer"
+  [[ -L "$dest/demo-1a2b3c4d.md.1" && "$(readlink "$dest/demo-1a2b3c4d.md.1")" == missing ]] || \
+    fail "expected plans-gc not to overwrite existing dangling destination link"
+  assert_file_contains "$dest/demo-1a2b3c4d.md.2" "old transient buffer"
+}
+
 test_plans_gc_hook_removes_slug_buffers_and_preserves_docs() {
   local sandbox home repo plans input out
   sandbox=$(new_sandbox)
