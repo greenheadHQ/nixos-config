@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# anki-host-backup — 인스턴스마다 헬퍼 애드온(/export)으로 일관된 .colpkg(미디어 포함, 구형 호환
+# anki-host-backup — 인스턴스마다 헬퍼 애드온(/export)으로 일관된 .colpkg(미디어 포함, 신형
 # 형식)를 만들고 HDD로 복사한다. 실행 중인 SQLite를 직접 rsync하면 불일치 사본이 되므로 Anki가
 # 직접 내보낸 패키지만 백업한다. 실패 시에만 Pushover(우선순위 1)로 알린다.
 #
@@ -64,7 +64,7 @@ for entry in $INSTANCES; do
     continue
   fi
 
-  payload="$(jq -n --arg path "${local_dir}/${file}" '{path: $path, include_media: true, legacy: true}')"
+  payload="$(jq -n --arg path "${local_dir}/${file}" '{path: $path, include_media: true, legacy: false}')"
   anki_helper_call_retry_busy "${helper}/export" "$payload" "$HELPER_CURL_MAX_TIME"
   if helper_busy; then
     # busy 예산 소진 — 순서 대기지만 오늘 백업이 빠지는 것이므로 실패로 알린다 (sync와 달리 다음 회차가 내일이다)

@@ -1,12 +1,17 @@
 """Offline recovery from generated packages; never opens an operational profile."""
+import base64
 import hashlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
 import stat
+import wave
+import zipfile
 
 import pytest
+from anki._backend import RustBackend
 from anki.collection import Collection
 
 
@@ -15,6 +20,23 @@ SOURCE = Path(os.environ.get("ANKI_HOST_RECOVERY_SOURCE", ROOT / "modules/nixos/
 spec = importlib.util.spec_from_file_location("field_recovery_fixture", SOURCE)
 recovery = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(recovery)
+
+
+def synthetic_media():
+    image = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII="
+    )
+    audio = io.BytesIO()
+    with wave.open(audio, "wb") as stream:
+        stream.setnchannels(1)
+        stream.setsampwidth(2)
+        stream.setframerate(8000)
+        stream.writeframes(b"\x00\x00" * 80)
+    return {"합성 이미지.png": image, "synthetic audio.wav": audio.getvalue()}
+
+
+def media_bytes(directory):
+    return {path.name: path.read_bytes() for path in Path(directory).iterdir() if path.is_file()}
 
 
 @pytest.fixture
@@ -34,16 +56,19 @@ def fixture(tmp_path):
     col.models.add_template(model, template)
     col.models.add(model)
     note = col.new_note(model)
-    values = {"Answer": "old answer", "Question": "synthetic question",
+    for name, data in synthetic_media().items():
+        assert col.media.write_data(name, data) == name
+    values = {"Answer": 'old answer [sound:synthetic audio.wav]',
+              "Question": 'synthetic question <img src="합성 이미지.png">',
               "검토 메모": "<p>한국어 메모 하나</p><p>두 번째 문단 &amp; 원문</p>"}
     for name, value in values.items():
         note[name] = value
     col.add_note(note, 1)
 
-    def export(legacy=False):
-        path = backups / ("legacy.colpkg" if legacy else "modern.colpkg")
+    def export(include_media=False):
+        path = backups / ("modern-media.colpkg" if include_media else "modern.colpkg")
         try:
-            col.export_collection_package(out_path=str(path), include_media=False, legacy=legacy)
+            col.export_collection_package(out_path=str(path), include_media=include_media, legacy=False)
         finally:
             col.reopen(after_full_sync=False)
         return path
@@ -52,10 +77,10 @@ def fixture(tmp_path):
     col.close()
 
 
-@pytest.mark.parametrize("legacy", [False, True])
-def test_recovers_historical_fields_without_changing_source_or_current_collection(fixture, legacy, capfd, monkeypatch):
+@pytest.mark.parametrize("include_media", [False, True])
+def test_recovers_historical_fields_without_changing_source_or_current_collection(fixture, include_media, capfd, monkeypatch):
     col, nid, values, export, backups, output = fixture
-    backup = export(legacy)
+    backup = export(include_media)
     before = backup.read_bytes()
     model = col.get_note(nid).note_type()
     col.models.rename_field(model, model["flds"][0], "Current Answer")
@@ -71,7 +96,9 @@ def test_recovers_historical_fields_without_changing_source_or_current_collectio
         assert stat.S_IMODE(package.stat().st_mode) == 0o600
         assert stat.S_IMODE(directory.stat().st_mode) == 0o700
         temporary.append(directory)
-        return extract(package, directory, ids)
+        notes = extract(package, directory, ids)
+        assert media_bytes(directory / "collection.media") == (synthetic_media() if include_media else {})
+        return notes
     monkeypatch.setattr(recovery, "_extract", checked_extract)
     result = recovery.recover_fields(backup, [nid], output / "fields.json", [backups], instance="fixture")
     saved = json.loads((output / "fields.json").read_text())
@@ -81,11 +108,43 @@ def test_recovers_historical_fields_without_changing_source_or_current_collectio
     assert backup.read_bytes() == before
     assert col.get_note(nid)["Current Answer"] == "new answer"
     assert col.db.all("select * from cards where nid=?", nid) == schedule
+    assert media_bytes(col.media.dir()) == synthetic_media()
     assert stat.S_IMODE((output / "fields.json").stat().st_mode) == 0o600
     assert temporary and not temporary[0].exists()
     printed = capfd.readouterr()
     assert "old answer" not in printed.out + printed.err
     assert "한국어" not in printed.out + printed.err
+
+
+def test_modern_media_package_restores_note_card_history_and_media_in_isolation(fixture, tmp_path):
+    col, nid, values, export, _, _ = fixture
+    card_id = col.get_note(nid).card_ids()[0]
+    col.set_user_flag_for_cards(4, [card_id])
+    col.sched.set_due_date([card_id], "3")
+    before = {table: col.db.all(f"select * from {table} order by id") for table in ("notes", "cards", "revlog")}
+    assert before["revlog"]
+    backup = export(include_media=True)
+    source_hash = hashlib.sha256(backup.read_bytes()).hexdigest()
+    with zipfile.ZipFile(backup) as package:
+        assert package.testzip() is None
+        assert "collection.anki21b" in package.namelist()
+    restored = tmp_path / "restored"
+    restored.mkdir(mode=0o700)
+    backend = RustBackend()
+    backend.import_collection_package(
+        col_path=str(restored / "collection.anki2"), backup_path=str(backup),
+        media_folder=str(restored / "collection.media"), media_db=str(restored / "collection.media.db2"),
+    )
+    recovered = Collection(str(restored / "collection.anki2"), backend=backend)
+    try:
+        assert dict(recovered.get_note(nid).items()) == values
+        assert {table: recovered.db.all(f"select * from {table} order by id") for table in before} == before
+        assert media_bytes(recovered.media.dir()) == synthetic_media()
+    finally:
+        recovered.close()
+    assert hashlib.sha256(backup.read_bytes()).hexdigest() == source_hash
+    assert {table: col.db.all(f"select * from {table} order by id") for table in before} == before
+    assert media_bytes(col.media.dir()) == synthetic_media()
 
 
 def test_missing_note_fails_without_output(fixture):

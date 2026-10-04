@@ -1,7 +1,8 @@
 """Apply pinned add-ons to a writable tree, with whole-tree rollback snapshots.
 
-Never opens a collection or prefs database. Call only while Anki is closed.
+Never opens a collection or prefs database. Close Anki before changing add-ons.
 The process guard is conservative (any Anki owned by this user blocks writes).
+Backup inventory is read-only and can be queried while Anki is running.
 """
 
 import argparse
@@ -46,7 +47,7 @@ def checked_tree(root):
 
 def relative_file(name):
     path = Path(name)
-    if not name or path.is_absolute() or ".." in path.parts or str(path) != name:
+    if not name or not path.parts or path.is_absolute() or ".." in path.parts or str(path) != name:
         raise ValueError(f"Invalid managed path: {name}")
     if path.parts[0] == "user_files" or name == "meta.json":
         raise ValueError(f"Runtime file cannot be managed as code: {name}")
@@ -59,9 +60,12 @@ def validate_record(record):
     for addon_id, item in record.items():
         if not re.fullmatch(r"[0-9]+", addon_id):
             raise ValueError(f"Invalid AnkiWeb ID: {addon_id}")
+        if not isinstance(item["files"], list):
+            raise ValueError("Invalid managed files")
         for name in item["files"]:
             relative_file(name)
-        if not isinstance(item["config_keys"], list):
+        if (not isinstance(item["config_keys"], list)
+                or any(not isinstance(key, str) for key in item["config_keys"])):
             raise ValueError("Invalid config keys")
 
 
@@ -142,6 +146,44 @@ class Manager:
     def ensure_ready(self):
         if self.journal.exists():
             raise RuntimeError("Interrupted apply detected. Close Anki and run: anki-addons recover")
+
+    def list_backups(self):
+        """Inspect snapshots without creating state or taking the write lock."""
+        result = {"schema_version": 1, "kind": "anki_addon_backups",
+                  "collection_data_included": False, "backups": []}
+        for path in [self.base, *self.base.parents, self.state]:
+            if path.is_symlink():
+                raise ValueError("Symlinked backup directory is not supported")
+        if not self.state.exists():
+            return result
+        if not self.state.is_dir():
+            raise ValueError("Expected backup directory")
+        for backup in sorted(self.state.iterdir()):
+            if not re.fullmatch(r"[0-9a-f]{32}", backup.name):
+                continue
+            checked_tree(backup)
+            ownership = read_json(backup / MARKER, {})
+            validate_record(ownership)
+            addons = []
+            for addon in sorted(backup.iterdir()):
+                if not addon.is_dir() or not (addon.name in ownership
+                        or (addon / "__init__.py").is_file() or (addon / "meta.json").is_file()):
+                    continue
+                meta = read_json(addon / "meta.json", {})
+                if not isinstance(meta, dict):
+                    raise ValueError("Expected add-on metadata object")
+                addons.append({"id": addon.name,
+                               "name": meta.get("name") if isinstance(meta.get("name"), str) else None,
+                               "package_mod": meta.get("mod") if type(meta.get("mod")) is int else None,
+                               "managed": addon.name in ownership})
+            # Snapshots are directory renames; their mtime is not creation time.
+            result["backups"].append({
+                "id": backup.name, "created_at": None, "created_at_source": "not_recorded",
+                "size_bytes": sum(path.stat().st_size for path in backup.rglob("*") if path.is_file()),
+                "restore_scope": "whole_addons21_tree", "compatibility": "not_evaluated",
+                "addons": addons,
+            })
+        return result
 
     def commit(self, stage):
         require_closed()  # Recheck after staging, just before replacing files.
@@ -278,14 +320,26 @@ def main():
     sub.add_parser("apply").add_argument("--defer-if-running", action="store_true")
     sub.add_parser("restore").add_argument("backup")
     sub.add_parser("recover")
+    sub.add_parser("list-backups").add_argument("--json", action="store_true")
     args = parser.parse_args()
     try:
+        manager = Manager(args.base.absolute())
+        if args.command == "list-backups":
+            inventory = manager.list_backups()
+            if args.json:
+                print(json.dumps(inventory, ensure_ascii=False))
+            elif inventory["backups"]:
+                for backup in inventory["backups"]:
+                    print(f"{backup['id']}  {backup['size_bytes']} bytes  "
+                          f"{len(backup['addons'])} add-ons  created: unknown")
+            else:
+                print("No add-on backups.")
+            return 0
         if running_anki():
             if args.command == "apply" and args.defer_if_running:
                 print("Anki is running: add-on apply deferred. Close Anki, then run: anki-addons apply")
                 return 0
             require_closed()
-        manager = Manager(args.base.absolute())
         with manager.lock():
             if args.command == "apply":
                 manager.apply(read_json(args.manifest))
@@ -294,6 +348,9 @@ def main():
             else:
                 manager.recover()
     except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
+        if args.command == "list-backups":
+            # Metadata/exception text can contain private config or file names.
+            parser.exit(1, f"anki-addons: Cannot list add-on backups ({type(exc).__name__})\n")
         parser.exit(1, f"anki-addons: {exc}\n")
     return 0
 

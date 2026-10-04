@@ -1,4 +1,6 @@
 import importlib.util
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -315,6 +317,155 @@ class AddonsTest(unittest.TestCase):
                 self.assertEqual(m.running_anki(), expected)
                 self.assertEqual(ps.call_args_list[0].args[0][-1], "uid=,pid=,comm=")
         self.closed.start()
+
+
+class BackupInventoryTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name).resolve()
+        self.manager = m.Manager(self.root / "Anki2")
+
+    def cli(self):
+        output, errors = io.StringIO(), io.StringIO()
+        argv = ["anki-addons", "--base", str(self.manager.base),
+                "--manifest", str(self.root / "unread-manifest.json"), "list-backups", "--json"]
+        with patch.object(sys, "argv", argv), contextlib.redirect_stdout(output), \
+                contextlib.redirect_stderr(errors), \
+                patch.object(m, "running_anki", side_effect=AssertionError("process guard called")), \
+                patch.object(m.Manager, "lock", side_effect=AssertionError("write lock called")):
+            try:
+                result = m.main()
+            except SystemExit as exc:
+                result = exc.code
+        return result, output.getvalue(), errors.getvalue()
+
+    def snapshot(self):
+        backup = self.manager.state / ("a" * 32)
+        addon = backup / "123"
+        addon.mkdir(parents=True)
+        (addon / "__init__.py").write_bytes(b"code\n")
+        m.write_json(addon / "meta.json", {"name": "Fixture", "mod": 1780000000,
+                                           "config": {"private_key": "fixture-secret-content"}})
+        m.write_json(backup / m.MARKER, {"123": {"files": ["__init__.py"], "config_keys": []}})
+        return backup, addon
+
+    def test_empty_cli_does_not_create_state_or_read_manifest(self):
+        result, output, errors = self.cli()
+        self.assertEqual(result, 0, errors)
+        self.assertEqual(json.loads(output), {"schema_version": 1, "kind": "anki_addon_backups",
+                                             "collection_data_included": False, "backups": []})
+        self.assertFalse(self.manager.base.exists())
+
+    def test_inventory_scope_metadata_and_redaction_without_filesystem_changes(self):
+        backup, addon = self.snapshot()
+        (backup / "999").mkdir()
+        (backup / "999/__init__.py").write_bytes(b"unmanaged\n")
+        (addon / "user_files").mkdir()
+        (addon / "user_files/state.db").write_bytes(b"private runtime\n")
+        (self.manager.base / "collection.anki2").write_bytes(b"collection must not be included")
+        (self.manager.state / "stage-ignored").mkdir()
+        m.write_json(self.manager.journal, {"private": "pending must not be output"})
+        (self.manager.state / "lock").write_bytes(b"existing lock\n")
+        os.utime(backup, (111, 222))
+        before = {str(p.relative_to(self.manager.base)): (p.stat().st_ino, p.stat().st_mode,
+                                                        p.stat().st_mtime_ns, p.read_bytes() if p.is_file() else None)
+                  for p in [self.manager.base, *self.manager.base.rglob("*")]}
+        result, output, errors = self.cli()
+        self.assertEqual(result, 0, errors)
+        inventory = json.loads(output)
+        self.assertEqual(len(inventory["backups"]), 1)
+        item = inventory["backups"][0]
+        self.assertEqual(item["id"], backup.name)
+        self.assertIsNone(item["created_at"])
+        self.assertEqual(item["created_at_source"], "not_recorded")
+        self.assertEqual(item["restore_scope"], "whole_addons21_tree")
+        self.assertEqual(item["compatibility"], "not_evaluated")
+        self.assertEqual(item["addons"], [
+            {"id": "123", "name": "Fixture", "package_mod": 1780000000, "managed": True},
+            {"id": "999", "name": None, "package_mod": None, "managed": False},
+        ])
+        expected_bytes = len(b"code\nunmanaged\nprivate runtime\n")
+        expected_bytes += len((addon / "meta.json").read_bytes()) + len((backup / m.MARKER).read_bytes())
+        self.assertEqual(item["size_bytes"], expected_bytes)
+        for private in ("fixture-secret-content", "private_key", "private runtime", "pending must not be output"):
+            self.assertNotIn(private, output + errors)
+        after = {str(p.relative_to(self.manager.base)): (p.stat().st_ino, p.stat().st_mode,
+                                                       p.stat().st_mtime_ns, p.read_bytes() if p.is_file() else None)
+                 for p in [self.manager.base, *self.manager.base.rglob("*")]}
+        self.assertEqual(after, before)
+
+    def test_missing_marker_is_unmanaged_and_non_integer_package_mod_is_unknown(self):
+        backup, addon = self.snapshot()
+        (backup / m.MARKER).unlink()
+        for package_mod in (True, "1.2.3", 1.5):
+            with self.subTest(package_mod=package_mod):
+                m.write_json(addon / "meta.json", {"name": "Fixture", "mod": package_mod})
+                item = self.manager.list_backups()["backups"][0]["addons"][0]
+                self.assertFalse(item["managed"])
+                self.assertIsNone(item["package_mod"])
+
+    def test_invalid_metadata_fails_without_disclosing_contents(self):
+        backup, addon = self.snapshot()
+        for path, content in [(addon / "meta.json", 'fixture-secret-content'),
+                              (addon / "meta.json", '["fixture-secret-content"]'),
+                              (backup / m.MARKER, '{"fixture-secret-content": {}}'),
+                              (backup / m.MARKER, '{"123": {"files": ["."], "config_keys": []}}'),
+                              (backup / m.MARKER, '{"123": {"files": "abc", "config_keys": []}}')]:
+            with self.subTest(path=path.name, content=content):
+                path.write_text(content)
+                result, output, errors = self.cli()
+                self.assertEqual(result, 1)
+                self.assertEqual(output, "")
+                self.assertIn("Cannot list add-on backups", errors)
+                self.assertNotIn("fixture-secret-content", errors)
+                m.write_json(addon / "meta.json", {})
+                m.write_json(backup / m.MARKER, {})
+
+    def test_malformed_ownership_lists_are_refused(self):
+        backup, _ = self.snapshot()
+        for field in ("files", "config_keys"):
+            for value in (None, {}, "not-a-list", [{}], [None], [True], [1], ["valid", {}]):
+                with self.subTest(field=field, value=value):
+                    record = {"123": {"files": ["__init__.py"], "config_keys": ["setting"]}}
+                    record["123"][field] = value
+                    m.write_json(backup / m.MARKER, record)
+                    result, output, errors = self.cli()
+                    self.assertEqual(result, 1)
+                    self.assertEqual(output, "")
+                    self.assertIn("Cannot list add-on backups", errors)
+        for keys in ([], ["setting", "한글 설정"]):
+            m.validate_record({"123": {"files": ["__init__.py"], "config_keys": keys}})
+
+    def test_symlinked_snapshot_or_metadata_is_refused_without_following_it(self):
+        backup, addon = self.snapshot()
+        outside = self.root / "outside.json"
+        outside.write_text('{"name": "fixture-secret-content"}')
+        for path in (addon / "meta.json", backup / m.MARKER, addon, backup):
+            with self.subTest(path=path.name):
+                saved = path.with_name(path.name + "-saved")
+                path.rename(saved)
+                path.symlink_to(outside if saved.is_file() else saved, target_is_directory=saved.is_dir())
+                result, output, errors = self.cli()
+                self.assertEqual(result, 1)
+                self.assertEqual(output, "")
+                self.assertNotIn("fixture-secret-content", errors)
+                self.assertEqual(outside.read_text(), '{"name": "fixture-secret-content"}')
+                path.unlink()
+                saved.rename(path)
+
+    def test_symlinked_base_or_state_is_refused(self):
+        for directory in (self.manager.base, self.manager.state):
+            with self.subTest(directory=directory.name):
+                outside = self.root / "outside"
+                outside.mkdir(exist_ok=True)
+                directory.parent.mkdir(parents=True, exist_ok=True)
+                directory.symlink_to(outside, target_is_directory=True)
+                result, output, errors = self.cli()
+                self.assertEqual(result, 1)
+                self.assertEqual(output, "")
+                self.assertEqual(list(outside.iterdir()), [])
+                directory.unlink()
 
 
 if __name__ == "__main__":
