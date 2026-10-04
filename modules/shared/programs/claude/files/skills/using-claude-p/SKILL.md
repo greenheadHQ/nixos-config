@@ -199,7 +199,6 @@ ssh minipc 'zsh -li -c "c -p \"...\""'  # → unmatched quote
 |--------|------|------|
 | T1 | init 인벤토리 (skills/tools/MCP/plugins 수) | ~$0.07 |
 | T2a | 스킬 등록 spot check | ~$0 (T1 재사용) |
-| T2b | 스킬 발동 회귀 (positive/negative 대조) | 호출 2회 (haiku) |
 | T3 | hooks 파일 존재/실행 가능 여부 | $0 |
 | T4 | MCP 서버 init 등록 확인 | ~$0 (T1 재사용) |
 | T5 | 권한 모델 (차단/허용) | ~$0.14 |

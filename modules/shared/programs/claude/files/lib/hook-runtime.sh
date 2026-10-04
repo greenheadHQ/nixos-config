@@ -13,7 +13,6 @@
 #   claude/files/hooks/pinning-alert.sh         # via $HOOK_RUNTIME_LIB
 #   claude/files/hooks/pinning-guard.sh         # via $HOOK_RUNTIME_LIB
 #   claude/files/hooks/fragile-hardcoding-guard.sh # via $HOOK_RUNTIME_LIB
-#   claude/files/hooks/log-skill.sh             # via $HOOK_RUNTIME_LIB
 #   claude/files/hooks/nrs-session-cleanup.sh   # via $HOOK_RUNTIME_LIB
 #   claude/files/hooks/plans-gc.sh              # via $HOOK_RUNTIME_LIB
 #   claude/files/hooks/record-last-session.sh   # via $HOOK_RUNTIME_LIB

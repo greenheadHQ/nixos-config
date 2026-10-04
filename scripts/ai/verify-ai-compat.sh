@@ -13,7 +13,6 @@
 #   허용하는 스킬은 홈 잔재 검사(존재=FAIL)와 충돌하므로 등록하지 않고, 미등록 예외 근거를 남긴다
 # - 전 스킬 코퍼스 + scripts/ai/ + tests/ 에서 스킬명 cross-reference grep (NOT-for, 산문 참조,
 #   modes/·scripts/ 잔존 포함). 이 스캔은 RETIRED_REF_SCAN_ROOTS가 자동 수행한다
-# - 전 스킬 evals/queries.json에서 혼동쌍 잔존 grep
 # - nrs로 홈 디렉터리 심링크 정리 반영
 set -euo pipefail
 

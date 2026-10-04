@@ -350,7 +350,7 @@ _verify_ai_compat_make_retired_ref_fixture() {
     "$repo_root/scripts/ai" \
     "$repo_root/tests/suites"
 
-  # 구 스캔 범위(SKILL.md·references/*.md·evals/queries.json)가 놓치던 위치들.
+  # 스킬 문서만 보던 구 스캔 범위가 놓치던 위치들.
   printf 'audit mode still routes to %s\n' "$name" > "$shared/demo/modes/audit.md"
   printf '# helper referencing %s\n' "$name" > "$repo_root/scripts/ai/legacy-helper.sh"
   printf '# suite referencing %s\n' "$name" > "$repo_root/tests/suites/legacy.sh"
