@@ -98,6 +98,9 @@ run_test "wt plugin manifest cleanup uses stable canonical target" test_wt_plugi
 run_test "wt plugin manifest GC removes unmarked orphan worktree entries" test_wt_plugin_manifest_gc_removes_unmarked_orphan_worktree_entries
 run_test "wt plugin manifest GC skips targets outside worktree base" test_wt_plugin_manifest_gc_skips_targets_outside_worktree_base
 run_test "wt plugin manifest GC keeps entries when path check fails" test_wt_plugin_manifest_gc_keeps_entries_when_path_check_fails
+run_test "wt plugin manifest GC supports nested targets" test_wt_plugin_manifest_gc_supports_nested_targets
+run_test "wt plugin manifest GC backups never overwrite collisions" test_wt_plugin_manifest_gc_backups_never_overwrite_collisions
+run_test "wt plugin manifest GC keeps orphans when backup fails" test_wt_plugin_manifest_gc_keeps_orphans_when_backup_fails
 run_test "wt cleanup removes exact Claude local plugin manifest entries" test_wt_cleanup_removes_exact_claude_local_plugin_manifest_entries
 run_test "wt cleanup stops when plugin manifest cleanup fails" test_wt_cleanup_stops_when_plugin_manifest_cleanup_fails
 run_test "wt plugin manifest missing and invalid inputs are safe" test_wt_plugin_manifest_missing_and_invalid_are_safe

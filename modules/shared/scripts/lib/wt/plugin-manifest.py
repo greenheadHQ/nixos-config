@@ -322,14 +322,14 @@ def orphan_gc_base(target_root: str) -> str | None:
 
     GC 범위를 CLI 인자로 따로 받지 않고 대상 경로에서 유도한다. 호출부(bootstrap.sh)는
     이미 `<repo>/.claude/worktrees/<name>`만 넘기므로 추가 인자 없이 같은 저장소의
-    worktree base로 범위가 좁혀지고, 그 밖의 경로로 helper를 직접 부르면 (마지막 두
-    조각이 다르므로) GC 자체가 꺼진다. wt가 만드는 대상은 항상 base 바로 아래이므로
-    부모 한 단계만 본다 — GC가 훑는 범위는 이렇게 얻은 base 아래 전체다.
+    worktree base로 범위가 좁혀진다. `<name>`에 `/`가 들어갈 수 있으므로 조상을 가까운
+    순서로 탐색한다. 중첩 저장소가 있으면 가장 가까운 base만 선택하고, 조상에 base가
+    없는 경로로 helper를 직접 부르면 GC 자체가 꺼진다.
     """
-    parent = Path(target_root).expanduser().parent
-    if parent.parts[-2:] != WT_WORKTREE_BASE_PARTS:
-        return None
-    return resolve_path(str(parent), strict=False)
+    for parent in Path(target_root).expanduser().parents:
+        if parent.parts[-2:] == WT_WORKTREE_BASE_PARTS:
+            return resolve_path(str(parent), strict=False)
+    return None
 
 
 def path_presence(path: Path) -> tuple[str, str]:
@@ -423,16 +423,42 @@ def backup_path_for_gc(manifest_path: Path) -> Path:
 def write_gc_backup(manifest_path: Path) -> Path | None:
     """GC 직전 manifest 사본을 남긴다 (실패하면 None — 호출부가 GC를 건너뛴다).
 
-    copy2는 원본 mode를 그대로 옮기는데, 지운 항목까지 담긴 전체 사본이 manifest보다
-    넓은 권한으로 남지 않도록 0600으로 좁힌다 (형제 helper codex-trust.py와 같은 계약).
+    같은 초의 GC나 기존 symlink와 충돌해도 사본을 덮어쓰지 않도록 배타적으로 생성한다.
+    지운 항목까지 담긴 전체 사본이 넓은 권한으로 남지 않도록 생성 시부터 0600을 쓴다.
     """
-    backup = backup_path_for_gc(manifest_path)
+    candidate = backup_path_for_gc(manifest_path)
+    backup = candidate
+    fd = -1
+    created = False
     try:
-        shutil.copy2(manifest_path, backup)
-        os.chmod(backup, 0o600)
+        with manifest_path.open("rb") as source:
+            suffix = 0
+            while True:
+                try:
+                    fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                except FileExistsError:
+                    suffix += 1
+                    backup = candidate.with_name(f"{candidate.name}.{suffix}")
+                    continue
+                created = True
+                break
+            with os.fdopen(fd, "wb") as destination:
+                fd = -1
+                os.fchmod(destination.fileno(), 0o600)
+                shutil.copyfileobj(source, destination)
+                destination.flush()
+                os.fsync(destination.fileno())
     except OSError as exc:
+        if created:
+            try:
+                backup.unlink()
+            except OSError:
+                pass
         warn(f"cannot write plugin manifest backup; keeping orphan entries: {backup}: {exc}")
         return None
+    finally:
+        if fd >= 0:
+            os.close(fd)
     return backup
 
 

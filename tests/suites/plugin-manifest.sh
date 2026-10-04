@@ -1064,3 +1064,215 @@ assert os.path.join(wt_base, "live-unmarked") in paths, paths
 assert os.path.join(wt_base, "gone-sibling") in paths, paths
 PY
 }
+
+test_wt_plugin_manifest_gc_supports_nested_targets() {
+  local sandbox
+  sandbox=$(new_sandbox)
+  "${WT_PYTHON:-python3}" - "$REPO_ROOT/modules/shared/scripts/lib/wt/plugin-manifest.py" "$sandbox" <<'PY'
+import contextlib
+import importlib.util
+import io
+import json
+from pathlib import Path
+import sys
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location("plugin_manifest", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+sandbox = Path(sys.argv[2]).resolve()
+base = sandbox / "repo/.claude/worktrees"
+base.mkdir(parents=True)
+(base / "live").mkdir()
+alias = sandbox / "repo-alias"
+alias.symlink_to(sandbox / "repo", target_is_directory=True)
+manifest = sandbox / "installed_plugins.json"
+target = base / "feat/target"
+unknown = base / "unknown"
+original_presence = module.path_presence
+
+
+def presence(path):
+    if path == unknown:
+        return module.PRESENCE_UNKNOWN, "fixture cannot inspect path"
+    return original_presence(path)
+
+
+def local(path, install, managed=False):
+    entry = {"scope": "local", "projectPath": str(path), "installPath": install}
+    if managed:
+        entry["metadata"] = {"wtManaged": {"version": 1}}
+    return entry
+
+
+entries = [
+    local(target, "/tmp/target-managed", managed=True),
+    local(target, "/tmp/target-manual"),
+    local(base / "orphan-flat", "/tmp/flat"),
+    local(base / "feat/orphan-deep", "/tmp/deep"),
+    local(base / "live", "/tmp/live"),
+    local(unknown, "/tmp/unknown"),
+    local(sandbox / "outside", "/tmp/outside"),
+    {"scope": "user", "projectPath": str(base / "user"), "installPath": "/tmp/user"},
+]
+expected = [entry for entry in entries if entry["installPath"] not in {
+    "/tmp/target-managed", "/tmp/flat", "/tmp/deep"
+}]
+# 별칭 base도 resolve해서 같은 범위로 판정하고, 대상 자신의 수동 등록은 보존한다.
+for literal_target in (target, alias / ".claude/worktrees/feat/target"):
+    manifest.write_text(json.dumps({"plugins": {"example@demo": entries}}) + "\n")
+    output = io.StringIO()
+    argv = ["remove-local", "--manifest", str(manifest), "--target-root", str(literal_target)]
+    if literal_target == target:
+        argv.extend(["--target-root-before-removal", str(target)])
+    with patch.object(module, "path_presence", side_effect=presence), contextlib.redirect_stderr(output):
+        assert module.main(argv) == 0
+    assert "removed 2 orphan worktree entries" in output.getvalue(), output.getvalue()
+    assert "cannot check worktree path" in output.getvalue(), output.getvalue()
+    assert json.loads(manifest.read_text())["plugins"]["example@demo"] == expected
+
+# base가 중첩된 경우 가까운 저장소의 base만 GC 범위로 삼는다.
+inner_base = base / "live/.claude/worktrees"
+assert module.orphan_gc_base(str(inner_base / "feat/target")) == str(inner_base)
+assert module.orphan_gc_base(str(base)) is None
+assert module.orphan_gc_base(str(sandbox / "outside/target")) is None
+PY
+}
+
+test_wt_plugin_manifest_gc_backups_never_overwrite_collisions() {
+  local sandbox
+  sandbox=$(new_sandbox)
+  "${WT_PYTHON:-python3}" - "$REPO_ROOT/modules/shared/scripts/lib/wt/plugin-manifest.py" "$sandbox" <<'PY'
+import contextlib
+import importlib.util
+import io
+import json
+from pathlib import Path
+import stat
+import sys
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location("plugin_manifest", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+sandbox = Path(sys.argv[2]).resolve()
+base = sandbox / "repo/.claude/worktrees"
+base.mkdir(parents=True)
+manifest = sandbox / "installed_plugins.json"
+candidate = manifest.with_name(manifest.name + ".bak-gc-fixed")
+candidate.write_bytes(b"existing backup sentinel\n")
+linked = candidate.with_name(candidate.name + ".1")
+external = sandbox / "external-backup"
+external.write_bytes(b"symlink target sentinel\n")
+linked.symlink_to(external)
+dangling = candidate.with_name(candidate.name + ".2")
+dangling.symlink_to(sandbox / "missing-target")
+collisions = {candidate, linked, dangling}
+snapshots = []
+backups = []
+
+for label in ("first", "second"):
+    target = base / ("target-" + label)
+    payload = {
+        "plugins": {
+            "example@demo": [
+                {"scope": "local", "projectPath": str(target), "installPath": "/tmp/target",
+                 "metadata": {"wtManaged": {"version": 1}}},
+                {"scope": "local", "projectPath": str(base / ("orphan-" + label)),
+                 "installPath": "/tmp/orphan"},
+            ]
+        },
+        "fixture": label,
+    }
+    before = (json.dumps(payload, indent=2) + "\n").encode()
+    manifest.write_bytes(before)
+    manifest.chmod(0o644)
+    output = io.StringIO()
+    # 후보를 고정해 같은 초의 연속 GC를 결정적으로 재현한다.
+    with patch.object(module, "backup_path_for_gc", return_value=candidate), contextlib.redirect_stderr(output):
+        assert module.main([
+            "remove-local", "--manifest", str(manifest), "--target-root", str(target),
+            "--target-root-before-removal", str(target),
+        ]) == 0
+    assert "removed 1 orphan worktree entries" in output.getvalue(), output.getvalue()
+    assert json.loads(manifest.read_bytes())["plugins"] == {}
+    created = set(sandbox.glob(manifest.name + ".bak-gc-*")) - collisions - set(backups)
+    assert len(created) == 1, created
+    backup = created.pop()
+    assert backup.is_file() and not backup.is_symlink(), backup
+    assert stat.S_IMODE(backup.stat().st_mode) == 0o600
+    backups.append(backup)
+    snapshots.append(before)
+    for saved_backup, saved_snapshot in zip(backups, snapshots):
+        assert saved_backup.read_bytes() == saved_snapshot, saved_backup
+    assert candidate.read_bytes() == b"existing backup sentinel\n"
+    assert linked.is_symlink() and linked.readlink() == external
+    assert external.read_bytes() == b"symlink target sentinel\n"
+    assert dangling.is_symlink() and dangling.readlink() == sandbox / "missing-target"
+    assert not (sandbox / "missing-target").exists()
+
+assert backups[0] != backups[1]
+PY
+}
+
+test_wt_plugin_manifest_gc_keeps_orphans_when_backup_fails() {
+  local sandbox
+  sandbox=$(new_sandbox)
+  "${WT_PYTHON:-python3}" - "$REPO_ROOT/modules/shared/scripts/lib/wt/plugin-manifest.py" "$sandbox" <<'PY'
+import contextlib
+import importlib.util
+import io
+import json
+from pathlib import Path
+import sys
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location("plugin_manifest", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+sandbox = Path(sys.argv[2]).resolve()
+base = sandbox / "repo/.claude/worktrees"
+base.mkdir(parents=True)
+target = base / "target"
+manifest = sandbox / "installed_plugins.json"
+orphan = {"scope": "local", "projectPath": str(base / "orphan"), "installPath": "/tmp/orphan"}
+managed = {"scope": "local", "projectPath": str(target), "installPath": "/tmp/managed",
+           "metadata": {"wtManaged": {"version": 1}}}
+payload = {"plugins": {"example@demo": [managed, orphan]}}
+
+# 존재하지 않는 목적지 부모라 backup 생성이 실패하지만 대상의 managed 제거는 계속한다.
+candidate = sandbox / "missing-parent/backup"
+manifest.write_text(json.dumps(payload) + "\n")
+output = io.StringIO()
+with patch.object(module, "backup_path_for_gc", return_value=candidate), contextlib.redirect_stderr(output):
+    assert module.main([
+        "remove-local", "--manifest", str(manifest), "--target-root", str(target),
+        "--target-root-before-removal", str(target),
+    ]) == 0
+assert "cannot write plugin manifest backup; keeping orphan entries" in output.getvalue()
+assert "removed 1 orphan" not in output.getvalue()
+assert json.loads(manifest.read_text())["plugins"]["example@demo"] == [orphan]
+assert not candidate.exists()
+
+# 쓰기 도중 실패도 완성된 백업으로 취급하지 않는다.
+candidate = sandbox / "partial-backup"
+manifest.write_text(json.dumps(payload) + "\n")
+
+
+def fail_copy(source, destination):
+    destination.write(b"partial")
+    raise OSError("fixture backup write failure")
+
+
+output = io.StringIO()
+with patch.object(module, "backup_path_for_gc", return_value=candidate), \
+        patch.object(module.shutil, "copyfileobj", side_effect=fail_copy), contextlib.redirect_stderr(output):
+    assert module.main([
+        "remove-local", "--manifest", str(manifest), "--target-root", str(target),
+        "--target-root-before-removal", str(target),
+    ]) == 0
+assert "fixture backup write failure" in output.getvalue(), output.getvalue()
+assert json.loads(manifest.read_text())["plugins"]["example@demo"] == [orphan]
+assert not candidate.exists(), "partial failed backup must be removed"
+PY
+}
