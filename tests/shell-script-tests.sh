@@ -318,6 +318,12 @@ run_test "missing wt Python helpers fail state changes" test_missing_wt_python_h
 run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_python_helpers_fail_cleanup_state_changes
 run_test "codex trust write failure returns warning" test_codex_trust_write_failure_returns_warning
 run_test "fixture git setup ignores host global hooks" test_fixture_git_is_hermetic_against_global_hooks
+run_test "line-count assertion preserves exact line counts" test_assert_line_count_preserves_exact_line_counts
+run_test "line-count assertion accepts zero matches" test_assert_line_count_accepts_zero_matches
+run_test "line-count assertion reports zero-match mismatch" test_assert_line_count_reports_zero_match_mismatch
+run_test "line-count assertion rejects missing and unreadable files" test_assert_line_count_rejects_file_errors
+run_test "line-count assertion rejects grep error with zero output" test_assert_line_count_rejects_grep_error_with_zero_output
+run_test "line-count assertion keeps sequential and parallel diagnostics" test_assert_line_count_harness_diagnostics
 run_test "suite definitions match aggregator registrations" test_suite_function_registration_parity
 run_test "nix sources use stdenv.hostPlatform predicates" test_nix_sources_use_host_platform_predicates
 run_test "deprecated stdenv predicate scan detects regression" test_deprecated_stdenv_predicate_scan_detects_regression
@@ -487,6 +493,9 @@ run_test "fragile-hardcoding-guard empty and malformed input noop" test_fragile_
 run_test "nrs-session-cleanup empty malformed and nonrepo noop" test_nrs_session_cleanup_hook_empty_malformed_and_nonrepo_input_noop
 run_test "plans-gc removes old transient buffer" test_plans_gc_hook_removes_old_transient_buffer
 run_test "plans-gc empty and malformed input noop" test_plans_gc_hook_empty_and_malformed_input_noop
+run_test "plans-gc preserves source for unsafe trash root" test_plans_gc_hook_preserves_source_for_unsafe_trash_root
+run_test "plans-gc preserves source for unsafe date destination" test_plans_gc_hook_preserves_source_for_unsafe_date_destination
+run_test "plans-gc preserves existing trash entries" test_plans_gc_hook_preserves_existing_trash_entries
 run_test "plans-gc retires slug buffers and preserves docs" test_plans_gc_hook_removes_slug_buffers_and_preserves_docs
 run_test "record-last-session normal input writes marker" test_record_last_session_hook_normal_input_writes_marker
 run_test "record-last-session empty malformed and subagent noop" test_record_last_session_hook_empty_malformed_and_subagent_noop
