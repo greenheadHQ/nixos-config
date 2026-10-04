@@ -76,7 +76,7 @@ def test_build_round_trip_preserves_definition_and_actual_asset_bytes(source, tm
 def test_source_inventory_is_sorted_exact_and_excludes_unmanaged_assets():
     paths = source_paths(HOST)
     assert paths == tuple(sorted(set(paths)))
-    assert len(paths) == 13
+    assert len(paths) == 14
     assert VERSION_PATH in paths
     assert all((HOST / path).is_file() for path in paths)
     assert not any(".license.txt" in path or "node_modules" in path for path in paths)
@@ -120,6 +120,7 @@ def test_version_requires_exact_schema_and_digest_without_git_provenance(source,
     ("sync-addon/code-highlight-renderer.html", "highlight-fragment-mismatch"),
     ("sync-addon/code-highlight.css", "highlight-fragment-mismatch"),
     ("sync-addon/text-size-controls.html", "text-size-fragment-mismatch"),
+    ("sync-addon/scratchpad.html", "scratchpad-fragment-mismatch"),
 ])
 def test_feature_source_change_cannot_silently_leave_full_template_stale(source, relative, reason):
     path = source / relative
@@ -136,6 +137,10 @@ def test_feature_source_change_cannot_silently_leave_full_template_stale(source,
     ("front.html", 'const KEY = "AnkiTextSizeV1"', 'const KEY = "AnkiTextSizeV2"', "text-size-fragment-mismatch"),
     ("front.html", "{{^질문}}{{#맥락}}<!-- anki-text-size-v1 -->", "{{#맥락}}<!-- anki-text-size-v1 -->",
      "text-size-fragment-mismatch"),
+    ("front.html", 'const KEY = "AnkiScratchpadV1"', 'const KEY = "AnkiScratchpadV2"',
+     "scratchpad-fragment-mismatch"),
+    ("back.html", "{{^질문}}{{#맥락}}<!-- anki-scratchpad-v1 -->",
+     "{{#맥락}}<!-- anki-scratchpad-v1 -->", "scratchpad-fragment-mismatch"),
 ])
 def test_full_template_cannot_silently_fork_feature_or_generation_guards(source, name, old, new, reason):
     path = source / SOURCE_DIR / name
@@ -247,3 +252,30 @@ def test_materializer_cli_needs_no_anki_or_qt_import(source, tmp_path):
 def test_shipped_highlight_supports_context_only_cards_and_preserves_the_native_guard(side):
     definition = load_checked_source(HOST)[0]["definition"]
     assert "{{^질문}}{{#맥락}}<!-- anki-code-highlight-v1 -->" in definition["tmpls"][0][side]
+
+
+@pytest.mark.parametrize("side", ["qfmt", "afmt"])
+def test_scratchpad_supports_context_only_cards_without_changing_generation(side):
+    definition = load_checked_source(HOST)[0]["definition"]
+    assert "{{^질문}}{{#맥락}}<!-- anki-scratchpad-v1 -->" in definition["tmpls"][0][side]
+    assert definition["req"] == [[0, "any", [0, 2]]]
+
+
+def test_scratchpad_requires_the_managed_card_marker(source):
+    path = source / SOURCE_DIR / "front.html"
+    path.write_bytes(path.read_bytes().replace(b'class="rehab-card" data-anki-scratchpad-card',
+                                             b'class="rehab-card"', 1))
+    with pytest.raises(ManagedBundleError, match="scratchpad-card-marker-mismatch"):
+        generated_version(source)
+
+
+@pytest.mark.parametrize("placement", ["missing", "after-front"])
+def test_scratchpad_answer_marker_must_precede_frontside(source, placement):
+    path = source / SOURCE_DIR / "back.html"
+    marker = b'<span hidden data-anki-scratchpad-answer></span>\n'
+    content = path.read_bytes().replace(marker, b"", 1)
+    if placement == "after-front":
+        content = content.replace(b"{{FrontSide}}\n", b"{{FrontSide}}\n" + marker, 1)
+    path.write_bytes(content)
+    with pytest.raises(ManagedBundleError, match="scratchpad-answer-marker-mismatch"):
+        generated_version(source)

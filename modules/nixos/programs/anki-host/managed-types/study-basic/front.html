@@ -1,4 +1,4 @@
-<div class="rehab-card">
+<div class="rehab-card" data-anki-scratchpad-card>
   {{#맥락}}<div class="context">{{맥락}}</div>{{/맥락}}
   <div class="question anki-code-scope">{{질문}}</div>
 </div>{{#질문}}<style>
@@ -1565,6 +1565,601 @@ AnkiCidCopyV2.mount(document.getElementById("qa") || document.body);
   // Anki reuses its WebView, including globals, across question/answer/card changes.
   // Each script invocation gets a new generation; a pending old card cannot paint it.
   window[KEY].render();
+})();
+</script>
+{{/맥락}}{{/질문}}
+{{#질문}}<!-- anki-scratchpad-v1 -->
+<style>
+.anki-scratchpad { --sp-bg:#fff; --sp-text:#202124; --sp-border:#c7d1dd; --sp-button-border:#ccd6e1; --sp-button-bg:#f1f4f8; --sp-button-hover:#e8edf3; --sp-button-active:#dfe7f0; --sp-icon:#465c76; --sp-muted:#667085; --sp-focus:#708ca5; position:fixed; z-index:30; box-sizing:border-box; color:var(--sp-text); font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; text-align:left; }
+.anki-scratchpad [hidden] { display:none!important; }
+.anki-scratchpad button { appearance:none; -webkit-appearance:none; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; min-height:44px; margin:0; padding:7px 12px; border:1px solid var(--sp-border); border-radius:10px; background:var(--sp-bg); color:inherit; font:500 13px/1.3 -apple-system,BlinkMacSystemFont,sans-serif; cursor:pointer; touch-action:manipulation; }
+.anki-scratchpad button:focus-visible, .anki-scratchpad__resize:focus-visible { outline:2px solid var(--sp-focus)!important; outline-offset:2px; }
+.anki-scratchpad textarea:focus { outline:none!important; box-shadow:none!important; }
+.anki-scratchpad__launch { gap:7px; box-shadow:0 1px 4px #0001; }
+.anki-scratchpad__dot { width:6px; height:6px; border-radius:50%; background:var(--sp-focus); }
+.anki-scratchpad__panel { box-sizing:border-box; height:100%; display:flex; flex-direction:column; border:0; border-top:1px solid var(--sp-border); border-radius:0; background:var(--sp-bg); overflow:visible; }
+.anki-scratchpad__resize { position:absolute; left:50%; top:-12px; transform:translateX(-50%); width:80px; height:24px; z-index:1; display:flex; align-items:center; justify-content:center; cursor:ns-resize; touch-action:none; user-select:none; }
+.anki-scratchpad__resize::after { content:""; box-sizing:content-box; width:36px; height:5px; border:2px solid var(--sp-bg); border-radius:6px; background:var(--sp-focus); }
+.anki-scratchpad__header { display:flex; flex:0 0 44px; align-items:center; justify-content:flex-end; padding:0 10px; }
+.anki-scratchpad__tools { display:flex; align-items:center; height:34px; border:1px solid var(--sp-button-border); border-radius:10px; background:var(--sp-button-bg); color:var(--sp-icon); }
+.anki-scratchpad__tools button { position:relative; flex:0 0 44px; width:44px; height:44px; min-height:44px; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; color:inherit; }
+.anki-scratchpad .anki-scratchpad__tools button:is(:hover,:active,:focus,:disabled) { background:transparent; border:0; border-radius:0; box-shadow:none; transform:none; transition:none; }
+.anki-scratchpad__tools button::after { content:""; position:absolute; inset:8px 4px; border-radius:6px; background:transparent; }
+.anki-scratchpad__tools button + button::before { content:""; position:absolute; left:0; width:1px; height:15px; background:var(--sp-button-border); }
+.anki-scratchpad__tools button:disabled { opacity:0.45; cursor:default; }
+.anki-scratchpad__tools button:active:not(:disabled)::after { background:var(--sp-button-active); }
+@media(hover:hover) { .anki-scratchpad__tools button:hover:not(:disabled)::after { background:var(--sp-button-hover); } }
+.anki-scratchpad__tools button:focus-visible { outline-offset:-6px; }
+.anki-scratchpad__tools svg { position:relative; z-index:1; width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; pointer-events:none; }
+.anki-scratchpad__value { appearance:none; -webkit-appearance:none; box-sizing:border-box; flex:1 1 auto; min-height:0; width:100%; margin:0; padding:8px 12px; border:0; border-radius:0; background:var(--sp-bg); color:inherit; font:calc(17px * var(--anki-text-scale,1))/1.55 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; resize:none; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; text-align:left; user-select:text; -webkit-user-select:text; }
+.anki-scratchpad__status { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
+html.anki-scratchpad-open:not(.anki-scratchpad-mobile) { overflow:hidden!important; }
+html.anki-scratchpad-open:not(.anki-scratchpad-mobile) body { box-sizing:border-box; display:flex; flex-direction:column; height:var(--sp-view-height); width:var(--sp-view-width); max-width:none; margin:0 0 0 var(--sp-view-left)!important; padding:var(--sp-view-top) 0 0!important; overflow:hidden; }
+html.anki-scratchpad-open:not(.anki-scratchpad-mobile) #qa, html.anki-scratchpad-open:not(.anki-scratchpad-mobile) .anki-scratchpad-reader { box-sizing:border-box; flex:1 1 0; min-height:0; align-self:center; width:min(100%,var(--anki-card-width,720px)); margin:0!important; padding:var(--anki-card-padding,24px); overflow:auto!important; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
+html.anki-scratchpad-open:not(.anki-scratchpad-mobile) .anki-scratchpad { position:relative; flex:0 0 var(--sp-panel-height); }
+/* AnkiMobile owns document scrolling and keyboard panning. Reserve space for
+   the fixed pad without resizing/reparenting the native document scroller. */
+html.anki-scratchpad-open.anki-scratchpad-mobile body { padding-bottom:calc(var(--anki-card-padding,24px) + var(--sp-panel-height))!important; }
+html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16px * var(--anki-text-scale,1))); }
+:is(.nightMode,.night_mode,.night-mode) .anki-scratchpad, body:is(.nightMode,.night_mode,.night-mode) ~ .anki-scratchpad { --sp-bg:#1f2933; --sp-text:#e5e7eb; --sp-border:#46515d; --sp-button-border:#53677d; --sp-button-bg:#293746; --sp-button-hover:#324153; --sp-button-active:#3b4c60; --sp-icon:#d6e0ec; --sp-muted:#aab4c0; --sp-focus:#99b1c6; }
+</style>
+<script>
+(() => {
+  const KEY = "AnkiScratchpadV1";
+  if (!window[KEY]) {
+    const page = document.documentElement;
+    let reader = null, anchor = null, cardId = null, answer = false;
+    let value = "", opened = true, ratio = 1 / 3, composing = false;
+    let ui = null, input = null, launch = null, panel = null, handle = null;
+    let normalScroll = 0, frame = null, dragging = null;
+    let lastLayout = "";
+    let dragY = 0, dragRatio = 0, dragHeight = 1;
+    const mobile = () => page.classList.contains("iphone") || page.classList.contains("ipad")
+      || document.body?.classList.contains("iphone") || document.body?.classList.contains("ipad");
+    const viewport = () => {
+      if (mobile()) return { left:0, top:0, width:window.innerWidth, height:window.innerHeight };
+      const view = window.visualViewport;
+      return { left:view?.offsetLeft || 0, top:view?.offsetTop || 0,
+        width:view?.width || window.innerWidth, height:view?.height || window.innerHeight };
+    };
+    const clampRatio = number => Math.max(0.2, Math.min(0.65, number));
+    const live = () => reader?.isConnected && anchor?.isConnected;
+    const endInput = () => {
+      if (document.activeElement === input) input.blur();
+      composing = false;
+    };
+    const layout = () => {
+      frame = null;
+      if (!live() || !ui?.isConnected) return;
+      const nativeScroll = mobile();
+      const view = viewport();
+      const geometry = [nativeScroll, opened, opened ? false : !!value, ratio, ...Object.values(view)].join("|");
+      // Typing/focus/blur do not resize the panel. In particular, leave iOS
+      // keyboard animation and document panning out of this layout loop.
+      if (geometry === lastLayout) return;
+      lastLayout = geometry;
+      ui.style.left = opened ? "0px" : `${view.left}px`;
+      ui.style.width = opened ? `${view.width}px` : "auto";
+      ui.style.top = "";
+      ui.style.bottom = "";
+      if (opened) {
+        const height = Math.min(view.height * 0.65, Math.max(112, view.height * ratio));
+        ui.style.height = `${height}px`;
+        if (nativeScroll) ui.style.bottom = "0px";
+        for (const [name, amount] of Object.entries({
+          "view-left":view.left, "view-top":view.top, "view-width":view.width,
+          "view-height":view.height + view.top, "panel-height":height,
+        })) {
+          page.style.setProperty(`--sp-${name}`, `${amount}px`);
+        }
+      } else {
+        ui.style.height = "auto";
+        ui.style.left = `${view.left + view.width - launch.offsetWidth - 12}px`;
+        ui.style.top = `${view.top + view.height - launch.offsetHeight - 12}px`;
+      }
+    };
+    const scheduleLayout = () => {
+      if (frame === null) frame = requestAnimationFrame(layout);
+    };
+    const update = () => {
+      if (!ui || !live()) return;
+      launch.hidden = opened;
+      launch.setAttribute("aria-expanded", String(opened));
+      launch.setAttribute("aria-label", value ? "연습장 펼치기, 작성 내용 있음" : "연습장 펼치기");
+      ui.querySelector(".anki-scratchpad__dot").hidden = !value;
+      panel.hidden = !opened;
+      input.setAttribute("aria-label", "회상한 답안");
+      ui.querySelector('[data-action="clear"]').disabled = !value;
+      // Keep the mobile toolbar stable through pointerdown -> input blur -> click.
+      ui.querySelector('[data-action="blur"]').hidden = !mobile();
+      page.classList.toggle("anki-scratchpad-mobile", mobile());
+      page.classList.toggle("anki-scratchpad-open", opened);
+      layout();
+    };
+    const focusInput = () => {
+      // Keep this synchronous with the gesture for iOS. If WebKit declines to
+      // open its keyboard, the visible tappable textarea remains the fallback.
+      if (mobile()) input.focus();
+      else { try { input.focus({ preventScroll:true }); } catch (_) { input.focus(); } }
+      update();
+    };
+    const open = (focus = true) => {
+      if (!live()) return;
+      if (!opened) {
+        if (!mobile()) normalScroll = window.scrollY;
+        opened = true;
+        update();
+        if (!mobile()) reader.scrollTop = normalScroll;
+      }
+      if (focus) focusInput();
+    };
+    const collapse = () => {
+      if (!live()) return;
+      value = input.value;
+      const scroll = reader.scrollTop;
+      endInput();
+      opened = false;
+      update();
+      if (!mobile()) {
+        window.scrollTo(0, scroll);
+        launch.focus({ preventScroll:true });
+      }
+    };
+    const suspend = () => {
+      endInput();
+      value = ""; cardId = null; answer = false;
+      reader = null; anchor = null; dragging = null;
+      ui?.remove(); ui = input = launch = panel = handle = null;
+      lastLayout = "";
+      page.classList.remove("anki-scratchpad-open", "anki-scratchpad-mobile");
+      for (const name of ["view-left", "view-top", "view-width", "view-height", "panel-height"]) {
+        page.style.removeProperty(`--sp-${name}`);
+      }
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = null;
+    };
+    const reset = () => {
+      suspend();
+      opened = true; ratio = 1 / 3;
+    };
+    const icons = {
+      clear:'<path d="m15 3 6 6-10 10H6l-4-4L15 3Z"/><path d="m7 10 7 7M11 19h10"/>',
+      blur:'<rect x="3" y="3" width="18" height="12" rx="2"/><path d="M6 7h.01M10 7h.01M14 7h.01M18 7h.01M7 11h10M9 19l3 3 3-3"/>',
+      collapse:'<path d="M5 6h14M7 12l5 5 5-5"/>',
+    };
+    const create = () => {
+      ui?.remove();
+      lastLayout = "";
+      ui = document.createElement("section");
+      ui.className = "anki-scratchpad tappable";
+      ui.setAttribute("aria-label", "학습 연습장");
+      ui.innerHTML = '<button type="button" class="anki-scratchpad__launch tappable" aria-controls="anki-scratchpad-panel">연습장<span class="anki-scratchpad__dot" aria-hidden="true" hidden></span></button><div class="anki-scratchpad__panel" id="anki-scratchpad-panel" hidden><div class="anki-scratchpad__resize tappable" role="separator" tabindex="0" aria-label="연습장 높이 조절" aria-orientation="horizontal" aria-valuemin="20" aria-valuemax="65"></div><div class="anki-scratchpad__header"><div class="anki-scratchpad__tools tappable">'
+        + Object.entries(icons).map(([action, icon]) => {
+          const label = { clear:"내용 지우기", blur:"키보드 닫기", collapse:"연습장 접기" }[action];
+          return `<button type="button" class="tappable" data-action="${action}" aria-label="${label}" title="${label}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg></button>`;
+        }).join("")
+        + '</div></div><textarea class="anki-scratchpad__value tappable" autocapitalize="off" spellcheck="false" placeholder="떠오르는 내용을 자유롭게 적으세요"></textarea></div><span class="anki-scratchpad__status" role="status" aria-live="polite"></span>';
+      // AnkiMobile transforms its body. A fixed child would attach to the
+      // body's content height, so resizing would not move the visible grip.
+      // Leave the native body/scroller intact and host the pad outside it.
+      (mobile() ? page : document.body).appendChild(ui);
+      input = ui.querySelector("textarea");
+      launch = ui.querySelector(".anki-scratchpad__launch");
+      panel = ui.querySelector(".anki-scratchpad__panel");
+      handle = ui.querySelector(".anki-scratchpad__resize");
+      launch.addEventListener("click", () => open());
+      ui.addEventListener("click", event => {
+        event.stopPropagation();
+        const action = event.target.closest("[data-action]")?.dataset.action;
+        if (action === "collapse") collapse();
+        if (action === "blur") { endInput(); update(); }
+        if (action === "clear") {
+          value = input.value = "";
+          ui.querySelector('[role="status"]').textContent = "연습장을 비웠습니다.";
+          focusInput();
+        }
+      });
+      input.addEventListener("input", () => { value = input.value; update(); });
+      input.addEventListener("focus", update);
+      input.addEventListener("blur", () => { composing = false; update(); });
+      input.addEventListener("compositionstart", () => { composing = true; });
+      input.addEventListener("compositionend", () => { composing = false; value = input.value; });
+      // Retain native editing/button activation while isolating reviewer taps.
+      for (const name of ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart", "touchend", "keydown", "keypress", "keyup"]) {
+        ui.addEventListener(name, event => event.stopPropagation());
+      }
+      handle.addEventListener("pointerdown", event => {
+        if (!opened || event.button > 0) return;
+        event.preventDefault();
+        dragging = event.pointerId;
+        dragY = event.clientY;
+        dragRatio = ratio;
+        dragHeight = viewport().height;
+        handle.setPointerCapture?.(dragging);
+      });
+      handle.addEventListener("pointermove", event => {
+        if (dragging !== event.pointerId) return;
+        // Use movement from the initial touch, not the panel's absolute top:
+        // WebKit can pan fixed elements when its software keyboard is open.
+        ratio = clampRatio(dragRatio + (dragY - event.clientY) / dragHeight);
+        update();
+        handle.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
+      });
+      const stopDrag = () => { dragging = null; };
+      handle.addEventListener("pointerup", stopDrag);
+      handle.addEventListener("pointercancel", stopDrag);
+      handle.addEventListener("keydown", event => {
+        if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+        event.preventDefault(); event.stopPropagation();
+        ratio = event.key === "Home" ? 0.2 : event.key === "End" ? 0.65
+          : clampRatio(ratio + (event.key === "ArrowUp" ? 0.05 : -0.05));
+        handle.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
+        update();
+      });
+    };
+    const mount = () => {
+      let nextReader = document.getElementById("qa");
+      const content = nextReader || document.body;
+      const marker = content?.querySelector("[data-anki-scratchpad-card]");
+      const host = marker && content.querySelector("[data-anki-cid]");
+      const nextId = host?.dataset.ankiCid;
+      if (!/^[1-9][0-9]*$/.test(nextId || "")) { suspend(); return; }
+      if (!nextReader && mobile()) nextReader = document.body;
+      if (!nextReader) {
+        nextReader = document.querySelector(".anki-scratchpad-reader");
+        if (!nextReader) {
+          nextReader = document.createElement("main");
+          nextReader.className = "anki-scratchpad-reader";
+          for (const child of [...document.body.childNodes]) if (child !== ui) nextReader.appendChild(child);
+          document.body.prepend(nextReader);
+        }
+      }
+      const nextAnchor = marker;
+      const nextAnswer = !!content.querySelector("[data-anki-scratchpad-answer]");
+      const showingAnswer = !answer && nextAnswer;
+      const changed = nextId !== cardId || (!nextAnswer && (answer || nextAnchor !== anchor));
+      if (changed || showingAnswer) endInput();
+      if (changed) { value = ""; composing = false; normalScroll = 0; }
+      reader = nextReader; anchor = nextAnchor; cardId = nextId; answer = nextAnswer;
+      if (!ui?.isConnected) create();
+      if (input.value !== value) input.value = value;
+      handle.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
+      update();
+      // Match the native question reset inside the split's scroll container.
+      if (changed && !answer && opened && !mobile()) reader.scrollTop = 0;
+    };
+    // Capture only the dedicated chord and focused scratchpad input. Existing
+    // toolbar controls stop bubbling; unrelated reviewer keys remain untouched.
+    document.addEventListener("keydown", event => {
+      if (!live()) return;
+      if (event.ctrlKey && event.shiftKey && !event.metaKey && !event.altKey
+          && event.code === "KeyJ" && !event.repeat && !event.isComposing && !composing) {
+        event.preventDefault(); event.stopImmediatePropagation(); open(); return;
+      }
+      if (event.target !== input) return;
+      event.stopPropagation();
+      if (event.key === "Escape" && !event.isComposing && !composing && event.keyCode !== 229) {
+        event.preventDefault(); endInput(); update();
+      }
+    }, true);
+    // A hidden application/locked screen is not the end of a study session.
+    // Document navigation ends it. An unmanaged card only suspends the pad,
+    // preserving the session's open/closed and size preferences.
+    window.addEventListener("pagehide", reset);
+    window.addEventListener("resize", scheduleLayout);
+    if (!mobile()) {
+      window.visualViewport?.addEventListener("resize", scheduleLayout);
+      window.visualViewport?.addEventListener("scroll", scheduleLayout);
+    }
+    const observer = new MutationObserver(() => {
+      const content = document.getElementById("qa") || document.body;
+      const nextAnchor = content?.querySelector("[data-anki-scratchpad-card]");
+      const host = nextAnchor && content.querySelector("[data-anki-cid]");
+      const nextAnswer = !!content?.querySelector("[data-anki-scratchpad-answer]");
+      if (!host) { if (cardId !== null) suspend(); }
+      else if (nextAnchor !== anchor || host.dataset.ankiCid !== cardId || nextAnswer !== answer) mount();
+    });
+    observer.observe(page, { childList:true, subtree:true });
+    window[KEY] = { mount };
+  }
+  window[KEY].mount();
+})();
+</script>
+{{/질문}}{{^질문}}{{#맥락}}<!-- anki-scratchpad-v1 -->
+<style>
+.anki-scratchpad { --sp-bg:#fff; --sp-text:#202124; --sp-border:#c7d1dd; --sp-button-border:#ccd6e1; --sp-button-bg:#f1f4f8; --sp-button-hover:#e8edf3; --sp-button-active:#dfe7f0; --sp-icon:#465c76; --sp-muted:#667085; --sp-focus:#708ca5; position:fixed; z-index:30; box-sizing:border-box; color:var(--sp-text); font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; text-align:left; }
+.anki-scratchpad [hidden] { display:none!important; }
+.anki-scratchpad button { appearance:none; -webkit-appearance:none; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; min-height:44px; margin:0; padding:7px 12px; border:1px solid var(--sp-border); border-radius:10px; background:var(--sp-bg); color:inherit; font:500 13px/1.3 -apple-system,BlinkMacSystemFont,sans-serif; cursor:pointer; touch-action:manipulation; }
+.anki-scratchpad button:focus-visible, .anki-scratchpad__resize:focus-visible { outline:2px solid var(--sp-focus)!important; outline-offset:2px; }
+.anki-scratchpad textarea:focus { outline:none!important; box-shadow:none!important; }
+.anki-scratchpad__launch { gap:7px; box-shadow:0 1px 4px #0001; }
+.anki-scratchpad__dot { width:6px; height:6px; border-radius:50%; background:var(--sp-focus); }
+.anki-scratchpad__panel { box-sizing:border-box; height:100%; display:flex; flex-direction:column; border:0; border-top:1px solid var(--sp-border); border-radius:0; background:var(--sp-bg); overflow:visible; }
+.anki-scratchpad__resize { position:absolute; left:50%; top:-12px; transform:translateX(-50%); width:80px; height:24px; z-index:1; display:flex; align-items:center; justify-content:center; cursor:ns-resize; touch-action:none; user-select:none; }
+.anki-scratchpad__resize::after { content:""; box-sizing:content-box; width:36px; height:5px; border:2px solid var(--sp-bg); border-radius:6px; background:var(--sp-focus); }
+.anki-scratchpad__header { display:flex; flex:0 0 44px; align-items:center; justify-content:flex-end; padding:0 10px; }
+.anki-scratchpad__tools { display:flex; align-items:center; height:34px; border:1px solid var(--sp-button-border); border-radius:10px; background:var(--sp-button-bg); color:var(--sp-icon); }
+.anki-scratchpad__tools button { position:relative; flex:0 0 44px; width:44px; height:44px; min-height:44px; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; color:inherit; }
+.anki-scratchpad .anki-scratchpad__tools button:is(:hover,:active,:focus,:disabled) { background:transparent; border:0; border-radius:0; box-shadow:none; transform:none; transition:none; }
+.anki-scratchpad__tools button::after { content:""; position:absolute; inset:8px 4px; border-radius:6px; background:transparent; }
+.anki-scratchpad__tools button + button::before { content:""; position:absolute; left:0; width:1px; height:15px; background:var(--sp-button-border); }
+.anki-scratchpad__tools button:disabled { opacity:0.45; cursor:default; }
+.anki-scratchpad__tools button:active:not(:disabled)::after { background:var(--sp-button-active); }
+@media(hover:hover) { .anki-scratchpad__tools button:hover:not(:disabled)::after { background:var(--sp-button-hover); } }
+.anki-scratchpad__tools button:focus-visible { outline-offset:-6px; }
+.anki-scratchpad__tools svg { position:relative; z-index:1; width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; pointer-events:none; }
+.anki-scratchpad__value { appearance:none; -webkit-appearance:none; box-sizing:border-box; flex:1 1 auto; min-height:0; width:100%; margin:0; padding:8px 12px; border:0; border-radius:0; background:var(--sp-bg); color:inherit; font:calc(17px * var(--anki-text-scale,1))/1.55 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; resize:none; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; text-align:left; user-select:text; -webkit-user-select:text; }
+.anki-scratchpad__status { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
+html.anki-scratchpad-open:not(.anki-scratchpad-mobile) { overflow:hidden!important; }
+html.anki-scratchpad-open:not(.anki-scratchpad-mobile) body { box-sizing:border-box; display:flex; flex-direction:column; height:var(--sp-view-height); width:var(--sp-view-width); max-width:none; margin:0 0 0 var(--sp-view-left)!important; padding:var(--sp-view-top) 0 0!important; overflow:hidden; }
+html.anki-scratchpad-open:not(.anki-scratchpad-mobile) #qa, html.anki-scratchpad-open:not(.anki-scratchpad-mobile) .anki-scratchpad-reader { box-sizing:border-box; flex:1 1 0; min-height:0; align-self:center; width:min(100%,var(--anki-card-width,720px)); margin:0!important; padding:var(--anki-card-padding,24px); overflow:auto!important; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
+html.anki-scratchpad-open:not(.anki-scratchpad-mobile) .anki-scratchpad { position:relative; flex:0 0 var(--sp-panel-height); }
+/* AnkiMobile owns document scrolling and keyboard panning. Reserve space for
+   the fixed pad without resizing/reparenting the native document scroller. */
+html.anki-scratchpad-open.anki-scratchpad-mobile body { padding-bottom:calc(var(--anki-card-padding,24px) + var(--sp-panel-height))!important; }
+html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16px * var(--anki-text-scale,1))); }
+:is(.nightMode,.night_mode,.night-mode) .anki-scratchpad, body:is(.nightMode,.night_mode,.night-mode) ~ .anki-scratchpad { --sp-bg:#1f2933; --sp-text:#e5e7eb; --sp-border:#46515d; --sp-button-border:#53677d; --sp-button-bg:#293746; --sp-button-hover:#324153; --sp-button-active:#3b4c60; --sp-icon:#d6e0ec; --sp-muted:#aab4c0; --sp-focus:#99b1c6; }
+</style>
+<script>
+(() => {
+  const KEY = "AnkiScratchpadV1";
+  if (!window[KEY]) {
+    const page = document.documentElement;
+    let reader = null, anchor = null, cardId = null, answer = false;
+    let value = "", opened = true, ratio = 1 / 3, composing = false;
+    let ui = null, input = null, launch = null, panel = null, handle = null;
+    let normalScroll = 0, frame = null, dragging = null;
+    let lastLayout = "";
+    let dragY = 0, dragRatio = 0, dragHeight = 1;
+    const mobile = () => page.classList.contains("iphone") || page.classList.contains("ipad")
+      || document.body?.classList.contains("iphone") || document.body?.classList.contains("ipad");
+    const viewport = () => {
+      if (mobile()) return { left:0, top:0, width:window.innerWidth, height:window.innerHeight };
+      const view = window.visualViewport;
+      return { left:view?.offsetLeft || 0, top:view?.offsetTop || 0,
+        width:view?.width || window.innerWidth, height:view?.height || window.innerHeight };
+    };
+    const clampRatio = number => Math.max(0.2, Math.min(0.65, number));
+    const live = () => reader?.isConnected && anchor?.isConnected;
+    const endInput = () => {
+      if (document.activeElement === input) input.blur();
+      composing = false;
+    };
+    const layout = () => {
+      frame = null;
+      if (!live() || !ui?.isConnected) return;
+      const nativeScroll = mobile();
+      const view = viewport();
+      const geometry = [nativeScroll, opened, opened ? false : !!value, ratio, ...Object.values(view)].join("|");
+      // Typing/focus/blur do not resize the panel. In particular, leave iOS
+      // keyboard animation and document panning out of this layout loop.
+      if (geometry === lastLayout) return;
+      lastLayout = geometry;
+      ui.style.left = opened ? "0px" : `${view.left}px`;
+      ui.style.width = opened ? `${view.width}px` : "auto";
+      ui.style.top = "";
+      ui.style.bottom = "";
+      if (opened) {
+        const height = Math.min(view.height * 0.65, Math.max(112, view.height * ratio));
+        ui.style.height = `${height}px`;
+        if (nativeScroll) ui.style.bottom = "0px";
+        for (const [name, amount] of Object.entries({
+          "view-left":view.left, "view-top":view.top, "view-width":view.width,
+          "view-height":view.height + view.top, "panel-height":height,
+        })) {
+          page.style.setProperty(`--sp-${name}`, `${amount}px`);
+        }
+      } else {
+        ui.style.height = "auto";
+        ui.style.left = `${view.left + view.width - launch.offsetWidth - 12}px`;
+        ui.style.top = `${view.top + view.height - launch.offsetHeight - 12}px`;
+      }
+    };
+    const scheduleLayout = () => {
+      if (frame === null) frame = requestAnimationFrame(layout);
+    };
+    const update = () => {
+      if (!ui || !live()) return;
+      launch.hidden = opened;
+      launch.setAttribute("aria-expanded", String(opened));
+      launch.setAttribute("aria-label", value ? "연습장 펼치기, 작성 내용 있음" : "연습장 펼치기");
+      ui.querySelector(".anki-scratchpad__dot").hidden = !value;
+      panel.hidden = !opened;
+      input.setAttribute("aria-label", "회상한 답안");
+      ui.querySelector('[data-action="clear"]').disabled = !value;
+      // Keep the mobile toolbar stable through pointerdown -> input blur -> click.
+      ui.querySelector('[data-action="blur"]').hidden = !mobile();
+      page.classList.toggle("anki-scratchpad-mobile", mobile());
+      page.classList.toggle("anki-scratchpad-open", opened);
+      layout();
+    };
+    const focusInput = () => {
+      // Keep this synchronous with the gesture for iOS. If WebKit declines to
+      // open its keyboard, the visible tappable textarea remains the fallback.
+      if (mobile()) input.focus();
+      else { try { input.focus({ preventScroll:true }); } catch (_) { input.focus(); } }
+      update();
+    };
+    const open = (focus = true) => {
+      if (!live()) return;
+      if (!opened) {
+        if (!mobile()) normalScroll = window.scrollY;
+        opened = true;
+        update();
+        if (!mobile()) reader.scrollTop = normalScroll;
+      }
+      if (focus) focusInput();
+    };
+    const collapse = () => {
+      if (!live()) return;
+      value = input.value;
+      const scroll = reader.scrollTop;
+      endInput();
+      opened = false;
+      update();
+      if (!mobile()) {
+        window.scrollTo(0, scroll);
+        launch.focus({ preventScroll:true });
+      }
+    };
+    const suspend = () => {
+      endInput();
+      value = ""; cardId = null; answer = false;
+      reader = null; anchor = null; dragging = null;
+      ui?.remove(); ui = input = launch = panel = handle = null;
+      lastLayout = "";
+      page.classList.remove("anki-scratchpad-open", "anki-scratchpad-mobile");
+      for (const name of ["view-left", "view-top", "view-width", "view-height", "panel-height"]) {
+        page.style.removeProperty(`--sp-${name}`);
+      }
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = null;
+    };
+    const reset = () => {
+      suspend();
+      opened = true; ratio = 1 / 3;
+    };
+    const icons = {
+      clear:'<path d="m15 3 6 6-10 10H6l-4-4L15 3Z"/><path d="m7 10 7 7M11 19h10"/>',
+      blur:'<rect x="3" y="3" width="18" height="12" rx="2"/><path d="M6 7h.01M10 7h.01M14 7h.01M18 7h.01M7 11h10M9 19l3 3 3-3"/>',
+      collapse:'<path d="M5 6h14M7 12l5 5 5-5"/>',
+    };
+    const create = () => {
+      ui?.remove();
+      lastLayout = "";
+      ui = document.createElement("section");
+      ui.className = "anki-scratchpad tappable";
+      ui.setAttribute("aria-label", "학습 연습장");
+      ui.innerHTML = '<button type="button" class="anki-scratchpad__launch tappable" aria-controls="anki-scratchpad-panel">연습장<span class="anki-scratchpad__dot" aria-hidden="true" hidden></span></button><div class="anki-scratchpad__panel" id="anki-scratchpad-panel" hidden><div class="anki-scratchpad__resize tappable" role="separator" tabindex="0" aria-label="연습장 높이 조절" aria-orientation="horizontal" aria-valuemin="20" aria-valuemax="65"></div><div class="anki-scratchpad__header"><div class="anki-scratchpad__tools tappable">'
+        + Object.entries(icons).map(([action, icon]) => {
+          const label = { clear:"내용 지우기", blur:"키보드 닫기", collapse:"연습장 접기" }[action];
+          return `<button type="button" class="tappable" data-action="${action}" aria-label="${label}" title="${label}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg></button>`;
+        }).join("")
+        + '</div></div><textarea class="anki-scratchpad__value tappable" autocapitalize="off" spellcheck="false" placeholder="떠오르는 내용을 자유롭게 적으세요"></textarea></div><span class="anki-scratchpad__status" role="status" aria-live="polite"></span>';
+      // AnkiMobile transforms its body. A fixed child would attach to the
+      // body's content height, so resizing would not move the visible grip.
+      // Leave the native body/scroller intact and host the pad outside it.
+      (mobile() ? page : document.body).appendChild(ui);
+      input = ui.querySelector("textarea");
+      launch = ui.querySelector(".anki-scratchpad__launch");
+      panel = ui.querySelector(".anki-scratchpad__panel");
+      handle = ui.querySelector(".anki-scratchpad__resize");
+      launch.addEventListener("click", () => open());
+      ui.addEventListener("click", event => {
+        event.stopPropagation();
+        const action = event.target.closest("[data-action]")?.dataset.action;
+        if (action === "collapse") collapse();
+        if (action === "blur") { endInput(); update(); }
+        if (action === "clear") {
+          value = input.value = "";
+          ui.querySelector('[role="status"]').textContent = "연습장을 비웠습니다.";
+          focusInput();
+        }
+      });
+      input.addEventListener("input", () => { value = input.value; update(); });
+      input.addEventListener("focus", update);
+      input.addEventListener("blur", () => { composing = false; update(); });
+      input.addEventListener("compositionstart", () => { composing = true; });
+      input.addEventListener("compositionend", () => { composing = false; value = input.value; });
+      // Retain native editing/button activation while isolating reviewer taps.
+      for (const name of ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart", "touchend", "keydown", "keypress", "keyup"]) {
+        ui.addEventListener(name, event => event.stopPropagation());
+      }
+      handle.addEventListener("pointerdown", event => {
+        if (!opened || event.button > 0) return;
+        event.preventDefault();
+        dragging = event.pointerId;
+        dragY = event.clientY;
+        dragRatio = ratio;
+        dragHeight = viewport().height;
+        handle.setPointerCapture?.(dragging);
+      });
+      handle.addEventListener("pointermove", event => {
+        if (dragging !== event.pointerId) return;
+        // Use movement from the initial touch, not the panel's absolute top:
+        // WebKit can pan fixed elements when its software keyboard is open.
+        ratio = clampRatio(dragRatio + (dragY - event.clientY) / dragHeight);
+        update();
+        handle.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
+      });
+      const stopDrag = () => { dragging = null; };
+      handle.addEventListener("pointerup", stopDrag);
+      handle.addEventListener("pointercancel", stopDrag);
+      handle.addEventListener("keydown", event => {
+        if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+        event.preventDefault(); event.stopPropagation();
+        ratio = event.key === "Home" ? 0.2 : event.key === "End" ? 0.65
+          : clampRatio(ratio + (event.key === "ArrowUp" ? 0.05 : -0.05));
+        handle.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
+        update();
+      });
+    };
+    const mount = () => {
+      let nextReader = document.getElementById("qa");
+      const content = nextReader || document.body;
+      const marker = content?.querySelector("[data-anki-scratchpad-card]");
+      const host = marker && content.querySelector("[data-anki-cid]");
+      const nextId = host?.dataset.ankiCid;
+      if (!/^[1-9][0-9]*$/.test(nextId || "")) { suspend(); return; }
+      if (!nextReader && mobile()) nextReader = document.body;
+      if (!nextReader) {
+        nextReader = document.querySelector(".anki-scratchpad-reader");
+        if (!nextReader) {
+          nextReader = document.createElement("main");
+          nextReader.className = "anki-scratchpad-reader";
+          for (const child of [...document.body.childNodes]) if (child !== ui) nextReader.appendChild(child);
+          document.body.prepend(nextReader);
+        }
+      }
+      const nextAnchor = marker;
+      const nextAnswer = !!content.querySelector("[data-anki-scratchpad-answer]");
+      const showingAnswer = !answer && nextAnswer;
+      const changed = nextId !== cardId || (!nextAnswer && (answer || nextAnchor !== anchor));
+      if (changed || showingAnswer) endInput();
+      if (changed) { value = ""; composing = false; normalScroll = 0; }
+      reader = nextReader; anchor = nextAnchor; cardId = nextId; answer = nextAnswer;
+      if (!ui?.isConnected) create();
+      if (input.value !== value) input.value = value;
+      handle.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
+      update();
+      // Match the native question reset inside the split's scroll container.
+      if (changed && !answer && opened && !mobile()) reader.scrollTop = 0;
+    };
+    // Capture only the dedicated chord and focused scratchpad input. Existing
+    // toolbar controls stop bubbling; unrelated reviewer keys remain untouched.
+    document.addEventListener("keydown", event => {
+      if (!live()) return;
+      if (event.ctrlKey && event.shiftKey && !event.metaKey && !event.altKey
+          && event.code === "KeyJ" && !event.repeat && !event.isComposing && !composing) {
+        event.preventDefault(); event.stopImmediatePropagation(); open(); return;
+      }
+      if (event.target !== input) return;
+      event.stopPropagation();
+      if (event.key === "Escape" && !event.isComposing && !composing && event.keyCode !== 229) {
+        event.preventDefault(); endInput(); update();
+      }
+    }, true);
+    // A hidden application/locked screen is not the end of a study session.
+    // Document navigation ends it. An unmanaged card only suspends the pad,
+    // preserving the session's open/closed and size preferences.
+    window.addEventListener("pagehide", reset);
+    window.addEventListener("resize", scheduleLayout);
+    if (!mobile()) {
+      window.visualViewport?.addEventListener("resize", scheduleLayout);
+      window.visualViewport?.addEventListener("scroll", scheduleLayout);
+    }
+    const observer = new MutationObserver(() => {
+      const content = document.getElementById("qa") || document.body;
+      const nextAnchor = content?.querySelector("[data-anki-scratchpad-card]");
+      const host = nextAnchor && content.querySelector("[data-anki-cid]");
+      const nextAnswer = !!content?.querySelector("[data-anki-scratchpad-answer]");
+      if (!host) { if (cardId !== null) suspend(); }
+      else if (nextAnchor !== anchor || host.dataset.ankiCid !== cardId || nextAnswer !== answer) mount();
+    });
+    observer.observe(page, { childList:true, subtree:true });
+    window[KEY] = { mount };
+  }
+  window[KEY].mount();
 })();
 </script>
 {{/맥락}}{{/질문}}

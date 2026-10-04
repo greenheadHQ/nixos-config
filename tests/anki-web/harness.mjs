@@ -18,6 +18,8 @@ export const renderer = inline(await readFile(resolve(addonPath, "code-highlight
 export const noteLinkRenderer = inline(await readFile(resolve(addonPath, "note-link-renderer.html"), "utf8"));
 export const cardIdScript = inline(await readFile(resolve(addonPath, "card-id-button.html"), "utf8"));
 export const textSizeScript = inline(await readFile(resolve(addonPath, "text-size-controls.html"), "utf8"));
+export const scratchpadFragment = await readFile(resolve(addonPath, "scratchpad.html"), "utf8");
+export const scratchpadScript = inline(scratchpadFragment);
 export const escape = value => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 export const block = (text, language = "javascript") => `<pre><code${language === null ? "" : ` class="language-${language}"`}>${escape(text)}</code></pre>`;
 export const scope = content => `<section class="anki-code-scope">${content}</section>`;
