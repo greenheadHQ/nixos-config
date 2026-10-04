@@ -1,5 +1,6 @@
 # agenix CLI가 사용하는 파일
-# 새 secret 추가: nix run github:ryantm/agenix -- -e new-secret.age
+# 새 secret 추가: 저장소 루트에서 nix develop 진입 후 secrets/에서 실행:
+#   AGENIX_RULES="$PWD/secrets.nix" agenix -e new-secret.age
 # 재암호화: 항목마다 recipient 그룹이 달라 복호화 identity도 다르다. 전체 rekey(-r)는 넘긴 identity로
 #   모든 항목을 복호화할 수 있을 때만 쓴다 — Mac 사용자 키 단독 항목과 MiniPC 호스트 키 전용 항목이
 #   함께 있어 한 호스트의 identity만으로는 중간에 멈춘다. 대상별 절차:

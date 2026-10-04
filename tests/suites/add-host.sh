@@ -376,31 +376,36 @@ _add_host_run_with_synthetic_rules() {
   done
 }
 
-# ── 시크릿 작업 위치 (#1396): agenix는 현재 디렉토리의 secrets.nix를 규칙 파일로 읽는다.
-# 마법사가 안내하는 `cd` 위치는 하나여야 하고, 그 위치에 sandbox의 규칙 파일이 있어야 한다.
-# 합성 규칙 세 종류 모두에서 같은 위치를 확인한다.
+# ── 시크릿 작업 위치 (#1396, #1488): 저장소 루트에서 pinned devShell에 진입한 뒤 secrets/로
+# 이동해야 한다. 명시적으로 지정할 AGENIX_RULES가 sandbox의 규칙 파일인지 세 종류 모두 확인한다.
 test_add_host_secret_guide_workdir_has_rules_file() {
-  local kind cd_lines workdir
+  local kind cd_lines repo workdir setup
   for kind in common user host; do
     _add_host_run_with_synthetic_rules "$kind"
 
     cd_lines="$(sed -n 's/^[[:space:]]*cd //p' "$_add_host_stdout")"
-    [[ -n "$cd_lines" && "$cd_lines" != *$'\n'* ]] \
-      || fail "[$kind] 작업 위치를 안내하는 cd 줄이 정확히 하나가 아님: $cd_lines"
-    workdir="$cd_lines"
+    [[ "$(wc -l <<< "$cd_lines" | tr -d ' ')" -eq 2 ]] \
+      || fail "[$kind] 저장소 루트·secrets/의 cd 줄이 정확히 두 개가 아님: $cd_lines"
+    repo="${cd_lines%%$'\n'*}"
+    [[ "${cd_lines#*$'\n'}" == secrets ]] || fail "[$kind] devShell 진입 뒤 secrets/로 이동하지 않음"
+    workdir="$repo/secrets"
     [[ -f "$workdir/secrets.nix" ]] \
-      || fail "[$kind] 안내된 작업 위치($workdir)에 secrets.nix가 없음 — agenix가 규칙 파일을 찾지 못한다"
+      || fail "[$kind] 안내된 작업 위치($workdir)에 명시할 secrets.nix가 없음"
     cmp -s "$_add_host_rules" "$workdir/secrets.nix" \
       || fail "[$kind] 안내된 작업 위치의 secrets.nix가 합성 규칙 파일과 다름"
+    # shellcheck disable=SC2016  # 마법사가 실행하지 않고 출력해야 할 사용자 명령이다.
+    printf -v setup '    cd %q\n    nix develop\n    agenix_bin="$(command -v agenix)"\n    cd secrets' "$repo"
+    assert_contains "$(cat "$_add_host_stdout")" "$setup"
+    assert_not_contains "$(cat "$_add_host_stdout")" 'nix run github:ryantm/agenix'
   done
 }
 
 # ── 대상별 recipient·identity 확인 (#1396): 합성 규칙 종류마다 안내가 그 종류의 복호화
 # identity를 짚어야 한다. 순서는 작업 위치 → 각 항목의 publicKeys 확인 → identity로 복호화
 # 확인(test -f 선행) → 대상별 재암호화 → 빈 값 확인이다. 재암호화는 EDITOR=:가 agenix까지
-# 전달돼야 하므로 root 형태는 `sudo EDITOR=: …`여야 한다(`EDITOR=: sudo …`는 sudo가 변수를
+# 전달돼야 하므로 root 형태는 `sudo AGENIX_RULES=… EDITOR=: …`여야 한다(`EDITOR=: sudo …`는 sudo가 변수를
 # 지워 비대화형 실행에서 시크릿이 비워진다). 전체 재암호화(-r)는 사용 조건과 함께 설명만 한다 —
-# 조건 없는 `agenix -- -r` 명령(identity를 붙인 변형 포함)은 identity가 없는 항목에서 중간에
+# 조건 없는 `agenix -r` 명령(identity를 붙인 변형 포함)은 identity가 없는 항목에서 중간에
 # 멈추는 작업을 무조건 권한다. 재암호화 전후 바이트 수 비교, d·f의 호스트 키 sudo 변형, 새 호스트
 # identity로 복호화하는 g 단계, 바이트 수 명령마다 앞선 복호화 성공 확인도 본다. 이 검사들은
 # managing-secrets-docs.sh의 _secrets_docs_assert_rekey_all_conditional·_secrets_docs_assert_value_check_steps·
@@ -442,7 +447,8 @@ test_add_host_secret_guide_checks_recipients_per_target() {
     sed -n "${dec_line}p" "$out" | grep -qF 'test -f <name>.age &&' \
       || fail "[$kind] 복호화 확인 명령 앞에 test -f <name>.age가 없음 — 파일 없는 항목이 복호화 가능으로 보인다"
 
-    grep -qF 'sudo EDITOR=: nix run github:ryantm/agenix -- -e <name>.age -i /etc/ssh/ssh_host_ed25519_key' "$out" \
+    # shellcheck disable=SC2016  # 출력의 리터럴 환경 변수·실행경로를 검사한다.
+    grep -qF 'sudo AGENIX_RULES="$PWD/secrets.nix" EDITOR=: "$agenix_bin" -e <name>.age -i /etc/ssh/ssh_host_ed25519_key' "$out" \
       || fail "[$kind] 호스트 키 재암호화의 root 형태(sudo 뒤에 EDITOR=:)가 없음"
     ! grep -qF 'EDITOR=: sudo' "$out" \
       || fail "[$kind] EDITOR=:를 sudo 앞에 둔 형태를 안내함 — sudo가 변수를 지워 시크릿이 비워진다"
