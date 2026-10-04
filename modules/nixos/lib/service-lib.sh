@@ -10,37 +10,52 @@
 # version-check/update 호출은 모두 명시적 priority 전달
 # ═══════════════════════════════════════════════════════════════
 send_notification() {
-  local title="$1"
-  local message="$2"
-  local priority="${3:-"-1"}"
-
-  curl -sf --proto =https --max-time 10 \
-    --form-string "token=${PUSHOVER_TOKEN}" \
-    --form-string "user=${PUSHOVER_USER}" \
-    --form-string "title=${title}" \
-    --form-string "message=${message}" \
-    --form-string "priority=${priority}" \
-    https://api.pushover.net/1/messages.json > /dev/null 2>&1 || true
+  send_notification_strict "$@" || true
 }
 
 # ═══════════════════════════════════════════════════════════════
 # Pushover 알림 전송 (반환값 전파)
-# send_notification과 동일하되 || true 없음
+# 자격 경로를 선택하고 stdin-config 전송은 공용 helper에 위임한다.
 # 호출측에서 성공/실패를 확인해야 할 때 사용 (온도 알림 등)
 # ═══════════════════════════════════════════════════════════════
 send_notification_strict() {
   local title="$1"
   local message="$2"
   local priority="${3:-"-1"}"
+  local cred_file="${PUSHOVER_CRED_FILE:-${CREDENTIALS_DIRECTORY:-}/pushover-system-monitor}"
 
-  curl -sf --proto =https --max-time 10 \
-    --form-string "token=${PUSHOVER_TOKEN}" \
-    --form-string "user=${PUSHOVER_USER}" \
-    --form-string "title=${title}" \
-    --form-string "message=${message}" \
-    --form-string "priority=${priority}" \
-    https://api.pushover.net/1/messages.json > /dev/null 2>&1
+  # 직접 파일/LoadCredential 선택은 호출 단위에 한정하여 다른 서비스 함수에 전파하지 않는다.
+  PUSHOVER_CRED_FILE="$cred_file" _service_send_notification "$title" "$message" "$priority"
 }
+
+# 알림 호출 때만 helper를 로드한다. service-lib source만 하는 흐름은 helper 배선과
+# 무관하게 유지하고, helper의 함수/자격 로드는 subshell 안에 한정한다.
+_service_send_notification() (
+  local helper="${PUSHOVER_LIB:-@pushoverLib@}"
+  local status
+
+  if [ ! -r "$helper" ]; then
+    echo "WARNING: Pushover helper is not readable" >&2
+    return 1
+  fi
+  if [ ! -r "$PUSHOVER_CRED_FILE" ]; then
+    echo "WARNING: Pushover credential file is not readable" >&2
+    return 1
+  fi
+  # shellcheck source=/dev/null
+  if ! source "$helper" >/dev/null 2>&1 || ! declare -F pushover_send >/dev/null 2>&1; then
+    echo "WARNING: Pushover helper could not be loaded" >&2
+    return 1
+  fi
+
+  if pushover_send "$PUSHOVER_CRED_FILE" "$1" "$2" "$3"; then
+    return 0
+  else
+    status=$?
+    echo "WARNING: Pushover notification failed (exit $status)" >&2
+    return "$status"
+  fi
+)
 
 # ═══════════════════════════════════════════════════════════════
 # GitHub Releases API로 최신 버전 조회

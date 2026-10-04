@@ -84,6 +84,9 @@ case "$last" in
   https://api.github.com/repos/*/releases/latest)
     echo '{"tag_name":"v9.9.9"}'
     ;;
+  https://api.pushover.net/*)
+    cat >> "$UPDATE_TEST_CALL_LOG"
+    ;;
   *)
     :
     ;;
@@ -130,6 +133,7 @@ _immich_update_run() {
     PUSHOVER_CRED_FILE="$sandbox/pushover" \
     BACKUP_DIR="$sandbox/backups" \
     SERVICE_LIB="$REPO_ROOT/modules/nixos/lib/service-lib.sh" \
+    PUSHOVER_LIB="$REPO_ROOT/modules/shared/scripts/lib/pushover.sh" \
     SERVER_IMAGE="ghcr.io/immich-app/immich-server:v1.2.3" \
     ML_IMAGE="ghcr.io/immich-app/immich-machine-learning:v1.2.3" \
     GITHUB_REPO="immich-app/immich" \
@@ -323,6 +327,7 @@ _copyparty_update_run() {
     PATH="$sandbox/stub-bin:$PATH" \
     PUSHOVER_CRED_FILE="$sandbox/pushover" \
     SERVICE_LIB="$REPO_ROOT/modules/nixos/lib/service-lib.sh" \
+    PUSHOVER_LIB="$REPO_ROOT/modules/shared/scripts/lib/pushover.sh" \
     STATE_DIR="$sandbox/state" \
     CONTAINER_NAME="copyparty" \
     CONTAINER_IMAGE="ghcr.io/9001/copyparty:v1.2.3" \
@@ -512,6 +517,7 @@ _uptime_kuma_update_run() {
     PATH="$sandbox/stub-bin:$PATH" \
     PUSHOVER_CRED_FILE="$sandbox/pushover" \
     SERVICE_LIB="$REPO_ROOT/modules/nixos/lib/service-lib.sh" \
+    PUSHOVER_LIB="$REPO_ROOT/modules/shared/scripts/lib/pushover.sh" \
     STATE_DIR="$sandbox/state" \
     BACKUP_DIR="$sandbox/backups" \
     CONTAINER_NAME="uptime-kuma" \
@@ -707,6 +713,7 @@ _karakeep_update_run() {
     PATH="$sandbox/stub-bin:$PATH" \
     PUSHOVER_CRED_FILE="$sandbox/pushover" \
     SERVICE_LIB="$REPO_ROOT/modules/nixos/lib/service-lib.sh" \
+    PUSHOVER_LIB="$REPO_ROOT/modules/shared/scripts/lib/pushover.sh" \
     STATE_DIR="$sandbox/state" \
     CONTAINER_NAME="karakeep" \
     CONTAINER_IMAGE="ghcr.io/karakeep-app/karakeep:1.2.3" \
