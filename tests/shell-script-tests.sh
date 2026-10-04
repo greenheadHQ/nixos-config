@@ -35,6 +35,13 @@ run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
 run_test "wt wrapper ignores runtime HOME for real script" test_wt_wrapper_ignores_runtime_home_for_real_script
 run_test "managed plugin skill helper rejects duplicate matches" test_managed_plugin_skill_link_requires_single_match
 run_test "rebuild-common exports public API" test_rebuild_common_exports_public_api
+run_test "nrs-lock status without lock" test_nrs_lock_status_without_lock
+run_test "nrs-lock retains stopped process before timeout" test_nrs_lock_status_retains_stopped_process_before_timeout
+run_test "nrs-lock stale after timeout with stopped process" test_nrs_lock_status_stale_after_timeout_with_stopped_process
+run_test "nrs-lock status matches acquire timeout boundary" test_nrs_lock_status_matches_acquire_timeout_boundary
+run_test "nrs-lock retains running process after timeout" test_nrs_lock_status_retains_running_process_after_timeout
+run_test "nrs-lock stale when worktree is missing" test_nrs_lock_status_stale_when_worktree_is_missing
+run_test "nrs cross-worktree lock guidance preserves lock" test_nrs_cross_worktree_lock_guidance_preserves_lock
 run_test "release_rebuild_lock preserves caller stderr" test_release_rebuild_lock_preserves_caller_stderr
 run_test "release_rebuild_lock_on_failure preserves caller stderr" test_release_rebuild_lock_on_failure_preserves_caller_stderr
 run_test "release_rebuild_lock without hold is a no-op" test_release_rebuild_lock_without_hold_is_noop
@@ -98,6 +105,9 @@ run_test "wt plugin manifest cleanup uses stable canonical target" test_wt_plugi
 run_test "wt plugin manifest GC removes unmarked orphan worktree entries" test_wt_plugin_manifest_gc_removes_unmarked_orphan_worktree_entries
 run_test "wt plugin manifest GC skips targets outside worktree base" test_wt_plugin_manifest_gc_skips_targets_outside_worktree_base
 run_test "wt plugin manifest GC keeps entries when path check fails" test_wt_plugin_manifest_gc_keeps_entries_when_path_check_fails
+run_test "wt plugin manifest GC supports nested targets" test_wt_plugin_manifest_gc_supports_nested_targets
+run_test "wt plugin manifest GC backups never overwrite collisions" test_wt_plugin_manifest_gc_backups_never_overwrite_collisions
+run_test "wt plugin manifest GC keeps orphans when backup fails" test_wt_plugin_manifest_gc_keeps_orphans_when_backup_fails
 run_test "wt cleanup removes exact Claude local plugin manifest entries" test_wt_cleanup_removes_exact_claude_local_plugin_manifest_entries
 run_test "wt cleanup stops when plugin manifest cleanup fails" test_wt_cleanup_stops_when_plugin_manifest_cleanup_fails
 run_test "wt plugin manifest missing and invalid inputs are safe" test_wt_plugin_manifest_missing_and_invalid_are_safe
@@ -315,6 +325,12 @@ run_test "missing wt Python helpers fail state changes" test_missing_wt_python_h
 run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_python_helpers_fail_cleanup_state_changes
 run_test "codex trust write failure returns warning" test_codex_trust_write_failure_returns_warning
 run_test "fixture git setup ignores host global hooks" test_fixture_git_is_hermetic_against_global_hooks
+run_test "line-count assertion preserves exact line counts" test_assert_line_count_preserves_exact_line_counts
+run_test "line-count assertion accepts zero matches" test_assert_line_count_accepts_zero_matches
+run_test "line-count assertion reports zero-match mismatch" test_assert_line_count_reports_zero_match_mismatch
+run_test "line-count assertion rejects missing and unreadable files" test_assert_line_count_rejects_file_errors
+run_test "line-count assertion rejects grep error with zero output" test_assert_line_count_rejects_grep_error_with_zero_output
+run_test "line-count assertion keeps sequential and parallel diagnostics" test_assert_line_count_harness_diagnostics
 run_test "suite definitions match aggregator registrations" test_suite_function_registration_parity
 run_test "nix sources use stdenv.hostPlatform predicates" test_nix_sources_use_host_platform_predicates
 run_test "deprecated stdenv predicate scan detects regression" test_deprecated_stdenv_predicate_scan_detects_regression
@@ -406,6 +422,15 @@ run_test "pushover helper missing credential skips curl" test_pushover_send_miss
 run_test "pushover helper sends expected fields" test_pushover_send_success_passes_expected_fields
 run_test "pushover helper passes optional sound" test_pushover_send_passes_optional_sound
 run_test "pushover helper curl failure returns nonzero" test_pushover_send_curl_failure_returns_1
+run_test "service notification sends credentials through stdin" test_service_notification_uses_stdin_without_credentials_in_argv
+run_test "service notification escapes multiline fields" test_service_notification_escapes_multiline_fields
+run_test "service notification preserves curl status and fail-soft return" test_service_notification_preserves_curl_status_and_fail_soft_return
+run_test "service notification rejects invalid credentials before curl" test_service_notification_missing_or_invalid_credentials_skip_curl
+run_test "service notification loads its helper lazily" test_service_notification_helper_failure_is_lazy_and_fail_soft
+run_test "service notification LoadCredential fallback is command scoped" test_service_notification_loadcredential_fallback_is_command_scoped
+run_test "service notification temperature cooldown follows send success" test_service_notification_temp_monitor_records_cooldown_only_after_success
+run_test "service notification purge reminder propagates failure" test_service_notification_purge_reminder_fails_when_transport_fails
+run_test "service notification fallback retries after send failure" test_service_notification_fallback_retries_after_transport_failure
 run_test "folder-actions lib source has no side effects" test_folder_actions_lib_source_is_side_effect_free
 run_test "folder-actions notify_failure uses Pushover helper boundary" test_folder_actions_notify_failure_uses_pushover_helper_boundary
 run_test "folder-actions drain_queue processes rescanned files in order" test_folder_actions_drain_queue_processes_rescanned_files_in_order
@@ -434,6 +459,10 @@ run_test "upload-immich rejects malformed check ids" test_upload_immich_rejects_
 run_test "upload-immich rechecks before deleting duplicates" test_upload_immich_rechecks_before_deleting_duplicates
 run_test "karakeep fallback-sync success removes only matched queue URL" test_karakeep_fallback_sync_success_removes_only_matched_queue_url
 run_test "karakeep fallback-sync query-only difference is held" test_karakeep_fallback_sync_query_only_difference_is_held
+run_test "karakeep fallback-sync different fragments are held" test_karakeep_fallback_sync_different_fragments_are_held
+run_test "karakeep fallback-sync missing fragment is held" test_karakeep_fallback_sync_missing_fragment_is_held
+run_test "karakeep fallback-sync selects exact fragment among variants" test_karakeep_fallback_sync_selects_exact_fragment_among_variants
+run_test "karakeep fallback-sync fragment preserves path and query rules" test_karakeep_fallback_sync_fragment_preserves_path_and_query_rules
 run_test "karakeep fallback-sync upload failure preserves queue" test_karakeep_fallback_sync_upload_failure_preserves_queue_and_records_notify_state
 run_test "karakeep fallback-sync GC removes expired state" test_karakeep_fallback_sync_gc_removes_only_expired_state_entries
 run_test "karakeep fallback-sync unmatched notification is deduplicated" test_karakeep_fallback_sync_unmatched_notification_is_deduplicated
@@ -454,6 +483,7 @@ run_test "karakeep fallback-sync unreadable queue is a match error" test_karakee
 run_test "karakeep fallback-sync comment open inside saved comment is text" test_karakeep_fallback_sync_comment_open_inside_saved_comment_is_text
 run_test "karakeep fallback-sync skips saved comment without url" test_karakeep_fallback_sync_skips_saved_comment_without_url
 run_test "karakeep fallback-sync upload failure notify key keeps query" test_karakeep_fallback_sync_upload_failure_notify_key_keeps_query
+run_test "karakeep fallback-sync upload failure notify key keeps fragment" test_karakeep_fallback_sync_upload_failure_notify_key_keeps_fragment
 run_test "karakeep fallback-sync processed state matches exact hash" test_karakeep_fallback_sync_processed_state_matches_exact_hash
 run_test "karakeep fallback-sync reads identifier tags spanning lines" test_karakeep_fallback_sync_reads_identifier_tags_spanning_lines
 run_test "karakeep fallback-sync flatten error is a match error" test_karakeep_fallback_sync_flatten_error_is_a_match_error
@@ -484,6 +514,9 @@ run_test "fragile-hardcoding-guard empty and malformed input noop" test_fragile_
 run_test "nrs-session-cleanup empty malformed and nonrepo noop" test_nrs_session_cleanup_hook_empty_malformed_and_nonrepo_input_noop
 run_test "plans-gc removes old transient buffer" test_plans_gc_hook_removes_old_transient_buffer
 run_test "plans-gc empty and malformed input noop" test_plans_gc_hook_empty_and_malformed_input_noop
+run_test "plans-gc preserves source for unsafe trash root" test_plans_gc_hook_preserves_source_for_unsafe_trash_root
+run_test "plans-gc preserves source for unsafe date destination" test_plans_gc_hook_preserves_source_for_unsafe_date_destination
+run_test "plans-gc preserves existing trash entries" test_plans_gc_hook_preserves_existing_trash_entries
 run_test "plans-gc retires slug buffers and preserves docs" test_plans_gc_hook_removes_slug_buffers_and_preserves_docs
 run_test "record-last-session normal input writes marker" test_record_last_session_hook_normal_input_writes_marker
 run_test "record-last-session empty malformed and subagent noop" test_record_last_session_hook_empty_malformed_and_subagent_noop

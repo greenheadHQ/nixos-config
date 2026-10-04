@@ -167,6 +167,7 @@ _wt_inherit_claude_local_plugins() {
 _wt_remove_claude_local_plugins_for_worktree() {
   local wt_path="$1"
   local canonical_wt_path="${2:-$wt_path}"
+  local git_root="$3"
   local helper
 
   helper=$(_wt_plugin_manifest_helper) \
@@ -177,6 +178,7 @@ _wt_remove_claude_local_plugins_for_worktree() {
     --manifest "$(_wt_claude_plugin_manifest)" \
     --target-root "$wt_path" \
     --target-root-before-removal "$canonical_wt_path" \
+    --worktree-base "$git_root/.claude/worktrees" \
     || {
       _warn "Claude local plugin cleanup 실패 — manifest를 변경하지 않았습니다"
       return 1
@@ -423,14 +425,14 @@ _remove_worktree() {
 
     # 제거에 성공했으므로 이제 부수 상태를 정리한다. 여기서 실패해도 worktree는 이미
     # 사라졌으니 중단하지 않고 알리기만 한다.
-    _wt_remove_claude_local_plugins_for_worktree "$wt_path" "$canonical_wt_path" \
+    _wt_remove_claude_local_plugins_for_worktree "$wt_path" "$canonical_wt_path" "$git_root" \
       || _warn "참고: $name — Claude local plugin 등록을 정리하지 못했습니다"
     _wt_untrust_codex_project "$canonical_wt_path"
   else
     # forced는 기존 순서를 유지한다 (호출자가 승인을 받은 경우와 clean 비-MERGED 기존
     # 경로가 여기로 온다): plugin 등록 해제 → 강제 제거. guarded가 제거를 앞으로 당긴 것은
     # 그 경로에만 적용되는 정책이다.
-    _wt_remove_claude_local_plugins_for_worktree "$wt_path" "$canonical_wt_path" || return 1
+    _wt_remove_claude_local_plugins_for_worktree "$wt_path" "$canonical_wt_path" "$git_root" || return 1
     # `rm -rf` fallback은 제거했다. git이 `--force`로도 거부하는 대상(잠금 등)을 디렉토리만
     # 지워 흉내내면 등록은 남고 실체만 사라진 유령 worktree가 생긴다 — 실제로 잠긴 브리지
     # worktree에서 그렇게 만들어졌다. 실패는 guarded와 같은 등록 상태 분류로 안내하고 여기서

@@ -167,6 +167,102 @@ HTML
   _karakeep_fallback_sync_assert_held "$sandbox" "실패 URL 일치 없음"
 }
 
+# 해시 경로와 일반 앵커를 구별하지 않고 fragment 전체를 식별자로 보존한다 (#1501).
+test_karakeep_fallback_sync_different_fragments_are_held() {
+  local sandbox queued_fragment saved_fragment
+  while IFS=$'\t' read -r queued_fragment saved_fragment; do
+    sandbox=$(new_sandbox)
+    _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+    _karakeep_fallback_sync_write_queue "$sandbox" "https://example.com/app$queued_fragment"
+    _karakeep_fallback_sync_singlefile_header "https://example.com/app$saved_fragment" \
+      > "$sandbox/fallback/archive.html"
+
+    _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+      || fail "expected different fragments to be held: $queued_fragment / $saved_fragment"
+    _karakeep_fallback_sync_assert_held "$sandbox" "실패 URL 일치 없음"
+  done <<'CASES'
+#/post/1	#/post/2
+#!/post/1	#!/post/2
+#post-1	#post-2
+#section-1	#section-2
+#section/	#section
+#section#one	#section#two
+CASES
+}
+
+# 앱 루트 메타데이터나 앵커 없는 canonical은 fragment가 있는 큐 URL을 증명하지 못한다.
+# 반대 방향도 동일하며, 빈 fragment(`#`)도 fragment 없는 URL과 자동 연결하지 않는다.
+test_karakeep_fallback_sync_missing_fragment_is_held() {
+  local sandbox fragment queue_url identifier_url direction
+  for fragment in '#/post/1' '#!/post/1' '#post-1' '#section' '#'; do
+    for direction in queue identifier; do
+      sandbox=$(new_sandbox)
+      _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+      queue_url="https://example.com/app"
+      identifier_url="$queue_url"
+      if [ "$direction" = queue ]; then
+        queue_url="$queue_url$fragment"
+      else
+        identifier_url="$identifier_url$fragment"
+      fi
+      _karakeep_fallback_sync_write_queue "$sandbox" "$queue_url"
+      printf '<link rel="canonical" href="%s">\n' "$identifier_url" > "$sandbox/fallback/archive.html"
+
+      _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+        || fail "expected missing fragment to be held: $direction $fragment"
+      _karakeep_fallback_sync_assert_held "$sandbox" "실패 URL 일치 없음"
+    done
+  done
+}
+
+# 같은 fragment의 SingleFile url은 루트 canonical이 함께 있어도 정확한 큐 URL에만 연결한다.
+test_karakeep_fallback_sync_selects_exact_fragment_among_variants() {
+  local sandbox fragment source_url sibling_url
+  for fragment in '#/post/1' '#!/post/1' '#post-1' '#section' '#'; do
+    sandbox=$(new_sandbox)
+    _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+    source_url="https://example.com/app$fragment"
+    sibling_url="https://example.com/app${fragment}other"
+    _karakeep_fallback_sync_write_queue "$sandbox" "$sibling_url" "$source_url"
+    {
+      _karakeep_fallback_sync_singlefile_header "$source_url"
+      printf '%s\n' '<link rel="canonical" href="https://example.com/app">'
+    } > "$sandbox/fallback/archive.html"
+
+    _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+      || fail "expected exact fragment run to exit 0: $fragment"
+    _karakeep_fallback_sync_assert_relinked "$sandbox" "$source_url"
+    assert_file_contains "$sandbox/state/failed-urls.txt" "$sibling_url"
+  done
+}
+
+# fragment 앞의 경로 끝 `/`와 scheme만 무시한다. fragment 내부의 `?`·끝 `/`와 쿼리는 보존한다.
+test_karakeep_fallback_sync_fragment_preserves_path_and_query_rules() {
+  local sandbox queue_url identifier_url
+  while IFS=$'\t' read -r queue_url identifier_url; do
+    sandbox=$(new_sandbox)
+    _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+    _karakeep_fallback_sync_write_queue "$sandbox" "$queue_url"
+    printf '<meta property="og:url" content="%s">\n' "$identifier_url" > "$sandbox/fallback/archive.html"
+    _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+      || fail "expected path-slash fragment run to exit 0"
+    _karakeep_fallback_sync_assert_relinked "$sandbox" "$queue_url"
+  done <<'CASES'
+https://example.com/app/#/post/1	http://example.com/app#/post/1
+https://example.com/app/#!/post/1?mode=read/	http://example.com/app#!/post/1?mode=read/
+https://example.com/articles/?redirect=/a/#section	http://example.com/articles?redirect=/a/#section
+CASES
+
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  _karakeep_fallback_sync_write_queue "$sandbox" "https://example.com/articles?redirect=/a/#section"
+  printf '%s\n' '<meta name="twitter:url" content="http://example.com/articles/?redirect=/a#section">' \
+    > "$sandbox/fallback/archive.html"
+  _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" \
+    || fail "expected query ending slash difference to be held with a fragment"
+  _karakeep_fallback_sync_assert_held "$sandbox" "실패 URL 일치 없음"
+}
+
 test_karakeep_fallback_sync_upload_failure_preserves_queue_and_records_notify_state() {
   local sandbox stdout_path stderr_path failed_url output notify_state
   sandbox=$(new_sandbox)
@@ -693,6 +789,37 @@ test_karakeep_fallback_sync_upload_failure_notify_key_keeps_query() {
   notify_state=$(cat "$sandbox/state/fallback-notify-state.tsv")
   assert_contains "$notify_state" "upload-failed:example.com/articles/query?x=1"
   assert_contains "$notify_state" "upload-failed:example.com/articles/query?x=2"
+}
+
+# 다른 fragment는 별도 실패 알림을 받고 같은 URL의 재시도는 30분 창 안에서 중복 알리지 않는다.
+test_karakeep_fallback_sync_upload_failure_notify_key_keeps_fragment() {
+  local sandbox first_url second_url notification_count notify_state attempt
+  sandbox=$(new_sandbox)
+  _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+  first_url="https://example.com/app/?x=1#/post/1"
+  second_url="https://example.com/app/?x=1#/post/2"
+  _karakeep_fallback_sync_write_queue "$sandbox" "$first_url" "$second_url"
+  _karakeep_fallback_sync_singlefile_header "$first_url" > "$sandbox/fallback/first.html"
+  _karakeep_fallback_sync_singlefile_header "$second_url" > "$sandbox/fallback/second.html"
+
+  for attempt in 1 2; do
+    FALLBACK_SYNC_TEST_CURL_EXIT=7 FALLBACK_SYNC_TEST_HTTP_CODE=000 \
+      _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout-$attempt" "$sandbox/stderr-$attempt" \
+      || fail "expected fragment upload failure run to keep script-level exit 0"
+  done
+
+  [ "$(wc -l < "$sandbox/curl.log")" -eq 4 ] || fail "expected both fragment URLs to retry uploads"
+  cmp -s "$sandbox/queue-before" "$sandbox/state/failed-urls.txt" \
+    || fail "expected failed fragment uploads to leave the queue unchanged"
+  [ ! -s "$sandbox/state/fallback-processed.tsv" ] || fail "expected no processed state after failed uploads"
+  notification_count=$(grep -Fc "자동 재연결 실패" "$sandbox/notifications.log" || true)
+  [ "$notification_count" = "2" ] \
+    || fail "expected one upload failure notification per fragment URL, got $notification_count"
+  notify_state=$(cat "$sandbox/state/fallback-notify-state.tsv")
+  [ "$(wc -l < "$sandbox/state/fallback-notify-state.tsv")" -eq 2 ] \
+    || fail "expected exactly two fragment notification keys"
+  assert_contains "$notify_state" "upload-failed:example.com/app?x=1#/post/1"
+  assert_contains "$notify_state" "upload-failed:example.com/app?x=1#/post/2"
 }
 
 # processed 기록은 첫 필드의 파일 해시가 정확히 같을 때만 건너뛴다.
