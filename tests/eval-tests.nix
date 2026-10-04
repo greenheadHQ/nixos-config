@@ -1089,6 +1089,54 @@ let
   ankiRuntimeCheck = flake.checks.x86_64-linux.anki-host-runtime;
   ankiHostLab = nixosCfg.systemd.services."anki-host-lab";
   ankiHostMain = nixosCfg.systemd.services."anki-host-main";
+  # #1502: a repository revision alone must not change the running Anki unit.
+  # These are evaluation comparisons, not a live deployment/restart test.
+  ankiHostMainUnit = cfg: toString cfg.systemd.units."anki-host-main.service".unit;
+  ankiHostRevisionOnly =
+    (nixosBase.extendModules {
+      specialArgs.inputs = flake.inputs // {
+        self = flake // {
+          rev = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+          dirtyRev = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-dirty";
+        };
+      };
+    }).config;
+  ankiHostChangedUnit =
+    module: ankiHostMainUnit (nixosBase.extendModules { modules = [ module ]; }).config;
+  # An unused derivation attribute changes its identity without building Linux
+  # packages on Darwin. Check each actual package-to-unit dependency separately.
+  ankiHostPackageChangedUnit = ankiHostChangedUnit {
+    nixpkgs.overlays = [
+      (_: prev: { anki = prev.anki.overrideAttrs { ankiRestartTest = "package"; }; })
+    ];
+  };
+  ankiHostHelperChangedUnit = ankiHostChangedUnit {
+    nixpkgs.overlays = [
+      (_: prev: {
+        anki-utils = prev.anki-utils // {
+          buildAnkiAddon =
+            args:
+            prev.anki-utils.buildAnkiAddon (
+              if builtins.isAttrs args && (args.pname or "") == "anki_host_sync" then
+                args // { ankiRestartTest = "helper"; }
+              else
+                args
+            );
+        };
+      })
+    ];
+  };
+  ankiHostBundleChangedUnit = ankiHostChangedUnit {
+    nixpkgs.overlays = [
+      (_: prev: {
+        runCommand =
+          name: args: command:
+          prev.runCommand name (
+            args // nixpkgsLib.optionalAttrs (name == "anki-managed-types") { ankiRestartTest = "bundle"; }
+          ) command;
+      })
+    ];
+  };
   ankiHostSyncMain = nixosCfg.systemd.services."anki-host-sync-main";
   ankiHostSyncMainTimer = nixosCfg.systemd.timers."anki-host-sync-main";
   ankiHostBackup = nixosCfg.systemd.services."anki-host-backup";
@@ -1645,6 +1693,25 @@ let
           nixpkgsLib.splitString " " nixosCfg.system.build.toplevel.passedChecks
         )
         && !((flake.checks.aarch64-darwin or { }) ? anki-host-runtime);
+    }
+    {
+      name = "Test AH2b: 저장소 SHA만 바뀌면 Anki main 유닛은 동일하고 신규 SHA 환경 변수는 없어야 함 (#1502)";
+      cond =
+        !(ankiHostMain.environment ? ANKI_HOST_MANAGED_SOURCE_REV)
+        && ankiHostMainUnit nixosCfg == ankiHostMainUnit ankiHostRevisionOnly
+        &&
+          nixosCfg.systemd.units."anki-host-main.service".text
+          == ankiHostRevisionOnly.systemd.units."anki-host-main.service".text;
+    }
+    {
+      name = "Test AH2c: Anki·helper·bundle 패키지 식별자 변경은 각각 main 유닛에 반영되고 기본 재시작 정책을 유지해야 함 (#1502, 평가만)";
+      cond =
+        ankiHostMain.restartIfChanged
+        && builtins.all (unit: unit != ankiHostMainUnit nixosCfg) [
+          ankiHostPackageChangedUnit
+          ankiHostHelperChangedUnit
+          ankiHostBundleChangedUnit
+        ];
     }
     {
       name = "Test AH3: AnkiConnect·헬퍼가 127.0.0.1에만 바인딩되고 인스턴스가 offscreen Qt로 뜨며, single-instance 키가 인스턴스별로 달라야 함 (같은 유저의 두 anki가 서로 명령을 넘기는 사고 방지)";

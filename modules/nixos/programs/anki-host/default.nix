@@ -40,7 +40,6 @@
   pkgs,
   lib,
   constants,
-  inputs,
   ...
 }:
 
@@ -161,7 +160,6 @@ let
       // lib.optionalAttrs inst.sync.enable {
         ANKI_HOST_SYNC_CREDENTIALS = ankiwebCredPath;
         ANKI_HOST_MANAGED_BUNDLE = "${import ./managed-types.nix { inherit pkgs; }}";
-        ANKI_HOST_MANAGED_SOURCE_REV = inputs.self.rev or inputs.self.dirtyRev or "unknown";
       }
       // lib.optionalAttrs inst.allowImport {
         # 컬렉션 교체(/import-colpkg) 라우팅 — 구성 시점 결정. sync.enable과의 배타는 아래 assertion

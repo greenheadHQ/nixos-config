@@ -10,7 +10,7 @@ import pytest
 from test_real_collection import runtime, add  # noqa: F401
 
 
-def configured(r, tmp_path):
+def configured(r, tmp_path, source_revision="unknown"):
     from anki_real_fixture.managed_bundle import build_bundle
     from anki_real_fixture.managed_runtime import ManagedRuntime, MODEL_NAME
 
@@ -34,7 +34,7 @@ def configured(r, tmp_path):
 
     manager = ManagedRuntime(r.window, tmp_path / 'managed', source, instance='fixture',
                              snapshot=r.helper._collection_identity, restore_point=backup,
-                             sync_status=lambda: {'result': 'success'}, ttl=600)
+                             sync_status=lambda: {'result': 'success'}, ttl=600, source_revision=source_revision)
     return manager, model, asset
 
 
@@ -50,6 +50,7 @@ def test_registration_requires_operator_preview_and_actual_verified_copy(runtime
     manager, model, asset = configured(r, tmp_path)
     assert manager.check()['status'] == 'unavailable'
     preview = manager.enrollment_prepare()
+    assert preview['source']['git_revision'] == 'unknown'
     with pytest.raises(r.error, match='confirmation'):
         manager.enrollment_apply(preview['operation_id'], preview['preview_token'], False)
     assert manager.check()['status'] == 'unavailable'
@@ -57,6 +58,22 @@ def test_registration_requires_operator_preview_and_actual_verified_copy(runtime
     assert manager.check()['status'] == 'normal'
     assert manager.check('Basic (and reversed card)')['status'] == 'unmanaged'
     assert not manager.check('Basic (and reversed card)')['write_blocked']
+
+
+def test_prepared_enrollment_keeps_revision_after_restart_without_sha(runtime, tmp_path):
+    from anki_real_fixture.managed_runtime import ManagedRuntime, MODEL_NAME
+
+    r = runtime
+    old_revision = 'a' * 40
+    manager, _, _ = configured(r, tmp_path, source_revision=old_revision)
+    preview = manager.enrollment_prepare()
+    restarted = ManagedRuntime(r.window, manager.root, manager.source, instance='fixture',
+                               snapshot=manager.snapshot, restore_point=manager.restore_point,
+                               sync_status=lambda: {'result': 'success'}, ttl=600)
+    assert restarted.source_revision == 'unknown'
+    restarted.enrollment_apply(preview['operation_id'], preview['preview_token'], True)
+    assert restarted.store.get_baseline(MODEL_NAME)['evidence']['source'] == preview['source']
+    assert restarted.check()['status'] == 'normal'
 
 
 def test_mixed_field_updates_rejected_before_any_note_changes(runtime, tmp_path):
