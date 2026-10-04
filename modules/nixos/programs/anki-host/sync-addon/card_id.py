@@ -115,6 +115,24 @@ def _guard(widget, mode, names):
     return "".join(pieces)
 
 
+def _generation_requirements(requirements, names, template_count, *, error_prefix):
+    """Validate the native requirements shared by guarded template widgets."""
+    req_by_ord = {}
+    for requirement in requirements:
+        if not isinstance(requirement, (list, tuple)) or len(requirement) != 3:
+            raise ValueError(f"{error_prefix}-invalid-requirement")
+        ordinal, mode, indexes = requirement
+        if (type(ordinal) is not int or ordinal in req_by_ord or mode not in ("all", "any")
+                or not isinstance(indexes, list) or not indexes
+                or any(type(index) is not int or not 0 <= index < len(names) for index in indexes)
+                or len(set(indexes)) != len(indexes)):
+            raise ValueError(f"{error_prefix}-unsupported-requirement")
+        req_by_ord[ordinal] = (mode, [names[index] for index in indexes])
+    if set(req_by_ord) != set(range(template_count)):
+        raise ValueError(f"{error_prefix}-template-requirement-mismatch")
+    return req_by_ord
+
+
 def build_plan(model, widget=None):
     """Return original/change pairs for a native Anki note-type dictionary.
 
@@ -149,19 +167,7 @@ def build_plan(model, widget=None):
         names.append(name)
     if len(set(names)) != len(names):
         raise ValueError("card-id-duplicate-field-name")
-    req_by_ord = {}
-    for requirement in requirements:
-        if not isinstance(requirement, (list, tuple)) or len(requirement) != 3:
-            raise ValueError("card-id-invalid-requirement")
-        ordinal, mode, indexes = requirement
-        if (type(ordinal) is not int or ordinal in req_by_ord or mode not in ("all", "any")
-                or not isinstance(indexes, list) or not indexes
-                or any(type(index) is not int or not 0 <= index < len(names) for index in indexes)
-                or len(set(indexes)) != len(indexes)):
-            raise ValueError("card-id-unsupported-requirement")
-        req_by_ord[ordinal] = (mode, [names[index] for index in indexes])
-    if set(req_by_ord) != set(range(len(templates))):
-        raise ValueError("card-id-template-requirement-mismatch")
+    req_by_ord = _generation_requirements(requirements, names, len(templates), error_prefix="card-id")
     changes = []
     template_names = set()
     for index, template in enumerate(templates):

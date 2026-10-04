@@ -92,3 +92,18 @@ def test_upload_resume_needs_new_approval_and_does_not_repeat_apply(tmp_path, mo
     schema.sync = good_sync
     assert schema.apply(p["operation_id"])["action"] == "approved-full-upload"
     assert len(adapter.calls) == 1
+
+
+@pytest.mark.parametrize("kind,receipt", [("sync", {"state": "synced"}),
+                                           ("notification", {"state": "sent"})])
+def test_schema_delivery_requires_root_role_and_refusal_preserves_root_resume(tmp_path, monkeypatch, kind, receipt):
+    schema, ops, adapter, snapshot, sync_calls, p, path, approval = schema_fixture(tmp_path, monkeypatch)
+    applied = ops.apply(p["operation_id"], p["preview_token"], True, schema_authorized=True)
+    with pytest.raises(OperationError, match="root-schema-approval-required"):
+        ops.record_delivery(p["operation_id"], kind, receipt)
+    assert ops.status(p["operation_id"])[kind] == applied[kind]
+    assert sync_calls == []
+    assert schema.inspect(p["operation_id"])["operation"]["sync"]["state"] == "pending"
+    result = schema.apply(p["operation_id"])
+    assert result["operation"]["sync"]["state"] == "synced"
+    assert len(adapter.calls) == len(sync_calls) == 1

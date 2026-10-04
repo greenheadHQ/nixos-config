@@ -143,3 +143,64 @@ def test_read_freshness_keeps_shell_produced_success_after_later_failure(script,
     assert after['last_successful_sync_at'] == before['last_successful_sync_at']
     assert after['last_attempt_at'] != before['last_attempt_at']
     assert after['last_attempt_result'] == expected
+
+
+@pytest.mark.parametrize('contents', [
+    '{"lastSuccessAt":', 'null', '[]', '{}',
+    '{"lastSuccessAt":"prior","lastSuccessCounts":null}',
+    '{"lastSuccessAt":null,"lastSuccessCounts":{"notes":100,"revlog":1000}}',
+    '{"lastSuccessAt":"prior","lastSuccessCounts":{"notes":true,"revlog":1000}}',
+    '{"lastSuccessAt":"prior","lastSuccessCounts":{"notes":-1,"revlog":1000}}',
+    '{"lastSuccessAt":"prior","lastSuccessCounts":{"notes":100,"revlog":"1000"}}',
+    '{"lastSuccessAt":"prior","lastSuccessCounts":{"notes":100,"revlog":1.5}}',
+    '{"lastSuccessAt":null,"lastSuccessCounts":null}\n{}',
+])
+def test_untrusted_baseline_is_preserved_and_blocks_sync(script, contents):
+    run, state, public, root = script
+    original = state / 'sync-status.json'
+    original.write_text(contents)
+    result = run(1001)
+    assert result.returncode == 1, result.stderr
+    assert original.read_text() == contents
+    assert not (root / 'calls.log').exists()
+    status = json.loads((public / 'fixture.json').read_text())
+    assert status['result'] == 'error' and status['error'] == 'sync-state-unavailable'
+    assert (root / 'alert.log').read_text().splitlines() == ['notification']
+
+
+def test_unreadable_baseline_is_not_replaced(script):
+    run, state, _public, root = script
+    original = state / 'sync-status.json'
+    original.write_text('{"lastSuccessAt":"prior","lastSuccessCounts":{"notes":100,"revlog":1000}}')
+    original.chmod(0)
+    if os.access(original, os.R_OK):
+        pytest.skip('process can bypass DAC; non-root fixture covers this case')
+    try:
+        result = run(1001)
+        assert result.returncode == 1
+        assert original.stat().st_mode & 0o777 == 0
+        assert not (root / 'calls.log').exists()
+    finally:
+        original.chmod(0o600)
+    assert json.loads(original.read_text())['lastSuccessCounts'] == {'notes': 100, 'revlog': 1000}
+
+
+@pytest.mark.parametrize('contents', [None, '{"lastSuccessAt":null,"lastSuccessCounts":null}'])
+def test_first_bootstrap_without_success_history_can_still_sync(script, contents):
+    run, state, _public, _root = script
+    if contents is not None:
+        (state / 'sync-status.json').write_text(contents)
+    result = run(1001)
+    assert result.returncode == 0, result.stderr
+    assert json.loads((state / 'sync-status.json').read_text())['lastSuccessCounts'] == {'notes': 10, 'revlog': 15}
+
+
+def test_repeated_corrupt_baseline_preserves_existing_alert_deduplication(script):
+    run, state, public, root = script
+    original = state / 'sync-status.json'
+    original.write_text('corrupt baseline')
+    assert run(1001).returncode == 1
+    assert run(1001).returncode == 1
+    assert original.read_text() == 'corrupt baseline'
+    assert json.loads((public / 'fixture.json').read_text())['result'] == 'error'
+    assert (root / 'alert.log').read_text().splitlines() == ['notification']

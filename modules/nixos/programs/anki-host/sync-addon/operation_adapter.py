@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import re
 import unicodedata
 from typing import Any
 
@@ -145,7 +144,7 @@ class AnkiAdapter:
         return {"name": name, "id": model["id"], "type": model["type"],
                 "fields": [{"name": f["name"], "index": f["ord"]} for f in model["flds"]],
                 "templates": [{"name": t["name"], "index": t["ord"], "front": t["qfmt"], "back": t["afmt"]}
-                              for t in model["tmpls"]], "css": model["css"]}
+                              for t in model["tmpls"]], "css": model["css"], "req": model.get("req")}
 
     def _model_check(self, action: str, p: dict[str, Any], model: dict[str, Any]) -> None:
         collection = model["flds"] if "_field_" in action else model["tmpls"]
@@ -207,15 +206,21 @@ class AnkiAdapter:
         finally:
             os.close(fd)
 
-    @staticmethod
-    def _anticipated_ordinals(model: dict[str, Any], values: dict[str, str]) -> set[int]:
+    def _anticipated_cards(self, model: dict[str, Any], values: dict[str, str], existing: list[Any]) -> int:
+        ordinals = {card.ord for card in existing}
         if model["type"] == 1:
-            # Control removal occurs before Anki generates cards, even with NFC
-            # disabled, and can make a formerly interrupted cloze marker valid.
-            stored = AnkiAdapter._stored_field_value(" ".join(values.values()), False)
-            return {int(n) - 1 for n in re.findall(r"\{\{c([1-9][0-9]*)::", stored)}
+            # An unsaved note lets the running Anki parse its own Cloze syntax,
+            # including comma lists, leading zeroes, nesting and numeric limits.
+            # Strip controls before parsing, as Anki does before generating cards.
+            note = self.col.new_note(model)
+            for name, value in values.items():
+                note[name] = self._stored_field_value(value, False)
+            numbers = note.cloze_numbers_in_fields()
+            # Anki caps generated ordinals at 499, but multiple different cloze
+            # numbers can each generate a card there when none already exists.
+            return len(existing) + sum(min(number - 1, 499) not in ordinals for number in numbers)
         # Include every template, even when conditions currently hide its card.
-        return set(range(len(model["tmpls"])))
+        return len(existing) + len(set(range(len(model["tmpls"]))) - ordinals)
 
     @staticmethod
     def _stored_field_value(value: str, normalize_text: bool) -> str:
@@ -253,7 +258,7 @@ class AnkiAdapter:
                     raise OperationError("unknown-note-field")
                 models[n["model_name"]] = model
                 decks[n["deck_name"]] = deck
-                anticipated_cards += max(1, len(self._anticipated_ordinals(model, n["fields"])))
+                anticipated_cards += max(1, self._anticipated_cards(model, n["fields"], []))
             snapshot.update(models=models, decks=decks)
             summary.update(new_notes=len(p["notes"]), cards=anticipated_cards,
                            decks=sorted(decks), anticipated_cards=True)
@@ -352,8 +357,7 @@ class AnkiAdapter:
                     # Count ordinals per note: identical ordinals on different
                     # notes are different cards. Old cloze cards are retained.
                     existing_cards = self._cards(note.card_ids())
-                    ordinals = {c.ord for c in existing_cards} | self._anticipated_ordinals(model, changed_fields)
-                    anticipated += max(len(existing_cards), len(ordinals))
+                    anticipated += self._anticipated_cards(model, changed_fields, existing_cards)
                 if action == "update_fields":
                     snapshot["model"] = next(iter(models.values()))
                 else:

@@ -247,7 +247,11 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
                 "notes": [note_view(n, max_field_chars, deps.public_url) for n in notes], "freshness": freshness}
 
     @mcp.tool(name="anki_note_info", annotations=READ_ONLY)
-    async def anki_note_info(note_ids: list[int], max_field_chars: int = 0) -> dict[str, Any]:
+    async def anki_note_info(
+        note_ids: list[int],
+        max_field_chars: int = 0,
+        offset: Annotated[int, Field(description="Pass page.next_offset with the same ordered note_ids for the next page.")] = 0,
+    ) -> dict[str, Any]:
         """지정한 노트 전체 조회(기본값: 필드 원문).
         반환 열기 URL은 Markdown 링크로 그대로 표시. 조립·수정·필드 저장 금지.
         Before reviewing a note with a 검토 메모 field, read its complete memo here, including all paragraphs.
@@ -273,7 +277,7 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         Check freshness for the host's recorded sync boundary; phone edits may still be absent even after
         a successful host sync."""
         freshness = read_freshness(deps.sync_status_file)
-        chunk, meta = page(note_ids, deps.page_max, 0, deps.page_max)
+        chunk, meta = page(note_ids, deps.page_max, offset, deps.page_max)
         notes = await anki.invoke("notesInfo", notes=chunk) if chunk else []
         return {"page": meta, "notes": [note_view(n, max_field_chars, deps.public_url) for n in notes], "freshness": freshness}
 
@@ -301,12 +305,15 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
                 "cards": [card_view(c, max_chars, deps.public_url) for c in cards], "freshness": freshness}
 
     @mcp.tool(name="anki_card_reviews", annotations=READ_ONLY)
-    async def anki_card_reviews(card_ids: list[int]) -> dict[str, Any]:
+    async def anki_card_reviews(
+        card_ids: list[int],
+        offset: Annotated[int, Field(description="Pass page.next_offset with the same ordered card_ids for the next page.")] = 0,
+    ) -> dict[str, Any]:
         """Review history (revlog) keyed by card id. Each entry: {id: review time (epoch ms), usn, ease: button 1-4,
         ivl: new interval (days; negative = seconds), lastIvl, factor: ease factor (permille), time: ms spent,
         type: 0 learn / 1 review / 2 relearn / 3 filtered / 4 manual}."""
         freshness = read_freshness(deps.sync_status_file)
-        chunk, meta = page(card_ids, deps.page_max, 0, deps.page_max)
+        chunk, meta = page(card_ids, deps.page_max, offset, deps.page_max)
         # AnkiConnect는 revlog.cid를 정수로 비교한다 — 문자열 id를 보내면 빈 결과가 온다
         reviews = await anki.invoke("getReviewsOfCards", cards=chunk) if chunk else {}
         return {"page": meta, "reviews": reviews, "freshness": freshness}

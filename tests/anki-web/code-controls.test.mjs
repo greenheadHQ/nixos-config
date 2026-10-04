@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { block, css, harness, renderer, scope } from "./harness.mjs";
+import { readFile } from "node:fs/promises";
+import { block, css, harness, manifest, renderer, scope } from "./harness.mjs";
+
+// Frozen pre-placement renderer: current source must also upgrade this already
+// loaded V1, not merely a "legacy" slice derived from the new implementation.
+const legacyRenderer = (await readFile(new URL("./fixtures/code-highlight-renderer-v1.html", import.meta.url), "utf8"))
+  .match(/<script>([\s\S]*)<\/script>/)[1]
+  .replace("__ANKI_SYNTAX_ASSET__", JSON.stringify(manifest.asset.filename))
+  .replace("__ANKI_SYNTAX_CSS__", JSON.stringify(css).replaceAll("<", "\\u003c"));
 
 const card = (content, { id = "1001", answer = false } = {}) =>
   `<main id="qa"><div class="anki-cid-copy" data-anki-cid="${id}"></div>${answer ? '<hr id="answer">' : ""}${scope(content)}</main>`;
@@ -79,6 +87,148 @@ test("controls follow the first expanded block and preserve scale when all code 
   assert.equal(anchor(), "optional");
   assert.equal(scale(page), "90%");
   assert.equal(document.querySelectorAll(".anki-code-controls").length, 1);
+});
+
+test("CSS-hidden first blocks leave the size toolbar beside visible code", async t => {
+  const page = await rendered(t, `<style>.folded-code { display:none }</style><div class="folded-code"><div>${block("hidden first")}</div></div>${block("visible second")}`);
+  const toolbar = page.document.querySelector(".anki-code-controls");
+  assert.equal(toolbar.nextElementSibling.textContent, "visible second");
+  assert.equal(page.document.querySelectorAll(".anki-code-controls").length, 1);
+  button(page, "larger").click();
+  assert.equal(scale(page), "110%");
+});
+
+test("a reused V1 reviewer adopts CSS-visible placement without losing its controls or scale", async t => {
+  const page = harness(card(block("old front")));
+  t.after(page.close);
+  page.window.eval(legacyRenderer);
+  await page.flush();
+  const original = page.window.AnkiCodeControlsV1;
+  button(page, "larger").click();
+  await replace(page, `<div style="display:none">${block("hidden first")}</div>${block("visible answer")}`, { answer: true });
+  assert.equal(page.window.AnkiCodeControlsV1, original);
+  assert.equal(page.document.querySelector(".anki-code-controls")?.nextElementSibling.textContent, "visible answer");
+  assert.equal(scale(page), "110%");
+  button(page, "larger").click();
+  assert.equal(scale(page), "120%");
+});
+
+test("upgraded V1 details and CSS changes converge on visible code and restore live controls", async t => {
+  const page = harness(card(`<div id="first" style="display:none">${block("first")}</div><details><summary>Optional</summary>${block("optional")}</details><div id="last">${block("last")}</div>`));
+  t.after(page.close);
+  page.window.eval(legacyRenderer);
+  await page.flush();
+  button(page, "smaller").click();
+  page.start();
+  await page.flush();
+  const anchor = () => page.document.querySelector(".anki-code-controls")?.nextElementSibling.textContent;
+  const details = page.document.querySelector("details");
+  const toggle = async open => {
+    details.open = open;
+    details.dispatchEvent(new page.window.Event("toggle"));
+    await page.flush();
+  };
+  assert.equal(anchor(), "last");
+  await toggle(true);
+  assert.equal(anchor(), "optional", "the original V1 toggle cannot leave the bar at CSS-hidden code");
+  assert.equal(scale(page), "90%");
+  await toggle(false);
+  assert.equal(anchor(), "last");
+  page.document.querySelector("#last").style.display = "none";
+  await page.flush();
+  assert.equal(anchor(), undefined);
+  assert.equal(page.document.querySelector("#qa").style.getPropertyValue("--anki-code-scale"), "0.9");
+  await toggle(true);
+  assert.equal(anchor(), "optional");
+  assert.equal(scale(page), "90%");
+  page.document.querySelector("#first").style.removeProperty("display");
+  await page.flush();
+  assert.equal(anchor(), "first");
+  button(page, "larger").click();
+  assert.equal(scale(page), "100%", "restored controls keep the original click listener and scale");
+  assert.equal(page.document.querySelectorAll(".anki-code-controls").length, 1);
+
+  let mutations = 0;
+  const watcher = new page.window.MutationObserver(records => { mutations += records.length; });
+  watcher.observe(page.document.querySelector("#qa"), { subtree: true, childList: true, attributes: true });
+  t.after(() => watcher.disconnect());
+  page.document.querySelector("#first").style.display = "none";
+  await page.flush();
+  assert.equal(anchor(), "optional");
+  const settled = mutations;
+  assert.ok(settled > 0);
+  await page.flush();
+  assert.equal(mutations, settled, "placement and highlight mutations settle without a feedback loop");
+});
+
+test("upgraded V1 preserves QA scale and ignores old roots while resetting following cards", async t => {
+  const page = harness(card(`<details open><summary>Old</summary>${block("old front")}</details>`));
+  t.after(page.close);
+  page.window.eval(legacyRenderer);
+  await page.flush();
+  const original = page.window.AnkiCodeControlsV1;
+  const oldRoot = page.document.querySelector("#qa");
+  const oldDetails = oldRoot.querySelector("details");
+  const staleButton = button(page, "larger");
+  staleButton.click();
+  const payload = `<div style="display:none">${block("hidden first")}</div>${block("visible")}`;
+  await replace(page, payload, { answer: true });
+  assert.equal(scale(page), "110%");
+  page.start();
+  page.start();
+  await page.flush();
+  const toolbar = page.document.querySelector(".anki-code-controls");
+  oldDetails.dispatchEvent(new page.window.Event("toggle"));
+  oldRoot.style.display = "none";
+  staleButton.click();
+  await page.flush();
+  assert.equal(page.document.querySelector(".anki-code-controls"), toolbar);
+  assert.equal(toolbar.nextElementSibling.textContent, "visible");
+  assert.equal(scale(page), "110%");
+  button(page, "larger").click();
+  assert.equal(scale(page), "120%", "repeated new template scripts wrap the original lifecycle only once");
+  await replace(page, payload, { id: "1002" });
+  assert.equal(scale(page), "100%");
+  button(page, "smaller").click();
+  await replace(page, payload, { id: "1002", answer: true });
+  assert.equal(scale(page), "90%");
+  await replace(page, payload, { id: "1002" });
+  assert.equal(scale(page), "100%");
+  assert.equal(page.window.AnkiCodeControlsV1, original);
+  assert.equal(page.document.querySelectorAll(".anki-code-controls").length, 1);
+});
+
+test("CSS and hidden changes move the toolbar without losing the current card scale", async t => {
+  const page = await rendered(t, `<style>.folded-code { display:none }</style><div id="optional" class="folded-code">${block("optional")}</div><div id="required">${block("required")}</div>`);
+  const optional = page.document.querySelector("#optional");
+  const required = page.document.querySelector("#required");
+  const anchor = () => page.document.querySelector(".anki-code-controls")?.nextElementSibling.textContent;
+  assert.equal(anchor(), "required");
+  button(page, "smaller").click();
+  optional.classList.remove("folded-code");
+  await page.flush();
+  assert.equal(anchor(), "optional");
+  assert.equal(scale(page), "90%");
+  optional.style.display = "none";
+  await page.flush();
+  assert.equal(anchor(), "required");
+  required.hidden = true;
+  await page.flush();
+  assert.equal(anchor(), undefined);
+  assert.equal(page.document.querySelector("#qa").style.getPropertyValue("--anki-code-scale"), "0.9");
+  required.hidden = false;
+  await page.flush();
+  assert.equal(anchor(), "required");
+  assert.equal(scale(page), "90%");
+  assert.equal(page.document.querySelectorAll(".anki-code-controls").length, 1);
+  const root = page.document.querySelector("#qa");
+  root.style.display = "none";
+  await page.flush();
+  assert.equal(anchor(), undefined);
+  root.style.removeProperty("display");
+  await page.flush();
+  assert.equal(anchor(), "required");
+  assert.equal(scale(page), "90%");
 });
 
 test("details events on a replaced card cannot reset or remount the current controls", async t => {
@@ -435,7 +585,7 @@ test("copy controls stop review gestures while code keeps native scrolling and s
 test("copy installs beside already-loaded V1 size controls without replacing their lifecycle", async t => {
   const page = harness(card(block("const value = 1;")));
   t.after(page.close);
-  const legacy = renderer.slice(0, renderer.indexOf("  // Copy has its own lifecycle:")) + "  window[CONTROLS].mount();\n})();";
+  const legacy = legacyRenderer.slice(0, legacyRenderer.indexOf("  // Copy has its own lifecycle:")) + "  window[CONTROLS].mount();\n})();";
   page.window.eval(legacy);
   const original = page.window.AnkiCodeControlsV1;
   button(page, "larger").click();
@@ -447,7 +597,6 @@ test("copy installs beside already-loaded V1 size controls without replacing the
   button(page, "larger").click();
   assert.equal(scale(page), "120%");
 });
-
 
 test("HTML editor blank lines and final BR lines are preserved when copying", async t => {
   const page = await rendered(t, '<pre><code><div>one</div><div><br></div><div>two</div></code></pre><pre><code><div>one</div><div><br></div></code></pre>');

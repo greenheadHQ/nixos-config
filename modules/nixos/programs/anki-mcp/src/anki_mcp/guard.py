@@ -3,7 +3,7 @@
 SDK 핸들러가 본문을 파싱하기 전에 수신 크기·시간을 제한하고, 공개 등록 요청의 빈도를 제한한다.
 - 요청 본문 상한: Content-Length가 크면 바로 413. 아니면 본문을 상한까지 여기서 미리 읽고 넘으면 413, 안 넘으면 읽은
   본문을 앱에 되돌려준다 — SDK 핸들러 안에서 예외로 끊으면 SDK의 광역 except가 500으로 바꾸므로(streamable_http.py),
-  판정은 앱에 들어가기 전에 끝내야 한다. MCP 요청은 JSON 한 덩어리라 버퍼링 비용은 상한(수백 KB)으로 묶인다.
+  판정은 앱에 들어가기 전에 끝내야 한다. 미디어를 받는 MCP와 달리 OAuth 제어 요청은 작은 별도 상한으로 묶는다.
 - /register rate limit: DCR은 인증이 없다 — 창(window) 안 등록 횟수가 burst를 넘으면 429. 재시작하면 초기화되는
   메모리 카운터면 충분하다(상한의 목적은 상태 파일 폭주 방지이지 과금이 아니다).
 """
@@ -18,6 +18,9 @@ from typing import Any, Callable
 
 
 DRAIN_FACTOR = 4  # 413 전에 읽어 버리는 본문의 상한 배수 — 이보다 크면 응답만 보내고 끊는다
+OAUTH_MAX_BODY_BYTES = 16 * 1024  # 토큰·승인·등록용: 5 MiB 미디어 전송 상한을 폼 파서에 그대로 적용하지 않는다
+OAUTH_MAX_FORM_FIELDS = 32  # OAuth 제어 요청: 중복·빈 필드도 파싱 비용에 포함한다
+OAUTH_PATHS = frozenset(("/register", "/token", "/revoke", "/authorize", "/approve"))
 
 
 def _json_response(status: int, error: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -56,11 +59,11 @@ class RequestGuard:
         self._registrations.append(now)
         return True
 
-    async def _drain(self, receive: Any, already: int, announced: int | None) -> None:
+    async def _drain(self, receive: Any, already: int, announced: int | None, max_body: int) -> None:
         """413을 보내기 전에 남은 본문을 읽어 버린다 — 읽지 않은 요청 데이터가 남은 소켓을 서버가 닫으면 RST가 나가
         클라이언트가 응답을 받기 전에 연결이 끊긴다(실측). 상한의 몇 배를 넘는 본문은 읽지 않고 그냥 끊는다."""
-        budget = self._max_body * DRAIN_FACTOR - already
-        if announced is not None and announced > self._max_body * DRAIN_FACTOR:
+        budget = max_body * DRAIN_FACTOR - already
+        if announced is not None and announced > max_body * DRAIN_FACTOR:
             return
         while budget > 0:
             message = await receive()
@@ -70,7 +73,7 @@ class RequestGuard:
             if not message.get("more_body", False):
                 return
 
-    async def _consume(self, receive: Any, send: Any) -> "tuple[bytes, list[dict[str, Any]]] | None":
+    async def _consume(self, receive: Any, send: Any, max_body: int) -> "tuple[bytes, list[dict[str, Any]]] | None":
         """본문을 상한까지 읽어 판정한다. 통과면 (body, trailing)을, 상한 초과로 413을 보냈으면 None을 반환한다.
         호출측이 이 전체를 read_timeout으로 감싸므로 미완결 본문은 여기서 대기하다 취소된다(slowloris 방어)."""
         body = b""
@@ -80,13 +83,15 @@ class RequestGuard:
             if message["type"] != "http.request":
                 trailing.append(message)
                 break
-            body += message.get("body", b"")
-            if len(body) > self._max_body:
+            chunk = message.get("body", b"")
+            size = len(body) + len(chunk)
+            if size > max_body:
                 if message.get("more_body", False):  # 이 메시지가 마지막이면 더 읽을 것이 없다 — 기다리면 영원히 멈춘다
-                    await self._drain(receive, len(body), None)
+                    await self._drain(receive, size, None, max_body)
                 for reply in _json_response(413, "request body too large"):
                     await send(reply)
                 return None
+            body += chunk
             if not message.get("more_body", False):
                 break
         return body, trailing
@@ -95,11 +100,13 @@ class RequestGuard:
         if scope["type"] != "http":
             await self._app(scope, receive, send)
             return
+        oauth = scope.get("path", "").rstrip("/") in OAUTH_PATHS
+        max_body = min(self._max_body, OAUTH_MAX_BODY_BYTES) if oauth else self._max_body
         headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
         length = headers.get("content-length")
-        if length and length.isdigit() and int(length) > self._max_body:
+        if length and length.isdigit() and int(length) > max_body:
             try:  # 남은 본문은 기한 안에서만 배출한다 — 배출이 늘어질수록 공격자에게 유리하다
-                await asyncio.wait_for(self._drain(receive, 0, int(length)), self._read_timeout)
+                await asyncio.wait_for(self._drain(receive, 0, int(length), max_body), self._read_timeout)
             except asyncio.TimeoutError:
                 pass
             for message in _json_response(413, "request body too large"):
@@ -112,7 +119,7 @@ class RequestGuard:
 
         # 본문 선읽기는 인증(SDK bearer 미들웨어)보다 앞에서 일어난다 — 기한을 둬 미완결 본문이 버퍼를 무한히 붙잡지 못하게 한다
         try:
-            outcome = await asyncio.wait_for(self._consume(receive, send), self._read_timeout)
+            outcome = await asyncio.wait_for(self._consume(receive, send, max_body), self._read_timeout)
         except asyncio.TimeoutError:
             for reply in _json_response(408, "request body read timed out"):
                 await send(reply)
@@ -120,6 +127,12 @@ class RequestGuard:
         if outcome is None:
             return  # _consume이 이미 413을 보냈다
         body, trailing = outcome
+        content_type = headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        if oauth and content_type == "application/x-www-form-urlencoded" and body.count(b"&") >= OAUTH_MAX_FORM_FIELDS:
+            # URL-encoded 필드는 '&'로만 구분된다. 디코딩·목록 할당 전에 중복·빈 필드까지 센다.
+            for reply in _json_response(400, "too many form fields"):
+                await send(reply)
+            return
         replay = [{"type": "http.request", "body": body, "more_body": False}, *trailing]
 
         async def replay_receive() -> dict[str, Any]:

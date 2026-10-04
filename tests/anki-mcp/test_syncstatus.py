@@ -1,13 +1,73 @@
+import asyncio
 import json
+import os
+import signal
+import subprocess
+import sys
 from datetime import datetime, timezone
 
 import pytest
 
-from anki_mcp.syncstatus import SyncNow, UnitState, classify, summarize
+from anki_mcp.syncstatus import SyncNow, UnitState, classify, run_cmd, summarize
 
 
 def _write(path, **fields):
     path.write_text(json.dumps(fields))
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("returncode", [0, 7])
+async def test_command_preserves_exit_status_and_drains_both_output_streams(returncode):
+    result = await run_cmd([
+        sys.executable, "-c",
+        "import sys; sys.stdout.write('x' * 131072); "
+        "sys.stderr.write('y' * 131072); sys.exit(int(sys.argv[1]))", str(returncode),
+    ])
+    assert result == (returncode, "x" * 131072, "y" * 131072)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("cancellation", ["deadline", "caller"])
+async def test_command_cancellation_kills_and_reaps_the_running_process(tmp_path, cancellation):
+    ready = tmp_path / "child.pid"
+    task = asyncio.create_task(run_cmd([
+        sys.executable, "-c",
+        "import os, pathlib, signal, sys, time; "
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)",
+        str(ready),
+    ]))
+
+    async def started():
+        while True:
+            try:
+                return int(ready.read_text())
+            except (FileNotFoundError, ValueError):
+                await asyncio.sleep(0.005)
+
+    pid = None
+    try:
+        pid = await asyncio.wait_for(started(), timeout=5)
+        if cancellation == "deadline":
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(task, timeout=0.01)
+        else:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        # A cancelled await alone is insufficient: the real command must no
+        # longer be running or left as an unreaped child when control returns.
+        with pytest.raises(ProcessLookupError):
+            os.kill(pid, 0)
+    finally:
+        if pid is not None:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
 
 def test_classify_distinguishes_running_and_stale():
@@ -160,10 +220,140 @@ async def test_sync_now_triggers_over_stale_running(tmp_path):
     assert out["outcome"] == "completed" and fake.started == 1
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("landed,expected", [
+    ("success", "completed"), ("error", "completed"), ("running", "failed"), (None, "skipped"),
+])
+async def test_sync_now_reports_result_published_while_observing_unit_exit(tmp_path, landed, expected):
+    path = tmp_path / "main.json"
+    _write(path, result="success", runId="old")
+    systemd = FakeSystemd(path)
+
+    async def runner(argv):
+        if argv[:2] == ["systemctl", "show"] and systemd.started and landed:
+            # The service publishes after the caller read the old status, but
+            # before the systemctl query returns the service's final state.
+            _write(path, result=landed, runId="new")
+        return await systemd(argv)
+
+    async def no_sleep(_):
+        pass
+
+    out = await SyncNow(str(path), "u.service", 5, runner=runner, sleep=no_sleep).run()
+    assert out["outcome"] == expected
+    assert out["status"]["runId"] == ("new" if landed else "old")
+    assert out["status"]["result"] == (landed or "success")
+
+
 class Clock:
     def __init__(self): self.now = 1000.5
     def __call__(self): return self.now
     async def sleep(self, seconds): self.now += seconds
+
+
+@pytest.mark.anyio
+async def test_sync_now_budget_includes_commands_and_caps_the_last_sleep(tmp_path):
+    path, clock = tmp_path / "main.json", Clock()
+    began = clock.now
+    _write(path, result="success", runId="old")
+    systemd = FakeSystemd(path, on_start=lambda: _write(path, result="running", runId="new"))
+    calls = []
+
+    async def runner(argv):
+        calls.append(argv[1])
+        clock.now += 2
+        result = await systemd(argv)
+        if systemd.started:
+            systemd.active = "active"
+        return result
+
+    out = await SyncNow(str(path), "u.service", 5, runner=runner, sleep=clock.sleep,
+                        monotonic=clock).run()
+    assert out["outcome"] == "timeout"
+    assert clock.now - began == 5
+    assert calls == ["show", "start"]  # No new command starts with an exhausted budget.
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("slow_command", [1, 2, 3])
+async def test_sync_now_stops_when_any_command_consumes_the_deadline(tmp_path, slow_command):
+    path, clock = tmp_path / "main.json", Clock()
+    began = clock.now
+    _write(path, result="success", runId="old")
+    systemd = FakeSystemd(path, on_start=lambda: _write(path, result="running", runId="new"))
+    calls = []
+
+    async def runner(argv):
+        calls.append(argv[1])
+        if len(calls) == slow_command:
+            # Simulate a command returning only after exhausting the budget.
+            clock.now += 6
+        result = await systemd(argv)
+        if systemd.started:
+            systemd.active = "active"
+        return result
+
+    out = await SyncNow(str(path), "u.service", 5, runner=runner, sleep=clock.sleep,
+                        monotonic=clock).run()
+    assert out["outcome"] == "timeout"
+    assert calls == ["show", "start", "show"][:slow_command]
+    assert clock.now - began == (8 if slow_command == 3 else 6)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("hung_command", [1, 2, 3])
+async def test_sync_now_cancels_hung_command_at_deadline(tmp_path, hung_command):
+    path = tmp_path / "main.json"
+    _write(path, result="success", runId="old")
+    systemd = FakeSystemd(path, on_start=lambda: _write(path, result="running", runId="new"))
+    calls, cancelled = [], []
+
+    async def runner(argv):
+        calls.append(argv[1])
+        if len(calls) == hung_command:
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.append(argv[1])
+                raise
+        result = await systemd(argv)
+        if systemd.started:
+            systemd.active = "active"
+        return result
+
+    # The virtual-clock tests cover the exact budget. Give the real event loop
+    # time to reach every command even when parallel CI workers are busy.
+    syncer = SyncNow(str(path), "u.service", 0.5, runner=runner, poll_interval=0.001)
+    out = await asyncio.wait_for(syncer.run(), timeout=3)
+    assert out["outcome"] == "timeout"
+    assert calls == ["show", "start", "show"][:hung_command]
+    assert cancelled == [calls[-1]]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure,expected", [
+    ("start-rejected", "trigger-failed"), ("show-rejected", "unavailable"),
+    ("missing-command", "unavailable"), ("command-timeout", "timeout"),
+])
+async def test_sync_now_reports_command_failure_with_the_recorded_status(tmp_path, failure, expected):
+    path = tmp_path / "main.json"
+    _write(path, result="success", runId="old")
+
+    async def runner(argv):
+        if failure == "command-timeout":
+            raise subprocess.TimeoutExpired(argv, 30)
+        if failure == "missing-command":
+            raise FileNotFoundError("systemctl")
+        if argv[1] == "show":
+            return ((1, "", "unit unavailable") if failure == "show-rejected"
+                    else (0, "ActiveState=inactive\nInvocationID=\n", ""))
+        return 1, "", "start denied"
+
+    out = await SyncNow(str(path), "u.service", 5, runner=runner).run()
+    assert out["outcome"] == expected
+    assert out["status"]["runId"] == "old"
+    if failure == "start-rejected":
+        assert out["detail"] == "start denied"
 
 
 def normal(path, run_id, started, *, result="success", mode="normal", action="normal"):

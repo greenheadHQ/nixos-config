@@ -26,6 +26,13 @@ import urllib.request
 # Exact codes only: helper errors may otherwise contain note content or secrets.
 HELPER_ERRORS = frozenset({
     "busy", "local-authentication-required", "role-not-allowed",
+    "managed-enrollment-confirmation-expired-or-invalid",
+    "managed-enrollment-model-missing",
+    "managed-enrollment-preview-stale",
+    "managed-enrollment-source-changed",
+    "managed-enrollment-source-does-not-match-runtime",
+    "managed-enrollment-state-changed",
+    "managed-enrollment-verification-failed",
     "managed-update-already-matches-deployed-source",
     "managed-update-baseline-changed-reprepare",
     "managed-update-confirmation-record-missing",

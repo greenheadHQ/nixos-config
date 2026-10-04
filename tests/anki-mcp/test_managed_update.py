@@ -435,6 +435,83 @@ def test_unconfirmed_postcondition_cannot_publish_or_release_protection(runtime)
     assert r.store.inspect(NAME)["status"] == "unavailable"
 
 
+@pytest.mark.parametrize("stage", ["before", "after"])
+@pytest.mark.parametrize("deployment", ["new-source", "source-unavailable"])
+def test_confirmed_update_diagnosis_uses_saved_target_after_deployment(runtime, stage, deployment):
+    r = runtime
+    original_revision = "a" * 40
+    r.engine = r.new_engine(source_revision=original_revision)
+    preview = r.prepare()
+    approved_bundle = copy.deepcopy(r.candidate)
+    r.publish_stage = stage
+    assert r.apply(preview)["state"] == "partial"
+    applied_model, applied_assets = copy.deepcopy(r.adapter.model), copy.deepcopy(r.adapter.assets)
+    if deployment == "new-source":
+        r.target["css"] += "\n/* later deployment, never approved */"
+        r.target_assets["_managed.js"] = b"later source asset, never approved"
+        r.write_source()
+    else:
+        (r.source / "bundle.json").unlink()
+    r.engine = r.new_engine(source_revision="b" * 40)
+    r.publish_stage = None
+    r.time += 1000  # Existing confirmation may finish after preview expiry.
+
+    result = r.engine.diagnose(OP)
+
+    assert result["state"] == "applied" and result["registered"]
+    baseline = r.store.get_baseline(NAME)
+    assert baseline["bundle"] == approved_bundle
+    assert baseline["evidence"]["source"]["git_revision"] == original_revision
+    assert r.store.inspect(NAME)["status"] == "normal"
+    assert r.adapter.model == applied_model and r.adapter.assets == applied_assets
+    assert r.adapter.calls == 1
+
+
+@pytest.mark.parametrize("change", ["version", "backup", "binding", "authority", "notes", "cards", "revlog",
+                                     "model", "asset", "media-registration", "confirmation", "saved-target"])
+def test_saved_target_diagnosis_keeps_every_original_protection(runtime, change):
+    r = runtime
+    preview = r.prepare()
+    r.publish_stage = "before"
+    assert r.apply(preview)["state"] == "partial"
+    r.target["css"] += "later deployed candidate"
+    r.write_source()
+    r.publish_stage = None
+    if change == "version":
+        r.adapter.version = "different-anki"
+    elif change == "backup":
+        (r.root / (OP + ".colpkg")).write_bytes(b"damaged backup")
+    elif change == "binding":
+        r.binding = {"different-collection": True}
+    elif change == "authority":
+        (r.store.root / "baselines" / (r.initial["record_id"] + ".json")).unlink()
+    elif change in ("notes", "cards", "revlog"):
+        r.adapter.rows[change][0][-1] = "unverified preserved data"
+    elif change == "model":
+        r.adapter.model["css"] += "unverified app edit"
+    elif change == "asset":
+        r.adapter.assets["_managed.js"] = b"unverified live asset"
+    elif change == "media-registration":
+        r.adapter.registered = False
+    else:
+        path = r.root / "updates" / (OP + ".json")
+        record = json.loads(path.read_text())
+        if change == "confirmation":
+            del record["confirmed_at"]
+        else:
+            record["target_bundle"]["definition"]["css"] += "unverified saved target"
+        path.write_text(json.dumps(record))
+    state = copy.deepcopy((r.adapter.model, r.adapter.assets, r.adapter.rows))
+
+    result = r.engine.diagnose(OP)
+
+    assert result["state"] == "unknown" and not result["registered"]
+    assert r.store.inspect(NAME)["write_blocked"]
+    assert not (r.store.root / "baselines" / (OP + ".json")).exists()
+    assert (r.adapter.model, r.adapter.assets, r.adapter.rows) == state
+    assert r.adapter.calls == 1
+
+
 @pytest.mark.parametrize("condition", ["stale", "media", "full-sync", "full-upload", "failure"])
 def test_delivery_needs_fresh_normal_and_media_receipts(runtime, condition):
     r = runtime

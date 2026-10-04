@@ -438,7 +438,11 @@ class Operations:
         if record["confirmation_required"] and confirm is not True:
             raise OperationError("explicit-confirmation-required")
         current = self.adapter.inspect(record["spec"])
-        if digest(current["snapshot"]) != record["snapshot_digest"]:
+        # A helper upgrade can correct card impact without changing the note
+        # payload or collection snapshot. An old, smaller preview must not keep
+        # bypassing the confirmation and backup policy until its token expires.
+        if (digest(current["snapshot"]) != record["snapshot_digest"]
+                or current["summary"].get("cards") != record["summary"].get("cards")):
             raise OperationError("stale-preview-create-a-new-request-id")
         return record
 
@@ -501,10 +505,13 @@ class Operations:
             self._save(record)
         return self._public(record)
 
-    def record_delivery(self, operation_id: str, kind: str, receipt: dict[str, Any]) -> dict[str, Any]:
+    def record_delivery(self, operation_id: str, kind: str, receipt: dict[str, Any],
+                        *, schema_authorized: bool = False) -> dict[str, Any]:
         if kind not in ("sync", "notification") or not isinstance(receipt, dict):
             raise OperationError("invalid-delivery-receipt")
         record = self._read(operation_id)
+        if record["schema_required"] and schema_authorized is not True:
+            raise OperationError("root-schema-approval-required")
         if record["action"] in OPERATOR_ACTIONS:
             raise OperationError("operator-local-action-has-no-delivery")
         if record["state"] not in ("applied", "partial"):

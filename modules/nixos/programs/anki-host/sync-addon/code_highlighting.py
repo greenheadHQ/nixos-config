@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 
 from . import note_links
+from .card_id import _generation_requirements, _guard
 
 
 MODEL_NAME = "학습 Basic"
@@ -52,11 +53,21 @@ def _upgrade_note_links(source):
     return source[:start] + replacement
 
 
+def _requirements(model):
+    """Bind each renderer to native card generation, never infer it from HTML."""
+    fields = [field["name"] for field in model["flds"]]
+    requirements = model.get("req")
+    if not isinstance(requirements, list) or any(name[0] in "#^/" for name in fields):
+        raise ValueError("code-highlight-missing-or-invalid-requirements")
+    return _generation_requirements(requirements, fields, len(model["tmpls"]), error_prefix="code-highlight")
+
+
 def build_plan(model, targets, *, renderer=None, css=None, asset_filename=None):
     """Plan named containers on named sides; preserve the model's existing CSS.
 
     Like the note-link planner, accepts native or public model metadata and
-    targets with template_name, side, field_name. The only supported note type
+    targets with template_name, side, field_name. Native card-generation ``req``
+    metadata is required in either representation. The only supported note type
     is the user's explicitly selected Basic type, not legacy Markdown/Cloze.
     """
     source_dir = Path(__file__).parent
@@ -80,6 +91,7 @@ def build_plan(model, targets, *, renderer=None, css=None, asset_filename=None):
     normalized, field_names, templates = note_links._validated_model(model)
     if normalized["name"] != MODEL_NAME or normalized["type"] != 0 or "질문" not in field_names:
         raise ValueError("code-highlight-unsupported-model")
+    requirements = _requirements(normalized)
     if not isinstance(targets, list) or not targets:
         raise ValueError("code-highlight-missing-targets")
     installed = "".join(t[side] for t in normalized["tmpls"] for side in ("qfmt", "afmt"))
@@ -120,9 +132,10 @@ def build_plan(model, targets, *, renderer=None, css=None, asset_filename=None):
                 container = note_links._field_container(source, token)
                 opening = note_links._add_link_class(container["opening"], container["attrs"], SCOPE_CLASS)
                 source = source[:container["start"]] + opening + source[container["end"]:]
-            # Static JS/style must not make an otherwise empty question generate
-            # a card. The existing field containers and their guards stay intact.
-            change[side] = source + "{{#질문}}" + rendered + "{{/질문}}"
+            # Share native generation conditions, including context-only cards.
+            # Static JS/style must not create cards whose required fields are empty.
+            mode, required = requirements[template["ord"]]
+            change[side] = source + _guard(rendered, mode, required)
         expected = {"expected_model_id": normalized["id"]}
         changes.append({
             "template_index": template["ord"],

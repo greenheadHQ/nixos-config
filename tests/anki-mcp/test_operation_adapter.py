@@ -1,3 +1,4 @@
+import re
 import sqlite3
 from types import SimpleNamespace
 
@@ -39,6 +40,16 @@ class Col:
         self.models = SimpleNamespace(by_name=lambda name: self.model if name == "Cloze" else None)
         self.deck_list = [{"id": 1, "name": "A", "dyn": 0, "conf": 1}, {"id": 2, "name": "B", "dyn": 0, "conf": 1}]
         self.decks = SimpleNamespace(all=lambda: self.deck_list)
+    def new_note(self, model):
+        class UnsavedNote(dict):
+            def cloze_numbers_in_fields(self):
+                # Anki API boundary double for these simple fixture strings.
+                # Real parser/card-generation agreement is checked by the
+                # separate pinned Anki runtime suite, not this test double.
+                return {int(number) for field in self.values()
+                        for group in re.findall(r"\{\{c([0-9,]+)::", field)
+                        for number in group.split(",") if number and 0 < int(number) <= 65535}
+        return UnsavedNote({field["name"]: "" for field in model["flds"]})
     def get_note(self, nid):
         if not self.db.list("select id from notes where id=?", nid):
             raise ValueError("not found")
@@ -148,3 +159,62 @@ def test_suspend_does_not_let_upstream_mutate_recorded_target_list():
     adapter = AnkiAdapter(SimpleNamespace(_anki_host_connect_version=1, _anki_host_connect=ac, reset=lambda: None), 100)
     spec = {"action": "suspend_cards", "params": {"card_ids": [10, 11], "suspended": True}}
     assert adapter.apply(spec)["state"] == "applied" and spec["params"]["card_ids"] == [10, 11]
+
+
+@pytest.mark.parametrize("action", ["add_notes", "update_fields", "update_fields_bulk"])
+@pytest.mark.parametrize("syntax", ["comma", "leading-zero"])
+@pytest.mark.parametrize("card_count", [20, 21])
+def test_supported_cloze_syntax_preserves_bulk_safety_boundary(tmp_path, action, syntax, card_count):
+    ops, _adapter, col = adapter_fixture(tmp_path)
+    text = ("{{c" + ",".join(str(n) for n in range(1, card_count + 1)) + "::new}}"
+            if syntax == "comma" else " ".join("{{c%03d::new}}" % n for n in range(1, card_count + 1)))
+    if action == "add_notes":
+        params = {"notes": [{"deck_name": "A", "model_name": "Cloze", "fields": {"Text": text}, "tags": []}],
+                  "allow_duplicate": False}
+    else:
+        update = {"note_id": 1, "fields": {"Text": text}}
+        params = {"notes": [update]} if action == "update_fields_bulk" else update
+    preview = ops.prepare(action, params)
+    assert preview["summary"]["cards"] == card_count
+    assert preview["confirmation_required"] is (card_count > 20)
+    assert preview["backup_required"] is (action != "add_notes" or card_count > 20)
+    if card_count > 20:
+        with pytest.raises(OperationError, match="explicit-confirmation-required"):
+            ops.apply(preview["operation_id"], preview["preview_token"])
+    assert col.db.scalar("select count() from cards") == 1
+
+
+def test_model_info_preserves_native_card_generation_requirements(tmp_path):
+    _ops, adapter, col = adapter_fixture(tmp_path)
+    col.model["req"] = [[0, "any", [0]]]
+    result = adapter.model_info("Cloze")
+    assert result["req"] == [[0, "any", [0]]]
+    result["req"][0][2].append(1)
+    assert col.model["req"] == [[0, "any", [0]]]
+
+
+@pytest.mark.parametrize("action", ["add_notes", "update_fields", "update_fields_bulk"])
+def test_predeployment_cloze_preview_requires_fresh_review_after_count_correction(tmp_path, action):
+    import json
+    ops, _adapter, col = adapter_fixture(tmp_path)
+    text = "{{c" + ",".join(str(n) for n in range(1, 22)) + "::new}}"
+    if action == "add_notes":
+        params = {"notes": [{"deck_name": "A", "model_name": "Cloze", "fields": {"Text": text}, "tags": []}],
+                  "allow_duplicate": False}
+    else:
+        update = {"note_id": 1, "fields": {"Text": text}}
+        params = {"notes": [update]} if action == "update_fields_bulk" else update
+    preview = ops.prepare(action, params)
+    # Replay the persisted preview format from the pre-fix helper: its payload
+    # and snapshot match, but the user only saw one anticipated card.
+    journal = tmp_path / (preview["operation_id"] + ".json")
+    record = json.loads(journal.read_text())
+    record["summary"]["cards"] = 1
+    record["confirmation_required"] = False
+    record["backup_required"] = action != "add_notes"
+    journal.write_text(json.dumps(record))
+    with pytest.raises(OperationError, match="stale-preview-create-a-new-request-id"):
+        ops.apply(preview["operation_id"], preview["preview_token"])
+    assert ops.status(preview["operation_id"])["state"] == "prepared"
+    assert not ops.status(preview["operation_id"]).get("backup")
+    assert col.db.scalar("select count() from cards") == 1

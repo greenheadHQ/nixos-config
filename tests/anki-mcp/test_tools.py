@@ -187,6 +187,67 @@ async def test_card_reviews_sends_integer_ids_and_returns_revlog_objects(tmp_pat
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("name,argument,data_key", [
+    ("anki_note_info", "note_ids", "notes"),
+    ("anki_card_reviews", "card_ids", "reviews"),
+])
+async def test_explicit_ids_can_follow_next_offset_without_missing_or_repeating_items(tmp_path, name, argument, data_key):
+    fake = FakeAnki()
+    ids = list(range(1, 102))
+    fake.notes = {i: {"noteId": i, "fields": {}, "cards": []} for i in ids}
+    mcp = make_mcp(fake, tmp_path)
+
+    def unpack(result):
+        return result[1] if isinstance(result, tuple) else result
+
+    first = unpack(await mcp.call_tool(name, {argument: ids}))
+    assert first["page"] == {"total": 101, "offset": 0, "limit": 100, "next_offset": 100}
+    assert len(first[data_key]) == 100
+    second = unpack(await mcp.call_tool(name, {argument: ids, "offset": first["page"]["next_offset"]}))
+    assert second["page"] == {"total": 101, "offset": 100, "limit": 100, "next_offset": None}
+    returned = ([n["noteId"] for page in (first, second) for n in page[data_key]] if data_key == "notes"
+                else [int(card) for page in (first, second) for card in page[data_key]])
+    assert returned == ids
+
+    catalog = {tool.name: tool for tool in await mcp.list_tools()}
+    schema = catalog[name].inputSchema
+    assert schema["properties"]["offset"]["type"] == "integer"
+    assert schema["properties"]["offset"]["default"] == 0
+    assert "offset" not in schema.get("required", [])
+    assert "same" in schema["properties"]["offset"]["description"]
+    assert "next_offset" in schema["properties"]["offset"]["description"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("name,argument,data_key", [
+    ("anki_note_info", "note_ids", "notes"),
+    ("anki_card_reviews", "card_ids", "reviews"),
+])
+@pytest.mark.parametrize("ids,offset,expected_ids,next_offset", [
+    ([], 0, [], None),
+    ([9, 3, 7], 1, [3, 7], None),
+    ([9, 3, 7], 3, [], None),
+    ([9, 3, 7], 50, [], None),
+    ([9, 3, 7], -1, [9, 3, 7], None),
+    (list(range(1, 101)), 0, list(range(1, 101)), None),
+])
+async def test_explicit_id_pagination_keeps_input_order_and_empty_page_contract(
+    tmp_path, name, argument, data_key, ids, offset, expected_ids, next_offset,
+):
+    fake = FakeAnki()
+    fake.notes = {i: {"noteId": i, "fields": {}, "cards": []} for i in ids}
+    result = await make_mcp(fake, tmp_path).call_tool(name, {argument: ids, "offset": offset})
+    structured = result[1] if isinstance(result, tuple) else result
+    returned = ([note["noteId"] for note in structured[data_key]] if data_key == "notes"
+                else [int(card) for card in structured[data_key]])
+    assert returned == expected_ids
+    assert structured["page"]["total"] == len(ids)
+    assert structured["page"]["next_offset"] == next_offset
+    if not expected_ids:
+        assert not fake.calls
+
+
+@pytest.mark.anyio
 async def test_tags_with_whitespace_or_empty_are_rejected_before_any_request(tmp_path):
     fake = FakeAnki()
     mcp = make_mcp(fake, tmp_path)

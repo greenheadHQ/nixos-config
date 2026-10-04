@@ -337,3 +337,38 @@ def test_existing_profile_switches_to_helper_owned_sync_without_enabling_media(r
     runtime._configure_headless_sync()
     assert profile == {"autoSync": False, "autoSyncMediaMinutes": 0, "syncMedia": False, "other": "preserve"}
     assert saves == [True]
+
+
+def test_http_schema_delivery_uses_authenticated_role_not_body(runtime, monkeypatch, tmp_path):
+    from test_host_operations import Adapter
+    ops = runtime.Operations(tmp_path / 'journal', Adapter(), lambda _: {'mirrored': True},
+                             ttl=600, bulk_limit=20, media_limit=5)
+    schema = ops.prepare('model_field_add', {'model_name': 'Basic', 'field_name': 'Extra'})
+    ops.apply(schema['operation_id'], schema['preview_token'], True, schema_authorized=True)
+    normal = ops.prepare('add_tags', {'note_ids': [1], 'tags': ['synthetic']})
+    ops.apply(normal['operation_id'], normal['preview_token'])
+    monkeypatch.setattr(runtime, '_operations', ops)
+    runtime.aqt.mw.col = types.SimpleNamespace()
+    server = runtime._Server(('127.0.0.1', 0), runtime._Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with httpx.Client(base_url=f'http://127.0.0.1:{server.server_port}', trust_env=False) as client:
+            for kind, receipt in (('sync', {'state': 'synced'}), ('notification', {'state': 'sent'})):
+                body = {'operation_id': schema['operation_id'], 'kind': kind, 'receipt': receipt,
+                        'schema_authorized': True, 'role': 'schema'}
+                rejected = client.post('/operations/delivery', headers={'Authorization': 'Bearer ' + '2' * 64}, json=body)
+                assert rejected.status_code == 400
+                assert rejected.json()['error'] == 'root-schema-approval-required'
+                assert ops.status(schema['operation_id'])[kind]['state'] != receipt['state']
+                accepted = client.post('/operations/delivery', headers={'Authorization': 'Bearer ' + '4' * 64}, json=body)
+                assert accepted.status_code == 200
+                assert accepted.json()['result'][kind] == receipt
+                ordinary = client.post('/operations/delivery', headers={'Authorization': 'Bearer ' + '2' * 64},
+                                       json={'operation_id': normal['operation_id'], 'kind': kind, 'receipt': receipt})
+                assert ordinary.status_code == 200
+                assert ordinary.json()['result'][kind] == receipt
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)

@@ -143,3 +143,72 @@ def test_root_approval_presync_and_bound_artifact(host, tmp_path, monkeypatch, c
         assert events == ['/operations/status', 'anki-host-sync-test.service', '/schema/backup',
                           f'anki-host-schema-test@{opid}.service', '/operations/status']
         assert json.loads(capsys.readouterr().out)['state'] == ('prepared' if presync == 'deferred' else 'applied')
+
+
+@pytest.mark.parametrize('service_failure', ['exit', 'spawn'])
+@pytest.mark.parametrize('delivery_state', ['blocked', 'synced'])
+def test_failed_schema_service_still_prints_same_operation_receipt_and_fails(
+        host, tmp_path, monkeypatch, capsys, service_failure, delivery_state):
+    state, keys = tmp_path / 'state', tmp_path / 'keys'
+    (state / 'approvals').mkdir(parents=True)
+    keys.mkdir()
+    (keys / 'schema').write_text('a' * 64)
+    opid = 'b' * 32
+    receipt = {'operation_id': opid, 'state': 'applied', 'sync': {'state': delivery_state}}
+    reads = []
+    def call(path, payload, key, port, timeout):
+        assert payload == {'operation_id': opid}
+        if path == '/operations/status':
+            reads.append(path)
+            return receipt if len(reads) > 1 else {**receipt, 'sync': {'state': 'blocked'}}
+        assert path == '/schema/backup'
+        return {'snapshot_digest': 'c' * 64, 'counts': {'notes': 2, 'cards': 2, 'revlog': 3},
+                'baseline': {'notes': 2, 'revlog': 3}, 'operation': {'backup': {'sha256': 'd' * 64}}}
+    def start(argv, check):
+        assert argv == ['systemctl', 'start', f'anki-host-schema-test@{opid}.service'] and check is True
+        if service_failure == 'spawn':
+            raise OSError('private service details')
+        raise host.subprocess.CalledProcessError(1, argv, output='private service details')
+    monkeypatch.setattr(host, 'helper', call)
+    monkeypatch.setattr(host.subprocess, 'run', start)
+    with pytest.raises(ValueError, match='schema-service-failed-inspect-status'):
+        host.approve(state, keys, 'test', opid, 123, 12345, 600, 5)
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == receipt
+    assert len(reads) == 2
+    assert 'private service details' not in captured.out + captured.err
+
+
+@pytest.mark.parametrize('service_fails', [False, True])
+def test_schema_receipt_readback_failure_reports_id_and_fixed_recovery_guidance(
+        host, tmp_path, monkeypatch, capsys, service_fails):
+    state, keys = tmp_path / 'state', tmp_path / 'keys'
+    (state / 'approvals').mkdir(parents=True)
+    keys.mkdir()
+    (keys / 'schema').write_text('a' * 64)
+    opid = 'b' * 32
+    reads = []
+    def call(path, payload, key, port, timeout):
+        assert payload == {'operation_id': opid}
+        if path == '/operations/status':
+            reads.append(path)
+            if len(reads) > 1:
+                raise OSError('private helper response')
+            return {'operation_id': opid, 'state': 'applied', 'sync': {'state': 'blocked'}}
+        return {'snapshot_digest': 'c' * 64, 'counts': {'notes': 2, 'cards': 2, 'revlog': 3},
+                'baseline': {'notes': 2, 'revlog': 3}, 'operation': {'backup': {'sha256': 'd' * 64}}}
+    def start(argv, check):
+        if service_fails:
+            raise host.subprocess.CalledProcessError(1, argv, output='private service details')
+    monkeypatch.setattr(host, 'helper', call)
+    monkeypatch.setattr(host.subprocess, 'run', start)
+    with pytest.raises(ValueError, match='schema-operation-status-unavailable'):
+        host.approve(state, keys, 'test', opid, 123, 12345, 600, 5)
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {
+        'operation_id': opid, 'status': 'unavailable',
+        'error': 'schema-operation-status-unavailable',
+        'next_action': 'inspect-original-operation-before-retrying',
+    }
+    assert len(reads) == 2
+    assert 'private' not in captured.out + captured.err
