@@ -106,13 +106,13 @@ agenix `.age` 22개(디스크 실측 — 재검증: `ls secrets/*.age | wc -l`) 
 추가 워크플로 (3단계):
 
 1. `secrets/secrets.nix`에 선언 추가
-2. `.age` 파일 생성 (암호화 방법은 [references/workflows.md](references/workflows.md) 참조)
+2. 사람이 값을 입력해 `.age` 파일 생성 ([references/workflows.md](references/workflows.md) ".age 파일 생성/암호화" 참조)
 3. 배포 경로 + 권한 설정 (HM home secret은 `modules/shared/programs/secrets/default.nix`, NixOS 서비스 secret은 해당 service module, opnix SA token은 opnix module)
 
 수정 워크플로:
 
-1. 기존 값 확인 (복호화 방법은 [references/workflows.md](references/workflows.md) 참조)
-2. 새 내용으로 재암호화하여 `.age` 파일 덮어쓰기
+1. 값 출력 없이 복호화 가능 여부·필수 키 확인 ([references/workflows.md](references/workflows.md) "기존 secret 상태 확인" 참조)
+2. 사람이 새 내용을 입력해 재암호화 ([references/workflows.md](references/workflows.md) ".age 파일 생성/암호화" 참조)
 
 호스트 추가: 새 호스트가 복호화해야 하는 항목의 recipient만 갱신하고, 새 호스트에서 복호화를 확인한 뒤에 완료로 본다. 그룹별 identity와 재암호화 조건은 [references/workflows.md](references/workflows.md) "호스트 추가" 참조.
 

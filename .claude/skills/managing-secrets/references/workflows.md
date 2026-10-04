@@ -2,7 +2,7 @@
 
 ## .age 파일 생성/암호화
 
-Interactive (터미널) -- `agenix -e` 사용:
+사람이 대화형 터미널에서 `agenix -e`로 값을 입력한다. 에이전트는 선언·명령·경로를 준비한다.
 
 ```bash
 cd secrets && nix run github:ryantm/agenix -- -e <name>.age
@@ -11,24 +11,15 @@ cd secrets && nix run github:ryantm/agenix -- -e <name>.age
 
 추가와 수정 모두 동일한 명령으로 처리.
 
-Non-interactive (Claude Code) -- `age` CLI pipe 사용:
+`agenix -e`를 사용할 수 없으면 [troubleshooting.md](troubleshooting.md)의 "agenix -e의 /dev/stdin 에러" 절차를 따른다. 보호된 임시 파일에 사람이 입력하고 암호화·왕복 검증 후 교체하는 정본이다. 에이전트는 코드 블록과 `<name>`·공개키 치환값·저장소 루트 경로를 준비해 사람에게 전달하며, 값 입력은 사람이 대화형 터미널에서 한다.
 
-```bash
-# 1. secrets/secrets.nix에서 공개키 확인
-# 2. 모든 recipient에 대해 -r 플래그 지정
-nix shell nixpkgs#age -c sh -c 'printf "KEY=value\n" | age \
-  -r "ssh-ed25519 <key1>" \
-  -r "ssh-ed25519 <key2>" \
-  -o secrets/<name>.age'
-```
+우회 절차의 recipient는 `secrets/secrets.nix`에서 그 항목의 `publicKeys`에 있는 공개키를 모두 `-r` 플래그로 지정한다. 항목마다 recipient 그룹이 다르므로 다른 항목의 목록을 옮겨 쓰지 않는다.
 
-`secrets/secrets.nix`에서 그 항목의 `publicKeys`에 있는 공개키를 모두 `-r` 플래그로 지정한다. 항목마다 recipient 그룹이 다르므로 다른 항목의 목록을 옮겨 쓰지 않는다.
+## 기존 secret 상태 확인 (값 비출력)
 
-## 기존 secret 내용 확인 (복호화)
-
-```bash
-nix shell nixpkgs#age -c age -d -i ~/.ssh/id_ed25519 secrets/<name>.age
-```
+- 복호화 가능 여부: [troubleshooting.md](troubleshooting.md)의 "복호화 실패" 절에 있는 `>/dev/null` 진단으로 성공 여부만 확인한다.
+- 배포된 파일의 존재·필수 키 유무: 같은 문서의 "배포 후 검증" 코드 블록으로 확인한다. `grep -q '^KEY='`는 `KEY=value` 형식에만 쓰며, 배포 경로는 `age.secrets.<name>.path`를 따른다.
+- 내용 열람·수정: 사람이 대화형 터미널에서 위 `agenix -e` 명령으로 에디터를 연다. 에이전트에는 값 대신 확인 결과만 전달한다.
 
 ## 호스트 추가
 
