@@ -8,6 +8,20 @@
 
 # shellcheck disable=SC2154
 
+# 호출자가 심링크가 아님을 확인한 관리 경로: 실제 자료를 누락으로 오인하거나 nrs만으로
+# 복구된다고 안내하지 않는다. activation은 자료를 보존하므로 먼저 사용자가 정리해야 한다.
+_report_missing_projection_link() {
+  local relpath="$1" missing_message="$2" abspath="$REPO_ROOT/$1"
+  local action="내용을 확인해 옮기거나 지운 뒤 nrs 재실행"
+  if [ -d "$abspath" ]; then
+    fail "심링크 자리에 실디렉토리: $relpath (보존됨; $action)"
+  elif [ -e "$abspath" ]; then
+    fail "심링크 자리에 파일: $relpath (보존됨; $action)"
+  else
+    fail "$missing_message"
+  fi
+}
+
 resolved_target_matches_repo_suffix() {
   local resolved="$1"
   local expected="$2"

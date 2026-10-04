@@ -30,6 +30,8 @@ if ! command -v "$GIT_BIN" >/dev/null 2>&1; then
 fi
 SOURCE_SKILLS="$PROJECT_DIR/.claude/skills"
 TARGET_SKILLS="$PROJECT_DIR/.agents/skills"
+# 관리 링크 자리에 남은 실디렉토리·파일을 보존할 때 경고에 붙이는 조치 (#1455, #1500).
+KEEP_ACTION="review its contents, move or delete it, then rerun nrs"
 
 if [ -L "$PROJECT_DIR/.agents" ]; then
   echo "Refusing to project Codex skills through .agents symlink: $PROJECT_DIR/.agents" >&2
@@ -49,7 +51,11 @@ if [ -e "$TARGET_SKILLS" ] && [ ! -d "$TARGET_SKILLS" ]; then
 fi
 
 # ── AGENTS.md → CLAUDE.md 심링크 ──
-if [ ! -L "$PROJECT_DIR/AGENTS.md" ] || [ "$(readlink "$PROJECT_DIR/AGENTS.md")" != "CLAUDE.md" ]; then
+if [ -d "$PROJECT_DIR/AGENTS.md" ] && [ ! -L "$PROJECT_DIR/AGENTS.md" ]; then
+  echo "Warning: keeping AGENTS.md: real directory in place of the managed link CLAUDE.md; $KEEP_ACTION" >&2
+elif [ -e "$PROJECT_DIR/AGENTS.md" ] && [ ! -L "$PROJECT_DIR/AGENTS.md" ]; then
+  echo "Warning: keeping AGENTS.md: file in place of the managed link CLAUDE.md; $KEEP_ACTION" >&2
+elif [ ! -L "$PROJECT_DIR/AGENTS.md" ] || [ "$(readlink "$PROJECT_DIR/AGENTS.md")" != "CLAUDE.md" ]; then
   $DRY_RUN_CMD ln -sfn "CLAUDE.md" "$PROJECT_DIR/AGENTS.md"
 fi
 
@@ -64,8 +70,6 @@ $DRY_RUN_CMD mkdir -p "$TARGET_SKILLS"
 # shared global `~/.codex/skills/` exposure 정책(exposedCodexSkills / intentionallyNotExposed)과
 # 별개의 축이며, SoT는 default.nix의 let 블록이다 (#486).
 CODEX_EXCLUDE_SKILLS="using-codex-exec"
-# 관리 링크 자리에 남은 실디렉토리·파일을 보존할 때 경고에 붙이는 조치 (#1455).
-KEEP_ACTION="review its contents, move or delete it, then rerun nrs"
 for source_skill_dir in "$SOURCE_SKILLS"/*/; do
   [ -d "$source_skill_dir" ] || continue
   [ -f "$source_skill_dir/SKILL.md" ] || continue

@@ -370,7 +370,7 @@ if [ -L "$REPO_ROOT/AGENTS.md" ]; then
     fail "AGENTS.md → '$target' (expected: CLAUDE.md)"
   fi
 else
-  fail "AGENTS.md 심링크 없음"
+  _report_missing_projection_link "AGENTS.md" "AGENTS.md 심링크 없음"
 fi
 
 echo ""
@@ -402,11 +402,7 @@ else
 
     # 디렉토리 심링크 여부 확인
     if [ ! -L "$projected_entry" ]; then
-      if [ -d "$projected_entry" ]; then
-        fail "레거시 실디렉토리: .agents/skills/$skill_name (심링크 전환 필요)"
-      else
-        fail "투영 누락: .agents/skills/$skill_name"
-      fi
+      _report_missing_projection_link ".agents/skills/$skill_name" "투영 누락: .agents/skills/$skill_name"
       continue
     fi
 

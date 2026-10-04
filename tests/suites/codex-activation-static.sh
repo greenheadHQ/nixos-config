@@ -53,6 +53,83 @@ _codex_projection_assert_state_unchanged() {
     || fail "$label changed state: $(diff <(printf '%s\n' "$before") <(printf '%s\n' "$after"))"
 }
 
+# AGENTS.md 자리의 실제 자료는 원본과 같아도 보존한다. dry-run과 반복 실행에서도 내용·구조가
+# 바뀌지 않고 원인·조치를 stderr로 알리며, activation의 종료 코드는 0을 유지한다 (#1500).
+test_codex_activation_agents_keeps_real_entries() {
+  local sandbox project kind mode before output rc
+  local script="$REPO_ROOT/modules/shared/programs/codex/files/project-codex-skills.sh"
+  sandbox="$(new_sandbox)"
+  for kind in file identical-file directory; do
+    project="$sandbox/$kind"
+    mkdir -p "$project/.agents/skills"
+    printf 'canonical instructions\n' > "$project/CLAUDE.md"
+    case "$kind" in
+      file) printf 'unique user instructions\n' > "$project/AGENTS.md" ;;
+      identical-file) cp "$project/CLAUDE.md" "$project/AGENTS.md" ;;
+      directory)
+        mkdir "$project/AGENTS.md"
+        printf 'unique directory notes\n' > "$project/AGENTS.md/notes.md"
+        ;;
+    esac
+    before="$(_codex_projection_state "$project")"
+    for mode in '' echo ''; do
+      rc=0
+      DRY_RUN_CMD="$mode" bash "$script" "$project" > "$sandbox/run.out" 2> "$sandbox/run.err" || rc=$?
+      [ "$rc" -eq 0 ] || fail "AGENTS.md $kind projection exited $rc: $(cat "$sandbox/run.err")"
+      _codex_projection_assert_state_unchanged "AGENTS.md $kind (DRY_RUN_CMD='$mode')" \
+        "$before" "$(_codex_projection_state "$project")"
+      output="$(cat "$sandbox/run.err")"
+      if [ "$kind" = directory ]; then
+        _codex_projection_assert_line "$output" "Warning: keeping AGENTS.md: real directory in place of the managed link CLAUDE.md; review its contents, move or delete it, then rerun nrs"
+      else
+        _codex_projection_assert_line "$output" "Warning: keeping AGENTS.md: file in place of the managed link CLAUDE.md; review its contents, move or delete it, then rerun nrs"
+      fi
+      assert_not_contains "$(cat "$sandbox/run.out")" 'AGENTS.md'
+    done
+  done
+}
+
+# 정상 링크는 유지하고, 부재·다른 대상·깨진 링크는 CLAUDE.md 링크로 수렴시킨다. 다른 링크의
+# 대상(파일·디렉토리)은 보존하고 dry-run에서는 링크도 바꾸지 않는다.
+test_codex_activation_agents_link_contract() {
+  local sandbox project kind before output rc
+  local script="$REPO_ROOT/modules/shared/programs/codex/files/project-codex-skills.sh"
+  sandbox="$(new_sandbox)"
+  for kind in missing correct file-target directory-target dangling; do
+    project="$sandbox/$kind"
+    mkdir -p "$project/.agents/skills" "$project/other-directory"
+    printf 'canonical instructions\n' > "$project/CLAUDE.md"
+    printf 'other file\n' > "$project/other-file"
+    printf 'other notes\n' > "$project/other-directory/notes.md"
+    case "$kind" in
+      correct) ln -s CLAUDE.md "$project/AGENTS.md" ;;
+      file-target) ln -s other-file "$project/AGENTS.md" ;;
+      directory-target) ln -s other-directory "$project/AGENTS.md" ;;
+      dangling) ln -s absent "$project/AGENTS.md" ;;
+    esac
+    before="$(_codex_projection_state "$project")"
+    rc=0
+    output="$(DRY_RUN_CMD='echo' bash "$script" "$project" 2>&1)" || rc=$?
+    [ "$rc" -eq 0 ] || fail "AGENTS.md $kind dry-run exited $rc: $output"
+    _codex_projection_assert_state_unchanged "AGENTS.md $kind dry-run" "$before" "$(_codex_projection_state "$project")"
+    if [ "$kind" = correct ]; then
+      assert_not_contains "$output" 'AGENTS.md'
+    else
+      assert_contains "$output" "ln -sfn CLAUDE.md $project/AGENTS.md"
+    fi
+    rc=0
+    output="$(DRY_RUN_CMD='' bash "$script" "$project" 2>&1)" || rc=$?
+    [ "$rc" -eq 0 ] || fail "AGENTS.md $kind projection exited $rc: $output"
+    [ "$(readlink "$project/AGENTS.md")" = CLAUDE.md ] || fail "AGENTS.md $kind did not become the managed link"
+    [ "$(cat "$project/CLAUDE.md")" = 'canonical instructions' ] || fail "CLAUDE.md was changed"
+    [ "$(cat "$project/other-file")" = 'other file' ] || fail "other file was changed"
+    [ "$(cat "$project/other-directory/notes.md")" = 'other notes' ] || fail "other directory was changed"
+    [ ! -e "$project/other-directory/CLAUDE.md" ] && [ ! -L "$project/other-directory/CLAUDE.md" ] \
+      || fail "AGENTS.md replacement wrote through a symlink"
+    assert_not_contains "$output" 'Warning: keeping AGENTS.md'
+  done
+}
+
 # 고아 정리는 원본이 사라진 관리 링크(`../../.claude/skills/<name>` 상대 심링크)만 지운다.
 test_codex_activation_orphan_cleanup_removes_only_managed_links() {
   local sandbox project plugin_skill missing_plugin_skill output first_state second_state rc

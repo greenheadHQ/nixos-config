@@ -111,6 +111,47 @@ _verify_ai_compat_assert_warning_count() {
   assert_contains "$output" "$marker"
 }
 
+test_verify_ai_compat_projection_obstructions_are_actionable() {
+  local sandbox repo_root path kind missing output before verifier
+  sandbox="$(new_sandbox)"
+  verifier="$(cat "$REPO_ROOT/scripts/ai/verify-ai-compat.sh")"
+  assert_contains "$verifier" '_report_missing_projection_link "AGENTS.md" "AGENTS.md 심링크 없음"'
+  assert_contains "$verifier" '_report_missing_projection_link ".agents/skills/$skill_name" "투영 누락: .agents/skills/$skill_name"'
+  for path in AGENTS.md .agents/skills/demo; do
+    for kind in file directory missing; do
+      repo_root="$sandbox/$kind/${path//\//_}"
+      mkdir -p "$repo_root/$(dirname "$path")"
+      case "$kind" in
+        file) printf 'unique user content\n' > "$repo_root/$path" ;;
+        directory)
+          mkdir "$repo_root/$path"
+          printf 'unique directory notes\n' > "$repo_root/$path/notes.md"
+          ;;
+      esac
+      if [ "$path" = AGENTS.md ]; then
+        missing="AGENTS.md 심링크 없음"
+      else
+        missing="투영 누락: $path"
+      fi
+      before="$(_codex_projection_state "$repo_root")"
+      output="$(_verify_ai_compat_with_stubbed_gate "$sandbox/home" "$repo_root" \
+        _report_missing_projection_link "$path" "$missing")"
+      _verify_ai_compat_assert_error_count "$output" 1
+      _codex_projection_assert_state_unchanged "verifier ($path $kind)" "$before" "$(_codex_projection_state "$repo_root")"
+      case "$kind" in
+        file) assert_contains "$output" "심링크 자리에 파일: $path" ;;
+        directory) assert_contains "$output" "심링크 자리에 실디렉토리: $path" ;;
+        missing) assert_contains "$output" "$missing" ;;
+      esac
+      if [ "$kind" != missing ]; then
+        assert_contains "$output" '보존됨; 내용을 확인해 옮기거나 지운 뒤 nrs 재실행'
+        assert_not_contains "$output" "$missing"
+        assert_not_contains "$output" '레거시'
+      fi
+    done
+  done
+}
+
 _verify_ai_compat_positive_checks() {
   local expected_suffix="modules/shared/programs/claude/files/hooks/pinning-guard.sh"
   local expected="$REPO_ROOT_REAL/$expected_suffix"
