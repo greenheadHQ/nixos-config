@@ -101,11 +101,11 @@ in
       # 실제 reboot에서 첫 bridge가 종료된 뒤 30분 공백이 확인됐기 때문이다.
       StartInterval = 60;
       RunAtLoad = true;
-      # launchd는 job 종료 시 같은 process group의 잔여 프로세스를 정리한다.
-      # maint가 native launch-group supervisor(setpgid(0,0)로 자기 그룹 분리)로 headless
-      # 서버를 띄우므로 서버는 별도 process group이 되지만, ensure가 방금 띄운 서버를
-      # 같이 죽이지 않도록 안전하게 그룹 정리를 포기한다.
-      AbandonProcessGroup = true;
+      # #1052의 double-fork 보호는 #1179의 native supervisor가 대체했다:
+      # setpgid(0,0) 성공 뒤에만 bridge를 fork하므로 서버는 ensure와 별도 그룹이다.
+      # ensure 그룹은 정리해야 중단된 Bash 자식의 복원용 lock fd가 남지 않는다.
+      # 격리 launchd 실측에서 고아 lock 해제와 handoff된 bridge PID 생존을 함께 검증한다.
+      AbandonProcessGroup = false;
       EnvironmentVariables = {
         HOME = homeDir;
         STATE_DIR = stateDir;

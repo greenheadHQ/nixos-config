@@ -66,6 +66,8 @@ run_driver "eval-tests" bash tests/run-eval-tests.sh
 run_driver "shell-script-tests" \
   bash scripts/ai/test-runtime-profile.sh run "$REPO_ROOT" -- bash tests/run-shell-script-tests.sh
 
+run_driver "claude-rc-runtime-tests" bash tests/run-claude-rc-runtime-tests.sh
+
 # 3) codex-hook-fixtures — Codex stable hook 회귀 차단 결정적 fixture. --no-live, Python stdlib only.
 run_driver "codex-hook-fixtures" bash tests/test-codex-hook-fixtures.sh --no-live
 

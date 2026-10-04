@@ -13,8 +13,9 @@ let
   pidArgv = import ./claude-rc-pid-argv-package.nix { inherit pkgs; };
   launchGroup = import ./claude-rc-launch-group-package.nix { inherit pkgs; };
   claudeRcFlock = import ../../../libraries/claude-rc-flock.nix { inherit pkgs; };
+  claudeRcShell = import ../../../libraries/claude-rc-shell.nix { inherit pkgs; };
 in
-pkgs.writeShellApplication {
+claudeRcShell.writeShellApplication {
   name = "claude-rc-maint";
   runtimeInputs =
     with pkgs;
