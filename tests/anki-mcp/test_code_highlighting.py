@@ -22,6 +22,7 @@ TARGETS = [
 def model():
     return {
         "id": 1787809609173, "name": "학습 Basic", "type": 0,
+        "req": [[0, "any", [0]]],
         "flds": [{"name": name, "ord": i} for i, name in enumerate(("질문", "답", "설명", "검토 메모"))],
         "tmpls": [{"name": "카드 1", "ord": 0,
                    "qfmt": '<div class="question">{{질문}}</div><!-- existing cid widget -->',
@@ -61,6 +62,7 @@ def test_template_plan_scopes_only_named_containers_and_binds_both_cas_direction
 def test_public_model_metadata_is_supported():
     native = model()
     public = {"id": native["id"], "name": native["name"], "type": 0, "css": native["css"],
+              "req": native["req"],
               "fields": [{"name": f["name"], "index": f["ord"]} for f in native["flds"]],
               "templates": [{"name": t["name"], "index": t["ord"], "front": t["qfmt"], "back": t["afmt"]}
                             for t in native["tmpls"]]}
@@ -208,3 +210,38 @@ def test_unknown_mobile_renderer_is_not_overwritten(mutation):
     before["tmpls"][0]["afmt"] += variants[mutation]
     with pytest.raises(ValueError, match="unknown-note-link-renderer"):
         plan(before)
+
+
+def test_context_only_card_receives_renderer_under_the_existing_any_requirement():
+    before = model()
+    before["flds"].append({"name": "맥락", "ord": 4})
+    before["req"] = [[0, "any", [0, 4]]]
+    before["tmpls"][0]["qfmt"] += '{{#맥락}}<div>{{맥락}}</div>{{/맥락}}'
+    changed = plan(before)["changes"][0]["change"]
+    rendered = RENDERER.replace("__ANKI_SYNTAX_ASSET__", json.dumps(ASSET)).replace(
+        "__ANKI_SYNTAX_CSS__", json.dumps(CSS))
+    expected = ("{{#질문}}" + rendered + "{{/질문}}"
+                + "{{^질문}}{{#맥락}}" + rendered + "{{/맥락}}{{/질문}}")
+    for side in ("front", "back"):
+        assert changed[side].endswith(expected)
+
+
+@pytest.mark.parametrize("requirements", [
+    None, [], [[0, "none", []]], [[0, "all", []]], [[True, "any", [0]]],
+    [[0, "any", [True]]], [[0, "any", [0, 0]]], [[0, "any", [-1]]],
+    [[0, "any", [4]]], [[1, "any", [0]]], [[0, "any", [0]], [0, "any", [1]]],
+])
+def test_missing_or_unsupported_native_generation_is_not_guessed(requirements):
+    before = model()
+    before["req"] = requirements
+    with pytest.raises(ValueError, match="requirement"):
+        plan(before)
+
+
+def test_all_requirement_does_not_enable_the_renderer_for_only_one_required_field():
+    before = model()
+    before["req"] = [[0, "all", [0, 2]]]
+    for side in ("front", "back"):
+        result = plan(before)["changes"][0]["change"][side]
+        assert "{{#질문}}{{#설명}}<!-- anki-code-highlight-v1 -->" in result
+        assert result.endswith("{{/설명}}{{/질문}}")

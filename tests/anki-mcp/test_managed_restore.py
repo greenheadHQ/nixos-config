@@ -313,3 +313,50 @@ def test_request_ids_cannot_traverse_journal(runtime):
         runtime.prepare("../arbitrary")
     with pytest.raises(OperationError, match="managed-restore-not-found"):
         runtime.engine.status("absent-request-id")
+
+
+@pytest.mark.parametrize("field,value", [
+    ("state", "unsupported-state"), ("state", None), ("state", []),
+    ("state", "applied"),  # A terminal result also needs its completion proof.
+    ("state", "preparing"), ("state", "prepared"),
+    ("state", "not-applied"), ("state", "expired"),
+    ("model_name", None), ("model_name", "Other model"),
+    ("authorization", None), ("authorization.model_name", "Other model"),
+    ("authorization.model_id", "123"), ("authorization.digest", "broken"),
+    ("before", []), ("before.model", {}), ("before.preservation", {}),
+    ("before.preservation.notes.count", -1), ("before.preservation.cards.sha256", "broken"),
+    ("summary", []), ("components", []), ("components.model", "finished"),
+    ("sync", None), ("sync.state", "finished"), ("created_at", None),
+    ("expires_at", "later"), ("preview_token", "broken"),
+    ("backup", {}), ("backup.mirrored", False), ("verification", {}),
+    ("verification.state", "unverified"), ("verification.anki_version", None),
+    ("media_before", []), ("media_before_digest", "broken"),
+])
+def test_damaged_restore_journal_never_releases_unverified_preservation(runtime, field, value):
+    r = runtime
+    preview = r.prepare()
+    r.adapter.stage = "after-model"
+    assert r.apply(preview)["state"] == "partial"
+    r.adapter.data["notes"][0][-1] = "unverified preservation change"
+    assert r.engine.diagnose(preview["request_id"])["state"] == "partial"
+    path = r.path / "journal" / (preview["operation_id"] + ".json")
+    record = json.loads(path.read_text())
+    target = record
+    *parents, key = field.split(".")
+    for parent in parents:
+        target = target[parent]
+    target[key] = value
+    path.write_text(json.dumps(record))
+    damaged = path.read_bytes()
+
+    # Both the running process and restart must reject the damaged evidence.
+    with pytest.raises(OperationError, match="managed-restore-invalid-journal"):
+        r.engine.has_pending(NAME)
+    with pytest.raises(OperationError, match="managed-restore-invalid-journal"):
+        r.engine.status(preview["request_id"])
+    with pytest.raises(OperationError, match="managed-restore-invalid-journal"):
+        r.prepare("new-restore-request")
+    with pytest.raises(OperationError, match="managed-restore-invalid-journal"):
+        r.new_engine()
+    assert path.read_bytes() == damaged
+    assert r.adapter.calls == 1

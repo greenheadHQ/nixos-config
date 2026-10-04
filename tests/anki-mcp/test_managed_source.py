@@ -241,3 +241,9 @@ def test_materializer_cli_needs_no_anki_or_qt_import(source, tmp_path):
     result = subprocess.run([sys.executable, "-B", str(source / "managed-types/build.py"),
                              str(source), str(output)], check=True, capture_output=True, text=True)
     assert result.stdout.strip() == load_bundle(output)[0]["digest"]
+
+
+@pytest.mark.parametrize("side", ["qfmt", "afmt"])
+def test_shipped_highlight_supports_context_only_cards_and_preserves_the_native_guard(side):
+    definition = load_checked_source(HOST)[0]["definition"]
+    assert "{{^질문}}{{#맥락}}<!-- anki-code-highlight-v1 -->" in definition["tmpls"][0][side]

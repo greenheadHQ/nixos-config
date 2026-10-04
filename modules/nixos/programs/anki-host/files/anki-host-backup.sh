@@ -13,6 +13,21 @@
 # (앞에 pushover.sh와 files/lib/helper-call.sh가 텍스트 결합되어 pushover_send·anki_helper_* 가 정의돼 있다.)
 
 CRED_FILE="${CREDENTIALS_DIRECTORY:-}/pushover"
+failures=""
+# Catch unexpected shell/file failures too. Expected per-instance failures are
+# collected below so the other instances can still be backed up. Notify once.
+notify_backup_exit() {
+  local rc=$?
+  trap - EXIT
+  if [ "$rc" -ne 0 ]; then
+    failures="${failures:- ${name:-initialization}(unexpected-failure)}"
+    if [ -r "$CRED_FILE" ]; then
+      pushover_send "$CRED_FILE" "Anki 백업 실패" "miniPC Anki 컬렉션 백업이 실패했습니다:${failures}. journalctl -u anki-host-backup 로그를 확인하세요." 1 || true
+    fi
+  fi
+  exit "$rc"
+}
+trap notify_backup_exit EXIT
 : "${INSTANCES:?}" "${STATE_ROOT:?}" "${BACKUP_DIR:?}" "${RETENTION_DAYS:?}" "${LOCAL_KEEP:?}" "${HELPER_CURL_MAX_TIME:?}"
 
 # anki_helper_call_retry_busy <url> <json-payload> <max-time-secs>
@@ -29,7 +44,6 @@ anki_helper_call_retry_busy() {
   return 0
 }
 
-failures=""
 stamp="$(date +%Y%m%dT%H%M%S)"
 
 # SSD 스테이징 정리(anki-host-<name>-*.colpkg만): 최신 LOCAL_KEEP개 — 실패한 회차의 산출물도 다음 회차에서 여기로 정리된다
@@ -46,9 +60,15 @@ for entry in $INSTANCES; do
   local_dir="${STATE_ROOT}/${name}/backups"
   dest_dir="${BACKUP_DIR}/${name}"
   file="anki-host-${name}-${stamp}.colpkg"
-  mkdir -p "$dest_dir"
+  if ! mkdir -p "$dest_dir"; then
+    failures="${failures} ${name}(destination)"
+    continue
+  fi
   # 이전 회차가 복사·검사에 실패해 남긴 파일부터 정리한다 — 실패가 며칠 이어져도 SSD가 LOCAL_KEEP개 이상 쌓이지 않는다
-  prune_local "$local_dir" "$name"
+  if ! prune_local "$local_dir" "$name"; then
+    failures="${failures} ${name}(local-prune)"
+    continue
+  fi
 
   if ! anki_helper_wait_ready "$helper"; then
     echo "anki-host-backup[${name}]: helper not ready: $(helper_error)" >&2
@@ -56,11 +76,22 @@ for entry in $INSTANCES; do
     continue
   fi
 
-  # 미디어 동기화(부트스트랩 뒤 백그라운드 다운로드)가 진행 중이면 미디어 포함 export가 불완전해진다 — 오늘은 건너뛰고 실패로 알린다
+  # Status failure is unknown, not idle. The helper rechecks under its mutation
+  # lock immediately before export, closing the gap after this early probe.
   anki_helper_call "${helper}/status/full" "" "$HELPER_CURL_MAX_TIME"
-  if helper_ok && [ "$(printf '%s' "$HELPER_BODY" | jq -r '.result.media.active')" = "true" ]; then
+  if ! helper_ok; then
+    echo "anki-host-backup[${name}]: media status unavailable: $(helper_error)" >&2
+    failures="${failures} ${name}(media-status)"
+    continue
+  fi
+  if [ "$(printf '%s' "$HELPER_BODY" | jq -r '.result.media.active' 2>/dev/null)" = "true" ]; then
     echo "anki-host-backup[${name}]: media sync in progress — skipping today's export" >&2
     failures="${failures} ${name}(media-syncing)"
+    continue
+  fi
+  if ! printf '%s' "$HELPER_BODY" | jq -e '.result.media | type == "object" and .active == false and .error == null' >/dev/null 2>&1; then
+    echo "anki-host-backup[${name}]: media readiness not confirmed" >&2
+    failures="${failures} ${name}(media-status)"
     continue
   fi
 
@@ -88,21 +119,28 @@ for entry in $INSTANCES; do
   if ! cp "${local_dir}/${file}" "${dest_dir}/${file}.partial" || ! mv "${dest_dir}/${file}.partial" "${dest_dir}/${file}"; then
     echo "anki-host-backup[${name}]: copy to HDD failed" >&2
     failures="${failures} ${name}(copy)"
-    rm -f "${dest_dir}/${file}.partial"
+    rm -f "${dest_dir}/${file}.partial" || true
     continue
   fi
-  chmod 0600 "${dest_dir}/${file}"
+  if ! chmod 0600 "${dest_dir}/${file}"; then
+    failures="${failures} ${name}(permissions)"
+    continue
+  fi
 
   # 일일 백업본 정리: HDD는 보존 기간 초과분, SSD는 최신 LOCAL_KEEP개
-  find "$dest_dir" -maxdepth 1 -type f -name "anki-host-${name}-*.colpkg" -mtime "+${RETENTION_DAYS}" -delete
-  prune_local "$local_dir" "$name"
+  if ! find "$dest_dir" -maxdepth 1 -type f -name "anki-host-${name}-*.colpkg" -mtime "+${RETENTION_DAYS}" -delete \
+    || ! prune_local "$local_dir" "$name"; then
+    failures="${failures} ${name}(retention)"
+    continue
+  fi
 
-  echo "anki-host-backup[${name}]: ${file} ($(stat -c %s "${dest_dir}/${file}") bytes) -> ${dest_dir}"
+  if ! bytes="$(stat -c %s "${dest_dir}/${file}")"; then
+    failures="${failures} ${name}(stat)"
+    continue
+  fi
+  echo "anki-host-backup[${name}]: ${file} (${bytes} bytes) -> ${dest_dir}"
 done
 
 if [ -n "$failures" ]; then
-  if [ -r "$CRED_FILE" ]; then
-    pushover_send "$CRED_FILE" "Anki 백업 실패" "miniPC Anki 컬렉션 백업이 실패했습니다:${failures}. journalctl -u anki-host-backup 로그를 확인하세요." 1 || true
-  fi
   exit 1
 fi

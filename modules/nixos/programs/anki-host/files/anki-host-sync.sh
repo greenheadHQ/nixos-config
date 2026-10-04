@@ -76,7 +76,7 @@ ALERT_DEDUPE_SECS=86400
 STATUS_COPY="${STATUS_RUN_DIR}/${INSTANCE}.json"
 publish_state() {
   [ -d "$STATUS_RUN_DIR" ] || return 0
-  cp "$STATE_FILE" "${STATUS_PARTIAL}"
+  cp "${1:-$STATE_FILE}" "${STATUS_PARTIAL}"
   if [ "$(id -u)" -eq 0 ]; then chown "${STATE_OWNER}:${STATE_GROUP}" "${STATUS_PARTIAL}"; fi
   chmod 0640 "${STATUS_PARTIAL}"
   mv "${STATUS_PARTIAL}" "$STATUS_COPY"
@@ -108,7 +108,26 @@ now() { date --iso-8601=ns; }
 RUN_ID="${INVOCATION_ID:-manual-$(date +%s%N)}"
 RUN_STARTED_AT="$(now)"
 
-state_get() { jq -r "$1 // empty" "$STATE_FILE" 2>/dev/null || true; }
+# Read the baseline once, before writing running. Only a genuinely absent file
+# or the explicit pre-bootstrap null pair means no history. A damaged existing
+# file must never be replaced with a fresh, unguarded baseline.
+load_state() {
+  if [ ! -e "$STATE_FILE" ] && [ ! -L "$STATE_FILE" ]; then
+    STATE_JSON='{"lastSuccessAt":null,"lastSuccessCounts":null}'
+    return 0
+  fi
+  STATE_JSON="$(jq -ces '
+    def count: type == "number" and . >= 0 and . == floor;
+    select(length == 1) | .[0]
+    | select(type == "object" and has("lastSuccessAt") and has("lastSuccessCounts"))
+    | select((.lastSuccessAt == null and .lastSuccessCounts == null) or
+        ((.lastSuccessAt | type == "string" and length > 0) and
+         (.lastSuccessCounts | type == "object" and
+           (.notes | count) and (.revlog | count))))
+  ' "$STATE_FILE" 2>/dev/null)"
+}
+
+state_get() { printf '%s' "$STATE_JSON" | jq -r "$1 // empty"; }
 
 # write_state <result> <error> <sync-json-or-empty>
 # lastSuccessAt·lastSuccessCounts(직전 성공 뒤 로컬 노트·revlog)는 성공 때만 갱신하고 그 외 기록에서는 보존한다 —
@@ -117,7 +136,7 @@ write_state() {
   local result="$1" error="$2" sync_json="$3"
   local last_success last_counts alert_key alert_at
   last_success="$(state_get '.lastSuccessAt')"
-  last_counts="$(jq -c '.lastSuccessCounts // empty' "$STATE_FILE" 2>/dev/null || true)"
+  last_counts="$(printf '%s' "$STATE_JSON" | jq -c '.lastSuccessCounts // empty')"
   alert_key="$(state_get '.lastAlert.key')"
   alert_at="$(state_get '.lastAlert.at')"
   if [ "$result" = "success" ]; then
@@ -136,6 +155,7 @@ write_state() {
       result: $result, mode: $mode, error: (if $error == "" then null else $error end),
       lastAlert: (if $alert_key == "" then null else {key: $alert_key, at: $alert_at} end),
       sync: $sync}' > "${STATE_PARTIAL}"
+  STATE_JSON="$(cat "$STATE_PARTIAL")"
   commit_state
 }
 
@@ -169,8 +189,9 @@ notify_alert() {
   fi
   # 전송 성공 여부와 무관하게 기록해 실패 루프에서 알림이 반복되지 않게 한다
   local tmp
-  tmp="$(jq --arg key "$key" --arg at "$(now)" '.lastAlert = {key: $key, at: $at}' "$STATE_FILE" 2>/dev/null || echo '{}')"
+  tmp="$(printf '%s' "$STATE_JSON" | jq --arg key "$key" --arg at "$(now)" '.lastAlert = {key: $key, at: $at}')"
   printf '%s\n' "$tmp" > "${STATE_PARTIAL}"
+  STATE_JSON="$tmp"
   commit_state
 }
 
@@ -184,7 +205,29 @@ notify_event() {
   fi
 }
 
-# 락을 잡은 직후 "실행 중"을 먼저 기록한다 — 호출자가 직전 회차의 낡은 결과를 이번 회차의 결과로 읽지 않게 한다
+# Publish only a diagnostic copy on unreadable/corrupt state; the original is
+# preserved for operator recovery and the helper independently refuses it.
+if ! load_state; then
+  echo "anki-host-sync[${INSTANCE}]: sync-state-unavailable; original state preserved" >&2
+  # Keep the existing 24h alert policy without writing into the broken source.
+  # The public diagnostic is used only for notification deduplication, never as
+  # a replacement count baseline.
+  alert_at="$(jq -r 'select(.error == "sync-state-unavailable") | .lastAlert.at // empty' "$STATUS_COPY" 2>/dev/null || true)"
+  alert_epoch="$(date -d "${alert_at:-invalid}" +%s 2>/dev/null || echo 0)"
+  if [ $(( $(date +%s) - alert_epoch )) -ge "$ALERT_DEDUPE_SECS" ]; then
+    send_pushover "Anki 동기화 실패" "miniPC의 Anki(${INSTANCE}) 동기화 보호 기준을 읽을 수 없어 동기화를 중단했습니다. 기존 상태 파일을 보존했으므로 로그와 파일을 확인하세요." 1 || true
+    alert_at="$(now)"
+  fi
+  jq -n --arg now "$(now)" --arg run_id "$RUN_ID" --arg started "$RUN_STARTED_AT" --arg mode "$MODE" \
+    --arg alert_at "$alert_at" \
+    '{runId: $run_id, runStartedAt: $started, lastAttemptAt: $now, mode: $mode,
+      result: "error", error: "sync-state-unavailable",
+      lastAlert: {key: "sync-state-unavailable", at: $alert_at}}' > "$STATE_PARTIAL"
+  publish_state "$STATE_PARTIAL"
+  exit 1
+fi
+
+# 락을 잡고 이전 보호 기준을 검증한 뒤 실행 중 상태를 기록한다.
 write_state "running" "" ""
 
 if ! anki_helper_wait_ready "$HELPER"; then

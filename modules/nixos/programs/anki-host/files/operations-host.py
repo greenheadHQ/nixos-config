@@ -178,9 +178,23 @@ def approve(state: Path, credentials: Path, instance: str, opid: str, group: int
                 "expires_at": time.time() + ttl, "nonce": secrets.token_hex(16)}
     path = state / "approvals" / (opid + ".json")
     atomic_file(path, json.dumps(approval).encode(), group, 0o640)
-    subprocess.run(["systemctl", "start", f"anki-host-schema-{instance}@{opid}.service"], check=True)
-    outcome = call("/operations/status")
+    service_failed = False
+    try:
+        subprocess.run(["systemctl", "start", f"anki-host-schema-{instance}@{opid}.service"], check=True)
+    except (OSError, subprocess.SubprocessError):
+        # A failed service can follow a completed local write. Always recover
+        # its original receipt before reporting failure; never reapply here.
+        service_failed = True
+    try:
+        outcome = call("/operations/status")
+    except Exception:
+        print(json.dumps({"operation_id": opid, "status": "unavailable",
+                          "error": "schema-operation-status-unavailable",
+                          "next_action": "inspect-original-operation-before-retrying"}))
+        raise ValueError("schema-operation-status-unavailable-inspect-original-operation") from None
     print(json.dumps(outcome, ensure_ascii=False))
+    if service_failed:
+        raise ValueError("schema-service-failed-inspect-status")
     if outcome.get("state") != "applied" or outcome.get("sync", {}).get("state") != "synced":
         raise ValueError("schema-operation-not-completed-inspect-status")
 

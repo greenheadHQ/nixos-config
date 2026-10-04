@@ -12,8 +12,10 @@ import copy
 from datetime import datetime
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
+import re
 import secrets
 import sqlite3
 import stat
@@ -238,10 +240,75 @@ class ManagedRestore:
                 record = json.load(stream)
         except FileNotFoundError:
             _error("not-found")
-        if (not isinstance(record, dict) or self._path(record.get("request_id")) != path
-                or record.get("operation_id") != path.stem):
+        except ValueError:
+            _error("invalid-journal")
+        try:
+            self._validate_record(record)
+            if self._path(record["request_id"]) != path or record["operation_id"] != path.stem:
+                _error("invalid-journal")
+        except (ValueError, KeyError, TypeError, OverflowError):
             _error("invalid-journal")
         return record
+
+    @staticmethod
+    def _validate_record(record: dict) -> None:
+        """Reject damaged evidence before any state can release the write gate.
+
+        Preparing/not-applied records can predate backup verification. Every
+        later state must retain the complete preview, including after restart.
+        This validates stored evidence only; it never repairs or reapplies it.
+        """
+        def timestamp(value: Any) -> bool:
+            return type(value) in (int, float) and math.isfinite(value) and value >= 0
+
+        def checksum(value: Any) -> bool:
+            return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+        if (not isinstance(record, dict)
+                or record["state"] not in ("preparing", "prepared", "applying", "applied",
+                                            "partial", "unknown", "not-applied", "expired")
+                or not isinstance(record["model_name"], str) or not record["model_name"]
+                or not timestamp(record["created_at"])
+                or any(not isinstance(record[key], dict) for key in
+                       ("authorization", "before", "summary", "components", "sync"))):
+            _error("invalid-journal")
+        authorization, before = record["authorization"], record["before"]
+        if (authorization["model_name"] != record["model_name"]
+                or type(authorization["model_id"]) is not int or authorization["model_id"] <= 0
+                or not isinstance(authorization["record_id"], str) or not authorization["record_id"]
+                or not isinstance(authorization["binding"], dict) or not authorization["binding"]
+                or not checksum(authorization["digest"])
+                or any(not isinstance(before[key], dict) for key in ("collection", "model", "preservation", "assets"))
+                or before["model"]["name"] != record["model_name"]
+                or before["model"]["id"] != authorization["model_id"]
+                or set(before["preservation"]) != {"notes", "cards", "revlog"}
+                or record["summary"]["target_digest"] != authorization["digest"]
+                or record["summary"]["preservation"] != before["preservation"]
+                or record["sync"]["state"] not in ("not-started", "pending", "synced", "blocked")
+                or any(value not in ("applying", "verified") for value in record["components"].values())):
+            _error("invalid-journal")
+        canonical_model(before["model"])
+        for proof in before["preservation"].values():
+            if (not isinstance(proof, dict) or type(proof["count"]) is not int
+                    or proof["count"] < 0 or not checksum(proof["sha256"])):
+                _error("invalid-journal")
+        if record["state"] in ("preparing", "prepared", "not-applied", "expired") and record["components"]:
+            _error("invalid-journal")
+        if record["state"] not in ("preparing", "not-applied"):
+            if (not timestamp(record["expires_at"]) or not checksum(record["preview_token"])
+                    or any(not isinstance(record[key], dict) for key in ("backup", "verification", "media_before"))
+                    or record["backup"]["mirrored"] is not True
+                    or not isinstance(record["backup"]["path"], str) or not record["backup"]["path"]
+                    or not checksum(record["backup"]["sha256"])
+                    or record["verification"]["state"] != "verified"
+                    or not isinstance(record["verification"]["anki_version"], str)
+                    or not record["verification"]["anki_version"]
+                    or record["verification"]["preservation"] != before["preservation"]
+                    or digest(record["media_before"]) != record["media_before_digest"]):
+                _error("invalid-journal")
+        if record["state"] == "applied" and (not timestamp(record["applied_at"])
+                or record["components"].get("preservation") != "verified"):
+            _error("invalid-journal")
 
     def _read(self, request_id: str) -> dict:
         return self._load_path(self._path(request_id))

@@ -97,6 +97,51 @@ async def test_funnel_guard_caps_registrations_and_body_size(tmp_path):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("field_count", [33, 1024])
+async def test_revoke_rejects_excess_form_fields_before_authentication(tmp_path, field_count):
+    cfg = replace(_settings(tmp_path), max_body_bytes=8388608)
+    funnel, _ = build(cfg)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=funnel), base_url=cfg.public_url) as http:
+        # 같은 이름·빈 값도 파서 할당량에 포함된다. 자격 없이 보낸 요청을 파싱 상한에서 거절한다.
+        response = await http.post("/revoke", content=b"&".join([b"x="] * field_count),
+                                   headers={"content-type": "application/x-www-form-urlencoded"})
+        assert (response.status_code, response.json()) == (400, {"error": "too many form fields"})
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("endpoint", ["/register", "/token", "/revoke", "/authorize", "/approve"])
+@pytest.mark.parametrize("chunked", [False, True])
+async def test_oauth_requests_have_a_small_body_limit_independent_of_media(tmp_path, endpoint, chunked):
+    cfg = replace(_settings(tmp_path), max_body_bytes=8388608)
+    funnel, approval = build(cfg)
+    app = approval if endpoint in ("/authorize", "/approve") else funnel
+    url = cfg.approval_url if app is approval else cfg.public_url
+
+    async def chunks():
+        yield b"x" * 8192
+        yield b"x" * 8192
+        yield b"x"
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=url) as http:
+        response = await http.post(endpoint, content=chunks() if chunked else b"x" * 16385,
+                                   headers={"content-type": "application/x-www-form-urlencoded"})
+        assert (response.status_code, response.json()) == (413, {"error": "request body too large"})
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("endpoint", ["/token", "/authorize", "/approve"])
+async def test_other_oauth_forms_share_the_field_limit(tmp_path, endpoint):
+    cfg = replace(_settings(tmp_path), max_body_bytes=8388608)
+    funnel, approval = build(cfg)
+    app = funnel if endpoint == "/token" else approval
+    url = cfg.public_url if app is funnel else cfg.approval_url
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=url) as http:
+        response = await http.post(endpoint, content=b"&".join([b"x="] * 33),
+                                   headers={"content-type": "application/x-www-form-urlencoded; charset=utf-8"})
+        assert (response.status_code, response.json()) == (400, {"error": "too many form fields"})
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("auth_method", ["none", "client_secret_post", None])
 async def test_split_apps_metadata_and_full_oauth_flow(tmp_path, auth_method):
     cfg = _settings(tmp_path)
@@ -377,6 +422,65 @@ async def _http_grant(funnel_http, approval_http):
         "code": code, "code_verifier": verifier, "redirect_uri": redirect, "resource": f"https://{PUBLIC_HOST}/mcp"})
     assert token.status_code == 200
     return client_id, token.json()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("explicit_secret", [False, True])
+@pytest.mark.parametrize("chunked", [False, True])
+async def test_public_client_can_revoke_at_both_oauth_limits(tmp_path, explicit_secret, chunked):
+    cfg = replace(_settings(tmp_path), max_body_bytes=8388608)
+    funnel, approval = build(cfg)
+    async with funnel.router.lifespan_context(funnel):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=funnel), base_url=cfg.public_url) as fh, \
+                httpx.AsyncClient(transport=httpx.ASGITransport(app=approval), base_url=cfg.approval_url) as ah:
+            client_id, token = await _http_grant(fh, ah)
+            fields = [("client_id", client_id), ("token", token["access_token"])]
+            if explicit_secret:
+                fields.append(("client_secret", ""))
+            # 정확히 32필드·16 KiB. 인코딩된 '&'는 필드 경계가 아니고, 중복 확장 필드는 허용된다.
+            fields += [("extension", "&")] * (31 - len(fields)) + [("padding", "")]
+            body = urlencode(fields).encode()
+            body += b"x" * (16384 - len(body))
+
+            async def chunks():
+                yield body[:8192]
+                yield body[8192:]
+
+            response = await fh.post("/revoke", content=chunks() if chunked else body,
+                                     headers={"content-type": "application/x-www-form-urlencoded; charset=utf-8"})
+            assert response.status_code == 200, response.text
+            denied = await fh.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                                   headers={"authorization": f"Bearer {token['access_token']}",
+                                            "accept": "application/json, text/event-stream"})
+            assert denied.status_code == 401
+            refresh = await fh.post("/token", data={"grant_type": "refresh_token", "client_id": client_id,
+                                                    "refresh_token": token["refresh_token"]})
+            assert refresh.status_code == 400 and refresh.json()["error"] == "invalid_grant"
+
+
+@pytest.mark.anyio
+async def test_oauth_limits_preserve_mcp_and_five_mib_upload_limits(tmp_path):
+    cfg = replace(_settings(tmp_path), max_body_bytes=8388608)
+    funnel, approval = build(cfg)
+    async with funnel.router.lifespan_context(funnel):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=funnel), base_url=cfg.public_url) as fh, \
+                httpx.AsyncClient(transport=httpx.ASGITransport(app=approval), base_url=cfg.approval_url) as ah:
+            _, token = await _http_grant(fh, ah)
+            headers = {"authorization": f"Bearer {token['access_token']}",
+                       "accept": "application/json, text/event-stream", "content-type": "application/json"}
+            # /mcp에는 OAuth의 16 KiB 제한이 적용되지 않는다. 쓰기 대신 도구 목록의 메타데이터로 확인한다.
+            request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {"_meta": {"padding": ""}}}
+            request["params"]["_meta"]["padding"] = "x" * 32768
+            listed = await fh.post("/mcp", headers=headers, content=json.dumps(request))
+            assert listed.status_code == 200 and listed.json()["result"]["tools"]
+            for size, expected in ((5242880, (415, {"error": "unsupported-image-format"})),
+                                   (5242881, (413, {"error": "media-too-large"}))):
+                issued = await fh.post("/mcp", headers=headers, json={"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                    "params": {"name": "anki_upload_ticket", "arguments": {}}})
+                ticket = issued.json()["result"]["structuredContent"]["ticket"]
+                # 지원하지 않는 이미지로 저장 전에 끝낸다. 5 MiB는 형식 검사까지, +1 byte는 크기 검사에서 멈춘다.
+                uploaded = await fh.post(f"/upload?ticket={ticket}", files={"file": ("a.bin", b"x" * size)})
+                assert (uploaded.status_code, uploaded.json()) == expected
 
 
 @pytest.mark.anyio

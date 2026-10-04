@@ -146,7 +146,7 @@ def _check_features(root: Path, definition: dict, asset_name: str) -> None:
         _fail("invalid-highlight-fragment")
     rendered = renderer.replace("__ANKI_SYNTAX_ASSET__", _script_json(asset_name)).replace(
         "__ANKI_SYNTAX_CSS__", _script_json(css))
-    guarded_highlight = "{{#질문}}" + rendered + "{{/질문}}"
+    guarded_highlight = _guard(rendered, mode, names)
     for side in (front, back):
         if (side.count(guarded_highlight) != 1
                 or "anki-code-highlight-v1" in side.replace(guarded_highlight, "")):

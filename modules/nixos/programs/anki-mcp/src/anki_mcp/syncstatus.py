@@ -228,46 +228,64 @@ class SyncNow:
         return {"outcome": "timeout", "status": summarize(read_status(self._status_file))}
 
     async def run(self) -> dict[str, Any]:
-        before = read_status(self._status_file)
-        unit = await unit_state(self._unit, self._run)
-        kind = classify(before, unit)
-        before_run_id = (before or {}).get("runId")
-        if kind == "running":
-            return {
-                "outcome": "already-running",
-                "detail": "a sync run is already in progress; systemd merges start requests into the running job, "
-                "so changes made just now will be picked up by the next run",
-                "status": summarize(before),
-            }
-        rc, _out, err = await self._run(["systemctl", "start", "--no-block", self._unit])
-        if rc != 0:
-            return {"outcome": "trigger-failed", "detail": err.strip()[:300], "status": summarize(before)}
-        waited = 0.0
-        while waited < self._wait:
-            await self._sleep(self._poll)
-            waited += self._poll
-            now = read_status(self._status_file)
-            run_id = (now or {}).get("runId")
-            if now and run_id != before_run_id and now.get("result") != "running":
-                return {"outcome": "completed", "status": summarize(now)}
-            unit = await unit_state(self._unit, self._run)
-            if not unit.running:
-                if run_id == before_run_id:
+        deadline = self._monotonic() + self._wait
+
+        async def bounded(awaitable):
+            return await asyncio.wait_for(awaitable, max(0, deadline - self._monotonic()))
+
+        try:
+            before = read_status(self._status_file)
+            unit = await bounded(unit_state(self._unit, self._run))
+            if self._monotonic() >= deadline:
+                raise TimeoutError
+            kind = classify(before, unit)
+            before_run_id = (before or {}).get("runId")
+            if kind == "running":
+                return {
+                    "outcome": "already-running",
+                    "detail": "a sync run is already in progress; systemd merges start requests into the running job, "
+                    "so changes made just now will be picked up by the next run",
+                    "status": summarize(before),
+                }
+            rc, _out, err = await bounded(self._run(["systemctl", "start", "--no-block", self._unit]))
+            if self._monotonic() >= deadline:
+                raise TimeoutError
+            if rc != 0:
+                return {"outcome": "trigger-failed", "detail": err.strip()[:300], "status": summarize(before)}
+            while self._monotonic() < deadline:
+                await bounded(self._sleep(min(self._poll, deadline - self._monotonic())))
+                now = read_status(self._status_file)
+                run_id = (now or {}).get("runId")
+                if now and run_id != before_run_id and now.get("result") != "running":
+                    return {"outcome": "completed", "status": summarize(now)}
+                if self._monotonic() >= deadline:
+                    raise TimeoutError
+                unit = await bounded(unit_state(self._unit, self._run))
+                if self._monotonic() > deadline:
+                    raise TimeoutError
+                if not unit.running:
+                    # The result can land while the unit query awaits. Re-read it
+                    # before deciding that this invocation never wrote a new run.
+                    now = read_status(self._status_file)
+                    run_id = (now or {}).get("runId")
+                    if run_id == before_run_id:
+                        return {
+                            "outcome": "skipped",
+                            "detail": "the unit finished without writing a new run — another run held the lock "
+                            "(bootstrap/timer overlap) or the unit's start condition was not met; try again shortly",
+                            "status": summarize(now),
+                        }
+                    if now and now.get("result") != "running":
+                        return {"outcome": "completed", "status": summarize(now)}
                     return {
-                        "outcome": "skipped",
-                        "detail": "the unit finished without writing a new run — another run held the lock "
-                        "(bootstrap/timer overlap) or the unit's start condition was not met; try again shortly",
+                        "outcome": "failed",
+                        "detail": "the unit exited before recording a result (crashed or was killed); "
+                        "check `journalctl -u " + self._unit + "`",
                         "status": summarize(now),
                     }
-                # 새 회차가 기록됐는데 유닛이 이미 멈췄다 — 마지막 기록이 방금 도착했을 수 있으니 한 번 더 읽는다
-                now = read_status(self._status_file)
-                if now and now.get("result") != "running":
-                    return {"outcome": "completed", "status": summarize(now)}
-                return {
-                    "outcome": "failed",
-                    "detail": "the unit exited before recording a result (crashed or was killed); "
-                    "check `journalctl -u " + self._unit + "`",
-                    "status": summarize(now),
-                }
+        except (TimeoutError, subprocess.TimeoutExpired):
+            pass
+        except (OSError, RuntimeError):
+            return {"outcome": "unavailable", "status": summarize(read_status(self._status_file))}
         return {"outcome": "timeout", "detail": f"no result within {self._wait}s; the run may still be in progress",
                 "status": summarize(read_status(self._status_file))}

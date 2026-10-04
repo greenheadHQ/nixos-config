@@ -404,3 +404,39 @@ def test_mcp_restore_still_rejects_history_option_changes(managed_update, option
     with pytest.raises(s.errors):
         s.manager.restores.prepare(NAME, "ordinary-restore-must-not-change-history-options")
     assert_unchanged(s, before)
+
+
+@pytest.mark.parametrize("stage", ["before", "after"])
+def test_confirmed_update_finishes_saved_target_after_new_source_deployment(managed_update, monkeypatch, stage):
+    s = managed_update
+    preview = prepare(s)
+    publish = s.updates.publish
+
+    def lose_registration_response(record, target):
+        if stage == "before":
+            raise RuntimeError("response lost before baseline publication")
+        publish(record, target)
+        raise RuntimeError("response lost after baseline publication")
+
+    monkeypatch.setattr(s.updates, "publish", lose_registration_response)
+    assert s.updates.apply(OPERATION, preview["preview_token"], True)["state"] == "partial"
+    before = full_state(s)
+    backup_count = len(s.backups)
+    later = copy.deepcopy(s.target)
+    later["css"] += "\n/* later deployment is a different, unapproved candidate */"
+    write_source(s, later, {**s.target_assets, s.changed_asset: b"later unapproved asset"})
+    s.manager = s.new_manager(source_revision="later-synthetic-revision")
+    s.updates = s.manager.updates
+    assert s.manager.check()["write_blocked"]
+
+    result = s.updates.diagnose(OPERATION)
+
+    assert result["state"] == "applied" and result["registered"]
+    assert result["sync"]["state"] == "pending"
+    baseline = s.manager.store.get_baseline(NAME)
+    assert baseline["bundle"] == s.target_bundle
+    assert baseline["asset_bytes"] == s.target_assets
+    assert baseline["evidence"]["source"]["git_revision"] == "synthetic-revision"
+    assert s.manager.check()["status"] == "normal"
+    assert len(s.backups) == backup_count
+    assert_unchanged(s, before)

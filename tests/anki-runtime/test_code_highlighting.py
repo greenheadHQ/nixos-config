@@ -161,3 +161,59 @@ def test_empty_question_and_optional_field_combinations_preserve_card_generation
             baseline = r.col.get_note(_direct_add(r, clone["name"], fields)).cards()
             actual = r.col.get_note(_direct_add(r, name, fields)).cards()
             assert [c.ord for c in actual] == [c.ord for c in baseline]
+
+
+@pytest.mark.parametrize("mode", ["any", "all"])
+@pytest.mark.parametrize("public_metadata", [False, True])
+def test_native_generation_guards_support_context_cards_without_creating_extra_cards(
+        runtime, mode, public_metadata):
+    r = runtime
+    name = _note_type(r)
+    native = _model(r)
+    r.col.models.add_field(native, r.col.models.new_field("맥락"))
+    native["tmpls"][0]["qfmt"] = (
+        '<div>{{질문}}</div>{{#맥락}}<div>{{맥락}}</div>{{/맥락}}' if mode == "any"
+        else '{{#맥락}}<div>{{질문}}</div>{{/맥락}}')
+    r.col.models.update_dict(native)
+    r.col.models._clear_cache()
+    native = _model(r)
+    assert native["req"] == [[0, mode, [0, 4]]]
+    clone = copy.deepcopy(native)
+    clone.update(id=0, name="Unhighlighted generation baseline")
+    r.col.models.add(clone)
+    metadata = r.adapter.model_info(name) if public_metadata else native
+    plan = planner.build_plan(metadata, TARGETS, renderer=RENDERER, css=CSS, asset_filename=ASSET)
+    _apply(r, plan)
+    assert _model(r)["req"] == native["req"]
+    for question, context in itertools.product(("", "populated"), repeat=2):
+        fields = {"질문": question, "맥락": context,
+                  "답": '<pre><code class="language-javascript">const answer = 1;</code></pre>',
+                  "설명": "", "검토 메모": "keep"}
+        baseline = r.col.get_note(_direct_add(r, clone["name"], fields)).cards()
+        actual = r.col.get_note(_direct_add(r, name, fields)).cards()
+        assert [c.ord for c in actual] == [c.ord for c in baseline]
+        if (any if mode == "any" else all)((question, context)):
+            assert len(actual) == 1
+            assert actual[0].question().count("<!-- anki-code-highlight-v1 -->") == 1
+            assert actual[0].answer().count("<!-- anki-code-highlight-v1 -->") == 2
+
+
+def test_shipped_managed_context_only_card_renders_code_features_on_both_sides(runtime):
+    from importlib import import_module
+    r = runtime
+    bundle = import_module(r.helper.__package__ + ".managed_bundle")
+    shipped, _ = bundle.load_bundle(Path(os.environ["ANKI_MANAGED_SOURCE"]))
+    model = r.col.models.new(planner.MODEL_NAME)
+    model.update(copy.deepcopy(shipped["definition"]))
+    r.col.models.add(model)
+    r.col.models._clear_cache()
+    assert _model(r)["req"] == [[0, "any", [0, 2]]]
+    nid = _direct_add(r, planner.MODEL_NAME, {
+        "질문": "", "맥락": "Synthetic context",
+        "답": '<pre><code class="language-javascript">const answer = 1;</code></pre>',
+    })
+    cards = r.col.get_note(nid).cards()
+    assert len(cards) == 1
+    assert cards[0].question().count("<!-- anki-code-highlight-v1 -->") == 1
+    assert cards[0].answer().count("<!-- anki-code-highlight-v1 -->") == 2
+    assert "const answer = 1;" in cards[0].answer()

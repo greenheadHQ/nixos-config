@@ -199,6 +199,64 @@ def test_broken_restore_journal_only_blocks_managed_type(runtime, tmp_path):
     assert r.ops.prepare('add_tags', {'note_ids': [nid], 'tags': ['allowed']})['state'] == 'prepared'
 
 
+@pytest.mark.parametrize('damage', ['unknown-state', 'missing-authorization', 'missing-preservation',
+                                     'invalid-components', 'false-completion'])
+def test_valid_json_restore_damage_cannot_clear_preservation_gate(runtime, tmp_path, monkeypatch, damage):
+    from anki_real_fixture.managed_runtime import ManagedRuntime
+    from anki_real_fixture.managed_restore import _rows
+
+    r = runtime
+    manager, model, _ = configured(r, tmp_path)
+    nid = add(r, model=model['name'])
+    other = add(r, model='Basic (and reversed card)')
+    enroll(manager)
+    current = r.col.models.by_name(model['name'])
+    current['css'] += '\n/* accidental presentation edit */'
+    r.col.models.update_dict(current)
+    preview = manager.restores.prepare(model['name'], 'corrupt-restore-evidence')
+    apply = manager.adapter.apply
+
+    def lost_response(*args):
+        apply(*args)
+        raise RuntimeError('lost response after real backend commits')
+
+    monkeypatch.setattr(manager.adapter, 'apply', lost_response)
+    assert manager.restores.apply(preview['request_id'], preview['preview_token'], True)['state'] == 'partial'
+    note = r.col.get_note(nid)
+    note['Back'] = 'unverified change after restore'
+    r.col.update_note(note)
+    assert manager.restores.diagnose(preview['request_id'])['state'] == 'partial'
+    assert manager.check()['status'] == 'unavailable'
+
+    path = manager.root / 'restores' / (preview['operation_id'] + '.json')
+    record = json.loads(path.read_text())
+    if damage == 'unknown-state':
+        record['state'] = 'unsupported-state'
+    elif damage == 'missing-authorization':
+        del record['authorization']
+    elif damage == 'missing-preservation':
+        del record['before']['preservation']
+    elif damage == 'invalid-components':
+        record['components'] = []
+    else:
+        record['state'] = 'applied'
+    path.write_text(json.dumps(record))
+    damaged, rows = path.read_bytes(), _rows(r.col)
+    restarted = ManagedRuntime(r.window, manager.root, manager.source, instance='fixture',
+                               snapshot=manager.snapshot, restore_point=manager.restore_point,
+                               sync_status=lambda: {}, ttl=600)
+
+    assert restarted.check()['status'] == 'unavailable'
+    assert restarted.check()['write_blocked']
+    r.adapter.managed_guard = restarted.guard
+    with pytest.raises(r.error, match='managed-model-write-blocked'):
+        r.ops.prepare('update_fields', {'note_id': nid, 'fields': {'Back': 'must remain blocked'}})
+    assert r.ops.prepare('update_fields', {'note_id': other, 'fields': {'Back': 'allowed'}})['state'] == 'prepared'
+    assert r.ops.prepare('add_tags', {'note_ids': [nid], 'tags': ['allowed']})['state'] == 'prepared'
+    assert path.read_bytes() == damaged
+    assert _rows(r.col) == rows
+
+
 def test_managed_source_rename_and_history_field_preserve_collection(runtime, tmp_path):
     from anki_real_fixture.managed_bundle import build_bundle, diff_bundle, load_bundle
     from anki_real_fixture.managed_drift import ManagedTypeStore

@@ -115,5 +115,5 @@ class SchemaOperations:
         delivered = result["action"] in ("normal", "approved-full-upload")
         result["operation"] = self.ops.record_delivery(operation_id, "sync", {
             "state": "synced" if delivered else "blocked", "action": result["action"],
-            "result": "success" if delivered else "root-reapproval-required"})
+            "result": "success" if delivered else "root-reapproval-required"}, schema_authorized=True)
         return result

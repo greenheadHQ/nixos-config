@@ -246,6 +246,9 @@ def _media_status() -> dict[str, Any]:
     try:
         status = aqt.mw.col.media_sync_status()
     except Exception as err:  # noqa: BLE001 — 마지막 미디어 sync 오류를 여기서 드러낸다
+        # The backend consumes errors on read. A status probe must not make an
+        # unsuccessful download look ready for the next export.
+        _state["media_error"] = err.__class__.__name__
         return {"active": False, "error": err.__class__.__name__, "detail": str(err)[:200]}
     progress = getattr(status, "progress", None)
     return {
@@ -253,6 +256,7 @@ def _media_status() -> dict[str, Any]:
         "checked": getattr(progress, "checked", None),
         "added": getattr(progress, "added", None),
         "removed": getattr(progress, "removed", None),
+        "error": _state.get("media_error"),
     }
 
 
@@ -279,6 +283,7 @@ def _wait_for_media(deadline: float, *, previous: bool = False) -> None:
         try:
             status = aqt.mw.col.media_sync_status()
         except Exception as err:
+            _state["media_error"] = err.__class__.__name__
             if not previous:
                 raise
             # The old thread has ended; the new sync below retries its transfer.
@@ -288,6 +293,7 @@ def _wait_for_media(deadline: float, *, previous: bool = False) -> None:
             return
         remaining = deadline - time.monotonic()
         if remaining <= 0:
+            _state["media_error"] = "media-sync-timeout"
             raise RuntimeError("media-sync-timeout")
         time.sleep(min(0.25, remaining))
 
@@ -314,23 +320,34 @@ def _full_download(auth: Any, out: Any) -> None:
 def _guard_thresholds() -> tuple[int, int]:
     """급감 게이트 하한 — sync 스크립트가 남기는 상태 파일(STATE_DIR/sync-status.json)의 lastSuccessAt·lastSuccessCounts에서
     계산한다. 스크립트가 유일한 생산자이고 이 함수는 두 필드만 읽는다. 성공 이력이 없거나 파일이 없으면 (0, 0) = 게이트 없음.
-    성공 이력이 있으면 하한은 최소 1 — 전부 지워진 컬렉션도 게이트에 걸려야 한다."""
+    성공 이력이 있으면 하한은 최소 1 — 전부 지워진 컬렉션도 게이트에 걸려야 한다.
+    기존 파일의 읽기 실패·손상은 성공 이력 부재가 아니므로 동기화를 차단한다."""
     if not STATE_DIR:
-        return (0, 0)
+        raise OperationError("sync-state-unavailable")
+    path = os.path.join(STATE_DIR, "sync-status.json")
     try:
-        with open(os.path.join(STATE_DIR, "sync-status.json"), encoding="utf-8") as stream:
+        with open(path, encoding="utf-8") as stream:
             state = json.load(stream)
+    except FileNotFoundError:
+        if os.path.lexists(path):
+            raise OperationError("sync-state-unavailable") from None
+        return (0, 0)
     except (OSError, ValueError):
+        raise OperationError("sync-state-unavailable") from None
+    if (not isinstance(state, dict) or "lastSuccessAt" not in state
+            or "lastSuccessCounts" not in state):
+        raise OperationError("sync-state-unavailable")
+    success, counts = state["lastSuccessAt"], state["lastSuccessCounts"]
+    if success is None and counts is None:
         return (0, 0)
-    if not state.get("lastSuccessAt"):
-        return (0, 0)
-    counts = state.get("lastSuccessCounts") or {}
+    if (not isinstance(success, str) or not success or not isinstance(counts, dict)
+            or any(type(counts.get(key)) is not int or counts[key] < 0 for key in ("notes", "revlog"))):
+        raise OperationError("sync-state-unavailable")
 
-    def floor_pct(value: Any) -> int:
-        n = int(value or 0)
+    def floor_pct(n: int) -> int:
         return max(1, n * GUARD_MIN_RETAIN_PCT // 100) if n > 0 else 0
 
-    return (floor_pct(counts.get("notes")), floor_pct(counts.get("revlog")))
+    return (floor_pct(counts["notes"]), floor_pct(counts["revlog"]))
 
 
 def _sync(mode: str) -> dict[str, Any]:
@@ -391,6 +408,7 @@ def _sync(mode: str) -> dict[str, Any]:
     if out.required == NO_CHANGES:
         if media_enabled:
             _wait_for_media(deadline)
+            _state["media_error"] = None
             media_state = "synced"
         action = "normal"
     elif out.required in (FULL_SYNC, FULL_DOWNLOAD, FULL_UPLOAD):
@@ -450,6 +468,16 @@ def _export(path: str, include_media: bool, legacy: bool) -> dict[str, Any]:
     if os.path.exists(real):
         # 새 파일만 만든다 — 아직 HDD로 미러되지 않은 복구점을 같은 이름으로 덮어쓰는 것은 되돌릴 수 없다
         raise RuntimeError("target-exists")
+    if include_media:
+        # _export runs on the main thread under the same mutation lock as sync.
+        # Export cancels pending media work; never use it as a media wait. A
+        # media-free pre-operation restore point does not need this condition.
+        if (mw.pm.auto_syncing_enabled() or mw.pm.periodic_sync_media_minutes() != 0
+                or mw.media_syncer.is_syncing()):
+            raise OperationError("media-sync-monitor-not-exclusive")
+        media = _media_status()
+        if media.get("active") is not False or media.get("error") is not None:
+            raise OperationError("media-not-ready")
     os.makedirs(os.path.dirname(real), exist_ok=True)
     snap = _snapshot()
     # export_collection_package는 내부에서 close_for_full_sync 후 backend가 컬렉션을 가져가 내보낸다.
@@ -883,7 +911,8 @@ class _Handler(BaseHTTPRequestHandler):
             elif path in ("/tags/unused/inspect", "/tags/unused/prepare", "/tags/unused/apply") and self.command == "POST":
                 result = _mutating("unused-tags", _unused_tags_request, path, body)
             elif path == "/operations/delivery" and self.command == "POST":
-                result = _mutating("delivery", lambda: _ops().record_delivery(body["operation_id"], body["kind"], body["receipt"]))
+                result = _mutating("delivery", lambda: _ops().record_delivery(
+                    body["operation_id"], body["kind"], body["receipt"], schema_authorized=role == "schema"))
             elif path == "/schema/inspect" and self.command == "POST":
                 result = _mutating("schema-inspect", lambda: _schema().inspect(body["operation_id"]))
             elif path == "/schema/backup" and self.command == "POST":

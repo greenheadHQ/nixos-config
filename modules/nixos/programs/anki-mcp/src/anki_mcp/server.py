@@ -35,7 +35,7 @@ from .approval import Lockout, build_approval_app
 from .authoring import compose_guidance
 from .card_links import register_card_links
 from .config import Settings, read_local_key, read_passphrase
-from .guard import RequestGuard
+from .guard import OAUTH_MAX_FORM_FIELDS, RequestGuard
 from .helper import Helper
 from .oauth import CLIENT_AUTH_METHODS, DEFAULT_SCOPES, FileOAuthProvider
 from .operations import OperationService
@@ -88,7 +88,12 @@ class PublicClientRevocation:
         headers = list(scope.get("headers", []))
         ctype = next((v for k, v in headers if k == b"content-type"), b"").decode().lower()
         if ctype.startswith("application/x-www-form-urlencoded"):
-            fields = dict(parse_qsl(body.decode(errors="replace"), keep_blank_values=True))
+            try:
+                fields = dict(parse_qsl(body.decode(errors="replace"), keep_blank_values=True,
+                                        max_num_fields=OAUTH_MAX_FORM_FIELDS))
+            except ValueError:
+                await JSONResponse({"error": "too many form fields"}, status_code=400)(scope, receive, send)
+                return
             if "client_secret" not in fields:
                 body += (b"&" if body else b"") + b"client_secret="
                 headers = [(k, v) for k, v in headers if k != b"content-length"]
@@ -218,7 +223,7 @@ def build(cfg: Settings):
         lockout=lockout,
     )
     # 승인 앱도 클라이언트·문구 검증 전에 form을 읽는다. 파서에 넘기기 전 두 앱의 자원 소비를 제한한다.
-    # Starlette 1.1.0의 URL-encoded 필드 제한 미적용은 앱의 본문/시간 상한으로 완화한다.
+    # OAuth 경로에는 작은 본문·필드 수 상한을 별도로 적용해 SDK 파서 버전과 무관하게 제한한다.
     for app in (funnel_app, approval_app):
         app.add_middleware(
             RequestGuard, max_body_bytes=cfg.max_body_bytes, register_burst=cfg.reg_burst,

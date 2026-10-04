@@ -81,59 +81,6 @@
     };
     window[CONTROLS] = { mount };
   }
-  // Placement upgrades independently of V1's private scale/toggle lifecycle.
-  // Existing reviewer globals may have been installed by an older template.
-  const PLACEMENT = "AnkiCodePlacementV1";
-  if (!window[PLACEMENT]) {
-    const controls = window[CONTROLS];
-    const originalMount = controls.mount;
-    let root = null;
-    const currentRoot = () => document.getElementById("qa") || document.body;
-    const visible = code => {
-      if (code.closest("details:not([open]), [hidden]")) return false;
-      for (let node = code; node; node = node.parentElement) {
-        if (window.getComputedStyle(node).display === "none") return false;
-      }
-      return true;
-    };
-    const place = () => {
-      const first = Array.from(root.querySelectorAll(".anki-code-scope pre > code"))
-        .find(visible)?.parentElement;
-      let toolbar = root.querySelector(".anki-code-controls");
-      if (!first) {
-        toolbar?.remove();
-        return;
-      }
-      if (!toolbar) {
-        // Calling the saved original avoids recursion through our wrapper and
-        // restores its live buttons after all blocks were temporarily hidden.
-        originalMount.call(controls);
-        toolbar = root.querySelector(".anki-code-controls");
-      }
-      if (toolbar && toolbar.nextElementSibling !== first) first.before(toolbar);
-    };
-    const observer = new MutationObserver(() => {
-      if (root === currentRoot() && root.isConnected) place();
-    });
-    controls.mount = (...args) => {
-      originalMount.apply(controls, args);
-      const nextRoot = currentRoot();
-      if (root !== nextRoot) {
-        observer.disconnect();
-        root = nextRoot;
-        // Old V1 details handlers can recreate the toolbar at their original
-        // anchor. Reconcile that child change as well as CSS visibility changes.
-        observer.observe(root, {
-          attributes: true, childList: true, subtree: true,
-          attributeFilter: ["class", "style", "hidden", "open"]
-        });
-      }
-      place();
-    };
-    // Neither stable placement nor our own style/DOM writes rewrite code or
-    // remount controls. The following observer delivery is therefore a no-op.
-    window[PLACEMENT] = true;
-  }
   // Copy has its own lifecycle: a reused WebView may still have the original
   // size controls installed. Do not replace their toggle listener or scale.
   const COPY = "AnkiCodeCopyV1";

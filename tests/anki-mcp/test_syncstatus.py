@@ -1,4 +1,6 @@
+import asyncio
 import json
+import subprocess
 from datetime import datetime, timezone
 
 import pytest
@@ -160,10 +162,140 @@ async def test_sync_now_triggers_over_stale_running(tmp_path):
     assert out["outcome"] == "completed" and fake.started == 1
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("landed,expected", [
+    ("success", "completed"), ("error", "completed"), ("running", "failed"), (None, "skipped"),
+])
+async def test_sync_now_reports_result_published_while_observing_unit_exit(tmp_path, landed, expected):
+    path = tmp_path / "main.json"
+    _write(path, result="success", runId="old")
+    systemd = FakeSystemd(path)
+
+    async def runner(argv):
+        if argv[:2] == ["systemctl", "show"] and systemd.started and landed:
+            # The service publishes after the caller read the old status, but
+            # before the systemctl query returns the service's final state.
+            _write(path, result=landed, runId="new")
+        return await systemd(argv)
+
+    async def no_sleep(_):
+        pass
+
+    out = await SyncNow(str(path), "u.service", 5, runner=runner, sleep=no_sleep).run()
+    assert out["outcome"] == expected
+    assert out["status"]["runId"] == ("new" if landed else "old")
+    assert out["status"]["result"] == (landed or "success")
+
+
 class Clock:
     def __init__(self): self.now = 1000.5
     def __call__(self): return self.now
     async def sleep(self, seconds): self.now += seconds
+
+
+@pytest.mark.anyio
+async def test_sync_now_budget_includes_commands_and_caps_the_last_sleep(tmp_path):
+    path, clock = tmp_path / "main.json", Clock()
+    began = clock.now
+    _write(path, result="success", runId="old")
+    systemd = FakeSystemd(path, on_start=lambda: _write(path, result="running", runId="new"))
+    calls = []
+
+    async def runner(argv):
+        calls.append(argv[1])
+        clock.now += 2
+        result = await systemd(argv)
+        if systemd.started:
+            systemd.active = "active"
+        return result
+
+    out = await SyncNow(str(path), "u.service", 5, runner=runner, sleep=clock.sleep,
+                        monotonic=clock).run()
+    assert out["outcome"] == "timeout"
+    assert clock.now - began == 5
+    assert calls == ["show", "start"]  # No new command starts with an exhausted budget.
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("slow_command", [1, 2, 3])
+async def test_sync_now_stops_when_any_command_consumes_the_deadline(tmp_path, slow_command):
+    path, clock = tmp_path / "main.json", Clock()
+    began = clock.now
+    _write(path, result="success", runId="old")
+    systemd = FakeSystemd(path, on_start=lambda: _write(path, result="running", runId="new"))
+    calls = []
+
+    async def runner(argv):
+        calls.append(argv[1])
+        if len(calls) == slow_command:
+            # Simulate a command returning only after exhausting the budget.
+            clock.now += 6
+        result = await systemd(argv)
+        if systemd.started:
+            systemd.active = "active"
+        return result
+
+    out = await SyncNow(str(path), "u.service", 5, runner=runner, sleep=clock.sleep,
+                        monotonic=clock).run()
+    assert out["outcome"] == "timeout"
+    assert calls == ["show", "start", "show"][:slow_command]
+    assert clock.now - began == (8 if slow_command == 3 else 6)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("hung_command", [1, 2, 3])
+async def test_sync_now_cancels_hung_command_at_deadline(tmp_path, hung_command):
+    path = tmp_path / "main.json"
+    _write(path, result="success", runId="old")
+    systemd = FakeSystemd(path, on_start=lambda: _write(path, result="running", runId="new"))
+    calls, cancelled = [], []
+
+    async def runner(argv):
+        calls.append(argv[1])
+        if len(calls) == hung_command:
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.append(argv[1])
+                raise
+        result = await systemd(argv)
+        if systemd.started:
+            systemd.active = "active"
+        return result
+
+    # The virtual-clock tests cover the exact budget. Give the real event loop
+    # time to reach every command even when parallel CI workers are busy.
+    syncer = SyncNow(str(path), "u.service", 0.5, runner=runner, poll_interval=0.001)
+    out = await asyncio.wait_for(syncer.run(), timeout=3)
+    assert out["outcome"] == "timeout"
+    assert calls == ["show", "start", "show"][:hung_command]
+    assert cancelled == [calls[-1]]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure,expected", [
+    ("start-rejected", "trigger-failed"), ("show-rejected", "unavailable"),
+    ("missing-command", "unavailable"), ("command-timeout", "timeout"),
+])
+async def test_sync_now_reports_command_failure_with_the_recorded_status(tmp_path, failure, expected):
+    path = tmp_path / "main.json"
+    _write(path, result="success", runId="old")
+
+    async def runner(argv):
+        if failure == "command-timeout":
+            raise subprocess.TimeoutExpired(argv, 30)
+        if failure == "missing-command":
+            raise FileNotFoundError("systemctl")
+        if argv[1] == "show":
+            return ((1, "", "unit unavailable") if failure == "show-rejected"
+                    else (0, "ActiveState=inactive\nInvocationID=\n", ""))
+        return 1, "", "start denied"
+
+    out = await SyncNow(str(path), "u.service", 5, runner=runner).run()
+    assert out["outcome"] == expected
+    assert out["status"]["runId"] == "old"
+    if failure == "start-rejected":
+        assert out["detail"] == "start denied"
 
 
 def normal(path, run_id, started, *, result="success", mode="normal", action="normal"):

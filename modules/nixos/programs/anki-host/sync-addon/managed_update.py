@@ -357,7 +357,9 @@ class ManagedUpdate:
         try:
             if not record.get("confirmed_at"):
                 _error("confirmation-record-missing")
-            target = self._target(record)
+            # A later deployment is a new candidate, not the authority for an
+            # already confirmed operation. Diagnose only its saved target.
+            target = self._target(record, check_source=False)
             if (self.adapter.version != record["verification"]["anki_version"]
                     or _file_hash(Path(record["backup"]["path"])) != record["backup"]["sha256"]):
                 _error("verification-or-backup-changed")
