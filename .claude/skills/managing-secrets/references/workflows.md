@@ -13,7 +13,7 @@ cd secrets && nix run github:ryantm/agenix -- -e <name>.age
 
 `agenix -e`를 사용할 수 없으면 [troubleshooting.md](troubleshooting.md)의 "agenix -e의 /dev/stdin 에러" 절차를 따른다. 보호된 임시 파일에 사람이 입력하고 암호화·왕복 검증 후 교체하는 정본이다. 에이전트는 코드 블록과 `<name>`·공개키 치환값·저장소 루트 경로를 준비해 사람에게 전달하며, 값 입력은 사람이 대화형 터미널에서 한다.
 
-우회 절차의 recipient는 `secrets/secrets.nix`에서 그 항목의 `publicKeys`에 있는 공개키를 모두 `-r` 플래그로 지정한다. 항목마다 recipient 그룹이 다르므로 다른 항목의 목록을 옮겨 쓰지 않는다.
+우회 절차의 recipient는 `secrets/secrets.nix`에서 그 항목의 `publicKeys`에 있는 공개키마다 `-r` 인수를 하나씩 지정한다. 참조 명령의 `-r` 인수도 공개키 수에 맞춰 추가하거나 삭제한다. 항목마다 recipient 그룹이 다르므로 다른 항목의 목록을 옮겨 쓰지 않는다.
 
 ## 기존 secret 상태 확인 (값 비출력)
 
