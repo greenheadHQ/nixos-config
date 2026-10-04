@@ -15,15 +15,7 @@ containers.copyparty = {
 
 ### 2. 시크릿 생성
 
-```bash
-# secrets/secrets.nix에 선언 추가
-"copyparty-password.age".publicKeys = allKeys;
-
-# 비밀번호 암호화
-(cd secrets && agenix -e copyparty-password.age)
-# 또는 직접 age 명령어로 암호화
-printf '%s\n' "PASSWORD" | age -r "ssh-ed25519 ..." -o secrets/copyparty-password.age
-```
+`secrets/secrets.nix`의 `copyparty-password.age` 선언과 `publicKeys`를 확인한다. 암호화는 [managing-secrets 워크플로](../../managing-secrets/references/workflows.md)의 ".age 파일 생성/암호화" 절차를 따르고, 파일명은 `copyparty-password.age`로 지정한다. 에이전트는 명령·경로·공개키만 준비하고, 비밀번호 입력은 사람이 대화형 터미널에서 한다.
 
 ### 3. 옵션 정의 (`modules/nixos/options/homeserver.nix`)
 
