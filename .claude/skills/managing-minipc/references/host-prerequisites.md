@@ -7,9 +7,9 @@
 - `sudo`로 systemd/podman 명령 실행 (호스트 sudoers 등록 필요)
 - Tailscale VPN 내부에서 `https://*.greenhead.dev` 도달
 - agenix가 호스트의 identity key(`/home/<user>/.ssh/id_ed25519`)로 복호화한 secret 파일 접근 (배포된 `/run/agenix/*` 읽기는 sudo 필요)
-- agenix CLI로 `<name>.age` 편집 (sudo 불필요. agenix는 cwd의 `./secrets.nix`를 RULES로 로드하므로 `secrets/` 디렉토리에서 실행)
-  - canonical: `cd secrets && agenix -e <name>.age` (PATH `agenix` 사용 가능 시)
-  - fallback: `cd secrets && nix run github:ryantm/agenix -- -e <name>.age`
+- agenix CLI로 `<name>.age` 편집 (사용자 키 항목은 sudo 불필요). 저장소 루트에서 `nix develop`에 진입해 `flake.lock`에 고정된 agenix를 사용한다.
+  - [managing-secrets 워크플로](../../managing-secrets/references/workflows.md)의 "명령 준비"에 따라 외부 CLI의 절대경로를 확인하고 `secrets/`에서 `AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -e <name>.age`로 기존 규칙 파일을 명시한다.
+  - 호스트 키 항목의 sudo 환경·절대 CLI 경로와 값 보존 확인은 [managing-secrets 워크플로](../../managing-secrets/references/workflows.md)의 "명령 준비"와 "호스트 추가"를 따른다.
 - Podman socket 접근 권한 + 각 서비스별 `podman-<service>.service` systemd unit 관리
 
 본 스킬을 macOS Codex 세션 등 다른 호스트에서 호출하면 명령이 작동하지 않는다.

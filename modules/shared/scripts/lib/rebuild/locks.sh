@@ -116,7 +116,12 @@ acquire_nrs_lock() {
             echo "  Worktree: $lock_worktree"
             echo "  Locked:   ${elapsed}m ago"
             echo ""
-            echo "  Run 'nrs-lock unlock' to release the lock."
+            echo "  This lock protects against applying a different worktree unintentionally."
+            echo "  Requested worktree: $FLAKE_PATH (the configuration this nrs would apply)."
+            echo "  Check 'nrs-lock status' before proceeding."
+            echo "  If its process is running, wait for it to finish."
+            echo "  After confirming it has stopped, run 'nrs-lock unlock' only for an intentional follow-up"
+            echo "  applying the requested worktree, then retry nrs."
             exit 1
         fi
     fi

@@ -317,19 +317,33 @@ def remove_target_entries(
     return changed
 
 
-def orphan_gc_base(target_root: str) -> str | None:
-    """제거 대상 worktree가 놓인 wt worktree base를 돌려준다 (아니면 None).
+def orphan_gc_base(target_root: str, worktree_base: str | None = None) -> str | None:
+    """호출자가 지정한 저장소 base에서만 GC한다. 없으면 유일한 후보만 추론한다.
 
-    GC 범위를 CLI 인자로 따로 받지 않고 대상 경로에서 유도한다. 호출부(bootstrap.sh)는
-    이미 `<repo>/.claude/worktrees/<name>`만 넘기므로 추가 인자 없이 같은 저장소의
-    worktree base로 범위가 좁혀지고, 그 밖의 경로로 helper를 직접 부르면 (마지막 두
-    조각이 다르므로) GC 자체가 꺼진다. wt가 만드는 대상은 항상 base 바로 아래이므로
-    부모 한 단계만 본다 — GC가 훑는 범위는 이렇게 얻은 base 아래 전체다.
+    상대 이름 자체에도 `.claude/worktrees`가 들어갈 수 있어 조상 문자열만으로
+    저장소를 구별할 수 없다. wt는 이미 알고 있는 git_root의 base를 명시한다.
+    target_root는 제거 전에 기록한 canonical 경로일 수 있으므로 다시 resolve하지
+    않는다 — 같은 위치에 다른 프로젝트를 가리키는 symlink가 생겨도 원래 범위를 쓴다.
     """
-    parent = Path(target_root).expanduser().parent
-    if parent.parts[-2:] != WT_WORKTREE_BASE_PARTS:
+    target = Path(target_root).expanduser()
+    if worktree_base is not None:
+        supplied = Path(worktree_base).expanduser()
+        if supplied.parts[-2:] != WT_WORKTREE_BASE_PARTS:
+            warn(f"invalid worktree base; skipping orphan GC: {worktree_base}")
+            return None
+        base = resolve_path(str(supplied), strict=False)
+        if base is None or not target.is_relative_to(Path(base)) or target == Path(base):
+            warn(f"target is outside worktree base; skipping orphan GC: {worktree_base}")
+            return None
+        return base
+
+    candidates = [
+        parent for parent in target.parents if parent.parts[-2:] == WT_WORKTREE_BASE_PARTS
+    ]
+    if len(candidates) > 1:
+        warn("ambiguous worktree base; pass --worktree-base to enable orphan GC")
         return None
-    return resolve_path(str(parent), strict=False)
+    return resolve_path(str(candidates[0]), strict=False) if candidates else None
 
 
 def path_presence(path: Path) -> tuple[str, str]:
@@ -423,16 +437,42 @@ def backup_path_for_gc(manifest_path: Path) -> Path:
 def write_gc_backup(manifest_path: Path) -> Path | None:
     """GC 직전 manifest 사본을 남긴다 (실패하면 None — 호출부가 GC를 건너뛴다).
 
-    copy2는 원본 mode를 그대로 옮기는데, 지운 항목까지 담긴 전체 사본이 manifest보다
-    넓은 권한으로 남지 않도록 0600으로 좁힌다 (형제 helper codex-trust.py와 같은 계약).
+    같은 초의 GC나 기존 symlink와 충돌해도 사본을 덮어쓰지 않도록 배타적으로 생성한다.
+    지운 항목까지 담긴 전체 사본이 넓은 권한으로 남지 않도록 생성 시부터 0600을 쓴다.
     """
-    backup = backup_path_for_gc(manifest_path)
+    candidate = backup_path_for_gc(manifest_path)
+    backup = candidate
+    fd = -1
+    created = False
     try:
-        shutil.copy2(manifest_path, backup)
-        os.chmod(backup, 0o600)
+        with manifest_path.open("rb") as source:
+            suffix = 0
+            while True:
+                try:
+                    fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                except FileExistsError:
+                    suffix += 1
+                    backup = candidate.with_name(f"{candidate.name}.{suffix}")
+                    continue
+                created = True
+                break
+            with os.fdopen(fd, "wb") as destination:
+                fd = -1
+                os.fchmod(destination.fileno(), 0o600)
+                shutil.copyfileobj(source, destination)
+                destination.flush()
+                os.fsync(destination.fileno())
     except OSError as exc:
+        if created:
+            try:
+                backup.unlink()
+            except OSError:
+                pass
         warn(f"cannot write plugin manifest backup; keeping orphan entries: {backup}: {exc}")
         return None
+    finally:
+        if fd >= 0:
+            os.close(fd)
     return backup
 
 
@@ -663,7 +703,7 @@ def remove_local_plugins(args: argparse.Namespace) -> int:
         # 쓰기는 락 안에서 한 번뿐이라 여기 얹는 비용이 사실상 0이고, wt cleanup은 대상
         # 하나만 지우므로 "그 worktree만" 정리하면 이미 사라진 형제 entry는 그것을 지웠던
         # 실행이 다시 오지 않는 한 영원히 남는다 (실제로 12건이 그렇게 쌓였다).
-        worktree_base = orphan_gc_base(target_root)
+        worktree_base = orphan_gc_base(target_root, args.worktree_base)
         if worktree_base is not None:
             # 이번 대상 자신은 GC에서 뺀다. 보호 경로(`wt cleanup --auto`)는 디렉토리를
             # 지운 뒤 이 helper를 부르므로, 빼지 않으면 대상의 표식 없는(사용자 수동)
@@ -711,6 +751,7 @@ def build_parser() -> argparse.ArgumentParser:
     remove_parser.add_argument("--manifest", required=True)
     remove_parser.add_argument("--target-root", required=True)
     remove_parser.add_argument("--target-root-before-removal")
+    remove_parser.add_argument("--worktree-base")
     remove_parser.set_defaults(func=remove_local_plugins)
 
     return parser

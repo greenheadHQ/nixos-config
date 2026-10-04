@@ -73,6 +73,7 @@ case "\$url" in
     ;;
   https://api.pushover.net/*)
     printf '%s\n' "\$@" >> "$notify_log"
+    cat >> "$notify_log"
     printf -- '---\n' >> "$notify_log"
     ;;
   *)
@@ -90,6 +91,7 @@ _run_generic_version_check() {
 
   PATH="$stub_dir:$PATH" \
     PUSHOVER_CRED_FILE="$pushover_cred" \
+    PUSHOVER_LIB="$REPO_ROOT/modules/shared/scripts/lib/pushover.sh" \
     SERVICE_LIB="$service_lib" \
     STATE_DIR="$state_dir" \
     CONTAINER_NAME="$container_name" \
@@ -132,6 +134,7 @@ case "\$url" in
     ;;
   https://api.pushover.net/*)
     printf '%s\n' "\$@" >> "$notify_log"
+    cat >> "$notify_log"
     printf -- '---\n' >> "$notify_log"
     ;;
   *)
@@ -151,6 +154,7 @@ _run_immich_version_check() {
     IMMICH_URL="$immich_url" \
     API_KEY_FILE="$api_key_file" \
     PUSHOVER_CRED_FILE="$pushover_cred" \
+    PUSHOVER_LIB="$REPO_ROOT/modules/shared/scripts/lib/pushover.sh" \
     STATE_DIR="$state_dir" \
     SERVICE_LIB="$service_lib" \
     bash "$(_immich_version_check_script_path)"
@@ -255,7 +259,7 @@ test_version_check_failure_at_threshold_triggers_watchdog_warning() {
 
   assert_file_contains "$state_dir/last-success" "1000000"
   # 제목("Version Check")은 ERR trap 알림과도 겹치므로 워치독 특유의 메시지 본문을 리터럴로 확인한다.
-  assert_file_contains "$notify_log" "message=버전 체크가 3일간 성공하지 못했습니다. 서비스 상태를 확인하세요."
+  assert_file_contains "$notify_log" 'form-string = "message=버전 체크가 3일간 성공하지 못했습니다. 서비스 상태를 확인하세요."'
 }
 
 test_version_check_failure_just_before_threshold_no_warning() {
@@ -322,7 +326,7 @@ test_version_check_recovery_updates_last_success_without_new_version_notificatio
   _run_generic_version_check "$stub_dir" "$(_version_check_service_lib_path)" "$cred" "$state_dir" \
     "demo" "demo:1.2" "demo/demo" "Demo" \
     || fail "GitHub fetch failure must still exit 0"
-  assert_file_contains "$notify_log" "message=버전 체크가 4일간 성공하지 못했습니다. 서비스 상태를 확인하세요."
+  assert_file_contains "$notify_log" 'form-string = "message=버전 체크가 4일간 성공하지 못했습니다. 서비스 상태를 확인하세요."'
   : > "$notify_log"
 
   local recovery_time=$((1000000 + 4 * 86400 + 3600))
@@ -453,7 +457,7 @@ test_immich_version_check_new_version_notifies_and_records() {
     "$immich_url" "$api_key_file" \
     || fail "immich new-version run must exit 0"
 
-  assert_file_contains "$notify_log" "title=Immich 업데이트 알림"
+  assert_file_contains "$notify_log" 'form-string = "title=Immich 업데이트 알림"'
   assert_file_contains "$state_dir/last-notified-version" "1.3.0"
   assert_file_contains "$state_dir/last-success" "$((1000000 + 3600))"
 }
@@ -465,20 +469,24 @@ test_immich_version_check_new_version_notifies_and_records() {
 # 바뀐 뒤에도 그대로 유지되는지를 검증한다.
 # ─────────────────────────────────────────────────────────────────
 
-# curl 스텁의 notify_log는 curl argv를 한 줄에 하나씩 기록한다(_write_version_check_curl_stub
-# 참고). "--form-string" "message=<내용>" 은 서로 다른 두 argv라서, message 값 자체에 개행이
-# 있으면 로그에서도 여러 줄로 나온다. message= 로 시작하는 줄부터, 그다음에 나오는 단독
-# "--form-string" 줄(바로 뒤의 form-string, 여기서는 priority) 전까지가 message 값이다.
-# 한 테스트에서 여러 번 알림을 보내면 이 블록이 로그에 여러 번 나오므로, 마지막 블록만
-# 골라야 한다(sed의 /시작/,/끝/ 범위는 첫 블록에서 멈춘다 — awk로 한 번 훑으며 매번 덮어쓴다).
+# curl 스텁은 --config - 로 받은 stdin도 기록한다. helper가 사용하는 quoted string의
+# escape(역슬래시/큰따옴표/개행/CR/탭)는 JSON과 같으므로 독립 parser로 복원한다.
+# 여러 알림이 있으면 마지막 message를 선택하여 기존 본문 회귀 단언을 유지한다.
 _extract_last_pushover_message() {
   local notify_log="$1"
-  awk '
-    /^message=/ { collecting = 1; buf = $0; sub(/^message=/, "", buf); next }
-    collecting && $0 == "--form-string" { collecting = 0; result = buf; next }
-    collecting { buf = buf "\n" $0; next }
-    END { printf "%s", result }
-  ' "$notify_log"
+  python3 - "$notify_log" <<'PY'
+import json
+import sys
+
+result = ""
+with open(sys.argv[1], encoding="utf-8") as log:
+    for line in log:
+        if line.startswith("form-string = "):
+            value = json.loads(line.removeprefix("form-string = "))
+            if value.startswith("message="):
+                result = value.removeprefix("message=")
+sys.stdout.write(result)
+PY
 }
 
 # 400줄 x 240자('A')로 약 96KB 본문을 만든다. head -20 파이프에서 SIGPIPE를
