@@ -192,7 +192,10 @@ EXIT_ERROR로 막는다(선언과 회수가 겹치면 sync가 매번 썼다 지�
   `home-manager-<primaryUser>` 서비스로 돌아 이 경고가 `nrs` 출력이 아니라 journal로 가므로,
   `journalctl -u home-manager-<primaryUser>`에서 확인하거나 메인 체크아웃의 `verify-ai-compat.sh`로 확인한다.
 - 권한 프롬프트 반복: `~/.codex/config.toml`의 `approval_policy`, `sandbox_mode`를 확인한다.
-- AGENTS 불일치: 프로젝트 루트 `AGENTS.md -> CLAUDE.md` 심링크를 복구한다.
+- AGENTS 불일치: `AGENTS.md` 자리가 일반 파일이나 실디렉토리면 `nrs`가 보존하고
+  `Warning: keeping AGENTS.md`를 stderr로 남긴다. 내용을 확인해 필요한 수정은 `CLAUDE.md`에
+  반영하고 해당 파일·디렉토리를 옮기거나 지운 뒤 `nrs`로 심링크를 복구한다. 검증기도 보존된
+  자료와 링크 누락을 구분해 안내한다. 정상 링크·다른 대상의 링크·링크 부재는 자동으로 수렴한다.
 - 활성화 누락: `nrs` 실행 후 `./scripts/ai/verify-ai-compat.sh`로 재검증한다.
 - codex 업데이트가 안 됨: codex는 nix overlay라 버전이 `codex-pin.json`에 핀된다 — 최신화는 `update-codex` 한 줄(자동 추적 아님). `npm install -g @openai/codex`는 `cleanupManualNodeCodex`가 제거하므로 사용하지 않는다 (`whence -p codex`로 PATH 잔재 확인 — nix profile/store 경로여야 정상).
 

@@ -102,6 +102,8 @@ run_test "wt cleanup removes exact Claude local plugin manifest entries" test_wt
 run_test "wt cleanup stops when plugin manifest cleanup fails" test_wt_cleanup_stops_when_plugin_manifest_cleanup_fails
 run_test "wt plugin manifest missing and invalid inputs are safe" test_wt_plugin_manifest_missing_and_invalid_are_safe
 run_test "codex activation .agents symlink guard static" test_codex_activation_agents_symlink_guard_static
+run_test "codex activation AGENTS keeps real entries" test_codex_activation_agents_keeps_real_entries
+run_test "codex activation AGENTS link contract" test_codex_activation_agents_link_contract
 run_test "codex activation orphan cleanup removes only managed links" test_codex_activation_orphan_cleanup_removes_only_managed_links
 run_test "codex activation projection fails closed without git" test_codex_activation_projection_fails_closed_without_git
 run_test "codex activation projection skips tracked dir and keeps untracked entries" test_codex_activation_projection_tracked_dir_skipped_untracked_entries_kept
@@ -322,6 +324,7 @@ run_test "extract_oos_entries filesystem input" test_extract_oos_entries_filesys
 run_test "extract_oos_entries git show input" test_extract_oos_entries_git_show_input
 run_test "extract_oos_entries empty and absent exit zero" test_extract_oos_entries_empty_and_absent_exit_zero
 run_test "verify-ai-compat Codex artifact contract static" test_verify_ai_compat_codex_artifact_contract_static
+run_test "verify-ai-compat projection obstructions are actionable" test_verify_ai_compat_projection_obstructions_are_actionable
 run_test "verify-ai-compat host-state positive fixture" test_verify_ai_compat_host_state_positive_fixture
 run_test "verify-ai-compat host-state detects non-executable hook" test_verify_ai_compat_host_state_detects_non_executable_hook
 run_test "verify-ai-compat host-state detects bad symlink targets" test_verify_ai_compat_host_state_detects_bad_symlink_targets
