@@ -159,8 +159,8 @@ try {
   await phone.evaluate(()=>{
     const vv=new EventTarget();Object.assign(vv,{width:430,height:715,offsetLeft:0,offsetTop:0});
     Object.defineProperty(window,"visualViewport",{value:vv,configurable:true});
-    // Force a real outer-document pan even when the product locks overflow.
-    // Dispatching viewport events alone cannot catch the reading-position bug.
+    // Chromium keeps fixed panes anchored during document scrolling. Check
+    // this separately from the WKWebView fixed-pane displacement replay below.
     const spacer=document.createElement("div");spacer.style.height="2400px";
     spacer.dataset.nativePanSimulator="true";document.documentElement.append(spacer);
   });
@@ -221,6 +221,109 @@ try {
   assert.ok(Math.abs(reopened.pad.bottom-715)<1,"reopening also ignores the inflated visual viewport");
   reports.push({mobileManagedReading:true,beforeKeyboard,withKeyboard,anchored,collapsedLauncher,reopened});
   await phone.close();
+  // A physical iPhone trace moved BOTH fixed siblings up 277px while their
+  // internal scroll position stayed unchanged. Chromium scrollTo cannot
+  // reproduce that: translate the root only in this replay to impose the
+  // measured displacement. This is not a claim that Anki transforms its root.
+  for (const ratio of [0.2,1/3,0.65]) for (const visibleHeight of [438,300]) {
+    const replay=await browser.newPage({viewport:{width:430,height:715},isMobile:true,hasTouch:true});
+    await replay.setContent('<!doctype html><html class="iphone"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html{height:100%}body{transform:translateZ(0)}'+css+'\n'+fragmentCSS+'</style></head><body class="card">'+question+context+'</body></html>');
+    await replay.evaluate(()=>{
+      const vv=new EventTarget();Object.assign(vv,{width:430,height:715,offsetLeft:0,offsetTop:0});
+      Object.defineProperty(window,'visualViewport',{value:vv,configurable:true});
+      window.scrollTo=()=>{throw new Error('keyboard compensation must not write document scrolling');};
+    });
+    await replay.evaluate(script);
+    await replay.evaluate(ratio=>{
+      if(ratio!==1/3) document.querySelector('[role="separator"]').dispatchEvent(new KeyboardEvent('keydown',{key:ratio===0.2?'Home':'End',bubbles:true}));
+      const marker=document.querySelectorAll('.context-line')[12];document.body.scrollTop=marker.offsetTop-80;
+      document.querySelector('textarea').focus();
+    },ratio);
+    const inspectReplay=()=>replay.evaluate(()=>({
+      marker:document.querySelectorAll('.context-line')[12].getBoundingClientRect().top,
+      scroll:document.body.scrollTop,body:document.body.getBoundingClientRect().toJSON(),
+      pad:document.querySelector('.anki-scratchpad').getBoundingClientRect().toJSON(),
+      geometry:document.documentElement.style.cssText,
+    }));
+    const start=await inspectReplay();
+    const move=async(height,pan,offset)=>replay.evaluate(async({height,pan,offset})=>{
+      visualViewport.height=height;visualViewport.offsetTop=offset;
+      document.documentElement.style.transform=`translateY(${-pan}px)`;
+      visualViewport.dispatchEvent(new Event('resize'));
+      visualViewport.dispatchEvent(new Event('scroll'));dispatchEvent(new Event('scroll'));
+      await new Promise(resolve=>requestAnimationFrame(resolve));
+      await new Promise(resolve=>requestAnimationFrame(resolve));
+    },{height,pan,offset});
+    const steps=[];
+    for(const pan of [0,140,277]) {
+      await move(visibleHeight,pan,pan);
+      const state=await inspectReplay();steps.push(state);
+      assert.ok(Math.abs(state.marker-start.marker)<1,'WK pane displacement keeps the reading marker in place');
+      assert.equal(state.scroll,start.scroll,'keyboard movement cannot rewrite internal reading position');
+      assert.ok(Math.abs(state.pad.bottom-visibleHeight)<1,'pad ends directly above the keyboard');
+      const expected=Math.min(visibleHeight*0.65,Math.max(112,visibleHeight*ratio));
+      assert.ok(Math.abs(state.pad.height-expected)<1,'pan offset cannot inflate the chosen panel height');
+      assert.ok(state.body.height>=visibleHeight*0.35-1,'even maximum pad size leaves question space');
+      assert.ok(Math.abs(state.body.bottom-state.pad.top)<1,'question and pad share exactly one boundary');
+    }
+    const stable=steps.at(-1);
+    for(const staleOffset of [1052,0,355,277]) {
+      await move(visibleHeight,277,staleOffset);
+      assert.deepEqual(await inspectReplay(),stable,'viewport offset alone does not move anchored panes');
+    }
+    // Inspect every scheduled frame of the close animation, not just its end.
+    const transition=await replay.evaluate(async visibleHeight=>{
+      const frames=[];
+      for(let step=1;step<=12;step++) {
+        const progress=step/12,height=visibleHeight+(715-visibleHeight)*progress,pan=277*(1-progress);
+        visualViewport.height=height;visualViewport.offsetTop=pan;
+        document.documentElement.style.transform=`translateY(${-pan}px)`;
+        visualViewport.dispatchEvent(new Event('resize'));
+        visualViewport.dispatchEvent(new Event('scroll'));
+        await new Promise(resolve=>requestAnimationFrame(()=>{
+          const pad=document.querySelector('.anki-scratchpad').getBoundingClientRect();
+          frames.push({height,marker:document.querySelectorAll('.context-line')[12].getBoundingClientRect().top,
+            bodyY:document.body.getBoundingClientRect().top,padBottom:pad.bottom,padHeight:pad.height});
+          resolve();
+        }));
+      }
+      return frames;
+    },visibleHeight);
+    for(const frame of transition) {
+      assert.ok(Math.abs(frame.marker-start.marker)<1,'reading marker stays anchored at intermediate animation frames');
+      assert.ok(Math.abs(frame.padBottom-frame.height)<1,'pad follows the keyboard boundary without a delayed catch-up');
+      assert.ok(frame.padHeight<=frame.height*0.65+1,'no transient full-screen pad during animation');
+    }
+    const closedKeyboard=await inspectReplay();
+    assert.ok(Math.abs(closedKeyboard.marker-start.marker)<1,'closing keyboard removes compensation without moving text');
+    assert.ok(Math.abs(closedKeyboard.pad.bottom-715)<1,'closed keyboard restores full available height');
+    await move(visibleHeight,277,277);
+    await replay.evaluate(()=>{
+      // Keep document scroll transfer separate from the imposed native pan.
+      window.scrollTo=(_x,y)=>Object.defineProperty(window,'scrollY',{value:y,configurable:true});
+      document.querySelector('[data-action="collapse"]').click();
+    });
+    const collapsed=[];
+    for(const pan of [277,1052,355,0]) {
+      await move(visibleHeight,pan,pan);
+      const launcher=await replay.locator('.anki-scratchpad__launch').boundingBox();collapsed.push(launcher);
+      assert.ok(Math.abs(launcher.y+launcher.height-(visibleHeight-12))<1,'collapsed launcher stays above the closing keyboard, including stale document pan');
+    }
+    await replay.evaluate(()=>document.querySelector('.anki-scratchpad__launch').click());
+    const reopened=await inspectReplay();
+    assert.ok(Math.abs(reopened.marker-start.marker)<1,'reopening retains the reading position after compensation is removed');
+    assert.ok(Math.abs(reopened.pad.bottom-visibleHeight)<1,'reopening uses current UI origin, not stale body coordinates');
+    await move(visibleHeight,277,277);
+    const remountedLauncher=await replay.evaluate(card=>{
+      document.querySelector('[data-action="collapse"]').click();
+      document.body.innerHTML='<p>Unmanaged synthetic card</p>';window.AnkiScratchpadV1.mount();
+      document.body.innerHTML=card;window.AnkiScratchpadV1.mount();
+      return document.querySelector('.anki-scratchpad__launch').getBoundingClientRect().toJSON();
+    },question+context);
+    assert.ok(Math.abs(remountedLauncher.bottom-(visibleHeight-12))<1,'a collapsed remount measures residual native pan before any follow-up event');
+    reports.push({mobileFixedPaneReplay:true,ratio,visibleHeight,start,steps,transition,closedKeyboard,collapsed,reopened,remountedLauncher});
+    await replay.close();
+  }
   await writeFile(resolve(output,"measurements.json"),JSON.stringify(reports,null,2)+"\n");
   console.log(`PASS: ${reports.length} geometry cases; screenshots and measurements: ${output}`);
 } finally { await browser.close(); }

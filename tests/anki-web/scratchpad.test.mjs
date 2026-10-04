@@ -4,8 +4,21 @@ import { harness, scratchpadScript } from "./harness.mjs";
 
 const card = (id = "123456789", back = false) =>
   `${back ? '<span hidden data-anki-scratchpad-answer></span>' : ""}<article class="rehab-card" data-anki-scratchpad-card><p class="question">긴 문제</p><span data-anki-cid="${id}"></span></article>${back ? '<hr id="answer"><p>해설</p>' : ""}`;
+function scriptHarness(html, options) {
+  const h=harness(html,options);
+  if(options.mobile) {
+    // jsdom has no layout engine. Model a stationary fixed UI here; native
+    // displacement tests override this, and browser tests verify real boxes.
+    const rect=h.window.HTMLElement.prototype.getBoundingClientRect;
+    h.window.HTMLElement.prototype.getBoundingClientRect=function() {
+      if(this.classList.contains('anki-scratchpad')) return new h.window.DOMRect(0,parseFloat(this.style.top)||0,0,parseFloat(this.style.height)||0);
+      return rect.call(this);
+    };
+  }
+  return h;
+}
 function setup({ mobile = false, qa = true } = {}) {
-  const h = harness(qa ? `<div id="qa">${card()}</div>` : card(), { mobile, preload:false });
+  const h = scriptHarness(qa ? `<div id="qa">${card()}</div>` : card(), { mobile, preload:false });
   h.window.scrollTo = () => {};
   h.window.eval(scratchpadScript);
   const ui = () => h.document.querySelector(".anki-scratchpad");
@@ -368,7 +381,7 @@ test("mobile transfers the reading position only when opening/collapsing, and re
 });
 
 test("mobile keyboard resize preserves reading position and ignores native pan height changes", async () => {
-  const h=harness(card(),{mobile:true,preload:false});
+  const h=scriptHarness(card(),{mobile:true,preload:false});
   try {
     const view=new h.window.EventTarget();
     Object.assign(view,{width:430,height:715,offsetLeft:0,offsetTop:0});
@@ -428,6 +441,64 @@ test("mobile collapsed launcher stays inside the layout viewport when native scr
     h.window.dispatchEvent(new h.window.Event('resize'));
     await new Promise(resolve=>h.window.setTimeout(resolve,25));
     assert.equal(h.ui().style.height,"146px","the keyboard still reduces the available space");
+  } finally {h.close();}
+});
+
+test("mobile corrects measured pane displacement without treating transient viewport offsets as movement", async () => {
+  const h=scriptHarness(card(),{mobile:true,preload:false});
+  try {
+    const view=new h.window.EventTarget();
+    Object.assign(view,{width:430,height:715,offsetLeft:0,offsetTop:0});
+    Object.defineProperty(h.window,"visualViewport",{value:view,configurable:true});
+    const style=h.document.documentElement.style;
+    let nativePan=0;
+    h.document.body.getBoundingClientRect=()=>({top:(parseFloat(style.getPropertyValue('--sp-view-top'))||0)-nativePan});
+    h.window.scrollTo=()=>assert.fail("do not fight native panning by writing scroll position");
+    h.window.eval(scratchpadScript);
+    h.document.body.scrollTop=333;
+    const ui=h.document.querySelector('.anki-scratchpad');
+    ui.getBoundingClientRect=()=>({top:parseFloat(ui.style.top)-nativePan});
+    const tick=async()=>{
+      view.dispatchEvent(new h.window.Event('scroll'));
+      h.window.dispatchEvent(new h.window.Event('scroll'));
+      await new Promise(resolve=>h.window.setTimeout(resolve,25));
+    };
+    view.height=438;view.dispatchEvent(new h.window.Event('resize'));
+    await tick();
+    nativePan=277;view.offsetTop=277;
+    await tick();
+    assert.equal(h.document.body.getBoundingClientRect().top,0,"correct the measured 277px pane displacement");
+    assert.equal(style.getPropertyValue('--sp-view-height'),"438px","pan offset must not inflate available height");
+    assert.equal(parseFloat(ui.style.top)+parseFloat(ui.style.height)-nativePan,438);
+    const geometry=style.cssText;
+    for(const offset of [1052,0,355]) {view.offsetTop=offset;await tick();}
+    assert.equal(style.cssText,geometry,"stale viewport offsets do not move already anchored panes");
+    nativePan=0;view.height=715;view.offsetTop=0;
+    view.dispatchEvent(new h.window.Event('resize'));await tick();
+    assert.equal(style.getPropertyValue('--sp-view-top'),"0px","remove compensation when native pan ends");
+    assert.equal(h.document.body.scrollTop,333,"never rewrite the user's internal reading position");
+  } finally {h.close();}
+});
+
+test("mobile collapsed launcher compensates native keyboard pan without reading the normal body position", async () => {
+  const h=setup({mobile:true,qa:false});
+  try {
+    const ui=h.ui(),launch=ui.querySelector('.anki-scratchpad__launch');
+    const view=new h.window.EventTarget();Object.assign(view,{width:430,height:438,offsetLeft:0,offsetTop:277});
+    Object.defineProperty(h.window,'visualViewport',{value:view,configurable:true});
+    Object.defineProperty(launch,'offsetHeight',{value:44});
+    let pan=277;
+    ui.getBoundingClientRect=()=>({top:parseFloat(ui.style.top)-pan});
+    h.action('collapse');
+    assert.equal(parseFloat(ui.style.top)-pan+44,426,'launcher stays visible while keyboard is closing');
+    h.document.body.getBoundingClientRect=()=>({top:-1052});
+    for(const displacement of [1052,355,0]) {
+      pan=displacement;h.window.dispatchEvent(new h.window.Event('scroll'));
+      await new Promise(resolve=>h.window.setTimeout(resolve,25));
+      assert.equal(parseFloat(ui.style.top)-pan+44,426,'normal document scroll does not contaminate fixed UI origin');
+    }
+    h.open();
+    assert.equal(h.document.documentElement.style.getPropertyValue('--sp-view-top'),'0px','reopen uses the UI origin, not stale body geometry');
   } finally {h.close();}
 });
 
