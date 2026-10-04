@@ -124,9 +124,11 @@ Caddy가 `/api/v1/bookmarks/singlefile`만 `karakeep-singlefile-bridge`로 우�
 
 - 원문 식별자: `url:` 줄이 있는 첫 SingleFile 저장 주석(`Page saved with SingleFile` 블록)의 `url:` 줄, canonical, `og:url`, `twitter:url`. 본문 링크와 문서 중간의 다른 저장 주석은 판정에 쓰지 않는다. 태그 속성은 HTML 문법대로 읽는다(이름 대소문자, `=` 앞뒤 공백, 큰·작은따옴표와 따옴표 없는 값, 순서, 여러 줄, rel 토큰 목록). 따옴표 안의 `>`는 지원하지 않으며, 그 식별자는 판정에서 빠진다(다른 식별자가 큐와 일치하면 그 URL로 연결된다).
 - 태그 문맥: canonical·`og:url`·`twitter:url` 태그는 문서 head에서만 읽는다. 첫 `<body`나 `</head>`에서 멈추고(둘 다 없으면 끝까지), 주석, title(RCDATA)·script·style·noscript·noframes 본문, template 내용(중첩 포함)은 건너뛴다. SingleFile 저장 주석은 따로 읽으므로 영향이 없다.
-- 판정: 식별자와 `normalize_url`(scheme, `#` 뒤, 경로 끝 `/` 차이만 무시. 쿼리는 끝 `/`까지 정확 일치)로 같은 큐 URL이 정확히 하나일 때만 그 URL을 쓴다. 쿼리만 다른 URL은 다른 글로 본다. 식별자 출처 사이에 우선순위는 없다.
+- 판정: 식별자와 `normalize_url`(http/https scheme과 경로 끝 `/` 하나의 차이만 무시. 쿼리와 fragment(`#`부터 끝까지)는 정확 일치)로 같은 큐 URL이 정확히 하나일 때만 그 URL을 쓴다. fragment를 먼저 분리하므로 쿼리나 fragment 끝의 `/`는 지우지 않는다. 쿼리나 fragment가 다른 URL은 다른 글로 본다. 식별자 출처 사이에 우선순위는 없다.
+- fragment 보존: `#/post/1`, `#!/post/1`, `#post-1` 같은 hash 경로와 일반 앵커를 모두 보존한다. 앱 루트 메타데이터는 hash 경로가 있는 큐 URL에 연결하지 않으며, 일반 앵커도 한쪽에 없거나 다르면 보류한다. 같은 앵커가 SingleFile `url:` 등 원문 식별자에 있으면 연결할 수 있다. #1495의 정확 식별·모호하면 보류 계약에 따라 일반 앵커의 자동 연결이 줄어드는 비용을 감수한다 (#1501).
 - 보류: 식별자 없음·일치 없음·후보 여럿이면 업로드·큐 제거·처리 기록 없이 파일과 큐를 그대로 두고, 원인을 담은 "자동 재연결 보류" 알림을 파일당 한 번 보낸다.
 - 판정 실패: 파일 해시 계산, 식별자 추출, 큐 읽기 중 하나가 실패하면 "원인: 판정 실패"로 알린다. 보류 알림 기록은 남기지 않아 회복 뒤의 판정 결과를 다시 알린다. 판정 실패가 계속되면 파일마다 30분(`NOTIFY_DEDUP_WINDOW_SEC`)에 한 번 알리고, 연속 실패 횟수에 넣는다.
+- 업로드 실패 알림: `upload-failed:<normalize_url 결과>` 키로 30분 동안 중복을 억제한다. 쿼리와 fragment가 다르면 별도 키이므로 각각 알리고, 같은 URL의 재시도는 그 시간 창 안에서 다시 알리지 않는다.
 - journal(`journalctl -u karakeep-fallback-sync`) 근거:
   - 성공: `Auto relink succeeded: <큐 URL> <- <파일> (via <출처>)`
   - 첫 보류: `Auto relink held (<판정>)` 줄 아래에 식별자와 후보 URL

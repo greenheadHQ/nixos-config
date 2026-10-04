@@ -115,20 +115,25 @@ gc_state_files() {
   gc_notify_state
 }
 
-# URL 동일성: scheme(http/https), `#` 뒤, 경로 끝 `/` 하나의 차이만 무시한다. 쿼리는 끝 `/`까지
-# 정확히 비교한다. 쿼리 값 끝의 `/`를 지우면 서로 다른 URL이 같아져 다른 북마크를 덮어쓴다 (#1495).
+# URL 동일성: scheme(http/https)과 경로 끝 `/` 하나의 차이만 무시한다. 쿼리와 fragment는 끝까지
+# 정확히 비교한다. fragment는 hash 경로·일반 앵커 모두 식별자로 보존한다 (#1501). 먼저 분리해야
+# fragment 앞의 경로 `/`는 정규화하면서 쿼리나 fragment 끝의 `/`는 보존할 수 있다 (#1495).
 normalize_url() {
   local url="$1"
-  local path query=""
+  local path query="" fragment=""
   url="${url#http://}"
   url="${url#https://}"
-  url="${url%%#*}"
+  path="${url%%#*}"
+  if [ "$path" != "$url" ]; then
+    fragment="${url:${#path}}"
+    url="$path"
+  fi
   path="${url%%\?*}"
   if [ "$path" != "$url" ]; then
     query="${url:${#path}}"
   fi
   path="${path%/}"
-  printf "%s%s" "$path" "$query"
+  printf "%s%s%s" "$path" "$query" "$fragment"
 }
 
 shorten_url() {
