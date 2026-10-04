@@ -28,6 +28,7 @@ _FEATURE_FILES = (
     "sync-addon/code-highlight-renderer.html",
     "sync-addon/code-highlight.css",
     "sync-addon/text-size-controls.html",
+    "sync-addon/scratchpad.html",
     "code-highlighting/dist/manifest.json",
 )
 
@@ -162,6 +163,24 @@ def _check_features(root: Path, definition: dict, asset_name: str) -> None:
             or not (front.index(guarded) + len(guarded) <= front.index(text_size)
                     < front.index(guarded_highlight))):
         _fail("text-size-fragment-mismatch")
+
+    # The side marker precedes FrontSide, so even staged answer rendering cannot
+    # be mistaken for a same-card fresh question (e.g. native review Undo).
+    # Re-run the idempotent scratchpad after each side's existing renderers.
+    scratchpad = _guard(_text(root, "sync-addon/scratchpad.html"), mode, names)
+    for side in (front, back):
+        if (side.count(scratchpad) != 1
+                or "anki-scratchpad-v1" in side.replace(scratchpad, "")
+                or side.index(scratchpad) < side.index(guarded_highlight) + len(guarded_highlight)):
+            _fail("scratchpad-fragment-mismatch")
+    if (front.replace(scratchpad, "").count("data-anki-scratchpad-card") != 1
+            or "data-anki-scratchpad-card" in back.replace(scratchpad, "")):
+        _fail("scratchpad-card-marker-mismatch")
+    answer_marker = '<span hidden data-anki-scratchpad-answer></span>'
+    if ("data-anki-scratchpad-answer" in front.replace(scratchpad, "")
+            or back.replace(scratchpad, "").count("data-anki-scratchpad-answer") != 1
+            or not back.startswith(answer_marker + "\n{{FrontSide}}")):
+        _fail("scratchpad-answer-marker-mismatch")
 
 
 def _assemble(anki_host_path: str | Path) -> tuple[dict, dict[str, bytes]]:

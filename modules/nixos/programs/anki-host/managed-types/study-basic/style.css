@@ -1,8 +1,10 @@
 .card {
+  --anki-card-width: 720px;
+  --anki-card-padding: 24px;
   box-sizing: border-box;
-  max-width: 720px;
+  max-width: var(--anki-card-width);
   margin: 0 auto;
-  padding: 24px;
+  padding: var(--anki-card-padding);
   font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
   font-size: calc(17px * var(--anki-text-scale, 1));
   line-height: 1.55;
