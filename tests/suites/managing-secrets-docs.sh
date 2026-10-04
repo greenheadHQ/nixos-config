@@ -93,10 +93,76 @@ _secrets_docs_known_hosts() {
 }
 
 # 표준입력에서 전체 재암호화(agenix의 -r/--rekey) 명령이 나오는 줄을 낸다. identity 같은 인자가 붙거나
-# 순서가 바뀐 변형(`-- -r -i <키>`, `-- -i <키> -r`)과 목록·문장 안의 inline code도 잡는다.
+# 순서가 바뀐 변형(`-r -i <키>`, `-i <키> -r`), sudo용 절대경로 변수, 기존 nix run 형태와
+# 목록·문장 안의 inline code도 잡는다.
 # tests/suites/add-host.sh도 이 헬퍼로 마법사 출력을 검사한다.
 _secrets_docs_rekey_all_lines() {
-  grep -nE 'agenix --([[:space:]]+[^[:space:]`]+)*[[:space:]]+(-r|--rekey)([[:space:]`]|$)' || true
+  grep -nE '(agenix|"\$agenix_bin")([[:space:]]+--)?([[:space:]]+[^[:space:]`]+)*[[:space:]]+(-r|--rekey)([[:space:]`]|$)' || true
+}
+
+# 문서의 외부 CLI 선택·검증 블록은 마법사의 출력과도 같아야 한다.
+_secrets_docs_external_agenix_setup() {
+  awk '/^if ! agenix_bin=/ { on = 1 } on { print } on && /^fi$/ { exit }' "$1"
+}
+
+# alias·함수(자식 Bash의 builtin/type을 가릴 exported 함수 포함)는 선택에 영향을 주지 않고,
+# lookup의 BASH_ENV도 읽지 않아야 한다. -p는 함수 import를 끄며 권한을 올리지 않는다. suite에서는
+# 합성 실행 파일만 호출한다. agenix가 PATH에 없을 때는 후속 CLI 실행 전에 종료한다.
+_secrets_docs_assert_external_agenix_lookup() {
+  local wf="$1" setup sandbox bin bash_bin env_bin kind rc
+  setup="$(_secrets_docs_external_agenix_setup "$wf")"
+  [[ -n "$setup" ]] || fail "외부 agenix 경로를 선택·검증하는 블록이 없음"
+  assert_contains "$setup" "command env -u BASH_ENV bash --noprofile --norc -p -c 'builtin type -P agenix'"
+  assert_contains "$setup" '[ "${agenix_bin#/}" = "$agenix_bin" ] || [ ! -x "$agenix_bin" ]'
+  assert_contains "$(cat "$wf")" $'nix develop\nif ! agenix_bin='
+  assert_contains "$(cat "$wf")" $'fi\ncd secrets'
+  assert_not_contains "$(cat "$wf")" 'AGENIX_RULES="$PWD/secrets.nix" agenix'
+  assert_not_contains "$(cat "$wf")" 'EDITOR=: agenix'
+  bash_bin="$(builtin type -P bash)"
+  env_bin="$(builtin type -P env)"
+  for kind in alias function builtin type missing; do
+    sandbox="$(new_sandbox)"
+    bin="$sandbox/bin"
+    mkdir -p "$bin"
+    ln -s "$bash_bin" "$bin/bash"
+    ln -s "$env_bin" "$bin/env"
+    printf '%s\n' "$setup" > "$sandbox/setup.sh"
+    cat > "$sandbox/startup.sh" <<'BASH_ENV'
+printf '%s\n' loaded > "$LOOKUP_STARTUP"
+BASH_ENV
+    cat > "$bin/agenix" <<'CLI'
+#!/usr/bin/env bash
+printf '%s\n' "$0" > "$LOOKUP_LOG"
+CLI
+    chmod +x "$bin/agenix"
+    cp "$bin/agenix" "$bin/spoof-agenix"
+    [[ "$kind" != missing ]] || rm "$bin/agenix"
+    cat > "$sandbox/run.sh" <<'RUN'
+set -euo pipefail
+export PATH="$1" LOOKUP_LOG="$2" LOOKUP_STARTUP="$3" LOOKUP_SPOOF="$1/spoof-agenix"
+case "$4" in
+  alias) shopt -s expand_aliases; alias agenix='printf shadow >&2; false' ;;
+  function) agenix() { printf shadow >&2; return 77; } ;;
+  builtin) builtin() { printf '%s\n' "$LOOKUP_SPOOF"; }; export -f builtin ;;
+  type) type() { printf '%s\n' "$LOOKUP_SPOOF"; }; export -f type ;;
+esac
+export BASH_ENV="$5"
+source "$6"
+unset BASH_ENV
+"$agenix_bin"
+RUN
+    rc=0
+    BASH_ENV='' "$bash_bin" --noprofile --norc "$sandbox/run.sh" "$bin" "$sandbox/cli.log" \
+      "$sandbox/startup.log" "$kind" "$sandbox/startup.sh" "$sandbox/setup.sh" \
+      > "$sandbox/stdout" 2> "$sandbox/stderr" || rc=$?
+    [[ ! -e "$sandbox/startup.log" ]] || fail "[$kind] 외부 CLI lookup이 BASH_ENV를 읽음"
+    if [[ "$kind" == missing ]]; then
+      [[ "$rc" -eq 1 && ! -e "$sandbox/cli.log" ]] || fail "CLI 누락 시 후속 실행 전에 종료하지 않음"
+    else
+      [[ "$rc" -eq 0 ]] || fail "[$kind] 외부 CLI lookup 실패: $(cat "$sandbox/stderr")"
+      [[ "$(cat "$sandbox/cli.log")" == "$bin/agenix" ]] || fail "[$kind] alias·함수 대신 선택한 CLI를 실행하지 않음"
+    fi
+  done
 }
 
 # 전체 재암호화 명령은 사용 조건("…때만") 문장 한 곳에만 둘 수 있다. 입력은 표준입력으로 받는다.
@@ -118,9 +184,9 @@ _secrets_docs_assert_rekey_all_conditional() {
 #   - 복호화 확인도 호스트 키 sudo 변형을 함께 낸다. 사용자 키 명령은 권한 상승 없이 둔다.
 _secrets_docs_assert_value_check_steps() {
   local where="$1" text enc_line verify_line bytes_cmd compare_line first between
-  local user_bytes_cmd='nix run github:ryantm/agenix -- -d <name>.age -i <identity> | wc -c'
-  local host_bytes_cmd='sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c'
-  local host_dec_cmd='test -f <name>.age && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key >/dev/null'
+  local user_bytes_cmd='AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -d <name>.age -i <identity> | wc -c'
+  local host_bytes_cmd='sudo AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c'
+  local host_dec_cmd='test -f <name>.age && sudo AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -d <name>.age -i /etc/ssh/ssh_host_ed25519_key >/dev/null'
   text="$(cat)"
   enc_line="$(grep -nF -m1 -- '-e <name>.age -i <identity>' <<< "$text" | cut -d: -f1 || true)"
   [[ -n "$enc_line" ]] || fail "$where: 대상별 재암호화 명령이 없음"
@@ -151,15 +217,20 @@ _secrets_docs_assert_value_check_steps() {
 # 같은 줄에서 `test -f <name>.age && <복호화> >/dev/null && <복호화> | wc -c` 형태여야 하고(두 복호화의
 # identity와 sudo가 같아야 한다), 그런 줄이 하나 이상 있어야 한다.
 _secrets_docs_assert_byte_counts_need_decrypt_success() {
-  local where="$1" line count=0
-  local re='test -f <name>\.age && (sudo )?nix run github:ryantm/agenix -- -d <name>\.age -i ([^ ]+) >/dev/null && (sudo )?nix run github:ryantm/agenix -- -d <name>\.age -i ([^ ]+) \| wc -c'
+  local where="$1" line cmd count=0
+  local re='test -f <name>\.age && (.*) >/dev/null && (.*) \| wc -c'
+  local user_re='^AGENIX_RULES="\$PWD/secrets\.nix" "\$agenix_bin" -d <name>\.age -i [^ ]+$'
+  local host_re='^sudo AGENIX_RULES="\$PWD/secrets\.nix" "\$agenix_bin" -d <name>\.age -i [^ ]+$'
   while IFS= read -r line; do
     [[ "$line" == *'| wc -c'* ]] || continue
     count=$((count + 1))
     [[ "$line" =~ $re ]] \
       || fail "$where: 바이트 수 명령 앞에 test -f와 복호화 성공 확인(>/dev/null &&)이 없음 — 복호화가 실패해도 0이 나온다: $line"
-    [[ "${BASH_REMATCH[1]}" == "${BASH_REMATCH[3]}" && "${BASH_REMATCH[2]}" == "${BASH_REMATCH[4]}" ]] \
-      || fail "$where: 복호화 성공 확인과 바이트 수 명령의 identity나 sudo가 다름: $line"
+    [[ "${BASH_REMATCH[1]}" == "${BASH_REMATCH[2]}" ]] \
+      || fail "$where: 복호화 성공 확인과 바이트 수 명령의 rules·CLI·identity나 sudo가 다름: $line"
+    cmd="${BASH_REMATCH[1]}"
+    [[ "$cmd" =~ $user_re || "$cmd" =~ $host_re ]] \
+      || fail "$where: 바이트 수 명령이 명시적 AGENIX_RULES와 devShell CLI를 쓰지 않음: $line"
   done
   [[ "$count" -gt 0 ]] || fail "$where: 바이트 수(| wc -c) 명령이 없음"
 }
@@ -181,9 +252,9 @@ _secrets_docs_assert_new_host_check_step() {
   step="$(sed -n "$verify_line,\$p" <<< "$text")"
 
   # shellcheck disable=SC2088  # 안내 문구에 그대로 나오는 리터럴 경로다(확장하지 않음).
-  grep -qF -- 'test -f <name>.age && nix run github:ryantm/agenix -- -d <name>.age -i ~/.ssh/id_ed25519 >/dev/null && nix run github:ryantm/agenix -- -d <name>.age -i ~/.ssh/id_ed25519 | wc -c' <<< "$step" \
+  grep -qF -- 'test -f <name>.age && AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -d <name>.age -i ~/.ssh/id_ed25519 >/dev/null && AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -d <name>.age -i ~/.ssh/id_ed25519 | wc -c' <<< "$step" \
     || fail "$where: 새 호스트 확인에 새 호스트 사용자 키(~/.ssh/id_ed25519) 복호화 명령이 없음"
-  grep -qF -- 'test -f <name>.age && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key >/dev/null && sudo nix run github:ryantm/agenix -- -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c' <<< "$step" \
+  grep -qF -- 'test -f <name>.age && sudo AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -d <name>.age -i /etc/ssh/ssh_host_ed25519_key >/dev/null && sudo AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -d <name>.age -i /etc/ssh/ssh_host_ed25519_key | wc -c' <<< "$step" \
     || fail "$where: 새 호스트 확인에 호스트 키(sudo) 복호화 명령이 없음"
   grep -qF '바이트 수가 출력되지 않으면' <<< "$step" \
     || fail "$where: 새 호스트 확인에 '바이트 수가 출력되지 않으면 복호화 실패' 안내가 없음"
@@ -335,19 +406,30 @@ EOF
 }
 
 # ── 호스트 추가 절차: secrets.nix가 쓰는 recipient 그룹마다 표에 복호화 identity와 호스트가 맞게 적혀
-# 있고, 규칙 파일이 있는 secrets/에서 publicKeys 확인 → identity로 복호화 확인(test -f 선행) →
+# 있고, pinned devShell 진입 후 규칙 파일을 명시하는 secrets/에서 publicKeys 확인 →
+# identity로 복호화 확인(test -f 선행) →
 # 대상별 재암호화(root는 sudo 뒤에 EDITOR=:) → 빈 값 확인 순서로 안내해야 한다. 전체 재암호화(-r)는
 # 조건 문장 한 곳에서만 설명하고, 공통 그룹을 모든 항목에 적용하라는 설명은 없어야 한다.
 test_managing_secrets_host_add_workflow_checks_recipients_per_target() {
   local wf="$REPO_ROOT/.claude/skills/managing-secrets/references/workflows.md"
   local rules="$REPO_ROOT/secrets/secrets.nix"
-  local section rows groups group row pub_line dec_line enc_line check_line
+  local section rows groups group row pub_line dec_line enc_line check_line bad out
   section="$(awk '/^## 호스트 추가/ { on = 1; print; next } on && /^## / { exit } on' "$wf")"
   [[ -n "$section" ]] || fail "workflows.md에 '## 호스트 추가' 절이 없음"
 
   _secrets_docs_assert_rekey_all_conditional "workflows.md 호스트 추가 절" <<< "$section"
   grep -F -- '-r`' <<< "$section" | grep -qF '때만' \
     || fail "호스트 추가 절에 전체 재암호화(-r)를 쓸 수 있는 조건이 없음"
+
+  # 직접 CLI의 인자 순서·sudo 절대경로 변수도 조건 없는 전체 rekey로 잡혀야 한다.
+  for bad in 'agenix -r' 'agenix -r -i <identity>' 'agenix -i <identity> -r' \
+    'sudo AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" --rekey -i <identity>' \
+    'nix run github:ryantm/agenix -- -i <identity> -r'; do
+    if out="$( (_secrets_docs_assert_rekey_all_conditional "합성 명령" <<< "$bad") 2>&1)"; then
+      fail "조건 없는 전체 재암호화 변형을 통과시킴: $bad"
+    fi
+    assert_contains "$out" "조건 없이"
+  done
 
   rows="$(_secrets_docs_workflow_group_rows <<< "$section")"
   groups="$(_secrets_docs_declared_groups "$rules" | cut -f2 | LC_ALL=C sort -u)"
@@ -358,7 +440,10 @@ test_managing_secrets_host_add_workflow_checks_recipients_per_target() {
     _secrets_docs_assert_group_row "$rules" "$group" "$row"
   done <<< "$groups"
 
-  assert_contains "$section" "cd secrets"
+  _secrets_docs_assert_external_agenix_lookup "$wf"
+  assert_not_contains "$(cat "$wf")" 'nix run github:ryantm/agenix'
+  assert_contains "$(cat "$REPO_ROOT/.claude/skills/managing-minipc/references/host-prerequisites.md")" 'AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -e <name>.age'
+  assert_contains "$(head -n 8 "$rules")" 'AGENIX_RULES="$PWD/secrets.nix" "$agenix_bin" -e new-secret.age'
   # 줄 번호 조회는 못 찾아도 빈 값으로 두고 아래 단정이 이유를 출력하게 한다(pipefail로 조용히 끝나지 않게).
   pub_line="$(grep -nF -m1 '`publicKeys` 확인' <<< "$section" | cut -d: -f1 || true)"
   dec_line="$(grep -nF -m1 -- '-d <name>.age -i <identity>' <<< "$section" | cut -d: -f1 || true)"
@@ -371,7 +456,7 @@ test_managing_secrets_host_add_workflow_checks_recipients_per_target() {
   sed -n "${dec_line}p" <<< "$section" | grep -qF 'test -f <name>.age &&' \
     || fail "복호화 확인 명령 앞에 test -f <name>.age가 없음 — 파일 없는 항목이 복호화 가능으로 보인다"
 
-  assert_contains "$section" 'sudo EDITOR=: nix run github:ryantm/agenix -- -e <name>.age -i /etc/ssh/ssh_host_ed25519_key'
+  assert_contains "$section" 'sudo AGENIX_RULES="$PWD/secrets.nix" EDITOR=: "$agenix_bin" -e <name>.age -i /etc/ssh/ssh_host_ed25519_key'
   assert_not_contains "$section" 'EDITOR=: sudo'
   grep -F 'EDITOR=:' <<< "$section" | grep -qF '비워진다' \
     || fail "EDITOR=:가 전달되지 않으면 시크릿이 비워진다는 경고가 없음"
