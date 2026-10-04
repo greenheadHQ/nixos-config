@@ -1073,7 +1073,9 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import subprocess
 import sys
 from unittest.mock import patch
 
@@ -1131,11 +1133,85 @@ for literal_target in (target, alias / ".claude/worktrees/feat/target"):
     assert "cannot check worktree path" in output.getvalue(), output.getvalue()
     assert json.loads(manifest.read_text())["plugins"]["example@demo"] == expected
 
-# base가 중첩된 경우 가까운 저장소의 base만 GC 범위로 삼는다.
+# 이름 안의 base 문자열과 실제 중첩 저장소는 명시한 base로 구분한다.
 inner_base = base / "live/.claude/worktrees"
-assert module.orphan_gc_base(str(inner_base / "feat/target")) == str(inner_base)
+inner_target = inner_base / "feat/target"
+assert module.orphan_gc_base(str(inner_target)) is None
+assert module.orphan_gc_base(str(inner_target), str(inner_base)) == str(inner_base)
+assert module.orphan_gc_base(str(inner_target), str(base)) == str(base)
 assert module.orphan_gc_base(str(base)) is None
 assert module.orphan_gc_base(str(sandbox / "outside/target")) is None
+
+target = base / "archive/.claude/worktrees/topic"
+inner_orphan = target.parent / "gone-inner"
+outer_orphan = base / "gone-outer"
+entries = [
+    local(target, "/tmp/target-managed", managed=True),
+    local(target, "/tmp/target-manual"),
+    local(outer_orphan, "/tmp/outer"),
+    local(inner_orphan, "/tmp/inner"),
+    local(base / "live", "/tmp/live"),
+    local(sandbox / "outside", "/tmp/outside"),
+]
+for explicit_base, removed, warning in (
+    (str(base), {"/tmp/target-managed", "/tmp/outer", "/tmp/inner"}, ""),
+    (str(target.parent), {"/tmp/target-managed", "/tmp/inner"}, ""),
+    (None, {"/tmp/target-managed"}, "ambiguous worktree base"),
+    (str(sandbox / "other/.claude/worktrees"), {"/tmp/target-managed"}, "outside worktree base"),
+    (str(sandbox), {"/tmp/target-managed"}, "invalid worktree base"),
+):
+    manifest.write_text(json.dumps({"plugins": {"example@demo": entries}}) + "\n")
+    argv = ["remove-local", "--manifest", str(manifest), "--target-root", str(target),
+            "--target-root-before-removal", str(target)]
+    if explicit_base is not None:
+        argv.extend(["--worktree-base", explicit_base])
+    output = io.StringIO()
+    with contextlib.redirect_stderr(output):
+        assert module.main(argv) == 0
+    assert json.loads(manifest.read_text())["plugins"]["example@demo"] == [
+        entry for entry in entries if entry["installPath"] not in removed
+    ]
+    if warning:
+        assert warning in output.getvalue(), output.getvalue()
+
+# 삭제 뒤 같은 위치가 다른 프로젝트의 symlink가 되어도 기록한 target를 다시 resolve하지 않는다.
+target.parent.mkdir(parents=True)
+outside_live = sandbox / "outside-live"
+outside_live.mkdir()
+target.symlink_to(outside_live, target_is_directory=True)
+manifest.write_text(json.dumps({"plugins": {"example@demo": entries}}) + "\n")
+assert module.main([
+    "remove-local", "--manifest", str(manifest), "--target-root", str(target),
+    "--target-root-before-removal", str(target), "--worktree-base", str(base),
+]) == 0
+assert json.loads(manifest.read_text())["plugins"]["example@demo"] == [
+    entry for entry in entries if entry["installPath"] not in {
+        "/tmp/target-managed", "/tmp/outer", "/tmp/inner"
+    }
+]
+target.unlink()
+
+# 실제 shell 어댑터가 별칭 repo의 base를 명시하며 canonical target는 그대로 넘긴다.
+fixture_home = sandbox / "home"
+adapter_manifest = fixture_home / ".claude/plugins/installed_plugins.json"
+adapter_manifest.parent.mkdir(parents=True)
+adapter_manifest.write_text(json.dumps({"plugins": {"example@demo": entries}}) + "\n")
+helper = Path(sys.argv[1]).resolve()
+env = dict(os.environ, HOME=str(fixture_home), WT_LIB_DIR=str(helper.parent), WT_PYTHON=sys.executable)
+env.pop("BASH_ENV", None)
+env.pop("ENV", None)
+result = subprocess.run([
+    "bash", "--noprofile", "--norc", "-c",
+    'set -euo pipefail; source "$1"; _wt_remove_claude_local_plugins_for_worktree "$2" "$3" "$4"',
+    "fixture", str(helper.with_name("bootstrap.sh")),
+    str(alias / ".claude/worktrees/archive/.claude/worktrees/topic"), str(target), str(alias),
+], env=env, capture_output=True, text=True)
+assert result.returncode == 0, result.stderr
+assert json.loads(adapter_manifest.read_text())["plugins"]["example@demo"] == [
+    entry for entry in entries if entry["installPath"] not in {
+        "/tmp/target-managed", "/tmp/outer", "/tmp/inner"
+    }
+]
 PY
 }
 
