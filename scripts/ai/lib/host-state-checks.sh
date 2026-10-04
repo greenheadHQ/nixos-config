@@ -207,8 +207,9 @@ verify_used_by_oracle() {
 
     # 단일 매칭 규칙: expected_var (use-site source local 변수) 의 할당 RHS 가 lib_basename 포함
     # + 동일 var 의 source 호출. hook_load_lib helper 호출은 변수 할당 RHS 의 일부이므로 같은 매칭 적용.
-    if printf '%s\n' "$_non_comment" | grep -qE "^[[:space:]]*${_expected_var}=.*${_lib_basename_re}" \
-      && printf '%s\n' "$_non_comment" | grep -qE "(\.[[:space:]]+|source[[:space:]]+)\"\\\$${_expected_var}\""; then
+    # here-string으로 별도 writer를 없애 grep -q 조기 종료 + pipefail의 SIGPIPE 거짓 실패를 막는다.
+    if grep -qE "^[[:space:]]*${_expected_var}=.*${_lib_basename_re}" <<< "$_non_comment" \
+      && grep -qE "(\.[[:space:]]+|source[[:space:]]+)\"\\\$${_expected_var}\"" <<< "$_non_comment"; then
       continue
     fi
     fail "USED-BY oracle: $_lib_label → $_use_site 에서 실제 source 패턴 미발견 (\$${_expected_var} 변수 할당 RHS 에 ${_lib_basename} 포함 + 동일 var source 필요)"
@@ -234,8 +235,8 @@ verify_used_by_oracle() {
       && grep -qE "(\.[[:space:]]+|source[[:space:]]+)\"\\\$[A-Z_]+_LIB\"" "$_candidate"; then
       _candidate_abs_rel="${_candidate#"$REPO_ROOT"/}"
       _candidate_rel="${_candidate_abs_rel#modules/shared/programs/}"
-      if ! printf '%s' "$_declared_list" | grep -Fxq "$_candidate_rel" \
-        && ! printf '%s' "$_declared_list" | grep -Fxq "$_candidate_abs_rel"; then
+      if ! grep -Fxq "$_candidate_rel" <<< "$_declared_list" \
+        && ! grep -Fxq "$_candidate_abs_rel" <<< "$_declared_list"; then
         fail "USED-BY oracle: $_lib_label backward check 실패 — $_candidate_rel 가 lib 을 source 하지만 USED-BY 헤더에 미선언"
         _ok=0
       fi
