@@ -187,6 +187,37 @@ let
   caddyVhosts = nixosCfg.services.caddy.virtualHosts;
   vhostNames = builtins.attrNames caddyVhosts;
 
+  # #1284: 기본값은 constants와 같아서 배선 결함을 드러내지 못한다.
+  # 네 공개 포트를 한 번에 바꿔 proxy와 backend가 같은 옵션을 소비하는지 확인한다.
+  caddyPortOverrideCfg =
+    (nixosBase.extendModules {
+      modules = [
+        {
+          homeserver = {
+            immich.port = 9999;
+            uptimeKuma.port = 9998;
+            copyparty.port = 9997;
+            karakeep.port = 9996;
+          };
+        }
+      ];
+    }).config;
+  caddyPortOverrideContainers = caddyPortOverrideCfg.virtualisation.oci-containers.containers;
+
+  # 줄 전체를 매칭해 포트 접두사 일치나 주석으로 통과하는 것을 막는다.
+  caddyProxyPorts =
+    cfg: service:
+    let
+      extraConfig =
+        cfg.services.caddy.virtualHosts."${
+          constants.domain.subdomains.${service}
+        }.${constants.domain.base}".extraConfig;
+      matches = map (builtins.match "[ \t]*reverse_proxy localhost:([0-9]+)[ \t]*") (
+        nixpkgsLib.splitString "\n" extraConfig
+      );
+    in
+    map (match: builtins.head match) (builtins.filter (match: match != null) matches);
+
   # Codex 피드백: builtins.all on empty list = true (vacuous truth)
   # Caddy가 활성화되어 있으면 vhosts가 비어있으면 안 됨
   hasVhosts = vhostNames != [ ];
@@ -1405,6 +1436,35 @@ let
     {
       name = "Test 3e: 모든 subdomain에 대응하는 Caddy virtualHost가 존재해야 함";
       cond = allSubdomainsHaveVhosts;
+    }
+    {
+      name = "Test 3f: homeserver 포트 override 시 Immich·Uptime Kuma·Copyparty의 Caddy 대상이 각각 새 포트를 따라야 함";
+      cond =
+        caddyProxyPorts caddyPortOverrideCfg "immich" == [ "9999" ]
+        && caddyProxyPorts caddyPortOverrideCfg "uptimeKuma" == [ "9998" ]
+        && caddyProxyPorts caddyPortOverrideCfg "copyparty" == [ "9997" ];
+    }
+    {
+      name = "Test 3g: Karakeep 포트 override 시 archive-assets·default handle은 새 포트를, SingleFile handle은 기존 별도 브리지 포트를 따라야 함";
+      cond =
+        caddyProxyPorts caddyPortOverrideCfg "karakeep" == [
+          "9996"
+          (toString nixosCfg.homeserver.karakeepSinglefileBridge.port)
+          "9996"
+        ]
+        &&
+          caddyPortOverrideCfg.homeserver.karakeepSinglefileBridge.port
+          == nixosCfg.homeserver.karakeepSinglefileBridge.port;
+    }
+    {
+      name = "Test 3h: Caddy 포트 override와 함께 네 backend의 loopback binding·UPTIME_KUMA_PORT도 같은 포트로 바뀌어야 함";
+      cond =
+        caddyPortOverrideContainers.immich-server.ports == [ "127.0.0.1:9999:2283" ]
+        && caddyPortOverrideContainers.uptime-kuma.ports == [ ]
+        && caddyPortOverrideContainers.uptime-kuma.environment.UPTIME_KUMA_HOST == "127.0.0.1"
+        && caddyPortOverrideContainers.uptime-kuma.environment.UPTIME_KUMA_PORT == "9998"
+        && caddyPortOverrideContainers.copyparty.ports == [ "127.0.0.1:9997:3923" ]
+        && caddyPortOverrideContainers.karakeep.ports == [ "127.0.0.1:9996:3000" ];
     }
     {
       name = "Test 4a: Caddy globalConfig에 default_bind ${minipcTailscaleIP}가 포함되어야 함 (줄 끝까지 정확 매칭, 다중 주소 방지)";
