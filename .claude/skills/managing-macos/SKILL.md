@@ -128,6 +128,12 @@ nrs
 
 로그: `~/Library/Logs/folder-actions/`
 
+`upload-immich`는 Nix가 선언한 bun·mise 실행 도구를 사용하고 Node는 기존 mise 설정으로
+선택한다. 새 personal Mac에서는 설정을 확인한 뒤 `mise install`로 Node를 먼저 설치한다.
+launchd와 스크립트는 `MISE_EXEC_AUTO_INSTALL=false`로 자동 설치를 끄며, Node가 없거나
+실행되지 않으면 환경 오류를 기록하고 원본·사이드카를 보존한다. activation에서 mise 설치를
+실행하지 않는다.
+
 ## 자주 발생하는 문제
 
 1. sudo 권한 필요: darwin-rebuild는 시스템 파일 수정에 sudo 필요

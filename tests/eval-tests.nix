@@ -1052,6 +1052,30 @@ let
               && wiredTo "folder-action-convert-video-to-gif" "ffmpeg"
             );
         }
+        {
+          name = "Test D38 ${hostName}: personal Immich upload 작업은 Nix bun·mise만 PATH에 선언하고 background 자동 설치를 꺼야 함 (work 호스트는 작업 없음)";
+          cond =
+            hasHost
+            && (
+              let
+                agent = hm.launchd.agents.folder-action-upload-immich or null;
+                hostPkgs = darwinCfgs.${hostName}.pkgs;
+              in
+              if isPersonalHost then
+                agent != null
+                && agent.enable
+                &&
+                  agent.config.EnvironmentVariables.PATH == "${
+                    nixpkgsLib.makeBinPath [
+                      hostPkgs.bun
+                      hostPkgs.mise
+                    ]
+                  }:/usr/bin:/bin"
+                && agent.config.EnvironmentVariables.MISE_EXEC_AUTO_INSTALL == "false"
+              else
+                agent == null && !(hm.home.file ? ".local/bin/upload-immich.sh")
+            );
+        }
       ]
       ++ tmuxVanillaTests hostName hasHost hm
     ) expectedDarwinHosts

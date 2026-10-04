@@ -253,19 +253,14 @@ test_upload_immich_missing_credential_branch_is_quiet_or_skipped() (
     fi
   done
 
-  if [ -e /tmp/upload-immich.lock.d ] || [ -e /tmp/upload-immich.lock ]; then
-    echo "SKIP: upload-immich missing credentials cannot run while the real lock path exists" >&2
-    return 0
-  fi
-
   sandbox=$(new_sandbox)
   home="$sandbox/home"
   watch="$home/FolderActions/upload-immich"
-  mkdir -p "$watch"
+  _folder_actions_install_tool_script "$sandbox" upload-immich
   printf '%s\n' "image" > "$watch/photo.jpg"
 
   set +e
-  out=$(HOME="$home" WATCH_DIR="$watch" bash "$(_upload_immich_script_path)" 2>&1)
+  out=$(HOME="$home" WATCH_DIR="$watch" bash "$home/.local/bin/upload-immich.sh" 2>&1)
   rc=$?
   set -e
 
@@ -1024,7 +1019,8 @@ EOF_RAR
 )
 
 # ── upload-immich 결과 처리 fixture (#1401) ───────────────────────────────────
-# Immich CLI와 서버는 대역이다.
+# mise·Node·Immich CLI와 서버는 대역이다.
+# - mise 대역: Node resolve/사전 검사와 CLI 실행 인자 및 자동 설치 설정을 기록한다.
 # - bun 대역: `bun x @immich/cli@3 upload ... -- <파일...>` 호출 인자를 기록하고, 넘겨받은 파일 중
 #   사례가 업로드 성공으로 지정한 것만 짝 .xmp와 함께 지운다(CLI --delete가 이번 실행에 업로드한
 #   파일과 그 사이드카만 지우는 동작). 끝나기 직전 감시 폴더 목록을 남겨 CLI 처리 직후와 스크립트
@@ -1093,6 +1089,24 @@ exit "$cli_rc"
 EOF_BUN
   } > "$sandbox/tools/bun"
 
+  cat > "$sandbox/tools/node" <<EOF_NODE
+#!/bin/sh
+printf 'AUTO_INSTALL=%s\n' "\${MISE_EXEC_AUTO_INSTALL:-unset}" >> '$sandbox/node.log'
+[ "\$*" = '--version' ] || exit 1
+echo v24.16.0
+EOF_NODE
+  {
+    printf '#!/bin/sh\nsandbox=%s\n' "'$sandbox'"
+    cat <<'EOF_MISE'
+{ printf 'AUTO_INSTALL=%s\n' "${MISE_EXEC_AUTO_INSTALL:-unset}"; for arg in "$@"; do printf 'ARG=%s\n' "$arg"; done; } >> "$sandbox/mise.log"
+case "$*" in
+  'which node') printf '%s\n' "$sandbox/tools/node" ;;
+  'exec -- '*) shift 2; exec "$@" ;;
+  *) exit 1 ;;
+esac
+EOF_MISE
+  } > "$sandbox/tools/mise"
+
   # check-fail이 있으면 HTTP 오류(curl -f의 22), check-response가 있으면 그 본문을 준다.
   # check-mutate에 적힌 파일은 응답 직전에 내용을 바꾼다(확인과 삭제 사이의 변경).
   {
@@ -1125,7 +1139,7 @@ if [ -e "$sandbox/check-response" ]; then /bin/cat "$sandbox/check-response"; ex
       END { printf "{\"results\":[%s]}", out }'
 EOF_CURL
   } > "$sandbox/tools/curl"
-  chmod 755 "$sandbox/tools/curl" "$sandbox/tools/bun"
+  chmod 755 "$sandbox/tools/curl" "$sandbox/tools/bun" "$sandbox/tools/mise" "$sandbox/tools/node"
 }
 
 # <sandbox> <파일>: 스크립트 사본의 /bin/rm 대역이 이 파일에서만 실패하게 한다.
@@ -1148,14 +1162,108 @@ _upload_immich_server_has() {
   printf '%s\n' "$verdict" > "$sandbox/verdicts/${sum%% *}"
 }
 
-# launchd PATH의 ~/.bun/bin 자리에 대역 디렉터리를 둔다.
+# launchd PATH의 Nix bun·mise bin 자리에 대역 디렉터리를 둔다. 외부에서 true를 줘도
+# 스크립트가 자동 설치를 꺼야 한다.
 _upload_immich_run_script() {
   local sandbox="$1"
-  env -i HOME="$sandbox/home" PATH="$sandbox/tools:/usr/bin:/bin" \
+  shift
+  (cd "$sandbox/home" && env -i HOME="$sandbox/home" PATH="$sandbox/tools:/usr/bin:/bin" \
     WATCH_DIR="$sandbox/home/FolderActions/upload-immich" \
     IMMICH_INSTANCE_URL="http://127.0.0.1:9" \
-    "$sandbox/home/.local/bin/upload-immich.sh"
+    MISE_EXEC_AUTO_INSTALL=true \
+    "$@" \
+    "$sandbox/home/.local/bin/upload-immich.sh")
 }
+
+test_upload_immich_preserves_inputs_when_runtime_is_missing() (
+  local sandbox watch runtime path out rc before
+  _upload_immich_fixture_runnable || return 0
+  for runtime in mise bun node node-unusable; do
+    for path in "/usr/bin/$runtime" "/bin/$runtime"; do
+      [[ ! -e "$path" ]] || fail "system $path makes the missing-runtime fixture unreachable"
+    done
+    sandbox=$(new_sandbox)
+    watch="$sandbox/home/FolderActions/upload-immich"
+    _upload_immich_prepare "$sandbox" 0 photo.jpg
+    printf '%s\n' "synthetic original" > "$watch/photo.jpg"
+    printf '%s\n' "synthetic sidecar" > "$watch/photo.xmp"
+    before=$(_folder_actions_tree_digest "$watch")
+    if [ "$runtime" = node-unusable ]; then
+      printf '#!/bin/sh\nexit 1\n' > "$sandbox/tools/node"
+    else
+      rm "$sandbox/tools/$runtime"
+    fi
+    rc=0
+    out=$(_upload_immich_run_script "$sandbox" 2>&1) || rc=$?
+    [[ "$rc" -eq 1 ]] || fail "$runtime: environment failure must exit 1 (got $rc): $out"
+    assert_contains "$out" "환경 오류"
+    [[ "$(_folder_actions_tree_digest "$watch")" == "$before" ]] \
+      || fail "$runtime: original and sidecar must remain unchanged: $out"
+    [[ ! -e "$sandbox/bun.log" && ! -e "$sandbox/curl.log" && ! -e "$sandbox/pushover.log" ]] \
+      || fail "$runtime: no CLI, server or notification call is allowed before runtime readiness"
+    [[ "$(_folder_actions_count_calls_on "$sandbox" rm "$watch/photo.jpg")" == 0 \
+      && "$(_folder_actions_count_calls_on "$sandbox" mv "$watch/photo.jpg")" == 0 ]] \
+      || fail "$runtime: original must not be deleted or quarantined"
+    [[ ! -e "$sandbox/lock/upload-immich.lock.d" ]] || fail "$runtime: fixture lock must be released"
+  done
+)
+
+test_upload_immich_runs_cli_through_mise_without_auto_install() (
+  local sandbox watch out expected actual
+  _upload_immich_fixture_runnable || return 0
+  sandbox=$(new_sandbox)
+  watch="$sandbox/home/FolderActions/upload-immich"
+  _upload_immich_prepare "$sandbox" 0 'photo with spaces.jpg'
+  printf '%s\n' "synthetic original" > "$watch/photo with spaces.jpg"
+  out=$(_upload_immich_run_script "$sandbox" 2>&1) || fail "minimal launchd PATH upload failed: $out"
+  expected=$(printf 'AUTO_INSTALL=false\nARG=%s\nARG=%s\n' which node
+    printf 'AUTO_INSTALL=false\nARG=%s\n' exec
+    printf 'ARG=%s\n' -- node --version
+    printf 'AUTO_INSTALL=false\nARG=%s\n' exec
+    printf 'ARG=%s\n' -- bun x @immich/cli@3 upload --album-name 'Desktop Upload' \
+      --delete --concurrency 2 -- "$watch/photo with spaces.jpg")
+  actual=$(cat "$sandbox/mise.log")
+  [[ "$actual" == "$expected" ]] || fail "mise runtime/CLI invocation changed: $actual"
+  assert_file_contains "$sandbox/node.log" 'AUTO_INSTALL=false'
+  [[ ! -e "$watch/photo with spaces.jpg" ]] || fail "the fixture CLI upload must still remove its uploaded file"
+)
+
+test_upload_immich_real_mise_preserves_uninstalled_node_without_installing() (
+  local sandbox watch mise_bin before out rc installed
+  _upload_immich_fixture_runnable || return 0
+  mise_bin=$(command -v mise) || {
+    echo 'SKIP: real mise missing; runtime doubles remain covered' >&2
+    return 0
+  }
+  sandbox=$(new_sandbox)
+  watch="$sandbox/home/FolderActions/upload-immich"
+  _upload_immich_prepare "$sandbox" 0 photo.jpg
+  printf '%s\n' 'synthetic original' > "$watch/photo.jpg"
+  printf '%s\n' 'synthetic sidecar' > "$watch/photo.xmp"
+  before=$(_folder_actions_tree_digest "$watch")
+  rm "$sandbox/tools/mise"
+  ln -s "$mise_bin" "$sandbox/tools/mise"
+  mkdir -p "$sandbox/mise-config" "$sandbox/mise-data/installs" "$sandbox/mise-cache" "$sandbox/mise-state"
+  # A fixed synthetic version avoids resolving lts/latest over the network. No trust/install is run.
+  printf '[tools]\nnode = "24.16.0"\n' > "$sandbox/mise-config/config.toml"
+  rc=0
+  out=$(_upload_immich_run_script "$sandbox" MISE_CONFIG_DIR="$sandbox/mise-config" \
+    MISE_GLOBAL_CONFIG_FILE="$sandbox/mise-config/config.toml" \
+    MISE_GLOBAL_CONFIG_ROOT="$sandbox" \
+    MISE_DATA_DIR="$sandbox/mise-data" MISE_CACHE_DIR="$sandbox/mise-cache" \
+    MISE_STATE_DIR="$sandbox/mise-state" MISE_SYSTEM_CONFIG_DIR="$sandbox/mise-system-config" \
+    MISE_SYSTEM_DATA_DIR="$sandbox/mise-system-data" MISE_TMP_DIR="$sandbox/mise-tmp" \
+    MISE_OFFLINE=true 2>&1) || rc=$?
+  [[ "$rc" -eq 1 ]] || fail "real mise with no installed Node must exit 1 (got $rc): $out"
+  assert_contains "$out" '환경 오류: mise Node 런타임 없음'
+  [[ "$(_folder_actions_tree_digest "$watch")" == "$before" ]] || fail 'uninstalled Node must preserve inputs'
+  # The external node double stays on PATH: which must reject it before exec could fall back to it.
+  [[ ! -e "$sandbox/node.log" && ! -e "$sandbox/bun.log" && ! -e "$sandbox/curl.log" ]] \
+    || fail 'uninstalled mise Node must not fall back to external Node or call CLI/server'
+  installed=$(find "$sandbox/mise-data/installs" -mindepth 1 -print | wc -l | tr -d ' ')
+  [[ "$installed" == 0 ]] || fail "background automatic installation created files: $installed"
+  [[ ! -e "$sandbox/lock/upload-immich.lock.d" ]] || fail 'fixture lock must be released'
+)
 
 test_upload_immich_keeps_originals_the_cli_did_not_upload() (
   local sandbox watch out expected actual

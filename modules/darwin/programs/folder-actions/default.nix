@@ -133,7 +133,12 @@ in
         # 업로드 실행 시간 제한은 없다. launchd는 TimeOut 키를 구현하지 않는다 (launchd.plist(5)).
         # 멈춘 실행도 저장이 확인되지 않은 원본은 지우지 않으며, 끝내면 다음 실행이 잠금을 회수한다.
         EnvironmentVariables = {
-          PATH = "${homeDir}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin";
+          # CLI 실행기는 Nix, Node 버전 선택은 기존 mise 설정이 관리한다 (#1485).
+          PATH = toolJobPath [
+            pkgs.bun
+            pkgs.mise
+          ];
+          MISE_EXEC_AUTO_INSTALL = "false";
           HOME = homeDir;
           IMMICH_INSTANCE_URL = "https://${constants.domain.subdomains.immich}.${constants.domain.base}";
           WATCH_DIR = shottrDefaultDir;
