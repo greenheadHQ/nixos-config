@@ -18,6 +18,66 @@ def credentials(tmp_path):
     return tmp_path
 
 
+@pytest.fixture
+def connect_access(monkeypatch, credentials):
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(credentials))
+    path = Path(__file__).resolve().parents[2] / "modules/nixos/programs/anki-host/anki-connect-access.py"
+    spec = importlib.util.spec_from_file_location("anki_connect_access_fixture", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def stats_request(decks):
+    return {"action": "getDeckStats", "version": 6, "key": "1" * 64, "params": {"decks": decks}}
+
+
+@pytest.mark.parametrize("count", [0, 1, 10, 50])
+def test_deck_stats_reads_names_once_per_nonempty_request(connect_access, count):
+    calls = []
+    ac = types.SimpleNamespace(deckNames=lambda: calls.append(True) or ["Known", "한글"])
+    names = ["Known" if i % 2 == 0 else "한글" for i in range(count)]
+    before = names.copy()
+    connect_access.check_request(stats_request(names), ac)
+    assert len(calls) == bool(count)
+    assert names == before
+
+
+@pytest.mark.parametrize("names", [None, "Known", {}, ("Known",), [None], [1], [[]], [{}], ["known"], [" Known"], ["Missing"], ["Known", None]])
+def test_deck_stats_rejects_invalid_or_inexact_names(connect_access, names):
+    calls = []
+    ac = types.SimpleNamespace(deckNames=lambda: calls.append(True) or ["Known"])
+    with pytest.raises(Exception, match="^deck not found$"):
+        connect_access.check_request(stats_request(names), ac)
+    assert len(calls) == int(isinstance(names, list) and isinstance(names[0], str))
+
+
+@pytest.mark.parametrize("override", [{"version": 5}, {"key": "f" * 64}, {"action": "createDeck"}, {"params": []}])
+def test_deck_stats_rejects_request_before_reading_decks(connect_access, override):
+    ac = types.SimpleNamespace(deckNames=lambda: pytest.fail("invalid request read decks"))
+    with pytest.raises(Exception):
+        connect_access.check_request({**stats_request(["Known"]), **override}, ac)
+
+
+def test_deck_stats_lookup_is_lazy_and_never_survives_request(connect_access):
+    calls, current = [], ["Known"]
+    def names():
+        calls.append(True)
+        if len(calls) == 1:
+            raise RuntimeError("lookup failed")
+        return current
+    ac = types.SimpleNamespace(deckNames=names)
+    # A later invalid element must not hide the first lookup's failure.
+    with pytest.raises(RuntimeError, match="lookup failed"):
+        connect_access.check_request(stats_request(["Known", None]), ac)
+    connect_access.check_request(stats_request(["Known"]), ac)
+    current[:] = ["New"]
+    with pytest.raises(Exception, match="^deck not found$"):
+        connect_access.check_request(stats_request(["Known"]), ac)
+    connect_access.check_request(stats_request(["New"]), ac)
+    assert len(calls) == 4
+
+
 def test_roles_and_malformed_credentials(credentials):
     access = Access(str(credentials))
     for header in (None, "", "Bearer wrong", "Bearer " + "한" * 64, "Bearer " + "f" * 64):
