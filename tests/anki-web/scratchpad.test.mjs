@@ -44,6 +44,49 @@ function setup({ mobile = false, qa = true, platform = "" } = {}) {
     isOpen:() => h.document.documentElement.classList.contains("anki-scratchpad-open") };
 }
 
+test("desktop hints describe the active platform chords and survive card remounts", async () => {
+  for (const [platform, expected] of [["MacIntel", ["⌥⇧J 입력", "⌥⇧↑/↓ 높이", "Esc 입력 종료"]],
+    ["Win32", ["Alt+Shift+J 입력", "Alt+Shift+↑/↓ 높이", "Esc 입력 종료"]]]) {
+    const h = setup({ platform });
+    try {
+      const hints = () => h.ui().querySelector(".anki-scratchpad__shortcuts");
+      assert.equal(hints().hidden, false);
+      assert.deepEqual([...hints().children].map(element => element.textContent), expected);
+      assert.ok(hints().nextElementSibling.classList.contains("anki-scratchpad__tools"));
+      h.action("collapse");
+      assert.ok(h.ui().querySelector("button").title.includes(expected[0].split(" ")[0]));
+      h.key("∆", { code:"KeyJ", altKey:true, shiftKey:true });
+      assert.equal(h.document.activeElement, h.input(), "the displayed physical chord opens input");
+      h.resize("ArrowUp");
+      assert.equal(h.ui().querySelector('[role="separator"]').getAttribute("aria-valuenow"), "38");
+      h.key("Escape");
+      assert.notEqual(h.document.activeElement, h.input(), "the displayed Escape chord leaves input");
+      await h.render("123456789", true);
+      h.document.getElementById("qa").innerHTML = "<p>Unmanaged card</p>";
+      await h.flush();
+      await h.render("123456790");
+      assert.equal(h.ui().querySelectorAll(".anki-scratchpad__shortcuts").length, 1);
+      assert.deepEqual([...hints().children].map(element => element.textContent), expected);
+    } finally { h.close(); }
+  }
+});
+
+test("AnkiMobile hides shortcut hints, tooltips and shortcut accessibility attributes", () => {
+  for (const device of ["iphone", "ipad"]) {
+    const h = setup({ mobile:true, platform:"MacIntel" });
+    try {
+      h.document.documentElement.classList.remove("iphone");
+      h.document.documentElement.classList.add(device);
+      h.open();
+      assert.equal(h.ui().querySelector(".anki-scratchpad__shortcuts").hidden, true);
+      assert.equal(h.ui().querySelector("[aria-keyshortcuts]"), null);
+      assert.equal(h.ui().querySelector("button").title, "연습장 펼치기");
+      assert.equal(h.ui().querySelector('[role="separator"]').title, "연습장 높이 조절");
+      assert.equal(h.ui().querySelector('[data-action="blur"]').hidden, false);
+    } finally { h.close(); }
+  }
+});
+
 test("collapse/reopen retains multiline literal text and focuses synchronously", () => {
   const h = setup();
   try {

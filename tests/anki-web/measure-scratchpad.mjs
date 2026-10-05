@@ -22,7 +22,8 @@ const browser = await chromium.launch({ executablePath:process.env.CHROMIUM_PATH
 const reports = [];
 try {
   const screens=[[320,568,true],[375,667,true],[390,844,true],[430,932,true],
-    [844,390,true],[860,650,false],[1440,900,false]];
+    [844,390,true],[1024,768,true],[320,568,false],[600,650,false],[601,650,false],
+    [860,650,false],[1440,900,false],[2560,1080,false]];
   const cases=screens.flatMap(screen=>screen[2]
     ? [[...screen,false],[...screen,true]] : [[...screen,true]]);
   cases.push([860,650,false,true,true]);
@@ -51,10 +52,16 @@ try {
         const qa = document.querySelector("#qa") || document.body;
         const input = ui.querySelector("textarea");
         const panel = ui.querySelector(".anki-scratchpad__panel");
+        const hints = ui.querySelector(".anki-scratchpad__shortcuts");
+        const tools = ui.querySelector(".anki-scratchpad__tools");
         const style = getComputedStyle(input);
         return { view:{ width:innerWidth,height:innerHeight },body:document.body.getBoundingClientRect().toJSON(),
           panel:panel.getBoundingClientRect().toJSON(), qa:qa.getBoundingClientRect().toJSON(),
           input:input.getBoundingClientRect().toJSON(),font:parseFloat(style.fontSize),
+          padding:[style.paddingLeft,style.paddingRight],hintsVisible:getComputedStyle(hints).display!=="none",
+          hints:hints.getBoundingClientRect().toJSON(),hintRows:[...hints.children].map(item=>item.getBoundingClientRect().top),
+          tools:tools.getBoundingClientRect().toJSON(),header:ui.querySelector(".anki-scratchpad__header").getBoundingClientRect().toJSON(),
+          buttons:[...tools.children].filter(button=>!button.hidden).map(button=>button.getBoundingClientRect().toJSON()),
           outline:style.outlineStyle,shadow:style.boxShadow,bottomBorder:getComputedStyle(panel).borderBottomWidth,
           scrollWidth:document.documentElement.scrollWidth };
       });
@@ -63,6 +70,23 @@ try {
       assert.ok(Math.abs(before.panel.bottom-height)<1, "flush bottom");
       assert.ok(Math.abs(before.panel.height-height/3)<1,"initial pad is one third of the screen");
       assert.deepEqual(await edges(),originalEdges,"open preserves original card horizontal padding");
+      const reader = mobile ? before.body : before.qa;
+      assert.ok(Math.abs(before.input.width-reader.width)<1,"input and reader share their maximum width");
+      assert.ok(Math.abs(before.input.left-(width-before.input.width)/2)<1,"input is horizontally centered");
+      assert.deepEqual(before.padding,["12px","12px"],"input keeps its own horizontal padding");
+      assert.equal(before.hintsVisible,!mobile,"only desktop shows keyboard hints");
+      assert.ok(before.input.height>0,"wrapping hints leaves space for input");
+      for (const button of before.buttons) {
+        assert.equal(button.width,44,"toolbar hit areas retain their width");
+        assert.equal(button.height,44,"toolbar hit areas retain their height");
+        assert.ok(button.left>=0 && button.right<=width,"toolbar fits the viewport");
+      }
+      if (!mobile) {
+        assert.ok(before.hints.right<=before.tools.left,"hints stay left of the tool group");
+        assert.ok(before.hints.left>=0,"hints remain inside the viewport");
+        assert.ok(before.hints.bottom<=before.header.bottom,"header contains wrapped hints");
+        if (width===320) assert.ok(new Set(before.hintRows).size>1,"narrow desktop wraps visible hints");
+      }
       if (!mobile) {
         assert.ok(Math.abs(before.body.height-height)<1, "body fills viewport");
         assert.ok(Math.abs(before.qa.bottom-before.panel.top)<1, "reader and pad meet");
@@ -139,6 +163,41 @@ try {
       assert.deepEqual(errors,[]);
       await page.close();
     }
+  }
+  // The mobile pad lives outside body: both panes must inherit a width change.
+  for (const mobile of [false,true]) {
+    const page = await browser.newPage({ viewport:{width:1440,height:900},isMobile:mobile,hasTouch:mobile });
+    await page.setContent(`<!doctype html><html${mobile?' class="ipad"':''}><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}\n${fragmentCSS}\n:root{--anki-card-width:900px}</style></head><body class="card"><main id="qa">${question}</main></body></html>`);
+    await page.evaluate(script);
+    const widths=await page.evaluate(mobile=>({
+      input:document.querySelector('textarea').getBoundingClientRect().width,
+      reader:(mobile?document.body:document.querySelector('#qa')).getBoundingClientRect().width,
+      panel:document.querySelector('.anki-scratchpad__panel').getBoundingClientRect().width,
+    }),mobile);
+    assert.deepEqual(widths,{input:900,reader:900,panel:1440},"shared width variable reaches both panes");
+    reports.push({ customCardWidth:true,mobile,widths });
+    await page.close();
+  }
+  for (const platform of ["MacIntel","Win32"]) {
+    const page=await browser.newPage({ viewport:{width:320,height:568} });
+    await page.setContent(`<!doctype html><html><head><style>${css}\n${fragmentCSS}</style></head><body class="card"><main id="qa">${question}</main></body></html>`);
+    await page.evaluate(platform=>Object.defineProperty(navigator,"platform",{value:platform}),platform);
+    await page.evaluate(script);
+    await page.evaluate(()=>{
+      for(let i=0;i<10;i++) document.dispatchEvent(new KeyboardEvent('keydown',{
+        key:'ArrowDown',altKey:true,shiftKey:true,bubbles:true,cancelable:true,
+      }));
+    });
+    const compact=await page.evaluate(()=>({
+      ratio:document.querySelector('[role="separator"]').getAttribute('aria-valuenow'),
+      height:document.querySelector('textarea').getBoundingClientRect().height,
+      scrollWidth:document.documentElement.scrollWidth,
+    }));
+    assert.equal(compact.ratio,"20");
+    assert.ok(compact.height>=32,"minimum panel still has room for one line of input");
+    assert.equal(compact.scrollWidth,320,"longer platform labels do not overflow");
+    reports.push({minimumDesktopPanel:true,platform,compact});
+    await page.close();
   }
   // Keyboard geometry is synthetic: physical AnkiMobile is a separate gate.
   const page = await browser.newPage({ viewport:{width:390,height:844},isMobile:true,hasTouch:true });
