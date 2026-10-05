@@ -35,5 +35,13 @@ def check_request(request, ac):
     if action == "getDeckStats":
         names = params.get("decks")
         # Upstream getDeckStats calls decks.id(), which creates unknown decks.
-        if not isinstance(names, list) or any(not isinstance(n, str) or n not in ac.deckNames() for n in names):
+        if not isinstance(names, list):
             raise Exception("deck not found")
+        known_names = None
+        for name in names:
+            if not isinstance(name, str):
+                raise Exception("deck not found")
+            if known_names is None:
+                known_names = set(ac.deckNames())
+            if name not in known_names:
+                raise Exception("deck not found")

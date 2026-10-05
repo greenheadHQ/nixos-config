@@ -39,7 +39,8 @@ class Col:
                       "tmpls": [{"name": "Cloze", "ord": 0, "qfmt": "{{cloze:Text}}", "afmt": "{{cloze:Text}}"}], "css": ""}
         self.models = SimpleNamespace(by_name=lambda name: self.model if name == "Cloze" else None)
         self.deck_list = [{"id": 1, "name": "A", "dyn": 0, "conf": 1}, {"id": 2, "name": "B", "dyn": 0, "conf": 1}]
-        self.decks = SimpleNamespace(all=lambda: self.deck_list)
+        self.decks = SimpleNamespace(all=lambda: self.deck_list,
+                                     by_name=lambda name: next((d for d in self.deck_list if d["name"] == name), None))
     def new_note(self, model):
         class UnsavedNote(dict):
             def cloze_numbers_in_fields(self):
@@ -67,6 +68,78 @@ def adapter_fixture(tmp_path):
     adapter = AnkiAdapter(window, 5242880)
     ops = Operations(tmp_path, adapter, lambda _: {"mirrored": True}, ttl=600, bulk_limit=20, media_limit=5242880)
     return ops, adapter, col
+
+
+def add_spec(names):
+    return {"action": "add_notes", "params": {"notes": [
+        {"deck_name": name, "model_name": "Cloze", "fields": {"Text": "{{c1::x}}"}, "tags": []}
+        for name in names], "allow_duplicate": False}}
+
+
+@pytest.mark.parametrize("count", [1, 20, 100])
+def test_add_notes_reads_only_each_target_deck(tmp_path, monkeypatch, count):
+    _ops, adapter, col = adapter_fixture(tmp_path)
+    col.deck_list.extend({"id": i, "name": str(i), "dyn": 0, "nested": [i]} for i in range(3, 103))
+    original, calls = col.decks.by_name, []
+    def by_name(name):
+        calls.append(name)
+        return original(name)
+    monkeypatch.setattr(col.decks, "by_name", by_name)
+    monkeypatch.setattr(col.decks, "all", lambda: pytest.fail("add_notes read all decks"))
+    result = adapter.inspect(add_spec(["3"] * count))
+    assert calls == ["3"] * count
+    assert result["summary"]["cards"] == count
+    result["snapshot"]["decks"]["3"]["nested"].append(0)
+    assert original("3")["nested"] == [3]
+
+
+@pytest.mark.parametrize("returned", [None, {"name": "A"}])
+def test_add_notes_rejects_missing_and_normalized_aliases(tmp_path, monkeypatch, returned):
+    _ops, adapter, col = adapter_fixture(tmp_path)
+    monkeypatch.setattr(col.decks, "by_name", lambda name: returned)
+    with pytest.raises(OperationError, match="^deck-not-found$"):
+        adapter.inspect(add_spec(["a"]))
+
+
+def test_add_notes_keeps_validation_order(tmp_path, monkeypatch):
+    _ops, adapter, col = adapter_fixture(tmp_path)
+    spec = add_spec(["Missing"])
+    spec["params"]["notes"][0]["model_name"] = "Missing"
+    monkeypatch.setattr(col.decks, "by_name", lambda name: pytest.fail("deck read before model validation"))
+    with pytest.raises(OperationError, match="^note-type-not-found$"):
+        adapter.inspect(spec)
+    monkeypatch.setattr(col.decks, "by_name", lambda name: {"name": name, "dyn": 1})
+    spec = add_spec(["A"])
+    spec["params"]["notes"][0]["fields"] = {"Unknown": "x"}
+    with pytest.raises(OperationError, match="^cannot-add-notes-to-filtered-deck$"):
+        adapter.inspect(spec)
+
+
+@pytest.mark.parametrize("change", ["modify", "delete", "rename", "create"])
+def test_add_notes_refreshes_decks_after_cloze_hooks(tmp_path, monkeypatch, change):
+    _ops, adapter, col = adapter_fixture(tmp_path)
+    calls = []
+    def anticipate(*_):
+        calls.append(True)
+        if len(calls) == 1:
+            if change == "modify":
+                col.deck_list[0]["conf"] = 9
+            elif change == "delete":
+                col.deck_list.pop(0)
+            elif change == "rename":
+                col.deck_list[0]["name"] = "Renamed"
+            else:
+                col.deck_list.append({"id": 3, "name": "New", "dyn": 0})
+        return 1
+    monkeypatch.setattr(adapter, "_anticipated_cards", anticipate)
+    spec = add_spec(["A", "New" if change == "create" else "A"])
+    if change in ("delete", "rename"):
+        with pytest.raises(OperationError, match="^deck-not-found$"):
+            adapter.inspect(spec)
+    else:
+        snapshot = adapter.inspect(spec)["snapshot"]
+        assert snapshot["decks"]["A"]["conf"] == (9 if change == "modify" else 1)
+        assert ("New" in snapshot["decks"]) is (change == "create")
 
 
 def test_field_update_counts_new_cloze_cards_and_retained_old_cards(tmp_path):

@@ -270,7 +270,12 @@ class AnkiAdapter:
             anticipated_cards = 0
             for n in p["notes"]:
                 model = self._model(n["model_name"])
-                deck = self._deck(n["deck_name"])
+                # by_name normalizes names; preserve the exact-name contract.
+                # Look up each note afresh: cloze hooks can change later decks.
+                deck = self.col.decks.by_name(n["deck_name"])
+                if deck is None or deck["name"] != n["deck_name"]:
+                    raise OperationError("deck-not-found")
+                deck = copy.deepcopy(deck)
                 if deck.get("dyn"):
                     raise OperationError("cannot-add-notes-to-filtered-deck")
                 if set(n["fields"]) - {f["name"] for f in model["flds"]}:
