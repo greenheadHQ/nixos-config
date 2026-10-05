@@ -60,6 +60,11 @@ in
       programs.ankiAddons.addons = lib.mkMerge [
         (lib.mapAttrs (_: package: { inherit package; }) packages)
         {
+          "24411424".config = {
+            # Keep Command+Backspace for text editing, never note deletion.
+            "reviewer delete note" = "<nop>";
+            "window_browser delete" = "<nop>";
+          };
           "1077002392".config = {
             showLinksPageAutomatically = false;
             showGraphPageAutomatically = false;

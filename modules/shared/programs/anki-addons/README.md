@@ -25,9 +25,15 @@ default config come from the pinned package; `meta.json` preserves unrelated
 keys while enforcing the declared `config` keys, enabled state and package
 metadata. Previously declared config keys removed from Nix fall back to the
 package defaults. GUI edits to declared keys are replaced on the next apply;
-other runtime config keys remain local. Defaults and the two existing custom
+other runtime config keys remain local. Defaults and the declared custom
 config overrides are shared across machines, not every transient GUI setting.
 Never put API keys or other secrets in the Nix config.
+
+Customize Keyboard Shortcuts disables the reviewer's `delete note` and the
+Browser's `delete` shortcuts with `<nop>`. This leaves Command+Backspace available
+for text editing without accidentally deleting a note. The deletion menus remain
+available. This desktop setting is shared by local profiles and does not sync to
+AnkiMobile.
 
 `user_files` is seeded only when files are missing, then preserved on updates.
 Other unknown runtime files and unmanaged add-ons are preserved. Removing an

@@ -17,8 +17,9 @@ function scriptHarness(html, options) {
   }
   return h;
 }
-function setup({ mobile = false, qa = true } = {}) {
+function setup({ mobile = false, qa = true, platform = "" } = {}) {
   const h = scriptHarness(qa ? `<div id="qa">${card()}</div>` : card(), { mobile, preload:false });
+  Object.defineProperty(h.window.navigator, "platform", { value:platform });
   h.window.scrollTo = () => {};
   h.window.eval(scratchpadScript);
   const ui = () => h.document.querySelector(".anki-scratchpad");
@@ -36,7 +37,10 @@ function setup({ mobile = false, qa = true } = {}) {
     h.document.activeElement.dispatchEvent(event);
     return event;
   };
-  return { ...h, ui, input, action, open, write, render, key,
+  const resize = (direction, steps = 1) => {
+    for (let i = 0; i < steps; i++) key(direction, { altKey:true, shiftKey:true });
+  };
+  return { ...h, ui, input, action, open, write, render, key, resize,
     isOpen:() => h.document.documentElement.classList.contains("anki-scratchpad-open") };
 }
 
@@ -77,8 +81,7 @@ test("next card, retry and undo clear text while retaining the session ratio", a
   const h = setup();
   try {
     h.open(); h.write("A");
-    const handle = h.ui().querySelector('[role="separator"]');
-    handle.dispatchEvent(new h.window.KeyboardEvent("keydown", { key:"End", bubbles:true }));
+    h.resize("ArrowUp", 10);
     await h.render("123456790");
     assert.equal(h.input().value, "");
     assert.equal(h.ui().querySelector('[role="separator"]').getAttribute("aria-valuenow"), "65");
@@ -110,7 +113,7 @@ test("same-card fresh front clears the draft; same DOM script re-execution prese
     const h = setup({ mobile:!qa, qa });
     try {
       h.open(); h.write("Undo 직전의 새 답안");
-      h.ui().querySelector('[role="separator"]').dispatchEvent(new h.window.KeyboardEvent("keydown", { key:"End", bubbles:true }));
+      h.resize("ArrowUp", 10);
       h.action("collapse");
       await h.render("123456789");
       assert.equal(h.input().value, "");
@@ -144,7 +147,7 @@ test("staged FrontSide on the answer does not look like same-card question Undo"
   } finally { h.close(); }
 });
 
-test("focused scratchpad buttons isolate reviewer keys while separator keyboard resizing works", () => {
+test("focused scratchpad buttons isolate reviewer keys while the resize chord works", () => {
   const h = setup();
   try {
     let native = 0;
@@ -153,7 +156,7 @@ test("focused scratchpad buttons isolate reviewer keys while separator keyboard 
     h.key(" "); h.key("Enter"); h.key("e");
     h.open();
     h.ui().querySelector('[role="separator"]').focus();
-    h.key("u"); h.key("1"); h.key("End");
+    h.key("u"); h.key("1"); h.resize("ArrowUp", 10);
     assert.equal(native, 0);
     assert.equal(h.ui().querySelector('[role="separator"]').getAttribute("aria-valuenow"), "65");
   } finally { h.close(); }
@@ -163,7 +166,7 @@ test("unmanaged cards suspend the UI but preserve the session open state and siz
   const h = setup();
   try {
     h.open(); h.write("남기지 않을 답");
-    h.ui().querySelector('[role="separator"]').dispatchEvent(new h.window.KeyboardEvent("keydown", { key:"End", bubbles:true }));
+    h.resize("ArrowUp", 10);
     h.document.getElementById("qa").innerHTML = '<p>다른 노트 유형</p><span data-anki-cid="123456790"></span>';
     await h.flush();
     assert.equal(h.ui(), null);
@@ -195,13 +198,13 @@ test("pagehide discards all session state without storage writes", () => {
   } finally { h.close(); }
 });
 
-test("physical Control+Shift+J works; Command chord and ordinary reviewer keys pass through", () => {
+test("physical Option+Shift+J works; Command chord and ordinary reviewer keys pass through", () => {
   const h = setup();
   try {
     h.action("collapse");
     assert.equal(h.key("J", { code:"KeyJ", shiftKey:true, metaKey:true }).defaultPrevented, false);
     assert.equal(h.isOpen(), false);
-    assert.equal(h.key("J", { code:"KeyJ", shiftKey:true, ctrlKey:true }).defaultPrevented, true);
+    assert.equal(h.key("Ô", { code:"KeyJ", shiftKey:true, altKey:true }).defaultPrevented, true);
     assert.equal(h.document.activeElement, h.input());
     h.key("Escape");
     let native = 0;
@@ -218,11 +221,176 @@ test("editing keys do not reach the reviewer and retain default text editing", (
     h.open();
     let native = 0;
     h.document.addEventListener("keydown", () => native++);
-    for (const key of [" ", "Enter", "1", "2", "3", "4", "e", "m", "r", "u", "ArrowUp", "Backspace"]) {
+    for (const key of [" ", "Enter", "1", "2", "3", "4", "e", "m", "r", "u", "ArrowUp", "ArrowDown", "Home", "End", "Backspace"]) {
       assert.equal(h.key(key).defaultPrevented, false);
     }
     assert.equal(native, 0);
   } finally { h.close(); }
+});
+
+test("Mac Command+A selects the draft on the first key after composition ends", () => {
+  const h = setup({ platform:"MacIntel" });
+  try {
+    h.open(); h.write("기준 문장\n한");
+    h.input().dispatchEvent(new h.window.CompositionEvent("compositionstart"));
+    h.input().dispatchEvent(new h.window.CompositionEvent("compositionend", { data:"한" }));
+    h.window.eval(scratchpadScript);
+    const event = h.key("a", { code:"KeyA", metaKey:true });
+    assert.equal(event.defaultPrevented, true);
+    assert.equal(h.input().value, "기준 문장\n한");
+    assert.deepEqual([h.input().selectionStart, h.input().selectionEnd], [0, 7]);
+    assert.equal(h.document.activeElement, h.input());
+  } finally { h.close(); }
+});
+
+test("Mac editing corrections leave active composition, other modifiers and other targets native", () => {
+  for (const options of [{ platform:"MacIntel" }, { platform:"Linux x86_64" }, { mobile:true, platform:"MacIntel" }]) {
+    const h = setup(options);
+    try {
+      h.open(); h.write("아직 입력 중");
+      h.input().setSelectionRange(3, 3);
+      h.document.queryCommandSupported = () => true;
+      h.window.getSelection().modify = () => assert.fail("must not modify native selection");
+      h.document.execCommand = () => assert.fail("must not issue an editing command");
+      for (const key of ["a", "Backspace"]) {
+        for (const extra of [{ isComposing:true }, { keyCode:229 }, { shiftKey:true }, { altKey:true }, { ctrlKey:true }]) {
+          assert.equal(h.key(key, { metaKey:true, ...extra }).defaultPrevented, false);
+          assert.equal(h.input().selectionStart, 3);
+        }
+        h.input().dispatchEvent(new h.window.CompositionEvent("compositionstart"));
+        assert.equal(h.key(key, { metaKey:true }).defaultPrevented, false);
+        h.input().dispatchEvent(new h.window.CompositionEvent("compositionend"));
+        if (options.mobile || options.platform !== "MacIntel") {
+          assert.equal(h.key(key, { metaKey:true }).defaultPrevented, false);
+        }
+      }
+      h.action("blur");
+      for (const key of ["a", "Backspace"]) assert.equal(h.key(key, { metaKey:true }).defaultPrevented, false);
+    } finally { h.close(); }
+  }
+});
+
+test("Option+Shift resize changes exactly five percentage points from each focus target", async () => {
+  for (const target of ["input", "handle", "card"]) {
+    const h = setup();
+    try {
+      h.open(); h.write("첫 문단\n둘째 문단\n셋째 문단");
+      h.input().setSelectionRange(2, 8, "backward");
+      const handle = h.ui().querySelector('[role="separator"]');
+      if (target === "handle") handle.focus();
+      if (target === "card") h.key("Escape");
+      const focus = h.document.activeElement;
+      const height = parseFloat(h.ui().style.height);
+      let native = 0;
+      h.document.addEventListener("keydown", () => native++, true);
+      // Re-running FrontSide must not register a second shortcut listener.
+      h.window.eval(scratchpadScript);
+      await h.flush();
+      assert.equal(h.key("ArrowUp", { altKey:true, shiftKey:true }).defaultPrevented, true);
+      assert.ok(Math.abs(parseFloat(h.ui().style.height) - height - h.window.innerHeight * 0.05) < 0.001);
+      assert.equal(handle.getAttribute("aria-valuenow"), "38");
+      assert.equal(h.key("ArrowDown", { altKey:true, shiftKey:true }).defaultPrevented, true);
+      assert.ok(Math.abs(parseFloat(h.ui().style.height) - height) < 0.001);
+      assert.equal(h.document.activeElement, focus);
+      assert.equal(h.input().value, "첫 문단\n둘째 문단\n셋째 문단");
+      assert.deepEqual([h.input().selectionStart, h.input().selectionEnd, h.input().selectionDirection], [2, 8, "backward"]);
+      assert.equal(native, 0, "the chord must not also invoke reviewer/handle actions");
+    } finally { h.close(); }
+  }
+});
+
+test("resize repeats clamp at 20–65%; plain handle keys no longer resize", () => {
+  const h = setup();
+  try {
+    const handle = h.ui().querySelector('[role="separator"]');
+    handle.focus();
+    for (const key of ["ArrowUp", "ArrowDown", "Home", "End"]) {
+      assert.equal(h.key(key).defaultPrevented, false);
+      assert.equal(handle.getAttribute("aria-valuenow"), "33");
+    }
+    for (const [key, limit] of [["ArrowUp", "65"], ["ArrowDown", "20"]]) {
+      for (let i = 0; i < 20; i++) {
+        assert.equal(h.key(key, { altKey:true, shiftKey:true, repeat:i > 0 }).defaultPrevented, true);
+      }
+      assert.equal(handle.getAttribute("aria-valuenow"), limit);
+    }
+    assert.equal(handle.getAttribute("aria-keyshortcuts"), "Alt+Shift+ArrowUp Alt+Shift+ArrowDown");
+    assert.equal(h.ui().querySelector("button").getAttribute("aria-keyshortcuts"), "Alt+Shift+J");
+  } finally { h.close(); }
+});
+
+test("opening chord consumes repeats without typing Option characters or refocusing", () => {
+  const h = setup();
+  try {
+    h.action("collapse");
+    assert.equal(h.key("Ô", { code:"KeyJ", altKey:true, shiftKey:true, repeat:true }).defaultPrevented, true);
+    assert.equal(h.isOpen(), false);
+    h.key("Ô", { code:"KeyJ", altKey:true, shiftKey:true });
+    h.write("답안");
+    h.input().setSelectionRange(1, 1);
+    assert.equal(h.key("Ô", { code:"KeyJ", altKey:true, shiftKey:true, repeat:true }).defaultPrevented, true);
+    assert.equal(h.input().value, "답안");
+    assert.equal(h.input().selectionStart, 1);
+    h.key("Escape");
+    h.key("Ô", { code:"KeyJ", altKey:true, shiftKey:true, repeat:true });
+    assert.notEqual(h.document.activeElement, h.input());
+  } finally { h.close(); }
+});
+
+test("shortcuts require exactly Option+Shift and leave closed/unmanaged cards alone", async () => {
+  const h = setup();
+  try {
+    const handle = h.ui().querySelector('[role="separator"]');
+    const height = h.ui().style.height;
+    for (const modifiers of [
+      {}, { shiftKey:true }, { altKey:true }, { ctrlKey:true, shiftKey:true },
+      { metaKey:true, shiftKey:true }, { altKey:true, shiftKey:true, ctrlKey:true },
+      { altKey:true, shiftKey:true, metaKey:true },
+    ]) {
+      assert.equal(h.key("ArrowUp", modifiers).defaultPrevented, false);
+      assert.equal(h.ui().style.height, height);
+    }
+    h.action("collapse");
+    for (const modifiers of [
+      { ctrlKey:true, shiftKey:true }, { altKey:true },
+      { altKey:true, shiftKey:true, ctrlKey:true }, { altKey:true, shiftKey:true, metaKey:true },
+    ]) {
+      assert.equal(h.key("J", { code:"KeyJ", ...modifiers }).defaultPrevented, false);
+      assert.equal(h.isOpen(), false);
+    }
+    for (const key of ["ArrowUp", "ArrowDown"]) {
+      assert.equal(h.key(key, { altKey:true, shiftKey:true }).defaultPrevented, false);
+      assert.equal(h.isOpen(), false);
+      assert.equal(handle.getAttribute("aria-valuenow"), "33");
+    }
+    h.document.getElementById("qa").innerHTML = "<p>다른 노트 유형</p>";
+    await h.flush();
+    for (const key of ["J", "ArrowUp", "ArrowDown"]) {
+      assert.equal(h.key(key, { code:key === "J" ? "KeyJ" : key, altKey:true, shiftKey:true }).defaultPrevented, false);
+      assert.equal(h.ui(), null);
+    }
+  } finally { h.close(); }
+});
+
+test("IME composition and legacy 229 events keep all Option+Shift chords native", () => {
+  for (const mode of ["event", "tracked", "legacy"]) {
+    const h = setup();
+    try {
+      h.open(); h.write("한");
+      const height = h.ui().style.height;
+      if (mode === "tracked") h.input().dispatchEvent(new h.window.CompositionEvent("compositionstart"));
+      for (const key of ["J", "ArrowUp", "ArrowDown"]) {
+        const event = h.key(key, { code:key === "J" ? "KeyJ" : key, altKey:true, shiftKey:true,
+          isComposing:mode === "event", keyCode:mode === "legacy" ? 229 : 0 });
+        assert.equal(event.defaultPrevented, false);
+        assert.equal(h.ui().style.height, height);
+        assert.equal(h.document.activeElement, h.input());
+        assert.equal(h.input().value, "한");
+      }
+      h.input().dispatchEvent(new h.window.CompositionEvent("compositionend", { data:"한" }));
+      assert.equal(h.key("ArrowUp", { altKey:true, shiftKey:true }).defaultPrevented, true);
+    } finally { h.close(); }
+  }
 });
 
 test("Escape first belongs to Korean IME composition, then only blurs the pad", () => {
@@ -294,7 +462,7 @@ test("replacing the mobile body with an unmanaged card removes the pad and prese
   const h=setup({mobile:true,qa:false});
   try {
     h.write("임시 답안");
-    h.ui().querySelector('[role="separator"]').dispatchEvent(new h.window.KeyboardEvent("keydown",{key:"End",bubbles:true}));
+    h.resize("ArrowUp", 10);
     const replacement=h.document.createElement("body");
     replacement.innerHTML="<p>다른 유형</p>";
     h.document.documentElement.replaceChild(replacement,h.document.body);

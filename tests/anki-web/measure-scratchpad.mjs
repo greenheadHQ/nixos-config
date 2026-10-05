@@ -235,7 +235,14 @@ try {
     });
     await replay.evaluate(script);
     await replay.evaluate(ratio=>{
-      if(ratio!==1/3) document.querySelector('[role="separator"]').dispatchEvent(new KeyboardEvent('keydown',{key:ratio===0.2?'Home':'End',bubbles:true}));
+      if(ratio!==1/3) {
+        for(let i=0;i<10;i++) document.dispatchEvent(new KeyboardEvent('keydown',{
+          key:ratio===0.2?'ArrowDown':'ArrowUp',altKey:true,shiftKey:true,bubbles:true,cancelable:true,
+        }));
+        if(document.querySelector('[role="separator"]').getAttribute('aria-valuenow')!==String(ratio*100)) {
+          throw new Error('Scratchpad replay did not reach the requested height ratio');
+        }
+      }
       const marker=document.querySelectorAll('.context-line')[12];document.body.scrollTop=marker.offsetTop-80;
       document.querySelector('textarea').focus();
     },ratio);
