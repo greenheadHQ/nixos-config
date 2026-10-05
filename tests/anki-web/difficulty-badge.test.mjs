@@ -46,9 +46,9 @@ test("a small badge appears before the question; only its evidence expands", t =
   assert.equal(panel(page).hidden, true);
   button(page).click();
   assert.equal(panel(page).hidden, false);
-  assert.match(panel(page).textContent, /최근 복습 5회: 다시 2회, 어려움 1회/);
+  assert.match(panel(page).textContent, /최근 정규 복습 5회 중 다시 2회 · 어려움 1회/);
   assert.match(panel(page).textContent, /기록 기간:/);
-  assert.match(panel(page).textContent, /기록 기준:/);
+  assert.doesNotMatch(panel(page).textContent, /기록 기준:|기록된 평가를 바탕/);
   assert.equal(page.document.querySelector("#answer"), null);
   assert.doesNotMatch(panel(page).textContent, /정답 원문/);
   assert.equal(button(page).getAttribute("aria-expanded"), "true");
@@ -61,7 +61,7 @@ test("learning evidence counts evaluations and interval delay is explicitly an e
     signal({ kind: "learning", samples: 9, again: 3, hard: 4, first_review_at: now - day })] }) });
   button(page).click();
   assert.equal(panel(page).querySelectorAll("li").length, 2);
-  assert.match(panel(page).textContent, /학습·재학습 9회: 다시 3회, 어려움 4회/);
+  assert.match(panel(page).textContent, /이번 학습·재학습 과정에서 누적 9회 중 다시 3회 · 어려움 4회/);
   assert.match(panel(page).textContent, /기록된 간격 기준 지연 추정: 8일/);
   assert.doesNotMatch(panel(page).textContent, /예정일|원인|의욕|기억력/);
 });

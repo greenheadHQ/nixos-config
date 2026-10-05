@@ -54,11 +54,11 @@ function pageFor(t) {
   return page;
 }
 
-function visible(page, text = /최근 복습 3회: 다시 2회, 어려움 0회/) {
+function visible(page, text = /최근 정규 복습 3회 중 다시 2회/) {
   assert.equal(root(page).hidden, false);
   assert.match(panel(page).textContent, text);
   assert.doesNotMatch(panel(page).textContent, /기록 기간:|기록 기준:|지연 추정|정답 원문/);
-  assert.match(panel(page).textContent, /이 카드에 저장된 복습 회차 기준/);
+  assert.doesNotMatch(panel(page).textContent, /이 카드에 저장된 복습 회차 기준|기록된 평가를 바탕|다시 0회|어려움 0회/);
 }
 
 function hidden(page) {
@@ -142,7 +142,7 @@ test("a callback for the next card before its template cannot replace the displa
   page.schedule([2, 1002, packed([2, 2, 2]), 0, 0, 0, 0]);
   visible(page);
   page.show(1002);
-  visible(page, /최근 복습 3회: 다시 0회, 어려움 3회/);
+  visible(page, /최근 정규 복습 3회 중 어려움 3회/);
 });
 
 test("same-card re-entry waits for a new callback and accepts Undo decreasing the counters", t => {
@@ -196,7 +196,7 @@ test("learning evidence is independent of the Review signal and disappears on na
   page.schedule(state, { kind: "relearning" });
   page.show();
   visible(page);
-  assert.match(panel(page).textContent, /학습·재학습 7회: 다시 3회, 어려움 4회/);
+  assert.match(panel(page).textContent, /이번 학습·재학습 과정에서 누적 7회 중 다시 3회 · 어려움 4회/);
   assert.equal(panel(page).querySelectorAll("li").length, 2);
   page.schedule(state, { kind: "review" });
   page.show();
@@ -241,7 +241,7 @@ test("the selected learning answer reaches the threshold and actual graduation c
   assert.deepEqual(triggered.slice(4), [3, 3, 0]);
   page.schedule(triggered, { kind: "learning", candidateKind: "review" });
   page.show();
-  visible(page, /학습·재학습 3회: 다시 3회, 어려움 0회/);
+  visible(page, /이번 학습·재학습 과정에서 누적 3회 중 다시 3회/);
   const graduated = decode(page.window.customData.good.dce);
   page.schedule(graduated);
   page.show();
@@ -278,10 +278,10 @@ test("a desktop local payload takes priority over mobile evidence, including an 
   page.window.AnkiDifficultyCurrent = localPayload([{ kind: "review", samples: 5, again: 0, hard: 4 }]);
   page.remount();
   assert.equal(root(page).hidden, false);
-  assert.match(panel(page).textContent, /최근 복습 5회: 다시 0회, 어려움 4회/);
-  assert.match(panel(page).textContent, /기록 기준:/);
+  assert.match(panel(page).textContent, /최근 정규 복습 5회 중 어려움 4회/);
+  assert.doesNotMatch(panel(page).textContent, /기록 기준:|기록된 평가를 바탕/);
   page.schedule();
-  assert.match(panel(page).textContent, /최근 복습 5회: 다시 0회, 어려움 4회/);
+  assert.match(panel(page).textContent, /최근 정규 복습 5회 중 어려움 4회/);
 });
 
 test("a local payload arriving while the mobile root waits retains priority over a later callback", t => {
@@ -359,20 +359,52 @@ test("a legacy badge API is replaced in the same WebView before mobile evidence 
   page.window.AnkiDifficultyBadgeV1 = legacy;
   page.show();
   assert.notStrictEqual(page.api(), legacy);
-  assert.equal(page.api().version, 2);
+  assert.equal(page.api().version, 3);
   assert.equal(typeof page.api().receive, "function");
   assert.deepEqual(cleaned, [null]);
+  hidden(page);
+  page.schedule();
   visible(page);
   button(page).click();
   assert.equal(panel(page).hidden, false);
 });
 
-test("repeated version-two template runs reuse one API and one interactive badge", t => {
+test("version-two replacement waits for fresh same-card evidence instead of reusing a consumed snapshot", t => {
+  const page = pageFor(t);
+  const consumed = [];
+  let disposed = 0;
+  const legacy = {
+    version: 2,
+    mount: () => assert.fail("the version-two API must not mount the new presentation"),
+    receive: snapshot => { consumed.push(snapshot.sequence); },
+    dispose: () => { disposed += 1; },
+  };
+  page.window.AnkiDifficultyBadgeV1 = legacy;
+  assert.equal(page.schedule(active()).sequence, 1);
+  assert.deepEqual(consumed, [1]);
+
+  page.show();
+  assert.equal(page.api().version, 3);
+  assert.notStrictEqual(page.api(), legacy);
+  assert.equal(disposed, 1);
+  hidden(page);
+  assert.equal(page.schedule(empty()).sequence, 2);
+  hidden(page);
+
+  page.show();
+  hidden(page);
+  assert.equal(page.schedule(active()).sequence, 3);
+  visible(page);
+  assert.deepEqual(consumed, [1]);
+  assert.equal(disposed, 1);
+});
+
+test("repeated version-three template runs reuse one API and one interactive badge", t => {
   const page = pageFor(t);
   page.schedule();
   page.show();
   const api = page.api();
-  assert.equal(api.version, 2);
+  assert.equal(api.version, 3);
   for (let index = 0; index < 3; index += 1) {
     page.remount();
     assert.strictEqual(page.api(), api);
@@ -400,11 +432,11 @@ test("upgrading the legacy API preserves local evidence even when legacy cleanup
   };
   page.show();
   assert.equal(cleaned, 1);
-  assert.equal(page.api().version, 2);
+  assert.equal(page.api().version, 3);
   assert.strictEqual(page.window.AnkiDifficultyCurrent, local);
   assert.equal(root(page).hidden, false);
-  assert.match(panel(page).textContent, /최근 복습 5회: 다시 0회, 어려움 4회/);
-  assert.match(panel(page).textContent, /기록 기준:/);
+  assert.match(panel(page).textContent, /최근 정규 복습 5회 중 어려움 4회/);
+  assert.doesNotMatch(panel(page).textContent, /기록 기준:|기록된 평가를 바탕/);
   page.remount();
   assert.equal(cleaned, 1);
   assert.strictEqual(page.window.AnkiDifficultyCurrent, local);

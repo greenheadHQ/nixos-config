@@ -78,7 +78,7 @@
 (() => {
   const KEY = "AnkiDifficultyBadgeV1";
   const SELECTOR = "[data-anki-difficulty-card]";
-  if (window[KEY]?.version !== 2) {
+  if (window[KEY]?.version !== 3) {
     const previous = window[KEY], localPayload = window.AnkiDifficultyCurrent;
     try {
       if (previous?.dispose) previous.dispose();
@@ -86,7 +86,13 @@
     } catch (_) {}
     window.AnkiDifficultyCurrent = localPayload;
     let view = null, latestCard = null, latestAt = 0, latestSource = null;
-    let eventRoot = null, eventCard = null, eventSequence = 0, eventPayload = null, waiting = null;
+    // Older APIs do not expose which snapshot they consumed. On replacement,
+    // wait for a fresh native callback instead of lending a stale same-card
+    // snapshot to the new presentation.
+    const inheritedSequence = previous && window.AnkiDifficultyEvents?.sequence;
+    let eventRoot = null, eventCard = null;
+    let eventSequence = Number.isSafeInteger(inheritedSequence) && inheritedSequence > 0 ? inheritedSequence : 0;
+    let eventPayload = null, waiting = null;
     const validId = value => typeof value === "string" && /^[1-9][0-9]*$/.test(value);
     const integer = value => Number.isSafeInteger(value) && value >= 0;
     const timestamp = value => integer(value) && value > 0 && value <= 8640000000000000;
@@ -231,20 +237,25 @@
       panel.setAttribute("role", "region");
       panel.setAttribute("aria-labelledby", button.id);
       button.setAttribute("aria-controls", panel.id);
-      panel.append(element("p", "이 카드에 기록된 평가를 바탕으로 표시한 점검 후보입니다."));
       const list = element("ul");
       for (const signal of data.signals) {
         const item = element("li");
-        const kind = signal.kind === "review" ? "최근 복습" : "학습·재학습";
-        item.append(element("span", `${kind} ${signal.samples}회: 다시 ${signal.again}회, 어려움 ${signal.hard}회`));
+        const review = signal.kind === "review";
+        const scope = review ? "최근 정규 복습" : "이번 학습·재학습 과정에서 누적";
+        const counts = [signal.again ? `다시 ${signal.again}회` : "",
+          signal.hard ? `어려움 ${signal.hard}회` : ""].filter(Boolean).join(" · ") || "다시·어려움 없음";
+        item.append(element("span", `${scope} ${signal.samples}회 중 ${counts}`));
+        item.append(element("span", review ?
+          "표시 이후 정규 복습 3회 연속 다시 없이, 그중 알맞음·쉬움이 2회 이상이면 이 항목이 사라집니다." :
+          "날짜가 바뀌어도 이어 세며, 이 과정을 마쳐 정규 복습으로 넘어가면 이 항목이 사라집니다.",
+        "anki-difficulty-badge__period"));
         if (signal.first_review_at !== null) item.append(element("span",
           `기록 기간: ${date(signal.first_review_at)} ~ ${date(signal.last_review_at)}`, "anki-difficulty-badge__period"));
         if (signal.late_days_estimate !== null) item.append(element("span",
           `기록된 간격 기준 지연 추정: ${signal.late_days_estimate}일`, "anki-difficulty-badge__period"));
         list.append(item);
       }
-      panel.append(list, element("p", data.source === "card-events" ? "이 카드에 저장된 복습 회차 기준" :
-        `기록 기준: ${date(data.generated_at)}`, "anki-difficulty-badge__period"));
+      panel.append(list);
       const record = { root, id, answer, expanded, destroy: () => {} };
       const live = () => view === record && root.isConnected &&
         root.getAttribute("data-anki-difficulty-card") === id;
@@ -311,7 +322,7 @@
       const payload = bindEvents(root, waiting.id, snapshot);
       return mount(scope, payload);
     };
-    window[KEY] = { version: 2, mount, render, receive, dispose: clear };
+    window[KEY] = { version: 3, mount, render, receive, dispose: clear };
   }
   window[KEY].mount();
 })();
