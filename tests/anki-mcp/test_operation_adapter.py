@@ -191,6 +191,64 @@ def test_new_child_deck_after_preview_is_stale(tmp_path):
         ops.apply(p["operation_id"], p["preview_token"], True)
 
 
+@pytest.mark.parametrize("count", [0, 1, 10, 100])
+def test_deck_delete_reads_each_card_once_per_inspection(tmp_path, monkeypatch, count):
+    _ops, adapter, col = adapter_fixture(tmp_path)
+    col.db.db.execute("delete from cards")
+    col.db.db.executemany("insert into cards values(?, 1, 1, 0, ?)", [(10 + i, i) for i in range(count)])
+    original, calls = col.get_card, []
+    def get_card(cid):
+        calls.append(cid)
+        return original(cid)
+    monkeypatch.setattr(col, "get_card", get_card)
+    spec = {"action": "delete_decks", "params": {"deck_names": ["A"]}}
+    first = adapter.inspect(spec)
+    assert calls == list(range(10, 10 + count))
+    assert first["summary"]["cards_to_remove"] == count
+    assert first["summary"]["notes_to_remove"] == bool(count)
+    calls.clear()
+    col.db.db.execute("insert into cards values(999, 1, 2, 0, 999)")
+    second = adapter.inspect(spec)
+    assert calls == list(range(10, 10 + count))
+    assert second["summary"]["notes_to_remove"] == 0
+    if count:
+        assert second["snapshot"]["note_card_membership"] != first["snapshot"]["note_card_membership"]
+
+
+def test_deck_delete_counts_surviving_siblings_and_filtered_returns(tmp_path, monkeypatch):
+    _ops, adapter, col = adapter_fixture(tmp_path)
+    col.deck_list.extend([{"id": 3, "name": "A::Child", "dyn": 0}, {"id": 4, "name": "Filtered", "dyn": 1}])
+    col.db.db.executemany("insert into notes values(?, 1, 'keep')", [(i,) for i in range(2, 6)])
+    col.db.db.executemany("insert into cards values(?, ?, ?, ?, ?)", [
+        (11, 1, 2, 0, 1), (20, 2, 1, 0, 0), (21, 2, 3, 0, 1),
+        (30, 3, 4, 1, 0), (40, 4, 4, 2, 0), (50, 5, 2, 0, 0)])
+    before = [col.db.all("select * from " + table) for table in ("notes", "cards", "revlog")]
+    original, calls = col.get_card, []
+    def get_card(cid):
+        calls.append(cid)
+        return original(cid)
+    monkeypatch.setattr(col, "get_card", get_card)
+    result = adapter.inspect({"action": "delete_decks", "params": {"deck_names": ["A", "A::Child", "Filtered"]}})
+    assert calls == [10, 20, 21, 30, 40]
+    assert result["summary"]["cards_to_remove"] == 4
+    assert result["summary"]["notes_to_remove"] == 2
+    assert result["snapshot"]["note_card_membership"] == [[10, 1], [11, 1], [20, 2], [21, 2], [30, 3], [40, 4]]
+    assert [col.db.all("select * from " + table) for table in ("notes", "cards", "revlog")] == before
+
+
+def test_deck_delete_keeps_first_sorted_card_failure(tmp_path, monkeypatch):
+    _ops, adapter, col = adapter_fixture(tmp_path)
+    col.db.db.execute("insert into cards values(11, 1, 1, 0, 1)")
+    calls = []
+    def get_card(cid):
+        calls.append(cid)
+        raise ValueError("missing")
+    monkeypatch.setattr(col, "get_card", get_card)
+    with pytest.raises(OperationError, match="^card-not-found$"):
+        adapter.inspect({"action": "delete_decks", "params": {"deck_names": ["A"]}})
+    assert calls == [10]
+
+
 @pytest.mark.parametrize("action", ["delete_notes", "delete_decks"])
 @pytest.mark.parametrize("change", ["preserved", "removed", "changed", "added"])
 def test_deletion_review_receipt_is_read_back_and_mismatch_is_partial(tmp_path, action, change):
