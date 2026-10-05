@@ -36,8 +36,9 @@ def test_delete_ordinary_deck_reports_its_name_and_two_deleted_cards(runtime):
     before = card_ids(r)
     assert len(before) == 2
 
-    _, outcome = r.apply('delete_decks', {'deck_names': ['Ordinary']})
+    preview, outcome = r.apply('delete_decks', {'deck_names': ['Ordinary']})
 
+    assert preview['summary']['notes_to_remove'] == 2
     assert_receipt(outcome, deleted_decks=['Ordinary'], retained_decks=[],
                    deleted_cards=2, retained_cards=0)
     assert r.col.decks.by_name('Ordinary') is None
@@ -50,8 +51,9 @@ def test_delete_empty_deck_reports_zero_deleted_cards(runtime):
     r = runtime
     r.apply('create_deck', {'name': 'Empty'})
 
-    _, outcome = r.apply('delete_decks', {'deck_names': ['Empty']})
+    preview, outcome = r.apply('delete_decks', {'deck_names': ['Empty']})
 
+    assert preview['summary']['notes_to_remove'] == 0
     assert_receipt(outcome, deleted_decks=['Empty'], retained_decks=[],
                    deleted_cards=0, retained_cards=0)
     assert r.col.decks.by_name('Empty') is None
@@ -70,10 +72,11 @@ def test_delete_parent_and_duplicate_child_reports_each_deck_once_and_keeps_sibl
     untouched = r.col.db.all('select * from cards where id=?', siblings[1])
     before = card_ids(r)
 
-    _, outcome = r.apply('delete_decks', {
+    preview, outcome = r.apply('delete_decks', {
         'deck_names': ['Parent::Child', 'Parent', 'Parent::Child'],
     })
 
+    assert preview['summary']['notes_to_remove'] == 1
     assert_receipt(outcome, deleted_decks=['Parent', 'Parent::Child'], retained_decks=[],
                    deleted_cards=2, retained_cards=0)
     assert r.col.decks.by_name('Parent') is None
@@ -92,8 +95,9 @@ def test_delete_default_keeps_the_deck_but_reports_deleted_cards(runtime):
     before = set(r.col.get_note(nid).card_ids())
     assert r.col.decks.by_name('Default')['id'] == 1
 
-    _, outcome = r.apply('delete_decks', {'deck_names': ['Default']})
+    preview, outcome = r.apply('delete_decks', {'deck_names': ['Default']})
 
+    assert preview['summary']['notes_to_remove'] == 1
     assert_receipt(outcome, deleted_decks=[], retained_decks=['Default'],
                    deleted_cards=1, retained_cards=0)
     assert r.col.decks.by_name('Default')['id'] == 1
@@ -116,6 +120,7 @@ def test_delete_filtered_deck_returns_card_instead_of_reporting_it_deleted(runti
     preview, outcome = r.apply('delete_decks', {'deck_names': ['Filtered']})
 
     assert preview['summary']['cards'] == 1 and preview['summary']['cards_to_remove'] == 0
+    assert preview['summary']['notes_to_remove'] == 0
     assert_receipt(outcome, deleted_decks=['Filtered'], retained_decks=[],
                    deleted_cards=0, retained_cards=1)
     assert r.col.decks.by_name('Filtered') is None
@@ -141,6 +146,7 @@ def test_delete_original_deck_counts_its_card_while_card_is_in_filtered_deck(run
     preview, outcome = r.apply('delete_decks', {'deck_names': ['Source']})
 
     assert preview['summary']['cards_to_remove'] == 1
+    assert preview['summary']['notes_to_remove'] == 1
     assert_receipt(outcome, deleted_decks=['Source'], retained_decks=[],
                    deleted_cards=1, retained_cards=0)
     assert r.col.decks.by_name('Source') is None
@@ -167,6 +173,7 @@ def test_delete_more_than_summary_limit_reports_all_deleted_cards(runtime):
     assert preview['summary']['ids_truncated'] is True
     assert len(preview['summary']['card_ids']) == 100
     assert preview['summary']['cards_to_remove'] == 101
+    assert preview['summary']['notes_to_remove'] == 101
     assert_receipt(outcome, deleted_decks=['Many'], retained_decks=[],
                    deleted_cards=101, retained_cards=0)
     assert r.col.decks.by_name('Many') is None

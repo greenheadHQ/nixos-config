@@ -244,6 +244,7 @@ class AnkiAdapter:
         snapshot: dict[str, Any] = {}
         warnings: list[str] = []
         summary: dict[str, Any] = {"notes": 0, "cards": 0, "new_notes": 0, "warnings": warnings}
+        delete_deck_cards = None
         if action == "configure_difficulty_mobile":
             if getattr(self.mw, "state", None) == "review":
                 raise OperationError("difficulty-mobile-reviewer-must-be-closed")
@@ -299,13 +300,14 @@ class AnkiAdapter:
             card_ids = sorted(cards)
             snapshot["decks"] = affected
             ordinary_dids = {int(d["id"]) for d in affected.values() if not d.get("dyn")}
-            removing = {c.id for c in self._cards(card_ids) if c.did in ordinary_dids or c.odid in ordinary_dids}
-            affected_nids = sorted({c.nid for c in self._cards(card_ids)})
+            delete_deck_cards = self._cards(card_ids)
+            removing = {c.id for c in delete_deck_cards if c.did in ordinary_dids or c.odid in ordinary_dids}
+            affected_nids = sorted({c.nid for c in delete_deck_cards})
             membership = [[row[0], row[1]] for row in self._rows("cards", "nid", affected_nids)]
             snapshot["note_card_membership"] = membership
             summary["cards_to_remove"] = len(removing)
-            summary["notes_to_remove"] = sum(all(cid in removing for cid, note_id in membership if note_id == nid)
-                                              for nid in affected_nids)
+            surviving_nids = {nid for cid, nid in membership if cid not in removing}
+            summary["notes_to_remove"] = sum(nid not in surviving_nids for nid in affected_nids)
             summary["decks"] = sorted(affected)
             if any(d.get("dyn") for d in affected.values()):
                 warnings.append("Filtered decks return cards to their original decks; deleting an original deck can delete those cards.")
@@ -384,7 +386,7 @@ class AnkiAdapter:
                 summary["anticipated_cards"] = True
                 warnings.append("Updating fields may activate templates or cloze deletions and generate new cards.")
         if card_ids:
-            cards = self._cards(card_ids)
+            cards = delete_deck_cards if delete_deck_cards is not None else self._cards(card_ids)
             if action == "reassess_difficulty":
                 for card in cards:
                     if card.note().note_type()["name"] != difficulty.MODEL_NAME:
