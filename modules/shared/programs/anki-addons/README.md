@@ -1,8 +1,9 @@
 # Desktop Anki add-ons
 
 AnkiWeb sync does not install desktop add-ons on another computer. This Home
-Manager module pins the ten desktop add-ons in `sources.json` and applies them
-to the existing macOS Anki installation. It does not install/upgrade Anki,
+Manager module pins the ten desktop add-ons in `sources.json` plus the local
+`nixos-difficulty-badge` package and applies them to the existing macOS Anki
+installation. The deployment manager does not install/upgrade Anki,
 enable `programs.anki`, or open/change `prefs21.db`, collections or sync accounts.
 The MiniPC's `anki-host` service keeps its separate, patched AnkiConnect package.
 
@@ -47,6 +48,53 @@ links. Interrupted transactions require explicit recovery before another apply.
 Anki's `update_enabled = false` keeps managed add-ons out of automatic update
 prompts/default selections. A user can still explicitly select an update in
 Anki; the next apply restores the pinned code. Perform durable updates in Nix.
+
+AnkiWeb packages use their numeric distribution IDs. Local package names are
+an explicit allowlist containing `nixos-difficulty-badge`; arbitrary names,
+paths and namespace prefixes remain refused. Local packages use the same
+ownership, writable-copy, process guard, backup and restore rules.
+
+## Inspection candidate badge
+
+The local add-on supplies a fresh, card-specific payload before each reviewer
+question and answer for the managed `학습 Basic` note type. The managed template
+shows a yellow `점검 후보` badge above the question; selecting it reveals the
+Again/Hard evidence. This is a suggestion to inspect the content, not a diagnosis
+of difficulty or motivation. Sibling cards are evaluated independently.
+
+The add-on reads the local review history and replays the same policy used by
+the host/MCP helper. It never writes cards, notes, tags, flags, review logs or
+scheduling settings. Undo and subsequent answers therefore change the evidence
+on the next display without maintaining a separate counter. An evaluation
+failure hides the badge and logs only the exception type. Preview and unmanaged
+cards receive an empty payload so another card's evidence cannot carry over.
+
+Recent review means the latest five actual Review answers, with at least three
+observations; multiple answers on one study day count and long intervals do not expire the history.
+Two Again, three Hard, or three combined Again/Hard including both ratings
+activate the candidate. After activation, three new observations with no Again
+and at least two Good/Easy clear it and begin a fresh window. Learning/relearning
+instead counts all answers within one episode across dates: three Again, four Hard, or four
+combined including both. These learning signals remain until graduation back
+to Review; simply crossing midnight does not clear them. A delay value, when
+available, is explicitly an estimate from logged intervals and is not a weight
+in the criterion.
+
+Ordinary content edits leave the evidence intact. The host/MCP reassessment
+operation requires the user to choose reassessment and stores a small card
+custom-data anchor while preserving the review log. Desktop rendering only
+reads that anchor. Invalid anchors are not silently discarded.
+
+AnkiWeb sync transports card data and templates, but not this desktop add-on.
+Custom Scheduling is not enabled by this package. A separate explicit host
+operation bootstraps prior review history into card-specific event summaries and
+installs the owned synchronous custom scheduler for mobile. Its candidates only
+change custom data; Anki commits the chosen candidate with the native answer and
+restores it with Undo. The desktop add-on continues to prefer its fresh local
+history payload. Mobile evidence contains counts without invented grading dates.
+See the host README's mobile initialization procedure and its boundaries for
+unseeded new cards and concurrent offline review branches. There are no automatic
+metadata writes during rendering or after background sync.
 
 ## Sources and updates
 

@@ -37,7 +37,7 @@ class Access:
             return False
         if method == "GET" and path in ("/status", "/status/full"):
             return True
-        if method == "POST" and path in ("/operations/status", "/operations/history", "/deck-options", "/model-info", "/media"):
+        if method == "POST" and path in ("/operations/status", "/operations/history", "/deck-options", "/model-info", "/media", "/difficulty/query"):
             return role in ("read", "operation", "schema")
         if method == "POST" and path in ("/operations/prepare", "/operations/apply", "/operations/delivery"):
             return role in ("operation", "schema")
@@ -46,6 +46,8 @@ class Access:
         if method == "POST" and path in ("/schema/inspect", "/schema/backup", "/schema/apply"):
             return role == "schema"
         if method == "POST" and path in ("/tags/unused/inspect", "/tags/unused/prepare", "/tags/unused/apply"):
+            return role == "schema"
+        if method == "POST" and path in ("/difficulty/mobile/prepare", "/difficulty/mobile/apply"):
             return role == "schema"
         if method == "POST" and path in ("/managed/check", "/managed/history", "/managed/restore/status"):
             return role in ("read", "operation", "schema")

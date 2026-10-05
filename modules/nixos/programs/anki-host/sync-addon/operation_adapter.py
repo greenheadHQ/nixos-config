@@ -14,6 +14,8 @@ from typing import Any
 from .operations import OperationError, decode_media, filename
 from . import note_link_feedback
 from . import unused_tags
+from . import difficulty
+from . import difficulty_mobile
 
 
 # A small, documented subset of the legacy deck-config representation. Preset
@@ -242,7 +244,23 @@ class AnkiAdapter:
         snapshot: dict[str, Any] = {}
         warnings: list[str] = []
         summary: dict[str, Any] = {"notes": 0, "cards": 0, "new_notes": 0, "warnings": warnings}
-        if action == "remove_unused_tags":
+        if action == "configure_difficulty_mobile":
+            if getattr(self.mw, "state", None) == "review":
+                raise OperationError("difficulty-mobile-reviewer-must-be-closed")
+            try:
+                prepared = difficulty_mobile.plan(self.col, enabled=p["enabled"])
+            except difficulty.DifficultyError as error:
+                raise OperationError(str(error)) from error
+            card_ids = prepared["card_ids"]
+            # Script bytes, membership and complete rows participate in the
+            # existing journal CAS, including a script change after preview.
+            snapshot["difficulty_mobile"] = prepared
+            summary.update(enabled=p["enabled"], changed_cards=len(prepared["updates"]),
+                           scope="card-difficulty-mobile-events")
+            warnings.append("Stop studying on every device, sync all reviews to this host, then apply. "
+                            "Sync the result to each device before resuming. New unseeded mobile cards "
+                            "and concurrent offline review branches require another explicit reconciliation.")
+        elif action == "remove_unused_tags":
             snapshot = unused_tags.checked_snapshot(self.col, p["tags"], p["protected_tags"])
             summary.update(tags=p["tags"], protected_tags=p["protected_tags"],
                            registry_names=len(p["tags"]), scope="local-tag-registry")
@@ -367,6 +385,18 @@ class AnkiAdapter:
                 warnings.append("Updating fields may activate templates or cloze deletions and generate new cards.")
         if card_ids:
             cards = self._cards(card_ids)
+            if action == "reassess_difficulty":
+                for card in cards:
+                    if card.note().note_type()["name"] != difficulty.MODEL_NAME:
+                        raise OperationError("unmanaged-difficulty-card")
+                    try:
+                        rows = difficulty.review_rows(self.col, card.id)
+                        if difficulty_mobile.KEY in difficulty.custom_data(card.custom_data):
+                            difficulty_mobile.card_data(card, rows, reassess=True)
+                        else:
+                            difficulty.reassessed_data(card.custom_data, rows)
+                    except difficulty.DifficultyError as error:
+                        raise OperationError(str(error)) from error
             note_ids = sorted(set(note_ids) | {c.nid for c in cards})
             snapshot["cards"] = self._rows("cards", "id", card_ids)
             snapshot["reviews"] = self._rows("revlog", "cid", card_ids)
@@ -379,6 +409,8 @@ class AnkiAdapter:
         summary["ids_truncated"] = len(note_ids) > 100 or len(card_ids) > 100
         if action == "set_card_flags":
             summary["flag"] = p["flag"]
+        if action == "reassess_difficulty":
+            summary["scope"] = "card-difficulty-reassessment-anchor"
         if action in ("delete_notes", "delete_decks"):
             # Compatibility: this is the pre-deletion scope, never a deleted-row
             # count. Anki retains revlog entries after removing their cards.
@@ -519,6 +551,25 @@ class AnkiAdapter:
             if any(card.user_flag() != p["flag"] for card in self._cards(p["card_ids"])):
                 raise OperationError("flag-readback-mismatch")
             result.update(card_ids=p["card_ids"], flag=p["flag"])
+        elif action == "configure_difficulty_mobile":
+            if getattr(self.mw, "state", None) == "review":
+                raise OperationError("difficulty-mobile-reviewer-must-be-closed")
+            prepared = difficulty_mobile.plan(self.col, enabled=p["enabled"])
+            difficulty_mobile.apply(self.col, prepared)
+            self.mw.reset()
+            result.update(enabled=p["enabled"], changed_cards=len(prepared["updates"]),
+                          scope="card-difficulty-mobile-events", sync_required=True)
+        elif action == "reassess_difficulty":
+            entry = self.col.add_custom_undo_entry("점검 후보 재평가")
+            try:
+                for cid in p["card_ids"]:
+                    difficulty.reassess_card(self.col, cid)
+            finally:
+                self.col.merge_undo_entries(entry)
+            # A custom-data-only OpChanges.card refresh can leave precomputed
+            # candidates holding the old anchor. Rebuild the reviewer queue.
+            self.mw.reset()
+            result.update(card_ids=p["card_ids"], scope="card-difficulty-reassessment-anchor")
         elif action == "forget_cards":
             ac.forgetCards(cards=p["card_ids"])
         elif action == "store_media":

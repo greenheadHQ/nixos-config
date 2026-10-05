@@ -23,6 +23,9 @@ import uuid
 
 MARKER = ".nix-managed.json"
 STATE = ".nix-anki-addons"
+# Explicit local packages do not have an AnkiWeb distribution ID. Keep this
+# allowlist narrower than Anki's arbitrary local package-name support.
+LOCAL_ADDONS = frozenset({"nixos-difficulty-badge"})
 
 
 def read_json(path, default=None):
@@ -54,12 +57,17 @@ def relative_file(name):
     return path
 
 
+def validate_addon_id(addon_id):
+    if not isinstance(addon_id, str) or not (
+            re.fullmatch(r"[0-9]+", addon_id) or addon_id in LOCAL_ADDONS):
+        raise ValueError(f"Invalid add-on ID: {addon_id}")
+
+
 def validate_record(record):
     if not isinstance(record, dict):
         raise ValueError("Invalid ownership record")
     for addon_id, item in record.items():
-        if not re.fullmatch(r"[0-9]+", addon_id):
-            raise ValueError(f"Invalid AnkiWeb ID: {addon_id}")
+        validate_addon_id(addon_id)
         if not isinstance(item["files"], list):
             raise ValueError("Invalid managed files")
         for name in item["files"]:
@@ -215,8 +223,7 @@ class Manager:
                 stage.mkdir(mode=0o700)
             new = {}
             for addon_id, addon in manifest.items():
-                if not re.fullmatch(r"[0-9]+", addon_id):
-                    raise ValueError(f"Invalid AnkiWeb ID: {addon_id}")
+                validate_addon_id(addon_id)
                 if not isinstance(addon["config"], dict) or type(addon["enabled"]) is not bool:
                     raise ValueError("Expected config object and enabled boolean")
                 source = Path(addon["source"])

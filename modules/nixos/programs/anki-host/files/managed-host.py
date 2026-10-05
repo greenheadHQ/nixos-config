@@ -1,4 +1,4 @@
-"""Root-only managed-model enrollment, deployed update and diagnostics.
+"""Root-only managed-model enrollment, deployed update and mobile difficulty setup.
 
 The wrapper owns the instance, loopback port, state and credential directories.
 There is no URL, raw definition, digest, filesystem path, schema action, or sync
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -26,6 +27,19 @@ import urllib.request
 # Exact codes only: helper errors may otherwise contain note content or secrets.
 HELPER_ERRORS = frozenset({
     "busy", "local-authentication-required", "role-not-allowed",
+    "root-operator-command-required", "operation-not-found", "operation-journal-invalid",
+    "collection-not-ready", "collection-not-open", "invalid-operation-parameters",
+    "request-id-payload-mismatch", "stale-preview-create-a-new-request-id",
+    "preview-expired-create-a-new-request-id", "preview-token-mismatch",
+    "explicit-confirmation-required", "restore-point-not-mirrored",
+    "apply-in-progress-or-interrupted-do-not-repeat",
+    "invalid-difficulty-mobile-request", "difficulty-mobile-reviewer-must-be-closed",
+    "difficulty-mobile-devices-must-be-ready",
+    "invalid-mobile-summary", "mobile-summary-capacity-exceeded", "duplicate-review-id",
+    "custom-data-capacity-exceeded", "custom-data-integer-not-javascript-safe", "custom-scheduling-already-configured",
+    "managed-difficulty-model-missing", "invalid-custom-data", "invalid-cutoff",
+    "invalid-reassessment-anchor", "reassessment-anchor-changed", "invalid-rollover",
+    "unmanaged-difficulty-card",
     "managed-enrollment-confirmation-expired-or-invalid",
     "managed-enrollment-model-missing",
     "managed-enrollment-preview-stale",
@@ -143,7 +157,7 @@ def helper(path: str, payload: dict[str, Any], *, key: str, port: int, timeout: 
     return value["result"]
 
 
-def normal_sync(instance: str, state: Path) -> None:
+def normal_sync(instance: str, state: Path) -> dict[str, Any]:
     """Use the host's fixed normal unit and require a newly published success."""
     def status() -> dict[str, Any]:
         try:
@@ -170,6 +184,8 @@ def normal_sync(instance: str, state: Path) -> None:
             or current.get("mode") != "normal" or not isinstance(current.get("sync"), dict)
             or current["sync"].get("action") != "normal"):
         raise CommandError("fresh-normal-sync-required")
+    return {"run_id": current["runId"], "run_started_at": current["runStartedAt"],
+            "result": "success", "action": "normal"}
 
 
 def update_result(result: dict[str, Any], operation_id: str) -> dict[str, Any]:
@@ -183,6 +199,28 @@ def update_result(result: dict[str, Any], operation_id: str) -> dict[str, Any]:
         if "error" in public:
             public["error"] = str(helper_error(public))
     return result
+
+
+def difficulty_result(result: dict[str, Any], operation_id: str,
+                      expected_request_id: str | None = None) -> dict[str, Any]:
+    """Reject foreign receipts and retain only closed-vocabulary error details."""
+    if result.get("action") != "configure_difficulty_mobile":
+        raise CommandError("unexpected-operation-action")
+    if (result.get("operation_id") != operation_id
+            or result.get("state") not in ("prepared", "applied", "partial", "unknown", "expired")
+            or not isinstance(result.get("sync"), dict) or result["sync"].get("state") != "disabled"
+            or (expected_request_id is not None and result.get("request_id") != expected_request_id)):
+        raise CommandError("helper-request-failed")
+
+    def redact(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {name: str(helper_error({"error": item})) if name == "error" else redact(item)
+                    for name, item in value.items()}
+        if isinstance(value, list):
+            return [redact(item) for item in value]
+        return value
+
+    return redact(result)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -207,6 +245,21 @@ def main(argv: list[str] | None = None) -> None:
     update.add_argument("--confirm", required=True, action="store_true")
     for name in ("update-status", "diagnose-update"):
         commands.add_parser(name, allow_abbrev=False).add_argument("operation_id", type=identifier)
+    difficulty_preview = commands.add_parser("difficulty-preview", allow_abbrev=False)
+    enabled = difficulty_preview.add_mutually_exclusive_group()
+    enabled.add_argument("--enabled", dest="enabled", action="store_true", default=True,
+                         help="enable mobile difficulty tracking (default)")
+    enabled.add_argument("--disabled", dest="enabled", action="store_false",
+                         help="disable mobile difficulty tracking")
+    difficulty_preview.add_argument("--devices-ready", required=True, action="store_true",
+                                    help="confirm other devices finished syncing and are idle until setup and sync complete")
+    difficulty_preview.add_argument("--request-id", required=True, type=request_id,
+                                    help="reuse the same ID and flags if the preview response is lost")
+    difficulty_apply = commands.add_parser("difficulty-apply", allow_abbrev=False)
+    difficulty_apply.add_argument("operation_id", type=identifier)
+    difficulty_apply.add_argument("--preview-token", required=True, type=preview_token)
+    difficulty_apply.add_argument("--confirm", required=True, action="store_true")
+    commands.add_parser("difficulty-status", allow_abbrev=False).add_argument("operation_id", type=identifier)
     args = parser.parse_args(argv)
     if os.geteuid() != 0:
         parser.error("root-required")
@@ -217,7 +270,7 @@ def main(argv: list[str] | None = None) -> None:
     if not 1 <= port <= 65535 or timeout <= 0:
         raise ValueError("invalid-configured-helper-boundary")
     state = None
-    if args.command in ("update-preview", "update"):
+    if args.command in ("update-preview", "update", "difficulty-preview", "difficulty-apply"):
         state = Path(os.environ["STATE_DIR"])
         if not state.is_absolute():
             raise ValueError("invalid-configured-state-directory")
@@ -239,6 +292,14 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "update":
         path = "/managed/update/apply"
         payload = {"operation_id": args.operation_id, "preview_token": args.preview_token, "confirm": True}
+    elif args.command == "difficulty-preview":
+        path = "/difficulty/mobile/prepare"
+        payload = {"enabled": args.enabled, "devices_ready": True, "request_id": args.request_id}
+    elif args.command == "difficulty-apply":
+        path = "/difficulty/mobile/apply"
+        payload = {"operation_id": args.operation_id, "preview_token": args.preview_token, "confirm": True}
+    elif args.command == "difficulty-status":
+        path, payload = "/operations/status", {"operation_id": args.operation_id}
     else:
         path = "/managed/update/" + ("status" if args.command == "update-status" else "diagnose")
         payload = {"operation_id": args.operation_id}
@@ -254,7 +315,25 @@ def main(argv: list[str] | None = None) -> None:
         # Emit before prepare: a lost response must leave a status lookup key.
         print("operation_id: " + operation_id, file=sys.stderr, flush=True)
         payload = {"operation_id": operation_id, "devices_ready": True}
-    result = call(path, payload)
+    elif args.command == "difficulty-preview":
+        # Operation IDs use the journal's deterministic request-ID derivation.
+        # Keep a recovery key even if presync or the prepare response is lost.
+        operation_id = hashlib.sha256(args.request_id.encode()).hexdigest()[:32]
+        print("operation_id: " + operation_id, file=sys.stderr, flush=True)
+        print("If interrupted, use difficulty-status for this operation or repeat difficulty-preview "
+              "with the same request ID and flags.", file=sys.stderr)
+        normal_sync(instance, state)
+    try:
+        result = call(path, payload)
+        if args.command.startswith("difficulty-"):
+            result = difficulty_result(result,
+                operation_id if args.command == "difficulty-preview" else args.operation_id,
+                args.request_id if args.command == "difficulty-preview" else None)
+    except Exception:
+        if args.command == "difficulty-apply":
+            print("Use difficulty-status " + args.operation_id + " before retrying this operation; "
+                  "do not create a new request ID.", file=sys.stderr)
+        raise
     if path.startswith("/managed/update/"):
         result = update_result(result, payload["operation_id"])
     complete = True
@@ -276,6 +355,29 @@ def main(argv: list[str] | None = None) -> None:
                             and result.get("sync", {}).get("state") == "synced")
     elif args.command == "update-preview":
         complete = result.get("state") == "prepared"
+    elif args.command.startswith("difficulty-"):
+        # The journal deliberately disables automatic delivery for root actions.
+        # This invocation's separate observation is never written into a receipt,
+        # and does not establish that a mobile device has downloaded the settings.
+        result["mobile_delivery"] = {"state": "not-checked", "device_sync_required": True}
+        if args.command == "difficulty-preview":
+            complete = result.get("state") == "prepared"
+        elif args.command == "difficulty-apply":
+            complete = False
+            result["mobile_delivery"]["state"] = "not-attempted"
+            if result.get("state") == "applied":
+                try:
+                    synced = normal_sync(instance, state)
+                except Exception:
+                    result["mobile_delivery"]["state"] = "unconfirmed"
+                    print("normal-sync-unconfirmed; inspect difficulty-status " + args.operation_id
+                          + " before retrying the same operation.", file=sys.stderr)
+                else:
+                    result["mobile_delivery"].update(state="host-normal-sync-completed", **synced)
+                    complete = True
+            else:
+                print("operation-not-completed; inspect difficulty-status " + args.operation_id
+                      + " before retrying the same operation.", file=sys.stderr)
     print(json.dumps(result, ensure_ascii=False))
     if not complete:
         raise SystemExit(1)

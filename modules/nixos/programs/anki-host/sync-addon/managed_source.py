@@ -29,6 +29,7 @@ _FEATURE_FILES = (
     "sync-addon/code-highlight.css",
     "sync-addon/text-size-controls.html",
     "sync-addon/scratchpad.html",
+    "sync-addon/difficulty-badge.html",
     "code-highlighting/dist/manifest.json",
 )
 
@@ -133,6 +134,14 @@ def _check_features(root: Path, definition: dict, asset_name: str) -> None:
     if (front.count(guarded) != 1 or "anki-cid-copy" in front.replace(guarded, "")
             or "anki-cid-copy" in back or back.count("{{FrontSide}}") != 1):
         _fail("card-id-fragment-mismatch")
+
+    badge = _guard(_text(root, "sync-addon/difficulty-badge.html"), mode, names)
+    question_at = front.find('class="question anki-code-scope"')
+    if (front.count(badge) != 1
+            or "anki-difficulty-badge-v1" in front.replace(badge, "")
+            or "anki-difficulty-badge-v1" in back
+            or question_at < 0 or front.index(badge) > question_at):
+        _fail("difficulty-badge-fragment-mismatch")
 
     note_links = _text(root, "sync-addon/note-link-renderer.html")
     if (back.count(note_links) != 1

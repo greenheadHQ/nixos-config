@@ -30,3 +30,20 @@ pkgs.lib.mapAttrs (
       ''}
     ''
 ) sources
+// {
+  "nixos-difficulty-badge" =
+    pkgs.runCommand "anki-addon-difficulty-badge-1"
+      {
+        passthru.source = {
+          name = "점검 후보";
+          mod = 1;
+        };
+      }
+      ''
+        mkdir -p "$out"
+        cp ${./difficulty-badge/__init__.py} "$out/__init__.py"
+        cp ${./difficulty-badge/manifest.json} "$out/manifest.json"
+        # The host/MCP and desktop evaluate one policy source, not separate copies.
+        cp ${../../../nixos/programs/anki-host/sync-addon/difficulty.py} "$out/difficulty.py"
+      '';
+}

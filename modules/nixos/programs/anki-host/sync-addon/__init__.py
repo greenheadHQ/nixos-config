@@ -793,6 +793,20 @@ def _unused_tags_request(path: str, body: dict[str, Any]) -> dict[str, Any]:
     return ops.apply(body["operation_id"], body["preview_token"], body["confirm"], operator_authorized=True)
 
 
+def _difficulty_mobile_request(path: str, body: dict[str, Any]) -> dict[str, Any]:
+    ops = _ops()
+    if path == "/difficulty/mobile/prepare":
+        if not {"enabled", "devices_ready", "request_id"} == set(body):
+            raise OperationError("invalid-difficulty-mobile-request")
+        return ops.prepare("configure_difficulty_mobile", {
+            "enabled": body["enabled"], "devices_ready": body["devices_ready"]},
+            body["request_id"], operator_authorized=True)
+    if (set(body) != {"operation_id", "preview_token", "confirm"}
+            or ops.status(body["operation_id"])["action"] != "configure_difficulty_mobile"):
+        raise OperationError("invalid-difficulty-mobile-request")
+    return ops.apply(body["operation_id"], body["preview_token"], body["confirm"], operator_authorized=True)
+
+
 def _media(body: dict[str, Any]) -> dict[str, Any]:
     _require_col()
     if body.get("filename") is None:
@@ -923,6 +937,23 @@ class _Handler(BaseHTTPRequestHandler):
                 result = _mutating("deck-options", _deck_options, str(body["deck_name"]))
             elif path == "/model-info" and self.command == "POST":
                 result = _mutating("model-info", lambda: AnkiAdapter(aqt.mw, MEDIA_LIMIT).model_info(str(body["model_name"])))
+            elif path == "/difficulty/query" and self.command == "POST":
+                from . import difficulty
+                from .operations import ids
+                if set(body) != {"card_ids"}:
+                    raise OperationError("invalid-difficulty-query")
+                card_ids = ids(body["card_ids"])
+                if len(card_ids) > 100:
+                    raise OperationError("difficulty-query-too-many-cards")
+                def query():
+                    try:
+                        return {"cards": [difficulty.card_payload(aqt.mw.col, cid, now=int(time.time() * 1000))
+                                          for cid in card_ids]}
+                    except difficulty.DifficultyError as error:
+                        raise OperationError(str(error)) from error
+                result = _mutating("difficulty-query", query)
+            elif path in ("/difficulty/mobile/prepare", "/difficulty/mobile/apply") and self.command == "POST":
+                result = _mutating("difficulty-mobile", _difficulty_mobile_request, path, body)
             elif path == "/media" and self.command == "POST":
                 result = _mutating("media", _media, body)
             elif path.startswith("/managed/") and self.command == "POST":

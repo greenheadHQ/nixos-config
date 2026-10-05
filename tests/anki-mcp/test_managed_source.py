@@ -76,7 +76,7 @@ def test_build_round_trip_preserves_definition_and_actual_asset_bytes(source, tm
 def test_source_inventory_is_sorted_exact_and_excludes_unmanaged_assets():
     paths = source_paths(HOST)
     assert paths == tuple(sorted(set(paths)))
-    assert len(paths) == 14
+    assert len(paths) == 15
     assert VERSION_PATH in paths
     assert all((HOST / path).is_file() for path in paths)
     assert not any(".license.txt" in path or "node_modules" in path for path in paths)
@@ -121,6 +121,7 @@ def test_version_requires_exact_schema_and_digest_without_git_provenance(source,
     ("sync-addon/code-highlight.css", "highlight-fragment-mismatch"),
     ("sync-addon/text-size-controls.html", "text-size-fragment-mismatch"),
     ("sync-addon/scratchpad.html", "scratchpad-fragment-mismatch"),
+    ("sync-addon/difficulty-badge.html", "difficulty-badge-fragment-mismatch"),
 ])
 def test_feature_source_change_cannot_silently_leave_full_template_stale(source, relative, reason):
     path = source / relative
@@ -135,6 +136,8 @@ def test_feature_source_change_cannot_silently_leave_full_template_stale(source,
     ("back.html", "ignoreIllegals: true", "ignoreIllegals: false", "highlight-fragment-mismatch"),
     ("front.html", "{{^질문}}{{#맥락}}", "{{#맥락}}", "card-id-fragment-mismatch"),
     ("front.html", 'const KEY = "AnkiTextSizeV1"', 'const KEY = "AnkiTextSizeV2"', "text-size-fragment-mismatch"),
+    ("front.html", 'const KEY = "AnkiDifficultyBadgeV1"', 'const KEY = "AnkiDifficultyBadgeV2"', "difficulty-badge-fragment-mismatch"),
+    ("front.html", 'class="question anki-code-scope"', 'class="question-renamed anki-code-scope"', "difficulty-badge-fragment-mismatch"),
     ("front.html", "{{^질문}}{{#맥락}}<!-- anki-text-size-v1 -->", "{{#맥락}}<!-- anki-text-size-v1 -->",
      "text-size-fragment-mismatch"),
     ("front.html", 'const KEY = "AnkiScratchpadV1"', 'const KEY = "AnkiScratchpadV2"',
