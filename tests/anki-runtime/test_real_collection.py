@@ -132,6 +132,7 @@ def test_packaged_handler_enforces_authentication_before_dispatch(runtime, monke
         {'action': 'deckNames', 'version': 5, 'key': read_key},
         {'action': 'createDeck', 'version': 6, 'key': read_key, 'params': {'deck': 'Unauthorized'}},
         {'action': 'getDeckStats', 'version': 6, 'key': read_key, 'params': {'decks': ['Unauthorized']}},
+        {'action': 'getDeckStats', 'version': 6, 'key': read_key, 'params': {'decks': [before[0], 'Unauthorized']}},
     ):
         reply = r.ac.handler(request)
         assert reply['error'], request
@@ -139,6 +140,21 @@ def test_packaged_handler_enforces_authentication_before_dispatch(runtime, monke
     reply = r.ac.handler({'action': 'deckNames', 'version': 6, 'key': read_key})
     assert reply == {'result': before, 'error': None}
     assert logged and all(name == 'reply' for name, _ in logged)
+
+
+def test_packaged_deck_stats_reads_names_once(runtime, monkeypatch):
+    r = runtime
+    original, calls = r.ac.deckNames, []
+    def names():
+        calls.append(True)
+        return original()
+    monkeypatch.setattr(r.ac, 'deckNames', names)
+    for count in (0, 1, 10, 50):
+        calls.clear()
+        reply = r.ac.handler({'action': 'getDeckStats', 'version': 6, 'key': '1' * 64,
+                              'params': {'decks': ['Default'] * count}})
+        assert reply['error'] is None
+        assert len(calls) == bool(count)
 
 
 def test_note_fields_tags_and_scheduling(runtime):
