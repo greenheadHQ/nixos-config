@@ -2254,6 +2254,8 @@ let
         && !home.programs.anki.enable
         && (home.home.activation ? ankiAddons) == enabled
         && builtins.length (builtins.attrNames home.programs.ankiAddons.addons) == 10
+        && home.programs.ankiAddons.addons."24411424".config."reviewer delete note" == "<nop>"
+        && home.programs.ankiAddons.addons."24411424".config."window_browser delete" == "<nop>"
       ) expectedDarwinHosts;
     }
   ];
