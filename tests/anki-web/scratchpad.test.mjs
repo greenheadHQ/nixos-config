@@ -38,15 +38,15 @@ function setup({ mobile = false, qa = true, platform = "" } = {}) {
     return event;
   };
   const resize = (direction, steps = 1) => {
-    for (let i = 0; i < steps; i++) key(direction, { altKey:true, shiftKey:true });
+    for (let i = 0; i < steps; i++) key(direction, { code:`Key${direction}`, altKey:true, shiftKey:true });
   };
   return { ...h, ui, input, action, open, write, render, key, resize,
     isOpen:() => h.document.documentElement.classList.contains("anki-scratchpad-open") };
 }
 
 test("desktop hints describe the active platform chords and survive card remounts", async () => {
-  for (const [platform, expected] of [["MacIntel", ["⌥⇧J 입력", "⌥⇧↑/↓ 높이", "Esc 입력 종료"]],
-    ["Win32", ["Alt+Shift+J 입력", "Alt+Shift+↑/↓ 높이", "Esc 입력 종료"]]]) {
+  for (const [platform, expected] of [["MacIntel", ["⌥⇧F 입력/접기", "⌥⇧J↓/K↑ 높이", "Esc 입력 종료"]],
+    ["Win32", ["Alt+Shift+F 입력/접기", "Alt+Shift+J↓/K↑ 높이", "Esc 입력 종료"]]]) {
     const h = setup({ platform });
     try {
       const hints = () => h.ui().querySelector(".anki-scratchpad__shortcuts");
@@ -55,9 +55,9 @@ test("desktop hints describe the active platform chords and survive card remount
       assert.ok(hints().nextElementSibling.classList.contains("anki-scratchpad__tools"));
       h.action("collapse");
       assert.ok(h.ui().querySelector("button").title.includes(expected[0].split(" ")[0]));
-      h.key("∆", { code:"KeyJ", altKey:true, shiftKey:true });
+      h.key("Ï", { code:"KeyF", altKey:true, shiftKey:true });
       assert.equal(h.document.activeElement, h.input(), "the displayed physical chord opens input");
-      h.resize("ArrowUp");
+      h.resize("K");
       assert.equal(h.ui().querySelector('[role="separator"]').getAttribute("aria-valuenow"), "38");
       h.key("Escape");
       assert.notEqual(h.document.activeElement, h.input(), "the displayed Escape chord leaves input");
@@ -124,7 +124,7 @@ test("next card, retry and undo clear text while retaining the session ratio", a
   const h = setup();
   try {
     h.open(); h.write("A");
-    h.resize("ArrowUp", 10);
+    h.resize("K", 10);
     await h.render("123456790");
     assert.equal(h.input().value, "");
     assert.equal(h.ui().querySelector('[role="separator"]').getAttribute("aria-valuenow"), "65");
@@ -156,7 +156,7 @@ test("same-card fresh front clears the draft; same DOM script re-execution prese
     const h = setup({ mobile:!qa, qa });
     try {
       h.open(); h.write("Undo 직전의 새 답안");
-      h.resize("ArrowUp", 10);
+      h.resize("K", 10);
       h.action("collapse");
       await h.render("123456789");
       assert.equal(h.input().value, "");
@@ -199,7 +199,7 @@ test("focused scratchpad buttons isolate reviewer keys while the resize chord wo
     h.key(" "); h.key("Enter"); h.key("e");
     h.open();
     h.ui().querySelector('[role="separator"]').focus();
-    h.key("u"); h.key("1"); h.resize("ArrowUp", 10);
+    h.key("u"); h.key("1"); h.resize("K", 10);
     assert.equal(native, 0);
     assert.equal(h.ui().querySelector('[role="separator"]').getAttribute("aria-valuenow"), "65");
   } finally { h.close(); }
@@ -209,7 +209,7 @@ test("unmanaged cards suspend the UI but preserve the session open state and siz
   const h = setup();
   try {
     h.open(); h.write("남기지 않을 답");
-    h.resize("ArrowUp", 10);
+    h.resize("K", 10);
     h.document.getElementById("qa").innerHTML = '<p>다른 노트 유형</p><span data-anki-cid="123456790"></span>';
     await h.flush();
     assert.equal(h.ui(), null);
@@ -241,13 +241,13 @@ test("pagehide discards all session state without storage writes", () => {
   } finally { h.close(); }
 });
 
-test("physical Option+Shift+J works; Command chord and ordinary reviewer keys pass through", () => {
+test("physical Option+Shift+F works; Command chord and ordinary reviewer keys pass through", () => {
   const h = setup();
   try {
     h.action("collapse");
-    assert.equal(h.key("J", { code:"KeyJ", shiftKey:true, metaKey:true }).defaultPrevented, false);
+    assert.equal(h.key("F", { code:"KeyF", shiftKey:true, metaKey:true }).defaultPrevented, false);
     assert.equal(h.isOpen(), false);
-    assert.equal(h.key("Ô", { code:"KeyJ", shiftKey:true, altKey:true }).defaultPrevented, true);
+    assert.equal(h.key("Ï", { code:"KeyF", shiftKey:true, altKey:true }).defaultPrevented, true);
     assert.equal(h.document.activeElement, h.input());
     h.key("Escape");
     let native = 0;
@@ -255,6 +255,34 @@ test("physical Option+Shift+J works; Command chord and ordinary reviewer keys pa
     h.key(" ");
     assert.equal(native, 1);
     assert.equal(h.isOpen(), true);
+  } finally { h.close(); }
+});
+
+test("focus chord opens, focuses an open pad, and collapses only a focused input", () => {
+  const h = setup();
+  try {
+    const press = () => h.key("Ï", { code:"KeyF", altKey:true, shiftKey:true });
+    h.write("회상한 내용\n두 번째 줄");
+    assert.notEqual(h.document.activeElement, h.input());
+    assert.equal(press().defaultPrevented, true);
+    assert.equal(h.isOpen(), true);
+    assert.equal(h.document.activeElement, h.input());
+    h.input().setSelectionRange(2, 6, "backward");
+    assert.equal(press().defaultPrevented, true);
+    assert.equal(h.isOpen(), false);
+    assert.equal(h.document.activeElement, h.ui().querySelector("button"));
+    assert.equal(h.input().value, "회상한 내용\n두 번째 줄");
+    assert.equal(press().defaultPrevented, true);
+    assert.equal(h.isOpen(), true);
+    assert.equal(h.document.activeElement, h.input());
+    assert.deepEqual([h.input().selectionStart, h.input().selectionEnd, h.input().selectionDirection], [2, 6, "backward"]);
+    for (const target of [h.ui().querySelector('[role="separator"]'), h.ui().querySelector('[data-action="collapse"]')]) {
+      target.focus();
+      press();
+      assert.equal(h.isOpen(), true, "toolbar focus is not input focus");
+      assert.equal(h.document.activeElement, h.input());
+    }
+    assert.equal(h.input().value, "회상한 내용\n두 번째 줄");
   } finally { h.close(); }
 });
 
@@ -329,10 +357,10 @@ test("Option+Shift resize changes exactly five percentage points from each focus
       // Re-running FrontSide must not register a second shortcut listener.
       h.window.eval(scratchpadScript);
       await h.flush();
-      assert.equal(h.key("ArrowUp", { altKey:true, shiftKey:true }).defaultPrevented, true);
+      assert.equal(h.key("", { code:"KeyK", altKey:true, shiftKey:true }).defaultPrevented, true);
       assert.ok(Math.abs(parseFloat(h.ui().style.height) - height - h.window.innerHeight * 0.05) < 0.001);
       assert.equal(handle.getAttribute("aria-valuenow"), "38");
-      assert.equal(h.key("ArrowDown", { altKey:true, shiftKey:true }).defaultPrevented, true);
+      assert.equal(h.key("Ô", { code:"KeyJ", altKey:true, shiftKey:true }).defaultPrevented, true);
       assert.ok(Math.abs(parseFloat(h.ui().style.height) - height) < 0.001);
       assert.equal(h.document.activeElement, focus);
       assert.equal(h.input().value, "첫 문단\n둘째 문단\n셋째 문단");
@@ -351,32 +379,40 @@ test("resize repeats clamp at 20–65%; plain handle keys no longer resize", () 
       assert.equal(h.key(key).defaultPrevented, false);
       assert.equal(handle.getAttribute("aria-valuenow"), "33");
     }
-    for (const [key, limit] of [["ArrowUp", "65"], ["ArrowDown", "20"]]) {
+    for (const key of ["ArrowUp", "ArrowDown"]) {
+      assert.equal(h.key(key, { altKey:true, shiftKey:true }).defaultPrevented, false);
+      assert.equal(handle.getAttribute("aria-valuenow"), "33", "old resize chords retain native behavior");
+    }
+    for (const [key, limit] of [["K", "65"], ["J", "20"]]) {
       for (let i = 0; i < 20; i++) {
-        assert.equal(h.key(key, { altKey:true, shiftKey:true, repeat:i > 0 }).defaultPrevented, true);
+        assert.equal(h.key(key, { code:`Key${key}`, altKey:true, shiftKey:true, repeat:i > 0 }).defaultPrevented, true);
       }
       assert.equal(handle.getAttribute("aria-valuenow"), limit);
     }
-    assert.equal(handle.getAttribute("aria-keyshortcuts"), "Alt+Shift+ArrowUp Alt+Shift+ArrowDown");
-    assert.equal(h.ui().querySelector("button").getAttribute("aria-keyshortcuts"), "Alt+Shift+J");
+    assert.equal(handle.getAttribute("aria-keyshortcuts"), "Alt+Shift+K Alt+Shift+J");
+    assert.equal(h.ui().querySelector("button").getAttribute("aria-keyshortcuts"), "Alt+Shift+F");
   } finally { h.close(); }
 });
 
-test("opening chord consumes repeats without typing Option characters or refocusing", () => {
+test("focus chord consumes repeats without typing, toggling or refocusing", () => {
   const h = setup();
   try {
     h.action("collapse");
-    assert.equal(h.key("Ô", { code:"KeyJ", altKey:true, shiftKey:true, repeat:true }).defaultPrevented, true);
+    assert.equal(h.key("Ï", { code:"KeyF", altKey:true, shiftKey:true, repeat:true }).defaultPrevented, true);
     assert.equal(h.isOpen(), false);
-    h.key("Ô", { code:"KeyJ", altKey:true, shiftKey:true });
+    h.key("Ï", { code:"KeyF", altKey:true, shiftKey:true });
     h.write("답안");
     h.input().setSelectionRange(1, 1);
-    assert.equal(h.key("Ô", { code:"KeyJ", altKey:true, shiftKey:true, repeat:true }).defaultPrevented, true);
+    assert.equal(h.key("Ï", { code:"KeyF", altKey:true, shiftKey:true, repeat:true }).defaultPrevented, true);
+    assert.equal(h.isOpen(), true);
+    assert.equal(h.document.activeElement, h.input());
     assert.equal(h.input().value, "답안");
     assert.equal(h.input().selectionStart, 1);
     h.key("Escape");
-    h.key("Ô", { code:"KeyJ", altKey:true, shiftKey:true, repeat:true });
+    h.key("Ï", { code:"KeyF", altKey:true, shiftKey:true, repeat:true });
     assert.notEqual(h.document.activeElement, h.input());
+    assert.equal(h.isOpen(), true);
+    assert.equal(h.input().value, "답안");
   } finally { h.close(); }
 });
 
@@ -390,26 +426,29 @@ test("shortcuts require exactly Option+Shift and leave closed/unmanaged cards al
       { metaKey:true, shiftKey:true }, { altKey:true, shiftKey:true, ctrlKey:true },
       { altKey:true, shiftKey:true, metaKey:true },
     ]) {
-      assert.equal(h.key("ArrowUp", modifiers).defaultPrevented, false);
-      assert.equal(h.ui().style.height, height);
+      for (const key of ["F", "J", "K"]) {
+        assert.equal(h.key(key, { code:`Key${key}`, ...modifiers }).defaultPrevented, false);
+        assert.equal(h.ui().style.height, height);
+        assert.notEqual(h.document.activeElement, h.input());
+      }
     }
     h.action("collapse");
     for (const modifiers of [
       { ctrlKey:true, shiftKey:true }, { altKey:true },
       { altKey:true, shiftKey:true, ctrlKey:true }, { altKey:true, shiftKey:true, metaKey:true },
     ]) {
-      assert.equal(h.key("J", { code:"KeyJ", ...modifiers }).defaultPrevented, false);
+      assert.equal(h.key("F", { code:"KeyF", ...modifiers }).defaultPrevented, false);
       assert.equal(h.isOpen(), false);
     }
-    for (const key of ["ArrowUp", "ArrowDown"]) {
-      assert.equal(h.key(key, { altKey:true, shiftKey:true }).defaultPrevented, false);
+    for (const key of ["J", "K"]) {
+      assert.equal(h.key(key, { code:`Key${key}`, altKey:true, shiftKey:true }).defaultPrevented, false);
       assert.equal(h.isOpen(), false);
       assert.equal(handle.getAttribute("aria-valuenow"), "33");
     }
     h.document.getElementById("qa").innerHTML = "<p>다른 노트 유형</p>";
     await h.flush();
-    for (const key of ["J", "ArrowUp", "ArrowDown"]) {
-      assert.equal(h.key(key, { code:key === "J" ? "KeyJ" : key, altKey:true, shiftKey:true }).defaultPrevented, false);
+    for (const key of ["F", "J", "K"]) {
+      assert.equal(h.key(key, { code:`Key${key}`, altKey:true, shiftKey:true }).defaultPrevented, false);
       assert.equal(h.ui(), null);
     }
   } finally { h.close(); }
@@ -422,8 +461,8 @@ test("IME composition and legacy 229 events keep all Option+Shift chords native"
       h.open(); h.write("한");
       const height = h.ui().style.height;
       if (mode === "tracked") h.input().dispatchEvent(new h.window.CompositionEvent("compositionstart"));
-      for (const key of ["J", "ArrowUp", "ArrowDown"]) {
-        const event = h.key(key, { code:key === "J" ? "KeyJ" : key, altKey:true, shiftKey:true,
+      for (const key of ["F", "J", "K"]) {
+        const event = h.key(key, { code:`Key${key}`, altKey:true, shiftKey:true,
           isComposing:mode === "event", keyCode:mode === "legacy" ? 229 : 0 });
         assert.equal(event.defaultPrevented, false);
         assert.equal(h.ui().style.height, height);
@@ -431,7 +470,7 @@ test("IME composition and legacy 229 events keep all Option+Shift chords native"
         assert.equal(h.input().value, "한");
       }
       h.input().dispatchEvent(new h.window.CompositionEvent("compositionend", { data:"한" }));
-      assert.equal(h.key("ArrowUp", { altKey:true, shiftKey:true }).defaultPrevented, true);
+      assert.equal(h.key("", { code:"KeyK", altKey:true, shiftKey:true }).defaultPrevented, true);
     } finally { h.close(); }
   }
 });
@@ -505,7 +544,7 @@ test("replacing the mobile body with an unmanaged card removes the pad and prese
   const h=setup({mobile:true,qa:false});
   try {
     h.write("임시 답안");
-    h.resize("ArrowUp", 10);
+    h.resize("K", 10);
     const replacement=h.document.createElement("body");
     replacement.innerHTML="<p>다른 유형</p>";
     h.document.documentElement.replaceChild(replacement,h.document.body);
