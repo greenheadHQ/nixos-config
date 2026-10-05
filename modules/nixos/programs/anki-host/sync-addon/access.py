@@ -47,6 +47,8 @@ class Access:
             return role == "schema"
         if method == "POST" and path in ("/tags/unused/inspect", "/tags/unused/prepare", "/tags/unused/apply"):
             return role == "schema"
+        if method == "POST" and path in ("/difficulty/mobile/prepare", "/difficulty/mobile/apply"):
+            return role == "schema"
         if method == "POST" and path in ("/managed/check", "/managed/history", "/managed/restore/status"):
             return role in ("read", "operation", "schema")
         if method == "POST" and path in ("/managed/restore/prepare", "/managed/restore/apply", "/managed/restore/delivery"):

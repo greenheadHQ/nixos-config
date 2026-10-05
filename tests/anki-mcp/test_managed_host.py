@@ -1,6 +1,7 @@
 """Root enrollment CLI routes narrowly without exposing local credentials."""
 
 import importlib.util
+import hashlib
 import io
 import json
 import os
@@ -64,6 +65,9 @@ def test_exact_root_command_routes(host, monkeypatch, tmp_path, capsys, argv, pa
     ["update-preview", "--devices-ready"],
     ["update", "a" * 32, "--preview-token", "b" * 64, "--confirm"],
     ["update-status", "a" * 32], ["diagnose-update", "a" * 32],
+    ["difficulty-preview", "--devices-ready", "--request-id", "mobile001"],
+    ["difficulty-apply", "a" * 32, "--preview-token", "b" * 64, "--confirm"],
+    ["difficulty-status", "a" * 32],
 ])
 def test_non_root_never_reads_credentials_or_sends_request(host, monkeypatch, argv):
     monkeypatch.setattr(host.os, "geteuid", lambda: 1000)
@@ -94,6 +98,21 @@ def test_non_root_never_reads_credentials_or_sends_request(host, monkeypatch, ar
     ["update", "a" * 32, "--preview-token", "b" * 64, "--confirm", "--digest", "c" * 64],
     ["update", "a" * 32, "--preview-token", "b" * 64, "--confirm", "--source", "/tmp/model.json"],
     ["update-status", "../escape"], ["diagnose-update", "a" * 32, "--confirm"],
+    ["difficulty-preview"], ["difficulty-preview", "--devices-ready"],
+    ["difficulty-preview", "--request-id", "mobile001"],
+    ["difficulty-preview", "--devices-rea", "--request-id", "mobile001"],
+    ["difficulty-preview", "--devices-ready", "--request-id", "short"],
+    ["difficulty-preview", "--devices-ready", "--request-id", "mobile001", "--enabled", "--disabled"],
+    ["difficulty-preview", "--devices-ready", "--request-id", "mobile001", "--code", "arbitrary"],
+    ["difficulty-preview", "--devices-ready", "--request-id", "mobile001", "--settings", "{}"],
+    ["difficulty-preview", "--devices-ready", "--request-id", "mobile001", "--url", "http://elsewhere"],
+    ["difficulty-apply", "a" * 32, "--confirm"],
+    ["difficulty-apply", "a" * 32, "--preview-token", "b" * 64],
+    ["difficulty-apply", "a" * 32, "--preview-token", "b" * 64, "--conf"],
+    ["difficulty-apply", "../escape", "--preview-token", "b" * 64, "--confirm"],
+    ["difficulty-apply", "a" * 32, "--preview-token", "invalid", "--confirm"],
+    ["difficulty-apply", "a" * 32, "--preview-token", "b" * 64, "--confirm", "--payload", "{}"],
+    ["difficulty-status", "../escape"], ["difficulty-status", "a" * 32, "--confirm"],
 ])
 def test_unknown_or_incomplete_commands_fail_before_credentials(host, monkeypatch, argv):
     monkeypatch.setattr(host, "read_credential", lambda _path: pytest.fail("unexpected credential read"))
@@ -355,6 +374,12 @@ def test_applied_update_checks_delivery_even_when_sync_fails(host, monkeypatch, 
     ("managed-enrollment-unknown-future-code", "helper-request-failed"),
     ("managed-update-stale-preview-reprepare", "managed-update-stale-preview-reprepare"),
     ("managed-update-stale-preview-reprepare: private note", "helper-request-failed"),
+    ("difficulty-mobile-devices-must-be-ready", "difficulty-mobile-devices-must-be-ready"),
+    ("difficulty-mobile-reviewer-must-be-closed", "difficulty-mobile-reviewer-must-be-closed"),
+    ("difficulty-mobile-devices-must-be-ready: private note", "helper-request-failed"),
+    ("request-id-payload-mismatch", "request-id-payload-mismatch"),
+    ("stale-preview-create-a-new-request-id", "stale-preview-create-a-new-request-id"),
+    ("restore-point-not-mirrored", "restore-point-not-mirrored"),
     ("private note contents", "helper-request-failed"),
     ("busy\nsecret", "helper-request-failed"), (["busy"], "helper-request-failed")])
 def test_http_errors_expose_only_exact_public_codes(host, monkeypatch, error_code, expected):
@@ -381,3 +406,225 @@ def test_update_result_filters_error_details_in_successful_transport(host):
     assert result["error"] == "helper-request-failed"
     assert result["sync"]["error"] == "managed-update-delivery-unconfirmed"
     assert value["error"] == "private note body"
+
+
+def difficulty_receipt(state="prepared", operation_id="a" * 32, request_id="mobile001", **changes):
+    return {"operation_id": operation_id, "request_id": request_id,
+            "action": "configure_difficulty_mobile", "state": state,
+            "confirmation_required": True, "backup_required": True, "schema_required": False,
+            "sync": {"state": "disabled"}, "notification": {"state": "disabled"}, **changes}
+
+
+@pytest.mark.parametrize("flags,enabled", [([], True), (["--enabled"], True), (["--disabled"], False)])
+def test_difficulty_preview_presyncs_and_keeps_recoverable_request(host, monkeypatch, tmp_path, capsys, flags, enabled):
+    environment(host, monkeypatch, tmp_path)
+    sync_status(tmp_path, runId="old")
+    events, reads = [], []
+    operation_id = hashlib.sha256(b"mobile001").hexdigest()[:32]
+    expected = difficulty_receipt(operation_id=operation_id, preview_token="b" * 64)
+    monkeypatch.setattr(host, "read_credential", lambda value: reads.append(value) or "d" * 64)
+
+    def start(argv, **kwargs):
+        assert argv == ["systemctl", "start", "anki-host-sync-test.service"]
+        assert kwargs == {"check": True, "capture_output": True}
+        recovery = capsys.readouterr()
+        assert "operation_id: " + operation_id in recovery.err
+        assert "same request ID and flags" in recovery.err
+        events.append("sync")
+        sync_status(tmp_path)
+
+    def call(path, payload, **kwargs):
+        assert events == ["sync"]
+        assert path == "/difficulty/mobile/prepare"
+        assert payload == {"enabled": enabled, "devices_ready": True, "request_id": "mobile001"}
+        assert kwargs == {"key": "d" * 64, "port": 19001, "timeout": 120}
+        events.append("prepare")
+        return expected
+
+    monkeypatch.setattr(host.subprocess, "run", start)
+    monkeypatch.setattr(host, "helper", call)
+    host.main(["difficulty-preview", "--devices-ready", "--request-id", "mobile001", *flags])
+    assert reads == [tmp_path / "test" / "schema"]
+    result = json.loads(capsys.readouterr().out)
+    assert result == expected | {"mobile_delivery": {"state": "not-checked", "device_sync_required": True}}
+    assert events == ["sync", "prepare"]
+
+
+def test_difficulty_preview_failure_never_prepares_without_fresh_normal_sync(host, monkeypatch, tmp_path, capsys):
+    environment(host, monkeypatch, tmp_path)
+    sync_status(tmp_path, runId="old")
+    monkeypatch.setattr(host, "read_credential", lambda _path: "d" * 64)
+    monkeypatch.setattr(host.subprocess, "run", lambda *_a, **_kw: None)
+    monkeypatch.setattr(host, "helper", lambda *_a, **_kw: pytest.fail("prepare before fresh normal sync"))
+    with pytest.raises(host.CommandError, match="fresh-normal-sync-required"):
+        host.main(["difficulty-preview", "--devices-ready", "--request-id", "mobile001"])
+    assert "same request ID and flags" in capsys.readouterr().err
+
+
+def test_lost_difficulty_preview_is_not_automatically_retried(host, monkeypatch, tmp_path, capsys):
+    environment(host, monkeypatch, tmp_path)
+    calls = []
+    monkeypatch.setattr(host, "read_credential", lambda _path: "d" * 64)
+    monkeypatch.setattr(host, "normal_sync", lambda *_a: {})
+
+    def lose(path, payload, **kwargs):
+        calls.append((path, payload))
+        raise host.urllib.error.URLError("private response text")
+
+    monkeypatch.setattr(host, "helper", lose)
+    with pytest.raises(host.urllib.error.URLError):
+        host.main(["difficulty-preview", "--devices-ready", "--request-id", "mobile001"])
+    assert calls == [("/difficulty/mobile/prepare", {"enabled": True, "devices_ready": True, "request_id": "mobile001"})]
+    output = capsys.readouterr()
+    assert output.out == "" and "private" not in output.err
+    assert hashlib.sha256(b"mobile001").hexdigest()[:32] in output.err
+
+
+def test_difficulty_status_uses_schema_key_without_sync_or_delivery_claim(host, monkeypatch, tmp_path, capsys):
+    environment(host, monkeypatch, tmp_path)
+    monkeypatch.delenv("STATE_DIR")
+    reads, calls = [], []
+    monkeypatch.setattr(host, "read_credential", lambda path: reads.append(path) or "d" * 64)
+    monkeypatch.setattr(host, "normal_sync", lambda *_a: pytest.fail("status started sync"))
+
+    def call(path, payload, **kwargs):
+        calls.append((path, payload, kwargs))
+        return difficulty_receipt("applied")
+
+    monkeypatch.setattr(host, "helper", call)
+    host.main(["difficulty-status", "a" * 32])
+    assert reads == [tmp_path / "test" / "schema"]
+    assert calls == [("/operations/status", {"operation_id": "a" * 32},
+                      {"key": "d" * 64, "port": 19001, "timeout": 120})]
+    assert json.loads(capsys.readouterr().out) == difficulty_receipt("applied") | {
+        "mobile_delivery": {"state": "not-checked", "device_sync_required": True}}
+
+
+@pytest.mark.parametrize("failure", [None, "process", "timeout", "stale", "not-normal"])
+def test_difficulty_apply_only_claims_verified_host_normal_sync(host, monkeypatch, tmp_path, capsys, failure):
+    environment(host, monkeypatch, tmp_path)
+    sync_status(tmp_path, runId="old")
+    monkeypatch.setattr(host, "read_credential", lambda _path: "d" * 64)
+    events = []
+    receipt = difficulty_receipt("applied")
+
+    def call(path, payload, **kwargs):
+        events.append(path)
+        assert path == "/difficulty/mobile/apply"
+        assert payload == {"operation_id": "a" * 32, "preview_token": "b" * 64, "confirm": True}
+        return receipt
+
+    def start(argv, **kwargs):
+        assert argv == ["systemctl", "start", "anki-host-sync-test.service"]
+        events.append("normal-sync")
+        if failure == "process":
+            raise host.subprocess.CalledProcessError(1, argv, output=b"private process body")
+        if failure == "timeout":
+            raise host.subprocess.TimeoutExpired(argv, 1, output=b"private process body")
+        sync_status(tmp_path, runId="old" if failure == "stale" else "new",
+                    sync={"action": "full-upload" if failure == "not-normal" else "normal"})
+
+    monkeypatch.setattr(host, "helper", call)
+    monkeypatch.setattr(host.subprocess, "run", start)
+    argv = ["difficulty-apply", "a" * 32, "--preview-token", "b" * 64, "--confirm"]
+    if failure is None:
+        host.main(argv)
+    else:
+        with pytest.raises(SystemExit) as error:
+            host.main(argv)
+        assert error.value.code == 1
+    output = capsys.readouterr()
+    result = json.loads(output.out)
+    assert result["sync"] == {"state": "disabled"}
+    assert result["mobile_delivery"]["device_sync_required"] is True
+    if failure is None:
+        assert result["mobile_delivery"] == {
+            "state": "host-normal-sync-completed", "device_sync_required": True,
+            "run_id": "new", "run_started_at": "1970-01-01T00:16:41.123456789+00:00",
+            "result": "success", "action": "normal"}
+    else:
+        assert result["mobile_delivery"]["state"] == "unconfirmed"
+        assert "difficulty-status " + "a" * 32 in output.err
+    assert "private" not in output.out + output.err and "d" * 64 not in output.out + output.err
+    assert events == ["/difficulty/mobile/apply", "normal-sync"]
+    assert "mobile_delivery" not in receipt  # CLI observations do not mutate the operation journal.
+
+
+@pytest.mark.parametrize("state", ["prepared", "partial", "unknown", "expired"])
+def test_difficulty_unconfirmed_apply_never_syncs_and_directs_status(host, monkeypatch, tmp_path, capsys, state):
+    environment(host, monkeypatch, tmp_path)
+    monkeypatch.setattr(host, "read_credential", lambda _path: "d" * 64)
+    monkeypatch.setattr(host, "normal_sync", lambda *_a: pytest.fail("unconfirmed operation synced"))
+    monkeypatch.setattr(host, "helper", lambda *_a, **_kw: difficulty_receipt(state))
+    with pytest.raises(SystemExit) as error:
+        host.main(["difficulty-apply", "a" * 32, "--preview-token", "b" * 64, "--confirm"])
+    assert error.value.code == 1
+    output = capsys.readouterr()
+    assert json.loads(output.out)["mobile_delivery"]["state"] == "not-attempted"
+    assert "difficulty-status " + "a" * 32 in output.err
+
+
+@pytest.mark.parametrize("failure", ["timeout", "connection", "http500", "invalid-json", "invalid-envelope"])
+def test_uncertain_difficulty_apply_uses_same_operation_status_guidance(host, monkeypatch, tmp_path, capsys, failure):
+    environment(host, monkeypatch, tmp_path)
+    monkeypatch.setattr(host, "read_credential", lambda _path: "d" * 64)
+    monkeypatch.setattr(host, "normal_sync", lambda *_a: pytest.fail("uncertain operation synced"))
+    calls = []
+
+    def request(*_a, **_kw):
+        calls.append("apply")
+        if failure in ("invalid-json", "invalid-envelope"):
+            return io.BytesIO(b"private" if failure == "invalid-json" else b'{"ok":true,"result":[]}')
+        raise {"timeout": TimeoutError("private"), "connection": host.urllib.error.URLError("private"),
+               "http500": host.urllib.error.HTTPError("http://private", 500, "private", {}, io.BytesIO(b"private"))}[failure]
+
+    monkeypatch.setattr(host.urllib.request, "build_opener", lambda *_a: SimpleNamespace(open=request))
+    with pytest.raises(Exception):
+        host.main(["difficulty-apply", "a" * 32, "--preview-token", "b" * 64, "--confirm"])
+    output = capsys.readouterr()
+    assert calls == ["apply"] and output.out == ""
+    assert "difficulty-status " + "a" * 32 in output.err
+    assert "do not create a new request ID" in output.err and "private" not in output.err
+
+
+@pytest.mark.parametrize("command", ["difficulty-apply", "difficulty-status"])
+def test_difficulty_cli_rejects_foreign_receipt_before_output_or_sync(host, monkeypatch, tmp_path, capsys, command):
+    environment(host, monkeypatch, tmp_path)
+    monkeypatch.setattr(host, "read_credential", lambda _path: "d" * 64)
+    monkeypatch.setattr(host, "normal_sync", lambda *_a: pytest.fail("foreign operation synced"))
+    monkeypatch.setattr(host, "helper", lambda *_a, **_kw: difficulty_receipt("applied", action="remove_unused_tags"))
+    args = [command, "a" * 32]
+    if command == "difficulty-apply":
+        args += ["--preview-token", "b" * 64, "--confirm"]
+    with pytest.raises(host.CommandError, match="unexpected-operation-action"):
+        host.main(args)
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("change", [{"operation_id": "c" * 32}, {"state": "applying"},
+    {"sync": []}, {"sync": {"state": "synced"}}, {"request_id": "different01"}])
+def test_difficulty_result_rejects_mismatched_receipts(host, change):
+    with pytest.raises(host.CommandError, match="helper-request-failed"):
+        host.difficulty_result(difficulty_receipt(**change), "a" * 32, "mobile001")
+
+
+def test_difficulty_receipt_redacts_nested_unknown_errors_without_mutating_journal(host):
+    value = difficulty_receipt("unknown", error="apply-result-unknown:private",
+                               result={"state": "unknown", "items": [{"error": "private note body"}]})
+    value["sync"]["error"] = "operation-not-found"
+    result = host.difficulty_result(value, "a" * 32)
+    assert result["error"] == result["result"]["items"][0]["error"] == "helper-request-failed"
+    assert result["sync"]["error"] == "operation-not-found"
+    assert value["result"]["items"][0]["error"] == "private note body"
+
+
+@pytest.mark.parametrize("code", [
+    "invalid-mobile-summary", "mobile-summary-capacity-exceeded", "duplicate-review-id",
+    "custom-data-capacity-exceeded", "custom-scheduling-already-configured",
+    "managed-difficulty-model-missing", "invalid-custom-data", "invalid-cutoff",
+    "invalid-reassessment-anchor", "reassessment-anchor-changed", "invalid-rollover",
+    "unmanaged-difficulty-card", "invalid-difficulty-mobile-request",
+])
+def test_difficulty_errors_use_exact_public_vocabulary(host, code):
+    assert str(host.helper_error({"error": code})) == code
+    assert str(host.helper_error({"error": code + ": private data"})) == "helper-request-failed"

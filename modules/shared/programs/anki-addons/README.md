@@ -69,12 +69,12 @@ on the next display without maintaining a separate counter. An evaluation
 failure hides the badge and logs only the exception type. Preview and unmanaged
 cards receive an empty payload so another card's evidence cannot carry over.
 
-Recent review means the latest five first review answers on distinct Anki study
-days, with at least three observations; long intervals do not expire the history.
+Recent review means the latest five actual Review answers, with at least three
+observations; multiple answers on one study day count and long intervals do not expire the history.
 Two Again, three Hard, or three combined Again/Hard including both ratings
 activate the candidate. After activation, three new observations with no Again
 and at least two Good/Easy clear it and begin a fresh window. Learning/relearning
-instead counts all answers within a study day: three Again, four Hard, or four
+instead counts all answers within one episode across dates: three Again, four Hard, or four
 combined including both. These learning signals remain until graduation back
 to Review; simply crossing midnight does not clear them. A delay value, when
 available, is explicitly an estimate from logged intervals and is not a weight
@@ -86,10 +86,15 @@ custom-data anchor while preserving the review log. Desktop rendering only
 reads that anchor. Invalid anchors are not silently discarded.
 
 AnkiWeb sync transports card data and templates, but not this desktop add-on.
-AnkiMobile currently has no supported equivalent for the immediate local-history
-payload. Custom Scheduling is not enabled by this package. The badge therefore
-requires the desktop add-on; mobile immediate reflection needs a separately
-validated implementation.
+Custom Scheduling is not enabled by this package. A separate explicit host
+operation bootstraps prior review history into card-specific event summaries and
+installs the owned synchronous custom scheduler for mobile. Its candidates only
+change custom data; Anki commits the chosen candidate with the native answer and
+restores it with Undo. The desktop add-on continues to prefer its fresh local
+history payload. Mobile evidence contains counts without invented grading dates.
+See the host README's mobile initialization procedure and its boundaries for
+unseeded new cards and concurrent offline review branches. There are no automatic
+metadata writes during rendering or after background sync.
 
 ## Sources and updates
 

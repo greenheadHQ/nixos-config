@@ -31,13 +31,13 @@ def test_multi_year_intervals_do_not_expire_the_evidence():
     assert result[0]["late_days_estimate"] == 359
 
 
-def test_first_review_each_learning_day_only_and_again_relearning_is_separate():
+def test_all_review_events_count_and_again_relearning_is_separate():
     rows = logs([1, 1, 1], days=[0, 1, 2])
     repeat = dict(rows[-1], id=rows[-1]["id"] + 1000, ease=1)
     relearn = [dict(repeat, id=repeat["id"] + i * 1000, type=2) for i in range(1, 4)]
     result = difficulty.assess(rows + [repeat] + relearn, card_type=3)
     assert [s["kind"] for s in result] == ["review", "learning"]
-    assert result[0]["samples"] == 3
+    assert result[0]["samples"] == 4
     assert result[1]["again"] == 3
 
 
@@ -57,7 +57,7 @@ def test_recovery_does_not_immediately_reactivate_from_the_old_window():
 
 @pytest.mark.parametrize("grades,active", [([1, 1, 1], True), ([2, 2, 2], False),
     ([2, 2, 2, 2], True), ([1, 2, 2, 2], True), ([1, 2, 2, 3], False)])
-def test_learning_repeats_use_separate_same_day_thresholds(grades, active):
+def test_learning_repeats_use_separate_episode_thresholds(grades, active):
     rows = logs(grades, days=[0] * len(grades), kind=0)
     for i, row in enumerate(rows):
         row["id"] += i * 1000

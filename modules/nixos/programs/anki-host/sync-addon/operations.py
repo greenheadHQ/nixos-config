@@ -107,6 +107,7 @@ PARAMETERS = {
     "suspend_cards": ({"card_ids", "suspended"}, set()),
     "set_card_flags": ({"card_ids", "flag"}, set()),
     "reassess_difficulty": ({"card_ids"}, set()),
+    "configure_difficulty_mobile": ({"enabled", "devices_ready"}, set()),
     "set_due_date": ({"card_ids", "days"}, set()),
     "forget_cards": ({"card_ids"}, set()),
     "store_media": ({"filename", "data"}, set()),
@@ -128,7 +129,7 @@ SCHEMA_ACTIONS = frozenset({"model_field_add", "model_field_remove", "model_fiel
                             "model_template_update"})
 DESTRUCTIVE_ACTIONS = frozenset({"delete_notes", "delete_decks", "set_due_date", "forget_cards"})
 FIELD_UPDATE_ACTIONS = frozenset({"update_fields", "update_fields_bulk"})
-OPERATOR_ACTIONS = frozenset({"remove_unused_tags"})
+OPERATOR_ACTIONS = frozenset({"remove_unused_tags", "configure_difficulty_mobile"})
 
 
 def validate_spec(action: Any, params: Any, media_limit: int) -> dict[str, Any]:
@@ -161,9 +162,11 @@ def validate_spec(action: Any, params: Any, media_limit: int) -> dict[str, Any]:
             raise OperationError("tags-must-not-be-empty")
     if "protected_tags" in p:
         p["protected_tags"] = tags(p["protected_tags"])
-    for key in ("suspended", "allow_duplicate"):
+    for key in ("suspended", "allow_duplicate", "enabled", "devices_ready"):
         if key in p and type(p[key]) is not bool:
             raise OperationError("invalid-boolean")
+    if action == "configure_difficulty_mobile" and p["devices_ready"] is not True:
+        raise OperationError("difficulty-mobile-devices-must-be-ready")
     if "index" in p and (type(p["index"]) is not int or p["index"] < 0):
         raise OperationError("invalid-index")
     if "expected_model_id" in p and (type(p["expected_model_id"]) is not int or p["expected_model_id"] <= 0):

@@ -6,7 +6,6 @@ Only the optional reassessment anchor is stored on the card (and synced).
 """
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import datetime, timedelta
 import hashlib
 import json
@@ -43,6 +42,14 @@ def _evidence(kind: str, rows: list[dict]) -> dict:
             "late_days_estimate": max(delays) if delays else None}
 
 
+def learning_boundary(row: dict) -> bool:
+    # Early rescheduling Review is logged as type 3, but begins a new lapse
+    # episode just like a due Review. Native preview logs fix factor=0; their
+    # seconds-based lastIvl can still become positive across the day cutoff.
+    return row["type"] in (1, 4, 5) or (row["type"] == 3 and row.get("lastIvl", 0) > 0
+                                          and row.get("factor", 0) > 0)
+
+
 def assess(rows: list[dict], *, card_type: int, cutoff: int = 0,
            day: Callable[[int], str] = study_day) -> list[dict]:
     """Replay in timestamp order; type=3 filtered/preview and ease=0 manual rows do not count.
@@ -58,8 +65,7 @@ def assess(rows: list[dict], *, card_type: int, cutoff: int = 0,
         raise DifficultyError("duplicate-review-id")
     recent, recovery = [], []
     review_active = False
-    seen_days = set()
-    learning_days: dict[str, list[dict]] = defaultdict(list)
+    learning_rows = []
     learning_evidence = None
     previous = None
     for original in ordered:
@@ -67,8 +73,8 @@ def assess(rows: list[dict], *, card_type: int, cutoff: int = 0,
         valid = row["type"] in (0, 1, 2) and row["ease"] in (1, 2, 3, 4)
         # A review begins a new learning/relearning episode. A manual change
         # can also reset its state; it is a boundary, never a counted answer.
-        if row["type"] in (1, 4, 5):
-            learning_days.clear()
+        if learning_boundary(row):
+            learning_rows.clear()
             learning_evidence = None
         if valid and row["type"] == 1:
             elapsed = None
@@ -80,23 +86,21 @@ def assess(rows: list[dict], *, card_type: int, cutoff: int = 0,
             interval = row.get("lastIvl", 0)
             row["late_days_estimate"] = (max(0, elapsed - interval)
                                          if elapsed is not None and interval > 0 else None)
-            key = day(row["id"])
-            if key not in seen_days:
-                seen_days.add(key)
-                if row["id"] > cutoff:
-                    recent = (recent + [row])[-5:]
-                    if review_active:
-                        recovery = (recovery + [row])[-3:]
-                        if (len(recovery) == 3 and all(r["ease"] != 1 for r in recovery)
-                                and sum(r["ease"] in (3, 4) for r in recovery) >= 2):
-                            review_active, recent, recovery = False, [], []
-                    elif len(recent) >= 3 and _trigger(recent):
-                        review_active, recovery = True, []
+            # Count actual rescheduling Review answers, including more than one
+            # on a study day. Presentation time is not the native grading time.
+            if row["id"] > cutoff:
+                recent = (recent + [row])[-5:]
+                if review_active:
+                    recovery = (recovery + [row])[-3:]
+                    if (len(recovery) == 3 and all(r["ease"] != 1 for r in recovery)
+                            and sum(r["ease"] in (3, 4) for r in recovery) >= 2):
+                        review_active, recent, recovery = False, [], []
+                elif len(recent) >= 3 and _trigger(recent):
+                    review_active, recovery = True, []
         elif valid and row["type"] in (0, 2) and row["id"] > cutoff:
-            key = day(row["id"])
-            learning_days[key].append(row)
-            if _trigger(learning_days[key], learning=True):
-                learning_evidence = _evidence("learning", learning_days[key])
+            learning_rows.append(row)
+            if _trigger(learning_rows, learning=True):
+                learning_evidence = _evidence("learning", learning_rows)
         previous = row
     signals = [_evidence("review", recent)] if review_active else []
     # Positive daily intervals do not prove graduation: consult native card.type.
@@ -168,7 +172,12 @@ def reassess_card(col, card_id: int) -> None:
     card = col.get_card(card_id)
     if card.note().note_type()["name"] != MODEL_NAME:
         raise DifficultyError("unmanaged-difficulty-card")
-    card.custom_data = reassessed_data(card.custom_data, review_rows(col, card_id))
+    rows = review_rows(col, card_id)
+    if "dce" in custom_data(card.custom_data):
+        from . import difficulty_mobile
+        card.custom_data = difficulty_mobile.card_data(card, rows, reassess=True)
+    else:
+        card.custom_data = reassessed_data(card.custom_data, rows)
     col.update_card(card)
 
 
