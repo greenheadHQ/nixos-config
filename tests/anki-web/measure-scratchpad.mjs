@@ -185,7 +185,7 @@ try {
     await page.evaluate(script);
     await page.evaluate(()=>{
       for(let i=0;i<10;i++) document.dispatchEvent(new KeyboardEvent('keydown',{
-        key:'ArrowDown',altKey:true,shiftKey:true,bubbles:true,cancelable:true,
+        key:'J',code:'KeyJ',altKey:true,shiftKey:true,bubbles:true,cancelable:true,
       }));
     });
     const compact=await page.evaluate(()=>({
@@ -296,7 +296,7 @@ try {
     await replay.evaluate(ratio=>{
       if(ratio!==1/3) {
         for(let i=0;i<10;i++) document.dispatchEvent(new KeyboardEvent('keydown',{
-          key:ratio===0.2?'ArrowDown':'ArrowUp',altKey:true,shiftKey:true,bubbles:true,cancelable:true,
+          key:ratio===0.2?'J':'K',code:ratio===0.2?'KeyJ':'KeyK',altKey:true,shiftKey:true,bubbles:true,cancelable:true,
         }));
         if(document.querySelector('[role="separator"]').getAttribute('aria-valuenow')!==String(ratio*100)) {
           throw new Error('Scratchpad replay did not reach the requested height ratio');

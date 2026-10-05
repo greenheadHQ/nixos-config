@@ -202,7 +202,7 @@ test("rendered evidence uses text nodes and does not read question or answer con
   assert.equal(page.document.querySelector(".answer").innerHTML, answer);
 });
 
-test("badge evidence and scratchpad coexist across answer and next-card transitions", async t => {
+test("badge evidence and scratchpad shortcuts coexist across focus and card transitions", async t => {
   const content = (id, answer = false) =>
     `${answer ? '<span hidden data-anki-scratchpad-answer></span>' : ""}` +
     `<div class="rehab-card" data-anki-scratchpad-card>${markup.replaceAll("{{CardID}}", id)}` +
@@ -218,6 +218,36 @@ test("badge evidence and scratchpad coexist across answer and next-card transiti
   button(page).click();
   await page.flush();
   assert.equal(panel(page).hidden, false);
+  const isOpen = () => page.document.documentElement.classList.contains("anki-scratchpad-open");
+  const key = (key, options = {}) => page.document.activeElement.dispatchEvent(
+    new page.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...options }));
+  const chord = letter => key(letter, { code: `Key${letter}`, altKey: true, shiftKey: true });
+  button(page).focus();
+  assert.equal(chord("F"), false);
+  assert.equal(page.document.activeElement, input());
+  assert.equal(isOpen(), true);
+  assert.equal(panel(page).hidden, false);
+  assert.equal(chord("F"), false);
+  assert.equal(isOpen(), false);
+  assert.equal(input().value, draft);
+  assert.equal(chord("F"), false);
+  assert.equal(isOpen(), true);
+  button(page).focus();
+  for (const [letter, ratio] of [["J", "28"], ["K", "33"]]) {
+    assert.equal(chord(letter), false);
+    assert.equal(page.document.querySelector('[role="separator"]').getAttribute("aria-valuenow"), ratio);
+    assert.equal(page.document.activeElement, button(page));
+    assert.equal(panel(page).hidden, false);
+    assert.equal(input().value, draft);
+  }
+  assert.equal(key("Escape"), false);
+  assert.equal(panel(page).hidden, true, "Escape still closes badge evidence from its button");
+  assert.equal(isOpen(), true);
+  assert.equal(key("Enter"), false);
+  assert.equal(panel(page).hidden, false);
+  assert.equal(key(" "), false);
+  assert.equal(panel(page).hidden, true);
+  button(page).click();
   assert.equal(input().value, draft);
 
   page.document.getElementById("qa").innerHTML = content("1001", true);

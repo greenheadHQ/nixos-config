@@ -2281,9 +2281,9 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
     // Matching, visible hints and accessibility labels share these bindings.
     const modifiers = ["Alt", "Shift"];
     const bindings = {
-      open:{ code:"KeyJ", modifiers },
-      grow:{ key:"ArrowUp", modifiers, delta:0.05 },
-      shrink:{ key:"ArrowDown", modifiers, delta:-0.05 },
+      focus:{ code:"KeyF", modifiers },
+      grow:{ code:"KeyK", modifiers, delta:0.05 },
+      shrink:{ code:"KeyJ", modifiers, delta:-0.05 },
       blur:{ key:"Escape" },
     };
     const matches = (event, binding) => (binding.code ? event.code === binding.code : event.key === binding.key)
@@ -2297,8 +2297,8 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       ? ({ Alt:"⌥", Shift:"⇧", Control:"⌃", Meta:"⌘" })[name] : `${name}+`).join("");
     const displayChord = binding => displayModifiers(binding) + displayKey(binding);
     const resizeHint = () => bindings.grow.modifiers.join("+") === bindings.shrink.modifiers.join("+")
-      ? displayChord(bindings.grow) + "/" + displayKey(bindings.shrink)
-      : displayChord(bindings.grow) + " / " + displayChord(bindings.shrink);
+      ? displayChord(bindings.shrink) + "↓/" + displayKey(bindings.grow) + "↑"
+      : displayChord(bindings.shrink) + "↓ / " + displayChord(bindings.grow) + "↑";
     const viewport = () => {
       const view = window.visualViewport;
       // WebKit can move fixed panes during keyboard panning. Compensate their
@@ -2370,9 +2370,9 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       // Keep the mobile toolbar stable through pointerdown -> input blur -> click.
       ui.querySelector('[data-action="blur"]').hidden = !mobile();
       ui.querySelector(".anki-scratchpad__shortcuts").hidden = mobile();
-      launch.title = "연습장 펼치기" + (mobile() ? "" : ` (${displayChord(bindings.open)})`);
+      launch.title = "연습장 펼치기" + (mobile() ? "" : ` (${displayChord(bindings.focus)})`);
       handle.title = "연습장 높이 조절" + (mobile() ? "" : ` (${resizeHint()})`);
-      for (const [element, chords] of [[launch, ariaChord(bindings.open)],
+      for (const [element, chords] of [[launch, ariaChord(bindings.focus)],
         [handle, `${ariaChord(bindings.grow)} ${ariaChord(bindings.shrink)}`]]) {
         if (mobile()) element.removeAttribute("aria-keyshortcuts");
         else element.setAttribute("aria-keyshortcuts", chords);
@@ -2455,7 +2455,7 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       panel = ui.querySelector(".anki-scratchpad__panel");
       handle = ui.querySelector(".anki-scratchpad__resize");
       const hints = ui.querySelector(".anki-scratchpad__shortcuts");
-      for (const [chord, label] of [[displayChord(bindings.open), "입력"],
+      for (const [chord, label] of [[displayChord(bindings.focus), "입력/접기"],
         [resizeHint(), "높이"], [displayChord(bindings.blur), "입력 종료"]]) {
         const hint = document.createElement("span"), key = document.createElement("kbd");
         key.textContent = chord;
@@ -2539,16 +2539,18 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
     document.addEventListener("keydown", event => {
       if (!live()) return;
       if (!event.isComposing && !composing && event.keyCode !== 229) {
-        const opening = matches(event, bindings.open);
+        const focusing = matches(event, bindings.focus);
         const resize = opened && [bindings.grow, bindings.shrink].find(binding => matches(event, binding));
-        if (opening || resize) {
-          // Use the physical J key: Option can produce a different character.
-          // Consume repeats too, so holding the opening chord cannot type it.
+        if (focusing || resize) {
+          // Match physical keys: Option can produce different characters.
+          // Consume focus repeats without typing or toggling again.
           event.preventDefault(); event.stopImmediatePropagation();
-          if (opening) {
-            if (!event.repeat) open();
+          if (focusing) {
+            if (!event.repeat) {
+              if (opened && document.activeElement === input) collapse();
+              else open();
+            }
           } else {
-            // These chords intentionally replace paragraph selection in the pad.
             ratio = clampRatio(ratio + resize.delta);
             handle.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
             update();
@@ -2661,9 +2663,9 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
     // Matching, visible hints and accessibility labels share these bindings.
     const modifiers = ["Alt", "Shift"];
     const bindings = {
-      open:{ code:"KeyJ", modifiers },
-      grow:{ key:"ArrowUp", modifiers, delta:0.05 },
-      shrink:{ key:"ArrowDown", modifiers, delta:-0.05 },
+      focus:{ code:"KeyF", modifiers },
+      grow:{ code:"KeyK", modifiers, delta:0.05 },
+      shrink:{ code:"KeyJ", modifiers, delta:-0.05 },
       blur:{ key:"Escape" },
     };
     const matches = (event, binding) => (binding.code ? event.code === binding.code : event.key === binding.key)
@@ -2677,8 +2679,8 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       ? ({ Alt:"⌥", Shift:"⇧", Control:"⌃", Meta:"⌘" })[name] : `${name}+`).join("");
     const displayChord = binding => displayModifiers(binding) + displayKey(binding);
     const resizeHint = () => bindings.grow.modifiers.join("+") === bindings.shrink.modifiers.join("+")
-      ? displayChord(bindings.grow) + "/" + displayKey(bindings.shrink)
-      : displayChord(bindings.grow) + " / " + displayChord(bindings.shrink);
+      ? displayChord(bindings.shrink) + "↓/" + displayKey(bindings.grow) + "↑"
+      : displayChord(bindings.shrink) + "↓ / " + displayChord(bindings.grow) + "↑";
     const viewport = () => {
       const view = window.visualViewport;
       // WebKit can move fixed panes during keyboard panning. Compensate their
@@ -2750,9 +2752,9 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       // Keep the mobile toolbar stable through pointerdown -> input blur -> click.
       ui.querySelector('[data-action="blur"]').hidden = !mobile();
       ui.querySelector(".anki-scratchpad__shortcuts").hidden = mobile();
-      launch.title = "연습장 펼치기" + (mobile() ? "" : ` (${displayChord(bindings.open)})`);
+      launch.title = "연습장 펼치기" + (mobile() ? "" : ` (${displayChord(bindings.focus)})`);
       handle.title = "연습장 높이 조절" + (mobile() ? "" : ` (${resizeHint()})`);
-      for (const [element, chords] of [[launch, ariaChord(bindings.open)],
+      for (const [element, chords] of [[launch, ariaChord(bindings.focus)],
         [handle, `${ariaChord(bindings.grow)} ${ariaChord(bindings.shrink)}`]]) {
         if (mobile()) element.removeAttribute("aria-keyshortcuts");
         else element.setAttribute("aria-keyshortcuts", chords);
@@ -2835,7 +2837,7 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       panel = ui.querySelector(".anki-scratchpad__panel");
       handle = ui.querySelector(".anki-scratchpad__resize");
       const hints = ui.querySelector(".anki-scratchpad__shortcuts");
-      for (const [chord, label] of [[displayChord(bindings.open), "입력"],
+      for (const [chord, label] of [[displayChord(bindings.focus), "입력/접기"],
         [resizeHint(), "높이"], [displayChord(bindings.blur), "입력 종료"]]) {
         const hint = document.createElement("span"), key = document.createElement("kbd");
         key.textContent = chord;
@@ -2919,16 +2921,18 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
     document.addEventListener("keydown", event => {
       if (!live()) return;
       if (!event.isComposing && !composing && event.keyCode !== 229) {
-        const opening = matches(event, bindings.open);
+        const focusing = matches(event, bindings.focus);
         const resize = opened && [bindings.grow, bindings.shrink].find(binding => matches(event, binding));
-        if (opening || resize) {
-          // Use the physical J key: Option can produce a different character.
-          // Consume repeats too, so holding the opening chord cannot type it.
+        if (focusing || resize) {
+          // Match physical keys: Option can produce different characters.
+          // Consume focus repeats without typing or toggling again.
           event.preventDefault(); event.stopImmediatePropagation();
-          if (opening) {
-            if (!event.repeat) open();
+          if (focusing) {
+            if (!event.repeat) {
+              if (opened && document.activeElement === input) collapse();
+              else open();
+            }
           } else {
-            // These chords intentionally replace paragraph selection in the pad.
             ratio = clampRatio(ratio + resize.delta);
             handle.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
             update();
