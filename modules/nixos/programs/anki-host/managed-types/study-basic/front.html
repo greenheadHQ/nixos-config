@@ -1580,8 +1580,11 @@ AnkiCidCopyV2.mount(document.getElementById("qa") || document.body);
 .anki-scratchpad__panel { box-sizing:border-box; height:100%; display:flex; flex-direction:column; border:0; border-top:1px solid var(--sp-border); border-radius:0; background:var(--sp-bg); overflow:visible; }
 .anki-scratchpad__resize { position:absolute; left:50%; top:-12px; transform:translateX(-50%); width:80px; height:24px; z-index:1; display:flex; align-items:center; justify-content:center; cursor:ns-resize; touch-action:none; user-select:none; }
 .anki-scratchpad__resize::after { content:""; box-sizing:content-box; width:36px; height:5px; border:2px solid var(--sp-bg); border-radius:6px; background:var(--sp-focus); }
-.anki-scratchpad__header { display:flex; flex:0 0 44px; align-items:center; justify-content:flex-end; padding:0 10px; }
-.anki-scratchpad__tools { display:flex; align-items:center; height:34px; border:1px solid var(--sp-button-border); border-radius:10px; background:var(--sp-button-bg); color:var(--sp-icon); }
+.anki-scratchpad__header { box-sizing:border-box; display:flex; flex:0 0 auto; min-height:44px; align-items:center; justify-content:flex-end; gap:12px; padding:5px 10px; }
+.anki-scratchpad__shortcuts { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:2px 12px; min-width:0; color:var(--sp-muted); font:11px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; }
+.anki-scratchpad__shortcuts span { white-space:nowrap; }
+.anki-scratchpad__shortcuts kbd { font:inherit; }
+.anki-scratchpad__tools { display:flex; flex-shrink:0; align-items:center; height:34px; border:1px solid var(--sp-button-border); border-radius:10px; background:var(--sp-button-bg); color:var(--sp-icon); }
 .anki-scratchpad__tools button { position:relative; flex:0 0 44px; width:44px; height:44px; min-height:44px; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; color:inherit; }
 .anki-scratchpad .anki-scratchpad__tools button:is(:hover,:active,:focus,:disabled) { background:transparent; border:0; border-radius:0; box-shadow:none; transform:none; transition:none; }
 .anki-scratchpad__tools button::after { content:""; position:absolute; inset:8px 4px; border-radius:6px; background:transparent; }
@@ -1591,7 +1594,7 @@ AnkiCidCopyV2.mount(document.getElementById("qa") || document.body);
 @media(hover:hover) { .anki-scratchpad__tools button:hover:not(:disabled)::after { background:var(--sp-button-hover); } }
 .anki-scratchpad__tools button:focus-visible { outline-offset:-6px; }
 .anki-scratchpad__tools svg { position:relative; z-index:1; width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; pointer-events:none; }
-.anki-scratchpad__value { appearance:none; -webkit-appearance:none; box-sizing:border-box; flex:1 1 auto; min-height:0; width:100%; margin:0; padding:8px 12px; border:0; border-radius:0; background:var(--sp-bg); color:inherit; font:calc(17px * var(--anki-text-scale,1))/1.55 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; resize:none; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; text-align:left; user-select:text; -webkit-user-select:text; }
+.anki-scratchpad__value { appearance:none; -webkit-appearance:none; box-sizing:border-box; flex:1 1 auto; min-height:0; width:min(100%,var(--anki-card-width,720px)); align-self:center; margin:0; padding:8px 12px; border:0; border-radius:0; background:var(--sp-bg); color:inherit; font:calc(17px * var(--anki-text-scale,1))/1.55 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; resize:none; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; text-align:left; user-select:text; -webkit-user-select:text; }
 .anki-scratchpad__status { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
 html.anki-scratchpad-open { overflow:hidden!important; }
 html.anki-scratchpad-open:not(.anki-scratchpad-mobile) body { box-sizing:border-box; display:flex; flex-direction:column; height:var(--sp-view-height); width:var(--sp-view-width); max-width:none; margin:0 0 0 var(--sp-view-left)!important; padding:var(--sp-view-top) 0 0!important; overflow:hidden; }
@@ -1616,6 +1619,27 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
     let dragY = 0, dragRatio = 0, dragHeight = 1;
     const mobile = () => page.classList.contains("iphone") || page.classList.contains("ipad")
       || document.body?.classList.contains("iphone") || document.body?.classList.contains("ipad");
+    // Matching, visible hints and accessibility labels share these bindings.
+    const modifiers = ["Alt", "Shift"];
+    const bindings = {
+      open:{ code:"KeyJ", modifiers },
+      grow:{ key:"ArrowUp", modifiers, delta:0.05 },
+      shrink:{ key:"ArrowDown", modifiers, delta:-0.05 },
+      blur:{ key:"Escape" },
+    };
+    const matches = (event, binding) => (binding.code ? event.code === binding.code : event.key === binding.key)
+      && (!binding.modifiers || Object.entries({ Alt:event.altKey, Shift:event.shiftKey, Control:event.ctrlKey, Meta:event.metaKey })
+        .every(([name, pressed]) => pressed === binding.modifiers.includes(name)));
+    const bindingKey = binding => binding.code?.replace(/^Key/, "") || binding.key;
+    const ariaChord = binding => [...(binding.modifiers || []), bindingKey(binding)].join("+");
+    const mac = /Mac/.test(navigator.platform);
+    const displayKey = binding => ({ ArrowUp:"↑", ArrowDown:"↓", Escape:"Esc" })[bindingKey(binding)] || bindingKey(binding);
+    const displayModifiers = binding => (binding.modifiers || []).map(name => mac
+      ? ({ Alt:"⌥", Shift:"⇧", Control:"⌃", Meta:"⌘" })[name] : `${name}+`).join("");
+    const displayChord = binding => displayModifiers(binding) + displayKey(binding);
+    const resizeHint = () => bindings.grow.modifiers.join("+") === bindings.shrink.modifiers.join("+")
+      ? displayChord(bindings.grow) + "/" + displayKey(bindings.shrink)
+      : displayChord(bindings.grow) + " / " + displayChord(bindings.shrink);
     const viewport = () => {
       const view = window.visualViewport;
       // WebKit can move fixed panes during keyboard panning. Compensate their
@@ -1686,6 +1710,14 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       ui.querySelector('[data-action="clear"]').disabled = !value;
       // Keep the mobile toolbar stable through pointerdown -> input blur -> click.
       ui.querySelector('[data-action="blur"]').hidden = !mobile();
+      ui.querySelector(".anki-scratchpad__shortcuts").hidden = mobile();
+      launch.title = "연습장 펼치기" + (mobile() ? "" : ` (${displayChord(bindings.open)})`);
+      handle.title = "연습장 높이 조절" + (mobile() ? "" : ` (${resizeHint()})`);
+      for (const [element, chords] of [[launch, ariaChord(bindings.open)],
+        [handle, `${ariaChord(bindings.grow)} ${ariaChord(bindings.shrink)}`]]) {
+        if (mobile()) element.removeAttribute("aria-keyshortcuts");
+        else element.setAttribute("aria-keyshortcuts", chords);
+      }
       page.classList.toggle("anki-scratchpad-mobile", mobile());
       page.classList.toggle("anki-scratchpad-open", opened);
       layout();
@@ -1749,7 +1781,7 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       // Establish a measurable fixed origin even for a first, collapsed mount.
       if (mobile()) ui.style.top = "0px";
       ui.setAttribute("aria-label", "학습 연습장");
-      ui.innerHTML = '<button type="button" class="anki-scratchpad__launch tappable" aria-controls="anki-scratchpad-panel">연습장<span class="anki-scratchpad__dot" aria-hidden="true" hidden></span></button><div class="anki-scratchpad__panel" id="anki-scratchpad-panel" hidden><div class="anki-scratchpad__resize tappable" role="separator" tabindex="0" aria-label="연습장 높이 조절" aria-orientation="horizontal" aria-valuemin="20" aria-valuemax="65"></div><div class="anki-scratchpad__header"><div class="anki-scratchpad__tools tappable">'
+      ui.innerHTML = '<button type="button" class="anki-scratchpad__launch tappable" aria-controls="anki-scratchpad-panel">연습장<span class="anki-scratchpad__dot" aria-hidden="true" hidden></span></button><div class="anki-scratchpad__panel" id="anki-scratchpad-panel" hidden><div class="anki-scratchpad__resize tappable" role="separator" tabindex="0" aria-label="연습장 높이 조절" aria-orientation="horizontal" aria-valuemin="20" aria-valuemax="65"></div><div class="anki-scratchpad__header"><div class="anki-scratchpad__shortcuts" aria-label="연습장 단축키" hidden></div><div class="anki-scratchpad__tools tappable">'
         + Object.entries(icons).map(([action, icon]) => {
           const label = { clear:"내용 지우기", blur:"키보드 닫기", collapse:"연습장 접기" }[action];
           return `<button type="button" class="tappable" data-action="${action}" aria-label="${label}" title="${label}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg></button>`;
@@ -1763,11 +1795,14 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       launch = ui.querySelector(".anki-scratchpad__launch");
       panel = ui.querySelector(".anki-scratchpad__panel");
       handle = ui.querySelector(".anki-scratchpad__resize");
-      launch.title = "연습장 펼치기 (⌥⇧J)";
-      launch.setAttribute("aria-keyshortcuts", "Alt+Shift+J");
-      handle.title = "연습장 높이 조절 (⌥⇧↑ / ⌥⇧↓)";
-      const resizeChords = "Alt+Shift+ArrowUp Alt+Shift+ArrowDown";
-      handle.setAttribute("aria-keyshortcuts", resizeChords);
+      const hints = ui.querySelector(".anki-scratchpad__shortcuts");
+      for (const [chord, label] of [[displayChord(bindings.open), "입력"],
+        [resizeHint(), "높이"], [displayChord(bindings.blur), "입력 종료"]]) {
+        const hint = document.createElement("span"), key = document.createElement("kbd");
+        key.textContent = chord;
+        hint.append(key, ` ${label}`);
+        hints.appendChild(hint);
+      }
       launch.addEventListener("click", () => open());
       ui.addEventListener("click", event => {
         event.stopPropagation();
@@ -1844,18 +1879,18 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
     // toolbar controls stop bubbling; unrelated reviewer keys remain untouched.
     document.addEventListener("keydown", event => {
       if (!live()) return;
-      if (event.altKey && event.shiftKey && !event.metaKey && !event.ctrlKey
-          && !event.isComposing && !composing && event.keyCode !== 229) {
-        const resize = opened && (event.key === "ArrowUp" || event.key === "ArrowDown");
-        if (event.code === "KeyJ" || resize) {
+      if (!event.isComposing && !composing && event.keyCode !== 229) {
+        const opening = matches(event, bindings.open);
+        const resize = opened && [bindings.grow, bindings.shrink].find(binding => matches(event, binding));
+        if (opening || resize) {
           // Use the physical J key: Option can produce a different character.
           // Consume repeats too, so holding the opening chord cannot type it.
           event.preventDefault(); event.stopImmediatePropagation();
-          if (event.code === "KeyJ") {
+          if (opening) {
             if (!event.repeat) open();
           } else {
             // These chords intentionally replace paragraph selection in the pad.
-            ratio = clampRatio(ratio + (event.key === "ArrowUp" ? 0.05 : -0.05));
+            ratio = clampRatio(ratio + resize.delta);
             handle.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
             update();
           }
@@ -1887,7 +1922,7 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
           return;
         }
       }
-      if (event.key === "Escape" && !event.isComposing && !composing && event.keyCode !== 229) {
+      if (matches(event, bindings.blur) && !event.isComposing && !composing && event.keyCode !== 229) {
         event.preventDefault(); endInput(); update();
       }
     }, true);
@@ -1925,8 +1960,11 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
 .anki-scratchpad__panel { box-sizing:border-box; height:100%; display:flex; flex-direction:column; border:0; border-top:1px solid var(--sp-border); border-radius:0; background:var(--sp-bg); overflow:visible; }
 .anki-scratchpad__resize { position:absolute; left:50%; top:-12px; transform:translateX(-50%); width:80px; height:24px; z-index:1; display:flex; align-items:center; justify-content:center; cursor:ns-resize; touch-action:none; user-select:none; }
 .anki-scratchpad__resize::after { content:""; box-sizing:content-box; width:36px; height:5px; border:2px solid var(--sp-bg); border-radius:6px; background:var(--sp-focus); }
-.anki-scratchpad__header { display:flex; flex:0 0 44px; align-items:center; justify-content:flex-end; padding:0 10px; }
-.anki-scratchpad__tools { display:flex; align-items:center; height:34px; border:1px solid var(--sp-button-border); border-radius:10px; background:var(--sp-button-bg); color:var(--sp-icon); }
+.anki-scratchpad__header { box-sizing:border-box; display:flex; flex:0 0 auto; min-height:44px; align-items:center; justify-content:flex-end; gap:12px; padding:5px 10px; }
+.anki-scratchpad__shortcuts { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:2px 12px; min-width:0; color:var(--sp-muted); font:11px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; }
+.anki-scratchpad__shortcuts span { white-space:nowrap; }
+.anki-scratchpad__shortcuts kbd { font:inherit; }
+.anki-scratchpad__tools { display:flex; flex-shrink:0; align-items:center; height:34px; border:1px solid var(--sp-button-border); border-radius:10px; background:var(--sp-button-bg); color:var(--sp-icon); }
 .anki-scratchpad__tools button { position:relative; flex:0 0 44px; width:44px; height:44px; min-height:44px; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; color:inherit; }
 .anki-scratchpad .anki-scratchpad__tools button:is(:hover,:active,:focus,:disabled) { background:transparent; border:0; border-radius:0; box-shadow:none; transform:none; transition:none; }
 .anki-scratchpad__tools button::after { content:""; position:absolute; inset:8px 4px; border-radius:6px; background:transparent; }
@@ -1936,7 +1974,7 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
 @media(hover:hover) { .anki-scratchpad__tools button:hover:not(:disabled)::after { background:var(--sp-button-hover); } }
 .anki-scratchpad__tools button:focus-visible { outline-offset:-6px; }
 .anki-scratchpad__tools svg { position:relative; z-index:1; width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; pointer-events:none; }
-.anki-scratchpad__value { appearance:none; -webkit-appearance:none; box-sizing:border-box; flex:1 1 auto; min-height:0; width:100%; margin:0; padding:8px 12px; border:0; border-radius:0; background:var(--sp-bg); color:inherit; font:calc(17px * var(--anki-text-scale,1))/1.55 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; resize:none; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; text-align:left; user-select:text; -webkit-user-select:text; }
+.anki-scratchpad__value { appearance:none; -webkit-appearance:none; box-sizing:border-box; flex:1 1 auto; min-height:0; width:min(100%,var(--anki-card-width,720px)); align-self:center; margin:0; padding:8px 12px; border:0; border-radius:0; background:var(--sp-bg); color:inherit; font:calc(17px * var(--anki-text-scale,1))/1.55 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; resize:none; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; text-align:left; user-select:text; -webkit-user-select:text; }
 .anki-scratchpad__status { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
 html.anki-scratchpad-open { overflow:hidden!important; }
 html.anki-scratchpad-open:not(.anki-scratchpad-mobile) body { box-sizing:border-box; display:flex; flex-direction:column; height:var(--sp-view-height); width:var(--sp-view-width); max-width:none; margin:0 0 0 var(--sp-view-left)!important; padding:var(--sp-view-top) 0 0!important; overflow:hidden; }
@@ -1961,6 +1999,27 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
     let dragY = 0, dragRatio = 0, dragHeight = 1;
     const mobile = () => page.classList.contains("iphone") || page.classList.contains("ipad")
       || document.body?.classList.contains("iphone") || document.body?.classList.contains("ipad");
+    // Matching, visible hints and accessibility labels share these bindings.
+    const modifiers = ["Alt", "Shift"];
+    const bindings = {
+      open:{ code:"KeyJ", modifiers },
+      grow:{ key:"ArrowUp", modifiers, delta:0.05 },
+      shrink:{ key:"ArrowDown", modifiers, delta:-0.05 },
+      blur:{ key:"Escape" },
+    };
+    const matches = (event, binding) => (binding.code ? event.code === binding.code : event.key === binding.key)
+      && (!binding.modifiers || Object.entries({ Alt:event.altKey, Shift:event.shiftKey, Control:event.ctrlKey, Meta:event.metaKey })
+        .every(([name, pressed]) => pressed === binding.modifiers.includes(name)));
+    const bindingKey = binding => binding.code?.replace(/^Key/, "") || binding.key;
+    const ariaChord = binding => [...(binding.modifiers || []), bindingKey(binding)].join("+");
+    const mac = /Mac/.test(navigator.platform);
+    const displayKey = binding => ({ ArrowUp:"↑", ArrowDown:"↓", Escape:"Esc" })[bindingKey(binding)] || bindingKey(binding);
+    const displayModifiers = binding => (binding.modifiers || []).map(name => mac
+      ? ({ Alt:"⌥", Shift:"⇧", Control:"⌃", Meta:"⌘" })[name] : `${name}+`).join("");
+    const displayChord = binding => displayModifiers(binding) + displayKey(binding);
+    const resizeHint = () => bindings.grow.modifiers.join("+") === bindings.shrink.modifiers.join("+")
+      ? displayChord(bindings.grow) + "/" + displayKey(bindings.shrink)
+      : displayChord(bindings.grow) + " / " + displayChord(bindings.shrink);
     const viewport = () => {
       const view = window.visualViewport;
       // WebKit can move fixed panes during keyboard panning. Compensate their
@@ -2031,6 +2090,14 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       ui.querySelector('[data-action="clear"]').disabled = !value;
       // Keep the mobile toolbar stable through pointerdown -> input blur -> click.
       ui.querySelector('[data-action="blur"]').hidden = !mobile();
+      ui.querySelector(".anki-scratchpad__shortcuts").hidden = mobile();
+      launch.title = "연습장 펼치기" + (mobile() ? "" : ` (${displayChord(bindings.open)})`);
+      handle.title = "연습장 높이 조절" + (mobile() ? "" : ` (${resizeHint()})`);
+      for (const [element, chords] of [[launch, ariaChord(bindings.open)],
+        [handle, `${ariaChord(bindings.grow)} ${ariaChord(bindings.shrink)}`]]) {
+        if (mobile()) element.removeAttribute("aria-keyshortcuts");
+        else element.setAttribute("aria-keyshortcuts", chords);
+      }
       page.classList.toggle("anki-scratchpad-mobile", mobile());
       page.classList.toggle("anki-scratchpad-open", opened);
       layout();
@@ -2094,7 +2161,7 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       // Establish a measurable fixed origin even for a first, collapsed mount.
       if (mobile()) ui.style.top = "0px";
       ui.setAttribute("aria-label", "학습 연습장");
-      ui.innerHTML = '<button type="button" class="anki-scratchpad__launch tappable" aria-controls="anki-scratchpad-panel">연습장<span class="anki-scratchpad__dot" aria-hidden="true" hidden></span></button><div class="anki-scratchpad__panel" id="anki-scratchpad-panel" hidden><div class="anki-scratchpad__resize tappable" role="separator" tabindex="0" aria-label="연습장 높이 조절" aria-orientation="horizontal" aria-valuemin="20" aria-valuemax="65"></div><div class="anki-scratchpad__header"><div class="anki-scratchpad__tools tappable">'
+      ui.innerHTML = '<button type="button" class="anki-scratchpad__launch tappable" aria-controls="anki-scratchpad-panel">연습장<span class="anki-scratchpad__dot" aria-hidden="true" hidden></span></button><div class="anki-scratchpad__panel" id="anki-scratchpad-panel" hidden><div class="anki-scratchpad__resize tappable" role="separator" tabindex="0" aria-label="연습장 높이 조절" aria-orientation="horizontal" aria-valuemin="20" aria-valuemax="65"></div><div class="anki-scratchpad__header"><div class="anki-scratchpad__shortcuts" aria-label="연습장 단축키" hidden></div><div class="anki-scratchpad__tools tappable">'
         + Object.entries(icons).map(([action, icon]) => {
           const label = { clear:"내용 지우기", blur:"키보드 닫기", collapse:"연습장 접기" }[action];
           return `<button type="button" class="tappable" data-action="${action}" aria-label="${label}" title="${label}"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg></button>`;
@@ -2108,11 +2175,14 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
       launch = ui.querySelector(".anki-scratchpad__launch");
       panel = ui.querySelector(".anki-scratchpad__panel");
       handle = ui.querySelector(".anki-scratchpad__resize");
-      launch.title = "연습장 펼치기 (⌥⇧J)";
-      launch.setAttribute("aria-keyshortcuts", "Alt+Shift+J");
-      handle.title = "연습장 높이 조절 (⌥⇧↑ / ⌥⇧↓)";
-      const resizeChords = "Alt+Shift+ArrowUp Alt+Shift+ArrowDown";
-      handle.setAttribute("aria-keyshortcuts", resizeChords);
+      const hints = ui.querySelector(".anki-scratchpad__shortcuts");
+      for (const [chord, label] of [[displayChord(bindings.open), "입력"],
+        [resizeHint(), "높이"], [displayChord(bindings.blur), "입력 종료"]]) {
+        const hint = document.createElement("span"), key = document.createElement("kbd");
+        key.textContent = chord;
+        hint.append(key, ` ${label}`);
+        hints.appendChild(hint);
+      }
       launch.addEventListener("click", () => open());
       ui.addEventListener("click", event => {
         event.stopPropagation();
@@ -2189,18 +2259,18 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
     // toolbar controls stop bubbling; unrelated reviewer keys remain untouched.
     document.addEventListener("keydown", event => {
       if (!live()) return;
-      if (event.altKey && event.shiftKey && !event.metaKey && !event.ctrlKey
-          && !event.isComposing && !composing && event.keyCode !== 229) {
-        const resize = opened && (event.key === "ArrowUp" || event.key === "ArrowDown");
-        if (event.code === "KeyJ" || resize) {
+      if (!event.isComposing && !composing && event.keyCode !== 229) {
+        const opening = matches(event, bindings.open);
+        const resize = opened && [bindings.grow, bindings.shrink].find(binding => matches(event, binding));
+        if (opening || resize) {
           // Use the physical J key: Option can produce a different character.
           // Consume repeats too, so holding the opening chord cannot type it.
           event.preventDefault(); event.stopImmediatePropagation();
-          if (event.code === "KeyJ") {
+          if (opening) {
             if (!event.repeat) open();
           } else {
             // These chords intentionally replace paragraph selection in the pad.
-            ratio = clampRatio(ratio + (event.key === "ArrowUp" ? 0.05 : -0.05));
+            ratio = clampRatio(ratio + resize.delta);
             handle.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
             update();
           }
@@ -2232,7 +2302,7 @@ html.anki-scratchpad-mobile .anki-scratchpad__value { font-size:max(16px,calc(16
           return;
         }
       }
-      if (event.key === "Escape" && !event.isComposing && !composing && event.keyCode !== 229) {
+      if (matches(event, bindings.blur) && !event.isComposing && !composing && event.keyCode !== 229) {
         event.preventDefault(); endInput(); update();
       }
     }, true);

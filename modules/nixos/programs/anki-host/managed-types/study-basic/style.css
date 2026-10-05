@@ -1,5 +1,7 @@
-.card {
+:root {
   --anki-card-width: 720px;
+}
+.card {
   --anki-card-padding: 24px;
   box-sizing: border-box;
   max-width: var(--anki-card-width);
