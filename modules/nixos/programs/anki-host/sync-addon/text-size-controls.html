@@ -72,6 +72,11 @@
   if (!window[KEY]) {
     let cardId = null, answer = false, scale = 100;
     let root = null, host = null, toolbar = null;
+    let composingTarget = null;
+    const bindings = {
+      smaller: { codes: ["Minus", "NumpadSubtract"], key: "-", ariaKey: "-" },
+      larger: { codes: ["Equal", "NumpadAdd"], key: "+", ariaKey: "Plus" },
+    };
     // The note type sizes .card, which desktop Anki puts on body: an ancestor
     // of #qa whose class list it rewrites per card. Scale from <html> instead.
     const page = document.documentElement;
@@ -118,8 +123,14 @@
         bar.setAttribute("role", "group");
         bar.setAttribute("aria-label", "이 카드의 본문 글자 크기");
         bar.innerHTML = '<span class="anki-text-controls__mark" aria-hidden="true">가</span><button type="button" data-action="smaller" aria-label="본문 글자 작게">−</button><output aria-live="polite" aria-atomic="true">100%</output><button type="button" data-action="larger" aria-label="본문 글자 크게">+</button><button type="button" data-action="reset" aria-label="본문 글자 크기 기본값">기본</button>';
+        for (const [action, binding] of Object.entries(bindings)) {
+          const button = bar.querySelector(`[data-action="${action}"]`);
+          button.setAttribute("aria-keyshortcuts", `Alt+Shift+${binding.ariaKey}`);
+          const chord = (/Mac/.test(navigator.platform) ? "⌥⇧" : "Alt+Shift+") + binding.key;
+          button.title = `${button.getAttribute("aria-label")} (${chord})`;
+        }
         // Stop reviewer tap/key actions, but retain native button activation
-        // and focus. No document-wide handlers.
+        // and focus. The dedicated shortcuts are handled during capture.
         for (const name of ["pointerdown", "pointerup", "mousedown", "mouseup",
           "touchstart", "touchend", "keydown", "keypress", "keyup"]) {
           bar.addEventListener(name, event => event.stopPropagation());
@@ -139,6 +150,19 @@
       }
       update();
     };
+    document.addEventListener("compositionstart", event => { composingTarget = event.target; }, true);
+    document.addEventListener("compositionend", () => { composingTarget = null; }, true);
+    document.addEventListener("keydown", event => {
+      if (!toolbar?.isConnected || event.defaultPrevented || event.isComposing
+          || composingTarget?.isConnected || event.keyCode === 229
+          || !event.altKey || !event.shiftKey || event.ctrlKey || event.metaKey) return;
+      // Match physical keys: Option+Shift can produce ±/— instead of +/-.
+      const action = Object.keys(bindings).find(name => bindings[name].codes.includes(event.code));
+      if (!action) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      // Reuse the GUI limits and updates without moving input focus/selection.
+      toolbar.querySelector(`[data-action="${action}"]`).click();
+    }, true);
     window[KEY] = { mount };
   }
   window[KEY].mount();
