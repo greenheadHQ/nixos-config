@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { block, cardIdScript, harness, scope, textSizeScript } from "./harness.mjs";
+import { block, cardIdScript, harness, scope, scratchpadScript, textSizeScript } from "./harness.mjs";
 
 const row = id => `<div class="anki-cid-copy" data-anki-cid="${id}"></div>`;
 const card = ({ id = "1001", answer = false, before = "", content = "" } = {}) =>
@@ -10,6 +10,13 @@ const controls = page => [...page.document.querySelectorAll(".anki-text-controls
 const button = (page, action) => page.document.querySelector(`.anki-text-controls [data-action="${action}"]`);
 const scale = page => page.document.querySelector(".anki-text-controls output")?.textContent;
 const variable = page => page.document.documentElement.style.getPropertyValue("--anki-text-scale");
+const shortcut = (page, code, options = {}, target = page.document) => {
+  const event = new page.window.KeyboardEvent("keydown", {
+    code, altKey: true, shiftKey: true, bubbles: true, cancelable: true, ...options,
+  });
+  target.dispatchEvent(event);
+  return event;
+};
 
 // Template order: the card ID fragment renders its row, then this fragment joins it.
 function rendered(t, html = card()) {
@@ -57,6 +64,84 @@ test("adjustment stops at 80 and 140 percent", t => {
   assert.equal(scale(page), "140%");
   assert.equal(variable(page), "1.4");
   assert.ok(button(page, "larger").disabled);
+});
+
+test("physical Shift+Option plus/minus keys reuse the GUI controls and limits", t => {
+  const page = rendered(t);
+  assert.ok(shortcut(page, "Equal", { key: "±" }).defaultPrevented);
+  assert.equal(scale(page), "110%");
+  assert.ok(shortcut(page, "Minus", { key: "—" }).defaultPrevented);
+  assert.equal(scale(page), "100%");
+  for (let i = 0; i < 8; i++) shortcut(page, "NumpadSubtract", { repeat: true });
+  assert.equal(scale(page), "80%");
+  assert.ok(button(page, "smaller").disabled);
+  assert.ok(shortcut(page, "Minus").defaultPrevented);
+  for (let i = 0; i < 8; i++) shortcut(page, "NumpadAdd", { repeat: true });
+  assert.equal(scale(page), "140%");
+  assert.ok(button(page, "larger").disabled);
+  button(page, "reset").click();
+  assert.equal(scale(page), "100%");
+  assert.equal(button(page, "larger").getAttribute("aria-keyshortcuts"), "Alt+Shift+Plus");
+  assert.match(button(page, "smaller").title, /Alt\+Shift\+-/);
+});
+
+test("only the dedicated chords are consumed, including while a toolbar button has focus", t => {
+  const page = rendered(t);
+  const seen = [];
+  page.document.addEventListener("keydown", event => seen.push(event.code));
+  for (const options of [{ altKey: false }, { shiftKey: false }, { ctrlKey: true }, { metaKey: true }]) {
+    assert.ok(!shortcut(page, "Equal", options).defaultPrevented);
+  }
+  assert.ok(!shortcut(page, "KeyF").defaultPrevented);
+  assert.equal(scale(page), "100%");
+  assert.equal(seen.length, 5);
+  button(page, "larger").focus();
+  assert.equal(page.document.activeElement, button(page, "larger"));
+  shortcut(page, "Equal", {}, button(page, "larger"));
+  assert.equal(scale(page), "110%");
+  assert.equal(seen.length, 5);
+});
+
+test("shortcuts preserve scratchpad text, focus, and selection and defer to IME composition", t => {
+  const page = rendered(t, card({ content: "<div data-anki-scratchpad-card></div>" }));
+  page.window.eval(scratchpadScript);
+  const input = page.document.querySelector(".anki-scratchpad textarea");
+  input.value = "한글 답안 + 생각";
+  input.focus();
+  input.setSelectionRange(2, 5);
+  shortcut(page, "Equal", {}, input);
+  assert.equal(scale(page), "110%");
+  assert.equal(page.document.activeElement, input);
+  assert.equal(input.value, "한글 답안 + 생각");
+  assert.deepEqual([input.selectionStart, input.selectionEnd], [2, 5]);
+  for (const options of [{ isComposing: true }, { keyCode: 229 }]) {
+    assert.ok(!shortcut(page, "Equal", options, input).defaultPrevented);
+  }
+  input.dispatchEvent(new page.window.CompositionEvent("compositionstart", { bubbles: true }));
+  assert.ok(!shortcut(page, "Equal", {}, input).defaultPrevented);
+  assert.equal(scale(page), "110%");
+  input.dispatchEvent(new page.window.CompositionEvent("compositionend", { bubbles: true }));
+  shortcut(page, "Minus", {}, input);
+  assert.equal(scale(page), "100%");
+});
+
+test("shortcut handlers survive rerenders without duplicate adjustment and ignore detached cards", t => {
+  const page = rendered(t);
+  page.render();
+  page.render();
+  shortcut(page, "Equal");
+  assert.equal(scale(page), "110%");
+  page.replace(card({ answer: true }));
+  shortcut(page, "Equal");
+  assert.equal(scale(page), "120%");
+  page.replace(card({ id: "1002" }));
+  shortcut(page, "Minus");
+  assert.equal(scale(page), "90%");
+  page.document.body.innerHTML = "<main id='qa'>다른 유형</main>";
+  assert.ok(!shortcut(page, "Equal").defaultPrevented);
+  page.render();
+  assert.ok(!shortcut(page, "Equal").defaultPrevented);
+  assert.equal(variable(page), "");
 });
 
 test("the answer keeps the question's scale; another card or returning to the question resets it", t => {
