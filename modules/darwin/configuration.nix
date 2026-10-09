@@ -47,6 +47,24 @@ let
     </dict>'';
 
   asUser = "launchctl asuser \"$(id -u -- ${username})\" sudo --user=${username} --set-home --";
+
+  # D2Coding 1.4.0 브리지 — 고정된 nixpkgs가 1.3.2라 src만 업스트림 1.4.0 릴리스로 교체한다.
+  # nixpkgs에는 NixOS/nixpkgs#571178로 같은 src·hash가 반영돼 있어, 다음 nixpkgs 갱신으로
+  # 고정본이 1.4.0 이상이 되면 override 없이 pkgs.d2coding을 그대로 쓰고(더 새 버전을
+  # 1.4.0으로 내리지 않는다) 경고로 이 블록 제거를 알린다.
+  d2codingBridgeVersion = "1.4.0";
+  d2coding =
+    if lib.versionOlder pkgs.d2coding.version d2codingBridgeVersion then
+      pkgs.d2coding.overrideAttrs {
+        version = d2codingBridgeVersion;
+        src = pkgs.fetchzip {
+          url = "https://github.com/naver/d2-coding-font/releases/download/VER${d2codingBridgeVersion}/D2Coding-Ver${d2codingBridgeVersion}-20261003.zip";
+          stripRoot = false;
+          hash = "sha256-+kzLE7laRUheaEN+54DoAvkX4YC8Wv7NZva4T7kf2mo=";
+        };
+      }
+    else
+      lib.warn "nixpkgs d2coding이 ${pkgs.d2coding.version}이다 — modules/darwin/configuration.nix의 D2Coding 브리지를 제거하라" pkgs.d2coding;
 in
 {
   imports = [
@@ -86,7 +104,7 @@ in
   # 한글: D2Coding (Nix 설치, 네이버 코딩 전용 한글 폰트, 앱별 font-family 폴백으로 지정)
   fonts.packages = [
     pkgs.nerd-fonts.jetbrains-mono
-    pkgs.d2coding
+    d2coding
   ];
 
   # Touch ID for sudo
