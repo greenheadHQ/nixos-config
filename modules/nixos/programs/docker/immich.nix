@@ -87,10 +87,10 @@ in
     # POSTGRES_PASSWORD_FILE: docker-entrypoint.sh가 지원하는 표준 기능
     # 시크릿 파일을 볼륨 마운트하여 컨테이너 내부에서 읽음
     #
-    # 이미지: Immich v3.0이 pgvecto.rs 지원을 제거해 공식 권장 전환용 이미지로 교체.
+    # 이미지: Immich가 pgvecto.rs 지원을 제거해 공식 권장 전환용 이미지로 교체.
     # `-pgvectors0.2.0` suffix는 기존 on-disk 데이터(pgvecto.rs 0.2.0)를 읽기 위한
     # 전환 브리지 — Immich가 기동 시 vchord로 자동 마이그레이션한다. 마이그레이션
-    # 완료·안정화 후 경량 태그(16-vectorchord0.4.3)로 재전환 가능.
+    # 완료·안정화 후 `-pgvectors` suffix를 뺀 경량 태그로 재전환 가능.
     # 주의: VectorChord 전환 후 Immich를 1.133.0 미만으로 다운그레이드 금지.
     # (근거: https://docs.immich.app/install/upgrading#migrating-to-vectorchord)
     virtualisation.oci-containers.containers.immich-postgres = {

@@ -41,6 +41,13 @@ _upload_immich_script_path() {
   printf '%s\n' "$REPO_ROOT/modules/darwin/programs/folder-actions/files/scripts/upload-immich.sh"
 }
 
+# upload-immich.sh가 고정한 CLI 패키지 지정(@immich/cli@<메이저>). 기대값에 메이저를 복사하지 않고
+# 스크립트에서 읽는다. 메이저 자체는 test_upload_immich_cli_major_matches_server_image가 서버
+# 이미지와 대조한다.
+_upload_immich_cli_spec() {
+  grep -oE '@immich/cli@[0-9]+' "$(_upload_immich_script_path)" | sort -u
+}
+
 _folder_actions_define_logger_stubs() {
   _FOLDER_ACTIONS_TEST_LOG_FILE="$1"
 
@@ -1021,12 +1028,12 @@ EOF_RAR
 # ── upload-immich 결과 처리 fixture (#1401) ───────────────────────────────────
 # mise·Node·Immich CLI와 서버는 대역이다.
 # - mise 대역: Node resolve/사전 검사와 CLI 실행 인자 및 자동 설치 설정을 기록한다.
-# - bun 대역: `bun x @immich/cli@3 upload ... -- <파일...>` 호출 인자를 기록하고, 넘겨받은 파일 중
+# - bun 대역: `bun x @immich/cli@<메이저> upload ... -- <파일...>` 호출 인자를 기록하고, 넘겨받은 파일 중
 #   사례가 업로드 성공으로 지정한 것만 짝 .xmp와 함께 지운다(CLI --delete가 이번 실행에 업로드한
 #   파일과 그 사이드카만 지우는 동작). 끝나기 직전 감시 폴더 목록을 남겨 CLI 처리 직후와 스크립트
 #   종료 뒤를 나눠 본다.
 # - curl 대역: 서버 ping은 성공시키고, stdin config로 온 bulk-upload-check 요청은 파일 SHA1별로
-#   사례가 지정한 판정(accept / duplicate / trashed)을 서버 v3 응답 모양으로 돌려준다.
+#   사례가 지정한 판정(accept / duplicate / trashed)을 서버 응답 모양으로 돌려준다.
 # 락과 스크립트 자신의 삭제는 위 배포 레이아웃 사본으로 격리해 calls.log에 기록한다.
 
 _upload_immich_fixture_runnable() {
@@ -1220,7 +1227,7 @@ test_upload_immich_runs_cli_through_mise_without_auto_install() (
     printf 'AUTO_INSTALL=false\nARG=%s\n' exec
     printf 'ARG=%s\n' -- node --version
     printf 'AUTO_INSTALL=false\nARG=%s\n' exec
-    printf 'ARG=%s\n' -- bun x @immich/cli@3 upload --album-name 'Desktop Upload' \
+    printf 'ARG=%s\n' -- bun x "$(_upload_immich_cli_spec)" upload --album-name 'Desktop Upload' \
       --delete --concurrency 2 -- "$watch/photo with spaces.jpg")
   actual=$(cat "$sandbox/mise.log")
   [[ "$actual" == "$expected" ]] || fail "mise runtime/CLI invocation changed: $actual"
@@ -1292,7 +1299,7 @@ test_upload_immich_keeps_originals_the_cli_did_not_upload() (
   assert_not_contains "$(cat "$sandbox/pushover.log")" "업로드 완료"
 
   # CLI에는 확정한 미디어 목록만 넘기고, 서버 중복 삭제는 CLI에 맡기지 않는다.
-  expected=$(printf 'ARG=%s\n' x @immich/cli@3 upload --album-name "Desktop Upload" \
+  expected=$(printf 'ARG=%s\n' x "$(_upload_immich_cli_spec)" upload --album-name "Desktop Upload" \
     --delete --concurrency 2 -- "$watch/failed.jpg" "$watch/uploaded.jpg")
   actual=$(cat "$sandbox/bun.log")
   [[ "$actual" == "$expected" ]] || fail "Immich CLI invocation changed: $actual"
@@ -1442,7 +1449,7 @@ test_upload_immich_keeps_originals_when_server_check_fails() (
 test_upload_immich_cli_major_matches_server_image() (
   local cli server
 
-  cli=$(grep -oE '@immich/cli@[0-9]+' "$(_upload_immich_script_path)" | sort -u)
+  cli=$(_upload_immich_cli_spec)
   server=$(grep -oE 'immich-server:v[0-9]+' "$REPO_ROOT/modules/nixos/programs/docker/immich.nix" | sort -u)
   [[ "$cli" =~ ^@immich/cli@[0-9]+$ ]] || fail "upload-immich.sh must pin exactly one CLI major: $cli"
   [[ "$server" =~ ^immich-server:v[0-9]+$ ]] || fail "immich.nix must declare exactly one server major: $server"
