@@ -198,7 +198,7 @@ EOF
   chmod +x "$bin/sudo" "$bin/podman" "$bin/systemctl"
 }
 
-# Immich v3.0.0 스키마를 줄인 합성 스키마: contrib 확장, 스키마 한정 SQL 함수와 식 인덱스,
+# Immich 스키마를 줄인 합성 스키마: contrib 확장, 스키마 한정 SQL 함수와 식 인덱스,
 # 예약어 테이블("user"), FK·CHECK·UNIQUE 제약, gin/gist 인덱스, version_history(최근 3.0.0 —
 # Immich는 serverVersion.toString()을 v 접두 없이 기록한다).
 _immich_restore_fixture_sql() {

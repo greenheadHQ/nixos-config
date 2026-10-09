@@ -27,12 +27,13 @@ LOCK_ACQUIRED=0
 SELF_REAP_DIR=""
 
 # 업로드 대상 확장자. CLI에는 이 목록에 든 파일만 넘기므로 서버가 받는 목록과 같아야 한다.
-# 출처: immich-server v3.0.0 server/src/utils/mime-types.ts의 image(4-70행: raw,
-# webSupportedImage, webUnsupportedImage)와 video(106-127행). 서버 이미지 메이저를 올리면 다시 맞춘다.
+# 출처: 운영 중인 immich-server 태그(modules/nixos/programs/docker/immich.nix)의
+# server/src/utils/mime-types.ts에서 image(raw, webSupportedImage, webUnsupportedImage)와 video
+# 객체의 키. 마이너 릴리스에서도 확장자가 추가되므로 서버 이미지 태그를 바꿀 때마다 다시 맞춘다.
 # .ts는 서버 목록대로 영상(MPEG-TS)으로 본다.
 MEDIA_EXT="3fr|ari|arw|cap|cin|cr2|cr3|crw|dcr|dng|erf|fff|iiq|k25|kdc|mrw|nef|nrw|orf|ori"
 MEDIA_EXT="${MEDIA_EXT}|pef|psd|raf|raw|rw2|rwl|sr2|srf|srw|x3f"
-MEDIA_EXT="${MEDIA_EXT}|avif|bmp|gif|jpeg|jpg|png|webp"
+MEDIA_EXT="${MEDIA_EXT}|avif|bmp|gif|jfif|jpeg|jpg|png|webp"
 MEDIA_EXT="${MEDIA_EXT}|heic|heif|hif|insp|jp2|jpe|jxl|mpo|svg|tif|tiff"
 MEDIA_EXT="${MEDIA_EXT}|3gp|3gpp|avi|flv|insv|m2t|m2ts|m4v|mkv|mov|mp4|mpe|mpeg|mpg|mts|mxf|ts|vob|webm|wmv"
 
@@ -617,13 +618,13 @@ wait_all_stable() {
 # ─── 서버 저장 확인 (bulk-upload-check) ───────────────────────
 # CLI 업로드 뒤에도 남은 원본이 서버에 이미 있는지 스크립트가 직접 확인한다. CLI의
 # --delete-duplicates는 쓰지 않는다: 서버 휴지통에만 있는 자산(isTrashed)도 중복으로 보고
-# 지우고, 올리지 않은 .xmp 사이드카까지 함께 지운다 (CLI 3.2.2 deleteFiles/findSidecar).
+# 지우고, 올리지 않은 .xmp 사이드카까지 함께 지운다 (CLI의 deleteFiles/findSidecar).
 #
-# 계약 (immich-server v3.0.0 server/src):
+# 계약 (운영 중인 immich-server 태그의 server/src. 서버 이미지 태그를 바꿀 때 다시 확인한다):
 # - POST <IMMICH_INSTANCE_URL>/api/assets/bulk-upload-check, 인증 헤더 x-api-key
-#   (controllers/asset-media.controller.ts, enum.ts ImmichHeader.ApiKey; CLI 3.2.2도 같은 헤더)
+#   (controllers/asset-media.controller.ts, enum.ts ImmichHeader.ApiKey; CLI도 같은 헤더)
 # - 요청 {"assets":[{"id":<클라이언트 식별자>,"checksum":<SHA1>}]} (dtos/asset-media.dto.ts).
-#   checksum은 28자면 base64, 아니면 hex로 읽는다 (utils/request.ts fromChecksum). CLI 3.2.2와
+#   checksum은 28자면 base64, 아니면 hex로 읽는다 (utils/request.ts fromChecksum). CLI와
 #   같이 hex를 보낸다. id는 경로 대신 요청 순번을 써서 JSON 이스케이프를 피한다.
 # - 응답 {"results":[{"id","action":"accept"|"reject","reason"?,"assetId"?,"isTrashed"?}]}
 #   (dtos/asset-media-response.dto.ts). bulkUploadCheck는 휴지통 자산도 reject/duplicate에

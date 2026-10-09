@@ -113,7 +113,7 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 
 서비스별 Pushover 토큰 독립 운영 (agenix: `pushover-immich`, `pushover-uptime-kuma`, `pushover-copyparty`, `pushover-karakeep`).
 
-Immich: API 버전 조회 가능 → "현재 v2.5.5 → 최신 v2.6.0" 형태 알림. 상세: [references/immich-update.md](references/immich-update.md)
+Immich: API로 현재 버전을 조회할 수 있어 알림에 현재 버전과 최신 버전을 함께 적는다. 상세: [references/immich-update.md](references/immich-update.md)
 
 Immich DB 백업: `immich-db-backup` 서비스가 매일 05:30에 `podman exec immich-postgres pg_dump -Fc`로 커스텀 포맷 백업 생성. 대상 HDD(`mediaData`) 마운트 가드(`RequiresMountsFor` + 스크립트 `mountpoint` 검사), 디스크 공간 검사, pg_restore --list 무결성 검증, 원자적 파일 이동, 30일 보관. 실패 시 Pushover 알림 (`pushover-immich` 재사용). `sudo systemctl start immich-db-backup`으로 수동 실행. 복구는 별도 DB에 복원·검증한 뒤 이름을 맞바꾼다 — 절차: [references/immich-update.md](references/immich-update.md)의 "DB 백업/복원" 절.
 

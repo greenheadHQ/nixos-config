@@ -1,4 +1,4 @@
-# tests/suites/immich-cleanup-v3-guard.sh — 도메인 테스트 정의 (sourced; aggregator가 lib/test-common.sh 후 source)
+# tests/suites/immich-cleanup-guard.sh — 도메인 테스트 정의 (sourced; aggregator가 lib/test-common.sh 후 source)
 # shellcheck shell=bash
 # SC2154: 공통 변수(REPO_ROOT 등)는 aggregator/test-common이 정의. SC2164: set -euo pipefail 런타임 상속.
 # shellcheck disable=SC2154,SC2164
@@ -125,7 +125,7 @@ run_immich_cleanup_fixture() {
     bash "$script"
 }
 
-test_immich_cleanup_v3_paginates_next_page_string() {
+test_immich_cleanup_paginates_next_page_string() {
   local sandbox output
   sandbox="$(new_sandbox)"
   setup_immich_cleanup_fixture "$sandbox" paginated
@@ -141,7 +141,7 @@ test_immich_cleanup_v3_paginates_next_page_string() {
   assert_line_count "$sandbox/requests.log" "page=2" 1
 }
 
-test_immich_cleanup_v3_empty_album_preserves_notification() {
+test_immich_cleanup_empty_album_preserves_notification() {
   local sandbox output
   sandbox="$(new_sandbox)"
   setup_immich_cleanup_fixture "$sandbox" empty
@@ -153,7 +153,7 @@ test_immich_cleanup_v3_empty_album_preserves_notification() {
   [[ ! -e "$sandbox/deletes.log" ]] || fail "empty album must not call asset delete"
 }
 
-test_immich_cleanup_v3_rejects_invalid_asset_id() {
+test_immich_cleanup_rejects_invalid_asset_id() {
   local sandbox output
   sandbox="$(new_sandbox)"
   setup_immich_cleanup_fixture "$sandbox" invalid-id
@@ -167,7 +167,7 @@ test_immich_cleanup_v3_rejects_invalid_asset_id() {
   [[ ! -e "$sandbox/deletes.log" ]] || fail "invalid asset id must not call asset delete"
 }
 
-test_immich_cleanup_v3_rejects_invalid_next_page() {
+test_immich_cleanup_rejects_invalid_next_page() {
   local sandbox output
   sandbox="$(new_sandbox)"
   setup_immich_cleanup_fixture "$sandbox" invalid-next-page

@@ -70,14 +70,14 @@ Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 �
 ### Immich
 
 - 현재 버전 확인: Immich API (`/api/server/version`) → `major.minor.patch`
-- 알림 형태: "현재: v2.5.5 → 최신: v2.6.0" (현재/최신 모두 표시)
+- 알림 형태: "현재: v<현재 버전> → 최신: v<최신 버전>" (현재/최신 모두 표시)
 - 업데이트: DB 백업(pg_dump) → 이미지 pull 2개 → 재시작 → API 헬스체크
 - Tailscale 대기: version-check에 `ExecStartPre` tailscale-wait 포함
 
 ### Uptime Kuma
 
 - 현재 버전 확인: pinned image tag 기준 (update 스크립트가 태그에서 추출). GitHub latest는 알림용
-- 알림 형태: "v2.1.0 출시됨" (현재 버전 미표시)
+- 알림 형태: "v<최신 버전> 출시됨" (현재 버전 미표시)
 - 메이저 불일치 감지 (`DETECT_MAJOR_MISMATCH`): pinned tag 메이저 ≠ GitHub latest 메이저 → 추가 안내 포함
 - 업데이트: pinned 이미지 pull → digest 비교 → stop → SQLite 백업(`kuma.db` gzip) → start → HTTP 헬스체크
 - ERR trap 복구: 실패 시 컨테이너 자동 재시작 (모니터링 서비스 가용성 보장)
@@ -86,7 +86,7 @@ Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 �
 ### Copyparty
 
 - 현재 버전 확인: pinned image tag 기준 (update 스크립트가 태그에서 추출). GitHub latest는 알림용
-- 알림 형태: "v1.20.6 출시됨"
+- 알림 형태: "v<최신 버전> 출시됨"
 - 업데이트: pinned 이미지 pull → digest 비교 → 재시작 → HTTP 헬스체크 (백업 없음)
 - ERR trap 복구: 실패 시 컨테이너 자동 재시작
 - Tailscale 불필요: localhost + 인터넷만 사용
@@ -94,7 +94,7 @@ Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 �
 ### Karakeep
 
 - 현재 버전 확인: pinned image tag 기준 (update 스크립트가 태그에서 추출). GitHub latest는 알림용
-- 알림 형태: "v0.x.y 출시됨"
+- 알림 형태: "v<최신 버전> 출시됨"
 - 업데이트: pinned 이미지 pull → digest 비교 → 재시작 → HTTP 헬스체크 (백업 없음)
 - 실행 명령: `sudo karakeep-update --ack-bridge-risk` (`--ack-bridge-risk` 없이 실행 불가)
 - ERR trap 복구: 실패 시 컨테이너 자동 재시작

@@ -31,8 +31,8 @@ Immich 서버가 `127.0.0.1`에만 바인딩되어 있으므로, Tailscale IP로
 
 ### API 호출
 
-1. 현재 버전: Immich API `/api/server/version` → `{"major":2,"minor":5,"patch":5}` → `"2.5.5"` 변환
-2. 최신 버전: GitHub `repos/immich-app/immich/releases/latest` → `"tag_name": "v2.5.5"` → `"2.5.5"` 변환
+1. 현재 버전: Immich API `/api/server/version`의 `major`·`minor`·`patch`를 `major.minor.patch` 문자열로 합친다
+2. 최신 버전: GitHub `repos/immich-app/immich/releases/latest`의 `tag_name`에서 앞의 `v`를 떼어 같은 형식으로 맞춘다
 
 ### 상태 관리
 
@@ -135,7 +135,7 @@ if [ -n "${ZSH_VERSION:-}" ]; then setopt interactive_comments; fi
 BACKUP=/mnt/data/backups/immich/immich-db-YYYY-MM-DD_HHMMSS.dump
 # BACKUP=/var/lib/immich-update/backups/backup-YYYYMMDD-HHMMSS.sql.gz
 
-# 복원 DB에 있어야 하는 확장 (Immich v3.0.0 스키마 선언 + VectorChord 이미지 기준)
+# 복원 DB에 있어야 하는 확장 (운영 중인 Immich 태그의 스키마 선언 + VectorChord 이미지 기준)
 IMMICH_REQUIRED_EXTENSIONS='cube earthdistance pg_trgm unaccent uuid-ossp vector vchord'
 
 # postgres 컨테이너의 psql. SQL은 heredoc(표준 입력)으로만 넘긴다
@@ -543,11 +543,11 @@ SQL
 
 합성 환경에서 확인하지 못한 조건:
 
-- 운영 이미지(`ghcr.io/immich-app/postgres:16-vectorchord0.4.3-pgvectors0.2.0`)의 VectorChord·pgvector 확장. 테스트는 `IMMICH_REQUIRED_EXTENSIONS`에서 `vector`·`vchord`를 빼고 실행하므로, 실제 복원에서는 검증 단계가 두 확장의 존재를 확인한다.
-- 확장 목록과 핵심 테이블 이름은 Immich v3.0.0 소스(`server/src/schema`) 기준이다. Immich를 올리면 다시 확인한다. pgvecto.rs를 쓰던 시기(이 저장소의 v3.0 전환 이전)의 백업은 `vchord`가 없어 검증에서 멈춘다.
+- 운영 postgres 이미지(`modules/nixos/programs/docker/immich.nix`의 `immich-postgres`)의 VectorChord·pgvector 확장. 테스트는 `IMMICH_REQUIRED_EXTENSIONS`에서 `vector`·`vchord`를 빼고 실행하므로, 실제 복원에서는 검증 단계가 두 확장의 존재를 확인한다.
+- 확장 목록과 핵심 테이블 이름은 운영 중인 Immich 태그의 소스(`server/src/schema`) 기준이다. 태그를 바꾸면 다시 확인한다: `gh api "repos/immich-app/immich/contents/server/src/schema/index.ts?ref=<태그>" -H "Accept: application/vnd.github.raw" | grep @Extensions`(기본 내장인 `plpgsql`을 빼고 이미지가 주는 `vector`·`vchord`를 더한 것이 목록)와 `server/src/schema/tables/{user,asset,album}.table.ts`의 `@Table` 이름. pgvecto.rs를 쓰던 시기(이 저장소의 VectorChord 전환 이전)의 백업은 `vchord`가 없어 검증에서 멈춘다.
 - [Immich 공식 복원 문서](https://docs.immich.app/administration/backup-and-restore)는 평문 SQL을 넣기 전에 `search_path` 설정 줄을 `sed`로 바꾼다. 합성 스키마(스키마를 명시한 SQL 함수와 식 인덱스)는 바꾸지 않고도 복원됐지만 실제 덤프로는 확인하지 않았다. `search_path` 관련 오류(`function … does not exist` 등)로 복원이 실패해도 절차는 기존 DB를 그대로 두고 멈춘다.
 - 복원은 운영 중인 같은 postgres 컨테이너(메모리 제한 1g, `libraries/constants.nix`)에서 인덱스를 다시 만든다. 메모리가 모자라 OOM이 나면 PostgreSQL 전체가 복구 과정에 들어가 운영 연결도 끊길 수 있다. 합성 DB는 작아서 이 부하를 재현하지 않았다.
-- DB 수준 설정(`ALTER DATABASE … SET`)은 `pg_dump`가 담지 않고, 이름 맞바꾸기로도 옮겨지지 않는다. Immich v3.0.0은 VectorChord 확장을 처음 만들 때만 `vchordrq.probes`를 DB 수준으로 설정하고, 검색 쿼리마다 `SET LOCAL`로 다시 지정한다(소스 기준). 전환 뒤 두 DB의 설정 차이는 아래로 본다.
+- DB 수준 설정(`ALTER DATABASE … SET`)은 `pg_dump`가 담지 않고, 이름 맞바꾸기로도 옮겨지지 않는다. Immich는 VectorChord 확장을 처음 만들 때만 `vchordrq.probes`를 DB 수준으로 설정하고, 검색 쿼리마다 `SET LOCAL`로 다시 지정한다(`server/src/repositories/database.repository.ts`의 `createExtension`과 `search.repository.ts` 기준). 전환 뒤 두 DB의 설정 차이는 아래로 본다.
 
 ```bash
 immich_psql -d postgres <<'SQL'
