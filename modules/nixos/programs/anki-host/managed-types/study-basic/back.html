@@ -3,19 +3,1711 @@
 
 <hr id="answer">
 
-<div class="answer anki-code-scope">{{답}}</div>
-{{#설명}}<div class="explanation linkRender anki-code-scope">{{설명}}</div>{{/설명}}
-{{#출처}}<div class="source linkRender anki-code-scope">{{출처}}</div>{{/출처}}<!-- anki-note-link-mobile-renderer -->
+<div class="answer anki-code-scope" data-anki-fence-field="답" data-anki-fence-pending="">{{답}}</div>
+{{#설명}}<div class="explanation linkRender anki-code-scope" data-anki-fence-field="설명" data-anki-fence-pending="">{{설명}}</div>{{/설명}}
+{{#출처}}<div class="source linkRender anki-code-scope" data-anki-fence-field="출처" data-anki-fence-pending="">{{출처}}</div>{{/출처}}{{#질문}}<!-- anki-code-highlight-v1 -->
+<script>
+(() => {
+  const ASSET = "_anki-syntax-hljs-11.12.0-fd009500d0c826a5.min.js";
+  const CSS = "/* Scoped GitHub-inspired palette; app night mode is authoritative, not OS theme. */\n:is([data-anki-fence-field], .anki-fence-scope)[data-anki-fence-pending] { opacity: 0; pointer-events: none; }\n.anki-fence-error { display: block; margin-top: 8px; font: 400 13px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; color: #57606a; }\n/* A late color pass must not change glyph metrics or code geometry. */\n.anki-code-scope pre > code[data-anki-fenced] .hljs-emphasis { font-style: inherit; }\n.anki-code-scope pre > code[data-anki-fenced] .hljs-strong { font-weight: inherit; }\n.anki-code-scope {\n  --anki-code-size: 17px;\n}\n.anki-code-scope pre {\n  box-sizing: border-box;\n  max-width: 100%;\n  min-width: 0;\n  overflow-x: auto;\n  white-space: pre;\n  overflow-wrap: normal;\n  word-break: normal;\n  tab-size: 4;\n  margin: 16px 0;\n  padding: 14px 16px;\n  border: 1px solid #d8dee4;\n  border-radius: 10px;\n  background: #f6f8fa;\n  color: #24292f;\n  text-align: left;\n  font: 400 17px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;\n  font-size: calc(var(--anki-code-size) * var(--anki-code-scale, 1));\n  -webkit-text-size-adjust: 100%;\n}\n.anki-code-controls {\n  box-sizing: border-box;\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  width: fit-content;\n  max-width: 100%;\n  margin: 10px 0 4px auto;\n  padding: 0;\n  gap: 2px;\n  border: 0;\n  background: transparent;\n  color: #57606a;\n  font: 400 11px/1 -apple-system, BlinkMacSystemFont, sans-serif;\n  -webkit-text-size-adjust: 100%;\n}\n.anki-code-controls + pre { margin-top: 0; }\n.anki-code-controls button {\n  appearance: none;\n  -webkit-appearance: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 28px;\n  min-height: 28px;\n  margin: 0;\n  padding: 0;\n  border: 0;\n  border-radius: 5px;\n  background: transparent;\n  box-shadow: none;\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  touch-action: manipulation;\n  -webkit-tap-highlight-color: transparent;\n  user-select: none;\n  -webkit-user-select: none;\n}\n.anki-code-controls button[data-action=\"smaller\"],\n.anki-code-controls button[data-action=\"larger\"] { font-size: 16px; }\n/* Keep the explicit accessible name while presenting a quiet reset icon. */\n.anki-code-controls button[data-action=\"reset\"] { font-size: 0; }\n.anki-code-controls button[data-action=\"reset\"]::before { content: \"\u21ba\"; font-size: 16px; }\n.anki-code-controls button:not(:disabled):hover,\n.anki-code-controls button:not(:disabled):active { background: #e6ebf0; }\n.anki-code-controls button:hover,\n.anki-code-controls button:active { box-shadow: none; }\n/* Desktop Anki suppresses button outlines with !important. Restore focus here. */\n.anki-code-controls button:focus-visible { outline: 2px solid #0969da !important; outline-offset: 1px; }\n.anki-code-controls button:disabled,\n.anki-code-controls button:disabled:hover { background: transparent; color: inherit; opacity: .4; cursor: default; }\n.anki-code-controls output {\n  min-width: 34px;\n  text-align: center;\n  font: inherit;\n  font-variant-numeric: tabular-nums;\n}\n@media (max-width: 600px) {\n  .anki-code-scope { --anki-code-size: 15px; }\n  .anki-code-scope pre { padding: 12px; }\n  .anki-code-controls button { min-width: 32px; min-height: 32px; }\n}\n.anki-code-scope pre > code {\n  display: block;\n  min-width: max-content;\n  padding: 0;\n  border: 0;\n  border-radius: 0;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  white-space: inherit;\n  overflow-wrap: inherit;\n  word-break: inherit;\n}\n.anki-code-scope .hljs-keyword, .anki-code-scope .hljs-selector-tag, .anki-code-scope .hljs-literal { color: #cf222e; }\n.anki-code-scope .hljs-title, .anki-code-scope .hljs-section { color: #8250df; }\n.anki-code-scope .hljs-string, .anki-code-scope .hljs-regexp { color: #0a3069; }\n.anki-code-scope .hljs-number, .anki-code-scope .hljs-attr, .anki-code-scope .hljs-variable, .anki-code-scope .hljs-type, .anki-code-scope .hljs-built_in { color: #0550ae; }\n.anki-code-scope .hljs-comment, .anki-code-scope .hljs-quote { color: #57606a; }\n.anki-code-scope .hljs-name, .anki-code-scope .hljs-selector-class, .anki-code-scope .hljs-selector-id { color: #116329; }\n.anki-code-scope .hljs-meta, .anki-code-scope .hljs-symbol, .anki-code-scope .hljs-bullet { color: #953800; }\n.anki-code-scope .hljs-emphasis { font-style: italic; }\n.anki-code-scope .hljs-strong { font-weight: 600; }\n:is(.nightMode, .night_mode) .anki-code-scope pre,\n.anki-code-scope:is(.nightMode, .night_mode) pre { background: #161b22; color: #e6edf3; border-color: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-controls {\n  color: #8b949e;\n}\n:is(.nightMode, .night_mode) .anki-code-controls button:not(:disabled):hover,\n:is(.nightMode, .night_mode) .anki-code-controls button:not(:disabled):active { background: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-controls button:focus-visible { outline-color: #79c0ff !important; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-keyword,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-tag,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-literal { color: #ff7b72; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-title,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-section { color: #d2a8ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-string,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-regexp { color: #a5d6ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-number,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-attr,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-variable,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-type,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-built_in { color: #79c0ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-comment,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-quote { color: #8b949e; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-name,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-class,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-id { color: #7ee787; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-meta,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-symbol,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-bullet { color: #ffa657; }\n\n/* Keep the existing sibling DOM: the size controller anchors its toolbar to\n * pre. Both controls share an external row without covering scrollable code. */\n.anki-code-block {\n  display: grid;\n  grid-template-areas: \"toolbar copy\" \"code code\" \"manual manual\";\n  grid-template-columns: minmax(0, 1fr) 44px;\n  gap: 4px;\n  min-width: 0;\n  margin: 16px 0;\n}\n.anki-code-block > .anki-code-controls {\n  grid-area: toolbar;\n  align-self: center;\n  justify-self: end;\n  margin: 0;\n  padding-right: 6px;\n  border-right: 1px solid #d8dee4;\n}\n.anki-code-scope .anki-code-block > pre {\n  grid-area: code;\n  margin: 0;\n}\n.anki-code-copy {\n  grid-area: copy;\n  align-self: center;\n  justify-self: end;\n  margin: 0;\n  color: #57606a;\n}\n.anki-code-copy button {\n  appearance: none;\n  -webkit-appearance: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 44px;\n  min-height: 44px;\n  margin: 0;\n  padding: 0;\n  border: 0;\n  border-radius: 6px;\n  background: transparent;\n  color: inherit;\n  box-shadow: none;\n  cursor: pointer;\n  touch-action: manipulation;\n  user-select: none;\n  -webkit-user-select: none;\n  -webkit-tap-highlight-color: transparent;\n}\n.anki-code-copy button:hover,\n.anki-code-copy button:active { background: #e6ebf0; box-shadow: none; }\n.anki-code-copy button:focus-visible { outline: 2px solid #0969da !important; outline-offset: 1px; }\n.anki-code-copy__check,\n.anki-code-copy[data-state=\"success\"] .anki-code-copy__icon { display: none; }\n.anki-code-copy[data-state=\"success\"] .anki-code-copy__check { display: block; }\n.anki-code-copy [role=\"status\"] {\n  position: absolute !important;\n  width: 1px !important;\n  height: 1px !important;\n  overflow: hidden !important;\n  clip: rect(0, 0, 0, 0) !important;\n  white-space: nowrap !important;\n}\n.anki-code-copy-manual { grid-area: manual; min-width: 0; text-align: left; }\n.anki-code-copy-manual[hidden] { display: none; }\n.anki-code-copy-manual p { margin: 8px 0; font: 400 13px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; }\n.anki-code-copy-manual textarea {\n  box-sizing: border-box;\n  width: 100%;\n  min-height: 100px;\n  padding: 10px;\n  border: 1px solid #d8dee4;\n  border-radius: 6px;\n  background: #f6f8fa;\n  color: #24292f;\n  font: 400 16px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;\n  white-space: pre;\n  overflow-wrap: normal;\n  user-select: text;\n  -webkit-user-select: text;\n}\n:is(.nightMode, .night_mode) .anki-code-copy { color: #8b949e; }\n:is(.nightMode, .night_mode) .anki-code-block > .anki-code-controls { border-color: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-copy button:hover,\n:is(.nightMode, .night_mode) .anki-code-copy button:active { background: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-copy button:focus-visible { outline-color: #79c0ff !important; }\n:is(.nightMode, .night_mode) .anki-code-copy-manual textarea { background: #161b22; color: #e6edf3; border-color: #30363d; }\n";
+  // Conservative initial bound from the pinned synthetic token-DOM benchmark;
+  // physical Mac/iPhone measurements may tighten it. Old HTML keeps its bound.
+  const FENCE_MAX_CHARS = 1024;
+  (function () {
+  "use strict";
+  const VERSION = 1;
+  if (window.AnkiFencedCodeV1?.version === VERSION) return;
+
+  const BLOCKS = new Set(["DIV", "P"]);
+  const INLINE = new Set([
+    "SPAN", "B", "I", "STRONG", "EM", "A", "U", "S", "STRIKE", "SUB", "SUP",
+    "MARK", "SMALL", "FONT", "ABBR", "KBD", "SAMP", "VAR", "WBR",
+  ]);
+  const SKIP = new Set(["PRE", "CODE", "SCRIPT", "STYLE", "TEXTAREA"]);
+  const hiddenInMarkup = node => {
+    if (node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true") return true;
+    if (!node.hasAttribute("style")) return false;
+    const style = node.style;
+    return style.display === "none" || style.visibility === "hidden" ||
+      style.visibility === "collapse" || style.opacity === "0";
+  };
+  // Match the copy control's conclusive alpha-zero color checks. A shadow or
+  // stroke may paint transparent text, but preserving such markup is safer than
+  // guessing whether flattening would disclose an originally hidden answer.
+  const transparentColor = color => {
+    const value = (color || "").trim().toLowerCase();
+    if (value === "transparent") return true;
+    const alpha = value.match(/^(?:rgba|hsla)\([^,]+,[^,]+,[^,]+,\s*([^,()]+)\)$/)?.[1] ||
+      value.match(/^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*\/\s*([^/()]+)\)$/)?.[1];
+    return !!alpha && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?%?$/.test(alpha.trim()) &&
+      Number(alpha.trim().replace(/%$/, "")) === 0;
+  };
+  const hidden = (node, styles) => {
+    if (node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true") return true;
+    if (styles.has(node)) return styles.get(node);
+    const style = window.getComputedStyle(node);
+    const fill = style.getPropertyValue("-webkit-text-fill-color").trim().toLowerCase();
+    const foreground = !fill || fill === "currentcolor" ? style.color : fill;
+    const result = style.display === "none" || style.visibility === "hidden" ||
+      style.visibility === "collapse" || style.opacity === "0" ||
+      style.contentVisibility === "hidden" || parseFloat(style.fontSize) === 0 ||
+      transparentColor(foreground);
+    styles.set(node, result);
+    return result;
+  };
+  const unsafe = (node, styles) => SKIP.has(node.tagName) || hidden(node, styles) ||
+    node.hasAttribute("contenteditable") || /(?:^|\s)(?:katex|MathJax|mjx-)[^\s]*/.test(node.getAttribute("class") || "") ||
+    (!BLOCKS.has(node.tagName) && !INLINE.has(node.tagName) && node.tagName !== "BR");
+  const point = (node, offset) => ({ node, offset });
+  const before = (node, positions) => point(node.parentNode, positions.get(node));
+  const after = (node, positions) => { const value = before(node, positions); value.offset++; return value; };
+
+  // Text and editor line breaks are read without rebuilding the field. Each
+  // logical chunk retains its DOM position so only fenced regions are replaced.
+  function read(scope) {
+    const chunks = [];
+    const barriers = [];
+    const blocks = new WeakMap();
+    const positions = new WeakMap();
+    const styles = new WeakMap();
+    const contentElements = [];
+    const nodeBefore = node => before(node, positions);
+    const nodeAfter = node => after(node, positions);
+    let length = 0;
+    let last = "";
+    function append(text, start, end, textNode) {
+      if (!text) return;
+      chunks.push({ start: length, end: length + text.length, text, from: start, to: end, textNode });
+      length += text.length;
+      last = text[text.length - 1];
+    }
+    function boundary(where) {
+      if (length && last !== "\n") append("\n", where, where, null);
+    }
+    function visit(node, index) {
+      positions.set(node, index);
+      if (node.nodeType === 3) {
+        append(node.data, point(node, 0), point(node, node.data.length), node);
+        return;
+      }
+      if (node.nodeType !== 1) return;
+      const tag = node.tagName;
+      if (SKIP.has(tag) || hiddenInMarkup(node)) {
+        barriers.push({ offset: length, node });
+        if (!hiddenInMarkup(node) && (tag === "PRE" || tag === "CODE" || tag === "TEXTAREA")) {
+          if (tag === "PRE") boundary(nodeBefore(node));
+          append("\ufffc", nodeBefore(node), nodeAfter(node), null);
+          if (tag === "PRE") boundary(nodeAfter(node));
+        }
+        return;
+      }
+      if (tag === "BR") {
+        append("\n", nodeBefore(node), nodeAfter(node), null);
+        return;
+      }
+      // Structural reading must not ask for every outside element's CSS. A
+      // matched region checks its content and ancestors before flattening them.
+      // Empty BR/WBR nodes contain no hidden characters to expose.
+      if (node.childNodes.length) contentElements.push({ offset: length, node });
+      const block = BLOCKS.has(tag);
+      if (block) boundary(nodeBefore(node));
+      if (node.hasAttribute("contenteditable") || /(?:^|\s)(?:katex|MathJax|mjx-)[^\s]*/.test(node.getAttribute("class") || "") ||
+        (!block && !INLINE.has(tag))) {
+        barriers.push({ offset: length, node });
+        if (!node.childNodes.length) append("\ufffc", nodeBefore(node), nodeAfter(node), null);
+      }
+      const start = length;
+      for (let index = 0; index < node.childNodes.length; index++) visit(node.childNodes[index], index);
+      const contentEnd = length;
+      if (block) {
+        // A completely empty editor DIV/P still represents an empty line.
+        if (length === start) append("\n", nodeAfter(node), nodeAfter(node), null);
+        else boundary(nodeAfter(node));
+        blocks.set(node, { start, contentEnd, end: length });
+      }
+    }
+    for (let index = 0; index < scope.childNodes.length; index++) visit(scope.childNodes[index], index);
+    return { text: chunks.map(chunk => chunk.text).join(""), chunks, barriers, blocks, positions, styles, contentElements };
+  }
+
+  function position(chunks, offset, end) {
+    let low = 0;
+    let high = chunks.length - 1;
+    while (low <= high) {
+      const middle = (low + high) >>> 1;
+      const chunk = chunks[middle];
+      if (offset < chunk.start || (end && offset === chunk.start)) high = middle - 1;
+      else if (offset > chunk.end || (!end && offset === chunk.end)) low = middle + 1;
+      else if (chunk.textNode) return point(chunk.textNode, offset - chunk.start);
+      else return end ? chunk.to : chunk.from;
+    }
+    // The end of the final line has no following chunk.
+    return chunks[chunks.length - 1].to;
+  }
+
+  function lineBlock(scope, where, blocks, start, end) {
+    let node = where.node.nodeType === 1 ? where.node : where.node.parentNode;
+    for (; node && node !== scope; node = node.parentNode) {
+      const bounds = blocks.get(node);
+      if (bounds && bounds.start === start && (bounds.contentEnd === end || bounds.contentEnd === end + 1)) return node;
+    }
+    return null;
+  }
+
+  function fail(scope) {
+    scope.dataset.ankiFenceState = "failed";
+    if (!scope.querySelector(".anki-fence-error")) {
+      const notice = scope.ownerDocument.createElement("small");
+      notice.className = "anki-fence-error";
+      notice.setAttribute("role", "status");
+      notice.textContent = "코드 블록을 안전하게 변환하지 못해 원문을 표시합니다.";
+      scope.appendChild(notice);
+    }
+    return { codes: [], failed: true };
+  }
+
+  function convert(scope) {
+    const state = scope.dataset.ankiFenceState;
+    if (state) return {
+      codes: state === "converted" ? Array.from(scope.querySelectorAll("code[data-anki-fenced]")) : [],
+      failed: state === "failed",
+    };
+    if (scope.textContent.indexOf("```") === -1) {
+      scope.dataset.ankiFenceState = "plain";
+      return { codes: [], failed: false };
+    }
+    try {
+      const source = read(scope);
+      const plans = [];
+      let opener = null;
+      let start = 0;
+      while (start <= source.text.length) {
+        const newline = source.text.indexOf("\n", start);
+        const end = newline === -1 ? source.text.length : newline;
+        const line = source.text.slice(start, end);
+        const match = /^ {0,3}(`{3,})([^`]*)$/.exec(line);
+        if (!opener && match) {
+          opener = { start, end, body: newline === -1 ? end : end + 1,
+            count: match[1].length, language: match[2].trim().split(/\s+/)[0] };
+        } else if (opener && match && match[1].length >= opener.count && /^[ \t]*$/.test(match[2])) {
+          // Remove the separator before the closing fence, never trim the body.
+          const bodyEnd = Math.max(opener.body, start - 1);
+          plans.push({ open: opener, start, end, text: source.text.slice(opener.body, bodyEnd) });
+          opener = null;
+        }
+        if (newline === -1) break;
+        start = end + 1;
+      }
+      if (!plans.length) {
+        scope.dataset.ankiFenceState = "plain";
+        return { codes: [], failed: false };
+      }
+      // Validate every region before committing any conversion in this field.
+      let barrierIndex = 0;
+      let contentIndex = 0;
+      const range = scope.ownerDocument.createRange();
+      const prepared = plans.map(plan => {
+        let from = position(source.chunks, plan.open.start, false);
+        let to = position(source.chunks, plan.end, true);
+        // An unsupported ancestor may begin before the opening line; its entry
+        // offset alone would not catch a fence nested inside it.
+        for (let node = from.node.nodeType === 1 ? from.node : from.node.parentNode;
+          node && node !== scope; node = node.parentNode) {
+          if (unsafe(node, source.styles)) throw new Error("unsafe fenced ancestor");
+        }
+        const firstBlock = lineBlock(scope, from, source.blocks, plan.open.start, plan.open.end);
+        const lastBlock = lineBlock(scope, to, source.blocks, plan.start, plan.end);
+        if (firstBlock) from = before(firstBlock, source.positions);
+        if (lastBlock) to = after(lastBlock, source.positions);
+        range.setStart(from.node, from.offset);
+        range.setEnd(to.node, to.offset);
+        while (barrierIndex < source.barriers.length && source.barriers[barrierIndex].offset < plan.open.start) barrierIndex++;
+        while (barrierIndex < source.barriers.length && source.barriers[barrierIndex].offset <= plan.end) {
+          if (range.intersectsNode(source.barriers[barrierIndex++].node)) throw new Error("unsafe fenced content");
+        }
+        while (contentIndex < source.contentElements.length && source.contentElements[contentIndex].offset < plan.open.start) contentIndex++;
+        while (contentIndex < source.contentElements.length && source.contentElements[contentIndex].offset <= plan.end) {
+          const node = source.contentElements[contentIndex++].node;
+          if (range.intersectsNode(node) && hidden(node, source.styles)) throw new Error("hidden fenced content");
+        }
+        const pre = scope.ownerDocument.createElement("pre");
+        const code = scope.ownerDocument.createElement("code");
+        code.dataset.ankiFenced = "";
+        if (plan.open.language) code.className = "language-" + plan.open.language;
+        code.textContent = plan.text;
+        pre.appendChild(code);
+        return { from, to, common: range.commonAncestorContainer, pre, code };
+      });
+      // A Range can split endpoint text/ancestors. Keep original references for
+      // only those touched parents, so rollback preserves outside listeners and
+      // live state without cloning or snapshotting every descendant in a field.
+      const savedParents = new Map();
+      const savedTexts = new Map();
+      function saveParent(node) {
+        if (!savedParents.has(node)) savedParents.set(node, Array.from(node.childNodes));
+      }
+      function saveBoundary(node, common) {
+        if (node.nodeType === 3) savedTexts.set(node, node.data);
+        while (node && node !== common) {
+          if (node.nodeType === 1) saveParent(node);
+          node = node.parentNode;
+        }
+        if (common.nodeType === 3) {
+          savedTexts.set(common, common.data);
+          saveParent(common.parentNode);
+        } else saveParent(common);
+      }
+      for (const item of prepared) {
+        saveBoundary(item.from.node, item.common);
+        saveBoundary(item.to.node, item.common);
+      }
+      try {
+        for (let i = prepared.length - 1; i >= 0; i--) {
+          const item = prepared[i];
+          range.setStart(item.from.node, item.from.offset);
+          range.setEnd(item.to.node, item.to.offset);
+          range.extractContents();
+          range.insertNode(item.pre);
+        }
+      } catch (error) {
+        for (const [node, children] of savedParents) node.replaceChildren(...children);
+        for (const [node, data] of savedTexts) node.data = data;
+        throw error;
+      }
+      scope.dataset.ankiFenceState = "converted";
+      return { codes: prepared.map(item => item.code), failed: false };
+    } catch (error) {
+      return fail(scope);
+    }
+  }
+  window.AnkiFencedCodeV1 = { version: VERSION, convert };
+})();
+
+  const fenceFields = Array.from(document.querySelectorAll(
+    "[data-anki-fence-field], .anki-fence-scope"));
+  const reveal = fields => {
+    for (const field of fields) {
+      if (!field.isConnected) continue;
+      for (const button of field.querySelectorAll("button[data-anki-fence-copy-pending]")) {
+        button.disabled = false;
+        button.removeAttribute("data-anki-fence-copy-pending");
+      }
+      field.removeAttribute("data-anki-fence-pending");
+    }
+  };
+  for (const field of fenceFields) {
+    try {
+      const result = window.AnkiFencedCodeV1.convert(field);
+      if (result.failed || !result.codes.length) reveal([field]);
+    } catch (_) {
+      // An unexpected converter failure is distinct from a missing highlighter.
+      // Keep the original field readable, without a later conversion attempt.
+      field.dataset.ankiFenceState = "failed";
+      if (!field.querySelector(".anki-fence-error")) {
+        const notice = document.createElement("small");
+        notice.className = "anki-fence-error";
+        notice.textContent = "코드 블록을 변환하지 못해 원문을 표시합니다.";
+        field.appendChild(notice);
+      }
+      reveal([field]);
+    }
+  }
+  const CONTROLS = "AnkiCodeControlsV1";
+  if (!window[CONTROLS]) {
+    let cardId = null, answer = false, scale = 100;
+    let root = null, first = null, toolbar = null;
+    const onToggle = event => {
+      if (event.target.tagName === "DETAILS") mount();
+    };
+    const update = () => {
+      root.style.setProperty("--anki-code-scale", String(scale / 100));
+      toolbar.querySelector("output").textContent = `${scale}%`;
+      toolbar.querySelector('[data-action="smaller"]').disabled = scale === 80;
+      toolbar.querySelector('[data-action="larger"]').disabled = scale === 140;
+      toolbar.querySelector('[data-action="reset"]').disabled = scale === 100;
+    };
+    const mount = () => {
+      const nextRoot = document.getElementById("qa") || document.body;
+      const blocks = Array.from(nextRoot.querySelectorAll(".anki-code-scope pre > code"));
+      const nextFirst = blocks.find(code => !code.closest("details:not([open]), [hidden]"))?.parentElement;
+      const id = nextRoot.querySelector("[data-anki-cid]")?.dataset.ankiCid;
+      const nextId = /^[1-9][0-9]*$/.test(id || "") ? id : null;
+      const nextAnswer = !!nextRoot.querySelector("#answer");
+      // Keep only the current card, including a replaced FrontSide DOM. Never
+      // persist preferences or infer identity from note text. A preview without
+      // CardID may retain a setting only while its exact code node survives.
+      if (nextId ? nextId !== cardId || (answer && !nextAnswer)
+        : nextRoot !== root || nextFirst !== first || cardId !== null) scale = 100;
+      cardId = nextId;
+      answer = nextAnswer;
+      if (root !== nextRoot) {
+        root?.removeEventListener("toggle", onToggle, true);
+        root?.style.removeProperty("--anki-code-scale");
+        // Native details toggles do not bubble. Keep the one toolbar reachable
+        // when optional code is expanded, without observing or rewriting code.
+        nextRoot.addEventListener("toggle", onToggle, true);
+      }
+      root = nextRoot;
+      first = nextFirst;
+      // FrontSide may carry previously rendered markup, but not its listeners.
+      for (const duplicate of root.querySelectorAll(".anki-code-controls")) {
+        if (duplicate !== toolbar) duplicate.remove();
+      }
+      if (!first) {
+        toolbar?.remove();
+        toolbar = null;
+        if (blocks.length) root.style.setProperty("--anki-code-scale", String(scale / 100));
+        else root.style.removeProperty("--anki-code-scale");
+        return;
+      }
+      if (!toolbar || !toolbar.isConnected || toolbar.nextElementSibling !== first) {
+        toolbar?.remove();
+        const bar = document.createElement("div");
+        bar.className = "anki-code-controls";
+        bar.setAttribute("role", "group");
+        bar.setAttribute("aria-label", "이 카드의 코드 글자 크기");
+        bar.innerHTML = '<button type="button" data-action="smaller" aria-label="코드 글자 작게">−</button><output aria-live="polite" aria-atomic="true">100%</output><button type="button" data-action="larger" aria-label="코드 글자 크게">+</button><button type="button" data-action="reset" aria-label="코드 글자 크기 기본값">기본</button>';
+        // Stop reviewer tap/key actions, but retain native button activation,
+        // focus and scrolling. No document-wide or code-block gesture handlers.
+        for (const name of ["pointerdown", "pointerup", "mousedown", "mouseup",
+          "touchstart", "touchend", "keydown", "keypress", "keyup"]) {
+          bar.addEventListener(name, event => event.stopPropagation());
+        }
+        bar.addEventListener("click", event => {
+          event.stopPropagation();
+          if (toolbar !== bar || !bar.isConnected) return;
+          const button = event.target.closest("button[data-action]");
+          if (!button || button.disabled) return;
+          const action = button.dataset.action;
+          scale = action === "reset" ? 100 : Math.max(80, Math.min(140,
+            scale + (action === "larger" ? 10 : -10)));
+          update();
+        });
+        first.before(bar);
+        toolbar = bar;
+      }
+      update();
+    };
+    window[CONTROLS] = { mount };
+  }
+  // Placement upgrades independently of V1's private scale/toggle lifecycle.
+  // Existing reviewer globals may have been installed by an older template.
+  const PLACEMENT = "AnkiCodePlacementV1";
+  if (!window[PLACEMENT]) {
+    const controls = window[CONTROLS];
+    const originalMount = controls.mount;
+    let root = null;
+    const currentRoot = () => document.getElementById("qa") || document.body;
+    const visible = code => {
+      if (code.closest("details:not([open]), [hidden]")) return false;
+      for (let node = code; node; node = node.parentElement) {
+        if (window.getComputedStyle(node).display === "none") return false;
+      }
+      return true;
+    };
+    const place = () => {
+      const first = Array.from(root.querySelectorAll(".anki-code-scope pre > code"))
+        .find(visible)?.parentElement;
+      let toolbar = root.querySelector(".anki-code-controls");
+      if (!first) {
+        toolbar?.remove();
+        return;
+      }
+      if (!toolbar) {
+        // Calling the saved original avoids recursion through our wrapper and
+        // restores its live buttons after all blocks were temporarily hidden.
+        originalMount.call(controls);
+        toolbar = root.querySelector(".anki-code-controls");
+      }
+      if (toolbar && toolbar.nextElementSibling !== first) first.before(toolbar);
+    };
+    const observer = new MutationObserver(() => {
+      if (root === currentRoot() && root.isConnected) place();
+    });
+    controls.mount = (...args) => {
+      originalMount.apply(controls, args);
+      const nextRoot = currentRoot();
+      if (root !== nextRoot) {
+        observer.disconnect();
+        root = nextRoot;
+        // Old V1 details handlers can recreate the toolbar at their original
+        // anchor. Reconcile that child change as well as CSS visibility changes.
+        observer.observe(root, {
+          attributes: true, childList: true, subtree: true,
+          attributeFilter: ["class", "style", "hidden", "open"]
+        });
+      }
+      place();
+    };
+    // Neither stable placement nor our own style/DOM writes rewrite code or
+    // remount controls. The following observer delivery is therefore a no-op.
+    window[PLACEMENT] = true;
+  }
+  // Copy has its own lifecycle: a reused WebView may still have the original
+  // size controls installed. Do not replace their toggle listener or scale.
+  const COPY = "AnkiCodeCopyV1";
+  if (!window[COPY]) {
+    let handles = [];
+    const events = ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart",
+      "touchend", "keydown", "keypress", "keyup", "click"];
+    const stop = event => event.stopPropagation();
+    const readText = code => {
+      // Keep text-node whitespace byte-for-byte. innerText alone would include
+      // opacity:0 answers; textContent alone would include hidden answers and
+      // lose BR/block boundaries. Never read cloze attributes or stored HTML.
+      const suppressed = node => {
+        const style = window.getComputedStyle(node);
+        return node.hidden || style.display === "none" || style.opacity === "0" ||
+          style.contentVisibility === "hidden";
+      };
+      for (let node = code; node; node = node.parentElement) {
+        if (suppressed(node)) return "";
+        if (node.tagName === "DETAILS" && !node.open) {
+          const summary = Array.from(node.children).find(child => child.tagName === "SUMMARY");
+          if (!summary?.contains(code)) return "";
+        }
+      }
+      const transparent = color => {
+        const value = (color || "").trim().toLowerCase();
+        if (value === "transparent") return true;
+        // Computed colors may retain Color 4 functions instead of rgba(). Only
+        // explicit numeric zero alpha is conclusive; unknown paint stays copied.
+        const alpha = value.match(/^(?:rgba|hsla)\([^,]+,[^,]+,[^,]+,\s*([^,()]+)\)$/)?.[1] ||
+          value.match(/^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*\/\s*([^/()]+)\)$/)?.[1];
+        return !!alpha && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?%?$/.test(alpha.trim()) &&
+          Number(alpha.trim().replace(/%$/, "")) === 0;
+      };
+      const visibleText = node => {
+        const style = window.getComputedStyle(node);
+        if (["hidden", "collapse"].includes(style.visibility) || parseFloat(style.fontSize) === 0) return false;
+        const property = name => style.getPropertyValue(name).trim();
+        const fill = property("-webkit-text-fill-color");
+        if (!transparent(!fill || fill === "currentcolor" ? style.color : fill)) return true;
+        // Transparent fill can still paint through shadow, stroke or clipped
+        // backgrounds. Decide per text node so descendants can restore styling.
+        const stroke = property("-webkit-text-stroke-width");
+        const noStroke = !stroke || parseFloat(stroke) === 0 || transparent(property("-webkit-text-stroke-color"));
+        const noShadow = !style.textShadow || style.textShadow === "none";
+        if (!noShadow || !noStroke) return true;
+        // background-clip is not inherited, but ancestor backgrounds can paint
+        // descendant glyphs. Keep uncertain paint instead of dropping text.
+        for (let ancestor = node; ancestor; ancestor = ancestor.parentElement) {
+          const paint = window.getComputedStyle(ancestor);
+          if (["background-clip", "-webkit-background-clip"].some(name => paint.getPropertyValue(name).includes("text"))) return true;
+        }
+        return false;
+      };
+      const fragments = [];
+      const blockDisplays = new Set(["block", "flow-root", "flex", "grid", "list-item",
+        "table", "table-row", "table-caption"]);
+      const visit = node => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          if (visibleText(node.parentElement)) fragments.push(node.nodeValue);
+          return;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE || suppressed(node) ||
+            ["SCRIPT", "STYLE", "TEMPLATE"].includes(node.tagName)) return;
+        const style = window.getComputedStyle(node);
+        if (node.tagName === "BR") {
+          if (!["hidden", "collapse"].includes(style.visibility)) fragments.push("\n");
+          return;
+        }
+        const boundary = node !== code && blockDisplays.has(style.display) ? (node.tagName === "P" ? 2 : 1) : 0;
+        if (boundary) fragments.push(boundary);
+        if (node.tagName === "DETAILS" && !node.open) {
+          const summary = Array.from(node.children).find(child => child.tagName === "SUMMARY");
+          if (summary) visit(summary);
+        } else for (const child of node.childNodes) visit(child);
+        if (boundary) fragments.push(boundary);
+      };
+      visit(code);
+      let text = "", boundary = 0;
+      for (const fragment of fragments) {
+        if (typeof fragment === "number") { boundary = Math.max(boundary, fragment); continue; }
+        if (!fragment) continue;
+        if (text && boundary) {
+          const existing = text.match(/\n*$/)?.[0].length || 0;
+          text += "\n".repeat(Math.max(0, boundary - existing));
+        }
+        text += fragment;
+        boundary = 0;
+      }
+      return text;
+    };
+    const attach = (root, code) => {
+      const pre = code.parentElement;
+      let shell = pre.parentElement;
+      if (!shell.classList.contains("anki-code-block")) {
+        shell = document.createElement("div");
+        shell.className = "anki-code-block";
+        pre.before(shell);
+        shell.append(pre);
+      }
+      const control = document.createElement("div");
+      control.className = "anki-code-copy";
+      control.innerHTML = '<button type="button" aria-label="코드 복사"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"><g class="anki-code-copy__icon"><rect x="7" y="7" width="9" height="10" rx="2"/><path d="M12 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></g><path class="anki-code-copy__check" d="m4 10 4 4 8-8"/></svg></button><span role="status" aria-live="polite" aria-atomic="true"></span>';
+      const panel = document.createElement("div");
+      panel.className = "anki-code-copy-manual";
+      panel.hidden = true;
+      panel.innerHTML = '<p>자동 복사가 지원되지 않습니다. 아래 코드를 선택하거나 길게 눌러 복사해 주세요.</p><textarea readonly rows="5" aria-label="복사할 코드" spellcheck="false" autocapitalize="off" autocorrect="off"></textarea>';
+      shell.append(control, panel);
+      const button = control.querySelector("button");
+      const status = control.querySelector('[role="status"]');
+      const input = panel.querySelector("textarea");
+      const cardId = root.querySelector("[data-anki-cid]")?.dataset.ankiCid;
+      const answer = !!root.querySelector("#answer");
+      let alive = true, pending = false, generation = 0, copyTimer = null, resetTimer = null;
+      const current = token => alive && generation === token && code.isConnected &&
+        control.isConnected && root.contains(code) && pre.contains(code) &&
+        (document.getElementById("qa") || document.body) === root &&
+        root.querySelector("[data-anki-cid]")?.dataset.ankiCid === cardId &&
+        !!root.querySelector("#answer") === answer;
+      const reset = () => {
+        control.dataset.state = "ready";
+        button.setAttribute("aria-label", "코드 복사");
+        status.textContent = "";
+      };
+      const settled = () => {
+        if (copyTimer !== null) clearTimeout(copyTimer);
+        copyTimer = null;
+        pending = false;
+        button.removeAttribute("aria-busy");
+      };
+      const manual = token => {
+        if (!current(token)) return;
+        settled();
+        control.dataset.state = "manual";
+        panel.hidden = false;
+        status.textContent = "자동 복사를 할 수 없습니다. 아래 코드를 직접 복사해 주세요.";
+        input.focus({ preventScroll: true });
+        input.select();
+        input.setSelectionRange(0, input.value.length);
+      };
+      const success = token => {
+        if (!current(token)) return;
+        settled();
+        control.dataset.state = "success";
+        panel.hidden = true;
+        button.setAttribute("aria-label", "코드 복사됨");
+        status.textContent = "코드를 복사했습니다.";
+        resetTimer = setTimeout(() => { if (current(token)) reset(); }, 1800);
+      };
+      const legacyCopy = payload => {
+        const temporary = document.createElement("textarea");
+        const previousFocus = document.activeElement;
+        temporary.value = payload;
+        // Textarea normalizes CRLF/CR. Use writeText instead if that would alter
+        // a programmatically supplied text node; never report a changed copy.
+        if (temporary.value !== payload) return false;
+        temporary.readOnly = true;
+        temporary.setAttribute("aria-hidden", "true");
+        temporary.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;font-size:16px;pointer-events:none;";
+        control.append(temporary);
+        try {
+          temporary.focus({ preventScroll: true });
+          temporary.select();
+          temporary.setSelectionRange(0, payload.length);
+          return typeof document.execCommand === "function" && document.execCommand("copy") === true;
+        } catch (_) {
+          return false;
+        } finally {
+          temporary.remove();
+          if (previousFocus?.isConnected && typeof previousFocus.focus === "function") previousFocus.focus({ preventScroll: true });
+        }
+      };
+      const copy = event => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (pending || !current(generation)) return;
+        if (resetTimer !== null) clearTimeout(resetTimer);
+        reset();
+        panel.hidden = true;
+        const payload = readText(code);
+        input.value = payload;
+        pending = true;
+        const token = ++generation;
+        control.dataset.state = "copying";
+        button.setAttribute("aria-busy", "true");
+        try {
+          // Keep both attempts in the user gesture. Qt may never settle the
+          // asynchronous API; a timeout exposes selectable code, not success.
+          if (legacyCopy(payload)) { success(token); return; }
+          if (window.isSecureContext && typeof window.navigator.clipboard?.writeText === "function") {
+            const result = window.navigator.clipboard.writeText(payload);
+            if (!result || typeof result.then !== "function") { manual(token); return; }
+            copyTimer = setTimeout(() => {
+              if (!current(token)) return;
+              manual(token);
+              generation++;
+            }, 1800);
+            result.then(() => success(token), () => manual(token));
+          } else manual(token);
+        } catch (_) { manual(token); }
+      };
+      for (const node of [control, panel]) {
+        for (const name of events) node.addEventListener(name, stop);
+      }
+      button.addEventListener("click", copy);
+      reset();
+      return () => {
+        alive = false;
+        generation++;
+        if (copyTimer !== null) clearTimeout(copyTimer);
+        if (resetTimer !== null) clearTimeout(resetTimer);
+        button.removeEventListener("click", copy);
+        for (const node of [control, panel]) {
+          for (const name of events) node.removeEventListener(name, stop);
+          node.remove();
+        }
+      };
+    };
+    const mount = () => {
+      for (const destroy of handles) destroy();
+      handles = [];
+      const root = document.getElementById("qa") || document.body;
+      // FrontSide can clone rendered controls without cloning listeners.
+      for (const duplicate of root.querySelectorAll(".anki-code-copy, .anki-code-copy-manual")) duplicate.remove();
+      for (const code of root.querySelectorAll(".anki-code-scope pre > code")) handles.push(attach(root, code));
+    };
+    window[COPY] = { mount };
+  }
+  const KEY = "AnkiCodeHighlightV1";
+  if (window[KEY]?.version !== 2) {
+    const records = new WeakMap();
+    const aliases = Object.freeze({
+      js: "javascript", javascript: "javascript", jsx: "javascript",
+      ts: "typescript", typescript: "typescript", tsx: "typescript",
+      html: "xml", xml: "xml", css: "css", json: "json",
+      bash: "bash", sh: "bash", shell: "bash", sql: "sql", c: "c",
+      python: "python", py: "python", java: "java", yaml: "yaml", yml: "yaml", http: "http"
+    });
+    let pending = null;
+    let generation = 0;
+    const library = () => {
+      const value = window.AnkiSyntaxHighlightLibraryV1;
+      return value && value.version === "11.12.0" ? value : null;
+    };
+    const load = () => {
+      if (library()) return Promise.resolve(library());
+      if (pending) return pending;
+      pending = new Promise(resolve => {
+        const script = document.createElement("script");
+        script.src = ASSET;
+        script.async = true;
+        script.dataset.ankiSyntaxAsset = ASSET;
+        let timer;
+        const finish = value => {
+          clearTimeout(timer);
+          script.onload = script.onerror = null;
+          script.remove();
+          resolve(value);
+        };
+        script.onload = () => finish(library());
+        script.onerror = () => finish(null);
+        timer = setTimeout(() => finish(null), 3000);
+        document.head.appendChild(script);
+      }).then(value => { pending = null; return value; });
+      return pending;
+    };
+    const render = async () => {
+      const current = ++generation;
+      const started = performance.now();
+      const nodes = Array.from(document.querySelectorAll(".anki-code-scope pre > code"));
+      const metrics = { blocks: nodes.length, highlighted: 0, skipped: 0, loadMs: 0, highlightMs: 0 };
+      if (!nodes.length) return metrics;
+      const fenced = nodes.filter(code => code.hasAttribute("data-anki-fenced"));
+      const existing = nodes.filter(code => !code.hasAttribute("data-anki-fenced"));
+      const languageOf = code => {
+        const classes = Array.from(code.classList).filter(name => name.startsWith("language-"));
+        const name = classes.length === 1 ? classes[0].slice(9).toLowerCase() : "";
+        return Object.hasOwn(aliases, name) ? aliases[name] : null;
+      };
+      // Keep unsupported and performance-skipped new blocks out of the old
+      // HTML budget. Otherwise even a plaintext fence could starve old code.
+      let newCharacters = 0, newBlocks = 0;
+      for (const code of fenced) {
+        if (code.dataset.ankiFenceHighlight) continue;
+        const size = code.textContent.length;
+        if (!languageOf(code)) code.dataset.ankiFenceHighlight = "plain";
+        else if (size > FENCE_MAX_CHARS || newCharacters + size > 16384 || newBlocks >= 32) {
+          code.dataset.ankiFenceHighlight = "skipped";
+        } else { newCharacters += size; newBlocks++; }
+      }
+      const eligible = fenced.filter(code => !["plain", "skipped", "highlighted"].includes(
+        code.dataset.ankiFenceHighlight));
+      // Plain/heavy fields have their complete display already. An unrelated
+      // old HTML block's cold loader must not keep those fields invisible.
+      const fields = new Set(fenced.map(code => code.closest(
+        "[data-anki-fence-field], .anki-fence-scope")).filter(Boolean));
+      reveal(Array.from(fields).filter(field => !eligible.some(code => field.contains(code))));
+      const loading = existing.length || eligible.length ? load() : Promise.resolve(null);
+      let timer, timedOut = false;
+      const engine = eligible.length ? await Promise.race([loading, new Promise(resolve => {
+        timer = setTimeout(() => { timedOut = true; resolve(null); }, 50);
+      })]) : await loading;
+      clearTimeout(timer);
+      if (current !== generation) return { stale: true };
+      metrics.loadMs = performance.now() - started;
+      const painting = performance.now();
+      const paint = (engine, candidates) => {
+        const painting = performance.now();
+        let characters = 0, highlighted = 0;
+        for (const code of candidates) {
+          if (!code.isConnected) continue;
+          const isFence = code.hasAttribute("data-anki-fenced");
+          if (isFence && ["plain", "skipped", "highlighted"].includes(code.dataset.ankiFenceHighlight)) continue;
+          const text = code.textContent;
+          const language = languageOf(code);
+          const previous = records.get(code);
+          if (previous && previous.html === code.innerHTML && previous.language === language) continue;
+          // Only replace markup that this exact DOM instance produced. Never flatten
+          // cloze spans, edited HTML, anchors, or other renderers' output.
+          if (code.children.length && (!previous || previous.html !== code.innerHTML)) {
+            metrics.skipped++;
+            continue;
+          }
+          if (previous) { code.textContent = text; code.classList.remove("hljs"); }
+          characters += text.length;
+          if (!engine || !language || text.length > 4096 || characters > 16384 ||
+              highlighted >= 32 || performance.now() - painting > 16) {
+            metrics.skipped++;
+            if (isFence) code.dataset.ankiFenceHighlight = engine && language ? "skipped" : "plain";
+            continue;
+          }
+          try {
+            const result = engine.highlight(text, { language, ignoreIllegals: true });
+            code.innerHTML = result.value;
+            code.classList.add("hljs");
+            records.set(code, { html: code.innerHTML, language });
+            metrics.highlighted++;
+            highlighted++;
+            if (isFence) code.dataset.ankiFenceHighlight = "highlighted";
+          } catch (_) {
+            // Loading or parsing must never prevent a question/answer from showing.
+            code.textContent = text;
+            code.classList.remove("hljs");
+            metrics.skipped++;
+            if (isFence) code.dataset.ankiFenceHighlight = "plain";
+          }
+        }
+      };
+      if (timedOut) {
+        for (const code of eligible) code.dataset.ankiFenceHighlight = "waiting";
+        // Resolving the first-display deadline must not detach the loader's
+        // onload handler. Only its current DOM can receive the late colors.
+        loading.then(value => {
+          if (current !== generation || !value) {
+            if (current === generation) for (const code of eligible) {
+              if (code.isConnected && code.dataset.ankiFenceHighlight === "waiting") code.dataset.ankiFenceHighlight = "plain";
+            }
+            return;
+          }
+          paint(value, existing);
+          paint(value, eligible.filter(code => code.dataset.ankiFenceHighlight === "waiting"));
+        });
+      } else {
+        paint(engine, existing);
+        paint(engine, fenced);
+      }
+      metrics.highlightMs = performance.now() - painting;
+      window[KEY].lastMetrics = metrics;
+      return metrics;
+    };
+    window[KEY] = { render, lastMetrics: null, version: 2 };
+  }
+  let style = document.getElementById("anki-code-style-v1");
+  if (!style) {
+    style = document.createElement("style");
+    style.id = "anki-code-style-v1";
+    document.head.appendChild(style);
+  }
+  // A synced template can change while the reviewer WebView remains alive.
+  if (style.textContent !== CSS) style.textContent = CSS;
+  let renderAttached = false;
+  try {
+    window[COPY].mount();
+    window[CONTROLS].mount();
+    // Opacity preserves layout but does not remove controls from keyboard focus.
+    // Disable only our copy buttons until their field's first display is ready,
+    // including when an older shared copy module survives in the reused WebView.
+    for (const field of fenceFields) {
+      if (!field.hasAttribute("data-anki-fence-pending")) continue;
+      for (const button of field.querySelectorAll(".anki-code-copy button")) {
+        button.disabled = true;
+        button.setAttribute("data-anki-fence-copy-pending", "");
+      }
+    }
+    // Anki reuses its WebView, including globals, across question/answer/card changes.
+    // Each script invocation gets a new generation; a pending old card cannot paint it.
+    window[KEY].render().then(metrics => {
+      if (!metrics.stale) reveal(fenceFields);
+    }, () => reveal(fenceFields));
+    renderAttached = true;
+  } finally {
+    // Setup failures must not leave the question/answer hidden. Once completion
+    // handlers are attached, keep the asynchronous readiness/stale policy above.
+    if (!renderAttached) reveal(fenceFields);
+  }
+})();
+</script>
+{{/질문}}{{^질문}}{{#맥락}}<!-- anki-code-highlight-v1 -->
+<script>
+(() => {
+  const ASSET = "_anki-syntax-hljs-11.12.0-fd009500d0c826a5.min.js";
+  const CSS = "/* Scoped GitHub-inspired palette; app night mode is authoritative, not OS theme. */\n:is([data-anki-fence-field], .anki-fence-scope)[data-anki-fence-pending] { opacity: 0; pointer-events: none; }\n.anki-fence-error { display: block; margin-top: 8px; font: 400 13px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; color: #57606a; }\n/* A late color pass must not change glyph metrics or code geometry. */\n.anki-code-scope pre > code[data-anki-fenced] .hljs-emphasis { font-style: inherit; }\n.anki-code-scope pre > code[data-anki-fenced] .hljs-strong { font-weight: inherit; }\n.anki-code-scope {\n  --anki-code-size: 17px;\n}\n.anki-code-scope pre {\n  box-sizing: border-box;\n  max-width: 100%;\n  min-width: 0;\n  overflow-x: auto;\n  white-space: pre;\n  overflow-wrap: normal;\n  word-break: normal;\n  tab-size: 4;\n  margin: 16px 0;\n  padding: 14px 16px;\n  border: 1px solid #d8dee4;\n  border-radius: 10px;\n  background: #f6f8fa;\n  color: #24292f;\n  text-align: left;\n  font: 400 17px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;\n  font-size: calc(var(--anki-code-size) * var(--anki-code-scale, 1));\n  -webkit-text-size-adjust: 100%;\n}\n.anki-code-controls {\n  box-sizing: border-box;\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  width: fit-content;\n  max-width: 100%;\n  margin: 10px 0 4px auto;\n  padding: 0;\n  gap: 2px;\n  border: 0;\n  background: transparent;\n  color: #57606a;\n  font: 400 11px/1 -apple-system, BlinkMacSystemFont, sans-serif;\n  -webkit-text-size-adjust: 100%;\n}\n.anki-code-controls + pre { margin-top: 0; }\n.anki-code-controls button {\n  appearance: none;\n  -webkit-appearance: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 28px;\n  min-height: 28px;\n  margin: 0;\n  padding: 0;\n  border: 0;\n  border-radius: 5px;\n  background: transparent;\n  box-shadow: none;\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  touch-action: manipulation;\n  -webkit-tap-highlight-color: transparent;\n  user-select: none;\n  -webkit-user-select: none;\n}\n.anki-code-controls button[data-action=\"smaller\"],\n.anki-code-controls button[data-action=\"larger\"] { font-size: 16px; }\n/* Keep the explicit accessible name while presenting a quiet reset icon. */\n.anki-code-controls button[data-action=\"reset\"] { font-size: 0; }\n.anki-code-controls button[data-action=\"reset\"]::before { content: \"\u21ba\"; font-size: 16px; }\n.anki-code-controls button:not(:disabled):hover,\n.anki-code-controls button:not(:disabled):active { background: #e6ebf0; }\n.anki-code-controls button:hover,\n.anki-code-controls button:active { box-shadow: none; }\n/* Desktop Anki suppresses button outlines with !important. Restore focus here. */\n.anki-code-controls button:focus-visible { outline: 2px solid #0969da !important; outline-offset: 1px; }\n.anki-code-controls button:disabled,\n.anki-code-controls button:disabled:hover { background: transparent; color: inherit; opacity: .4; cursor: default; }\n.anki-code-controls output {\n  min-width: 34px;\n  text-align: center;\n  font: inherit;\n  font-variant-numeric: tabular-nums;\n}\n@media (max-width: 600px) {\n  .anki-code-scope { --anki-code-size: 15px; }\n  .anki-code-scope pre { padding: 12px; }\n  .anki-code-controls button { min-width: 32px; min-height: 32px; }\n}\n.anki-code-scope pre > code {\n  display: block;\n  min-width: max-content;\n  padding: 0;\n  border: 0;\n  border-radius: 0;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  white-space: inherit;\n  overflow-wrap: inherit;\n  word-break: inherit;\n}\n.anki-code-scope .hljs-keyword, .anki-code-scope .hljs-selector-tag, .anki-code-scope .hljs-literal { color: #cf222e; }\n.anki-code-scope .hljs-title, .anki-code-scope .hljs-section { color: #8250df; }\n.anki-code-scope .hljs-string, .anki-code-scope .hljs-regexp { color: #0a3069; }\n.anki-code-scope .hljs-number, .anki-code-scope .hljs-attr, .anki-code-scope .hljs-variable, .anki-code-scope .hljs-type, .anki-code-scope .hljs-built_in { color: #0550ae; }\n.anki-code-scope .hljs-comment, .anki-code-scope .hljs-quote { color: #57606a; }\n.anki-code-scope .hljs-name, .anki-code-scope .hljs-selector-class, .anki-code-scope .hljs-selector-id { color: #116329; }\n.anki-code-scope .hljs-meta, .anki-code-scope .hljs-symbol, .anki-code-scope .hljs-bullet { color: #953800; }\n.anki-code-scope .hljs-emphasis { font-style: italic; }\n.anki-code-scope .hljs-strong { font-weight: 600; }\n:is(.nightMode, .night_mode) .anki-code-scope pre,\n.anki-code-scope:is(.nightMode, .night_mode) pre { background: #161b22; color: #e6edf3; border-color: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-controls {\n  color: #8b949e;\n}\n:is(.nightMode, .night_mode) .anki-code-controls button:not(:disabled):hover,\n:is(.nightMode, .night_mode) .anki-code-controls button:not(:disabled):active { background: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-controls button:focus-visible { outline-color: #79c0ff !important; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-keyword,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-tag,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-literal { color: #ff7b72; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-title,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-section { color: #d2a8ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-string,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-regexp { color: #a5d6ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-number,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-attr,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-variable,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-type,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-built_in { color: #79c0ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-comment,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-quote { color: #8b949e; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-name,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-class,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-id { color: #7ee787; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-meta,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-symbol,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-bullet { color: #ffa657; }\n\n/* Keep the existing sibling DOM: the size controller anchors its toolbar to\n * pre. Both controls share an external row without covering scrollable code. */\n.anki-code-block {\n  display: grid;\n  grid-template-areas: \"toolbar copy\" \"code code\" \"manual manual\";\n  grid-template-columns: minmax(0, 1fr) 44px;\n  gap: 4px;\n  min-width: 0;\n  margin: 16px 0;\n}\n.anki-code-block > .anki-code-controls {\n  grid-area: toolbar;\n  align-self: center;\n  justify-self: end;\n  margin: 0;\n  padding-right: 6px;\n  border-right: 1px solid #d8dee4;\n}\n.anki-code-scope .anki-code-block > pre {\n  grid-area: code;\n  margin: 0;\n}\n.anki-code-copy {\n  grid-area: copy;\n  align-self: center;\n  justify-self: end;\n  margin: 0;\n  color: #57606a;\n}\n.anki-code-copy button {\n  appearance: none;\n  -webkit-appearance: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 44px;\n  min-height: 44px;\n  margin: 0;\n  padding: 0;\n  border: 0;\n  border-radius: 6px;\n  background: transparent;\n  color: inherit;\n  box-shadow: none;\n  cursor: pointer;\n  touch-action: manipulation;\n  user-select: none;\n  -webkit-user-select: none;\n  -webkit-tap-highlight-color: transparent;\n}\n.anki-code-copy button:hover,\n.anki-code-copy button:active { background: #e6ebf0; box-shadow: none; }\n.anki-code-copy button:focus-visible { outline: 2px solid #0969da !important; outline-offset: 1px; }\n.anki-code-copy__check,\n.anki-code-copy[data-state=\"success\"] .anki-code-copy__icon { display: none; }\n.anki-code-copy[data-state=\"success\"] .anki-code-copy__check { display: block; }\n.anki-code-copy [role=\"status\"] {\n  position: absolute !important;\n  width: 1px !important;\n  height: 1px !important;\n  overflow: hidden !important;\n  clip: rect(0, 0, 0, 0) !important;\n  white-space: nowrap !important;\n}\n.anki-code-copy-manual { grid-area: manual; min-width: 0; text-align: left; }\n.anki-code-copy-manual[hidden] { display: none; }\n.anki-code-copy-manual p { margin: 8px 0; font: 400 13px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; }\n.anki-code-copy-manual textarea {\n  box-sizing: border-box;\n  width: 100%;\n  min-height: 100px;\n  padding: 10px;\n  border: 1px solid #d8dee4;\n  border-radius: 6px;\n  background: #f6f8fa;\n  color: #24292f;\n  font: 400 16px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;\n  white-space: pre;\n  overflow-wrap: normal;\n  user-select: text;\n  -webkit-user-select: text;\n}\n:is(.nightMode, .night_mode) .anki-code-copy { color: #8b949e; }\n:is(.nightMode, .night_mode) .anki-code-block > .anki-code-controls { border-color: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-copy button:hover,\n:is(.nightMode, .night_mode) .anki-code-copy button:active { background: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-copy button:focus-visible { outline-color: #79c0ff !important; }\n:is(.nightMode, .night_mode) .anki-code-copy-manual textarea { background: #161b22; color: #e6edf3; border-color: #30363d; }\n";
+  // Conservative initial bound from the pinned synthetic token-DOM benchmark;
+  // physical Mac/iPhone measurements may tighten it. Old HTML keeps its bound.
+  const FENCE_MAX_CHARS = 1024;
+  (function () {
+  "use strict";
+  const VERSION = 1;
+  if (window.AnkiFencedCodeV1?.version === VERSION) return;
+
+  const BLOCKS = new Set(["DIV", "P"]);
+  const INLINE = new Set([
+    "SPAN", "B", "I", "STRONG", "EM", "A", "U", "S", "STRIKE", "SUB", "SUP",
+    "MARK", "SMALL", "FONT", "ABBR", "KBD", "SAMP", "VAR", "WBR",
+  ]);
+  const SKIP = new Set(["PRE", "CODE", "SCRIPT", "STYLE", "TEXTAREA"]);
+  const hiddenInMarkup = node => {
+    if (node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true") return true;
+    if (!node.hasAttribute("style")) return false;
+    const style = node.style;
+    return style.display === "none" || style.visibility === "hidden" ||
+      style.visibility === "collapse" || style.opacity === "0";
+  };
+  // Match the copy control's conclusive alpha-zero color checks. A shadow or
+  // stroke may paint transparent text, but preserving such markup is safer than
+  // guessing whether flattening would disclose an originally hidden answer.
+  const transparentColor = color => {
+    const value = (color || "").trim().toLowerCase();
+    if (value === "transparent") return true;
+    const alpha = value.match(/^(?:rgba|hsla)\([^,]+,[^,]+,[^,]+,\s*([^,()]+)\)$/)?.[1] ||
+      value.match(/^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*\/\s*([^/()]+)\)$/)?.[1];
+    return !!alpha && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?%?$/.test(alpha.trim()) &&
+      Number(alpha.trim().replace(/%$/, "")) === 0;
+  };
+  const hidden = (node, styles) => {
+    if (node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true") return true;
+    if (styles.has(node)) return styles.get(node);
+    const style = window.getComputedStyle(node);
+    const fill = style.getPropertyValue("-webkit-text-fill-color").trim().toLowerCase();
+    const foreground = !fill || fill === "currentcolor" ? style.color : fill;
+    const result = style.display === "none" || style.visibility === "hidden" ||
+      style.visibility === "collapse" || style.opacity === "0" ||
+      style.contentVisibility === "hidden" || parseFloat(style.fontSize) === 0 ||
+      transparentColor(foreground);
+    styles.set(node, result);
+    return result;
+  };
+  const unsafe = (node, styles) => SKIP.has(node.tagName) || hidden(node, styles) ||
+    node.hasAttribute("contenteditable") || /(?:^|\s)(?:katex|MathJax|mjx-)[^\s]*/.test(node.getAttribute("class") || "") ||
+    (!BLOCKS.has(node.tagName) && !INLINE.has(node.tagName) && node.tagName !== "BR");
+  const point = (node, offset) => ({ node, offset });
+  const before = (node, positions) => point(node.parentNode, positions.get(node));
+  const after = (node, positions) => { const value = before(node, positions); value.offset++; return value; };
+
+  // Text and editor line breaks are read without rebuilding the field. Each
+  // logical chunk retains its DOM position so only fenced regions are replaced.
+  function read(scope) {
+    const chunks = [];
+    const barriers = [];
+    const blocks = new WeakMap();
+    const positions = new WeakMap();
+    const styles = new WeakMap();
+    const contentElements = [];
+    const nodeBefore = node => before(node, positions);
+    const nodeAfter = node => after(node, positions);
+    let length = 0;
+    let last = "";
+    function append(text, start, end, textNode) {
+      if (!text) return;
+      chunks.push({ start: length, end: length + text.length, text, from: start, to: end, textNode });
+      length += text.length;
+      last = text[text.length - 1];
+    }
+    function boundary(where) {
+      if (length && last !== "\n") append("\n", where, where, null);
+    }
+    function visit(node, index) {
+      positions.set(node, index);
+      if (node.nodeType === 3) {
+        append(node.data, point(node, 0), point(node, node.data.length), node);
+        return;
+      }
+      if (node.nodeType !== 1) return;
+      const tag = node.tagName;
+      if (SKIP.has(tag) || hiddenInMarkup(node)) {
+        barriers.push({ offset: length, node });
+        if (!hiddenInMarkup(node) && (tag === "PRE" || tag === "CODE" || tag === "TEXTAREA")) {
+          if (tag === "PRE") boundary(nodeBefore(node));
+          append("\ufffc", nodeBefore(node), nodeAfter(node), null);
+          if (tag === "PRE") boundary(nodeAfter(node));
+        }
+        return;
+      }
+      if (tag === "BR") {
+        append("\n", nodeBefore(node), nodeAfter(node), null);
+        return;
+      }
+      // Structural reading must not ask for every outside element's CSS. A
+      // matched region checks its content and ancestors before flattening them.
+      // Empty BR/WBR nodes contain no hidden characters to expose.
+      if (node.childNodes.length) contentElements.push({ offset: length, node });
+      const block = BLOCKS.has(tag);
+      if (block) boundary(nodeBefore(node));
+      if (node.hasAttribute("contenteditable") || /(?:^|\s)(?:katex|MathJax|mjx-)[^\s]*/.test(node.getAttribute("class") || "") ||
+        (!block && !INLINE.has(tag))) {
+        barriers.push({ offset: length, node });
+        if (!node.childNodes.length) append("\ufffc", nodeBefore(node), nodeAfter(node), null);
+      }
+      const start = length;
+      for (let index = 0; index < node.childNodes.length; index++) visit(node.childNodes[index], index);
+      const contentEnd = length;
+      if (block) {
+        // A completely empty editor DIV/P still represents an empty line.
+        if (length === start) append("\n", nodeAfter(node), nodeAfter(node), null);
+        else boundary(nodeAfter(node));
+        blocks.set(node, { start, contentEnd, end: length });
+      }
+    }
+    for (let index = 0; index < scope.childNodes.length; index++) visit(scope.childNodes[index], index);
+    return { text: chunks.map(chunk => chunk.text).join(""), chunks, barriers, blocks, positions, styles, contentElements };
+  }
+
+  function position(chunks, offset, end) {
+    let low = 0;
+    let high = chunks.length - 1;
+    while (low <= high) {
+      const middle = (low + high) >>> 1;
+      const chunk = chunks[middle];
+      if (offset < chunk.start || (end && offset === chunk.start)) high = middle - 1;
+      else if (offset > chunk.end || (!end && offset === chunk.end)) low = middle + 1;
+      else if (chunk.textNode) return point(chunk.textNode, offset - chunk.start);
+      else return end ? chunk.to : chunk.from;
+    }
+    // The end of the final line has no following chunk.
+    return chunks[chunks.length - 1].to;
+  }
+
+  function lineBlock(scope, where, blocks, start, end) {
+    let node = where.node.nodeType === 1 ? where.node : where.node.parentNode;
+    for (; node && node !== scope; node = node.parentNode) {
+      const bounds = blocks.get(node);
+      if (bounds && bounds.start === start && (bounds.contentEnd === end || bounds.contentEnd === end + 1)) return node;
+    }
+    return null;
+  }
+
+  function fail(scope) {
+    scope.dataset.ankiFenceState = "failed";
+    if (!scope.querySelector(".anki-fence-error")) {
+      const notice = scope.ownerDocument.createElement("small");
+      notice.className = "anki-fence-error";
+      notice.setAttribute("role", "status");
+      notice.textContent = "코드 블록을 안전하게 변환하지 못해 원문을 표시합니다.";
+      scope.appendChild(notice);
+    }
+    return { codes: [], failed: true };
+  }
+
+  function convert(scope) {
+    const state = scope.dataset.ankiFenceState;
+    if (state) return {
+      codes: state === "converted" ? Array.from(scope.querySelectorAll("code[data-anki-fenced]")) : [],
+      failed: state === "failed",
+    };
+    if (scope.textContent.indexOf("```") === -1) {
+      scope.dataset.ankiFenceState = "plain";
+      return { codes: [], failed: false };
+    }
+    try {
+      const source = read(scope);
+      const plans = [];
+      let opener = null;
+      let start = 0;
+      while (start <= source.text.length) {
+        const newline = source.text.indexOf("\n", start);
+        const end = newline === -1 ? source.text.length : newline;
+        const line = source.text.slice(start, end);
+        const match = /^ {0,3}(`{3,})([^`]*)$/.exec(line);
+        if (!opener && match) {
+          opener = { start, end, body: newline === -1 ? end : end + 1,
+            count: match[1].length, language: match[2].trim().split(/\s+/)[0] };
+        } else if (opener && match && match[1].length >= opener.count && /^[ \t]*$/.test(match[2])) {
+          // Remove the separator before the closing fence, never trim the body.
+          const bodyEnd = Math.max(opener.body, start - 1);
+          plans.push({ open: opener, start, end, text: source.text.slice(opener.body, bodyEnd) });
+          opener = null;
+        }
+        if (newline === -1) break;
+        start = end + 1;
+      }
+      if (!plans.length) {
+        scope.dataset.ankiFenceState = "plain";
+        return { codes: [], failed: false };
+      }
+      // Validate every region before committing any conversion in this field.
+      let barrierIndex = 0;
+      let contentIndex = 0;
+      const range = scope.ownerDocument.createRange();
+      const prepared = plans.map(plan => {
+        let from = position(source.chunks, plan.open.start, false);
+        let to = position(source.chunks, plan.end, true);
+        // An unsupported ancestor may begin before the opening line; its entry
+        // offset alone would not catch a fence nested inside it.
+        for (let node = from.node.nodeType === 1 ? from.node : from.node.parentNode;
+          node && node !== scope; node = node.parentNode) {
+          if (unsafe(node, source.styles)) throw new Error("unsafe fenced ancestor");
+        }
+        const firstBlock = lineBlock(scope, from, source.blocks, plan.open.start, plan.open.end);
+        const lastBlock = lineBlock(scope, to, source.blocks, plan.start, plan.end);
+        if (firstBlock) from = before(firstBlock, source.positions);
+        if (lastBlock) to = after(lastBlock, source.positions);
+        range.setStart(from.node, from.offset);
+        range.setEnd(to.node, to.offset);
+        while (barrierIndex < source.barriers.length && source.barriers[barrierIndex].offset < plan.open.start) barrierIndex++;
+        while (barrierIndex < source.barriers.length && source.barriers[barrierIndex].offset <= plan.end) {
+          if (range.intersectsNode(source.barriers[barrierIndex++].node)) throw new Error("unsafe fenced content");
+        }
+        while (contentIndex < source.contentElements.length && source.contentElements[contentIndex].offset < plan.open.start) contentIndex++;
+        while (contentIndex < source.contentElements.length && source.contentElements[contentIndex].offset <= plan.end) {
+          const node = source.contentElements[contentIndex++].node;
+          if (range.intersectsNode(node) && hidden(node, source.styles)) throw new Error("hidden fenced content");
+        }
+        const pre = scope.ownerDocument.createElement("pre");
+        const code = scope.ownerDocument.createElement("code");
+        code.dataset.ankiFenced = "";
+        if (plan.open.language) code.className = "language-" + plan.open.language;
+        code.textContent = plan.text;
+        pre.appendChild(code);
+        return { from, to, common: range.commonAncestorContainer, pre, code };
+      });
+      // A Range can split endpoint text/ancestors. Keep original references for
+      // only those touched parents, so rollback preserves outside listeners and
+      // live state without cloning or snapshotting every descendant in a field.
+      const savedParents = new Map();
+      const savedTexts = new Map();
+      function saveParent(node) {
+        if (!savedParents.has(node)) savedParents.set(node, Array.from(node.childNodes));
+      }
+      function saveBoundary(node, common) {
+        if (node.nodeType === 3) savedTexts.set(node, node.data);
+        while (node && node !== common) {
+          if (node.nodeType === 1) saveParent(node);
+          node = node.parentNode;
+        }
+        if (common.nodeType === 3) {
+          savedTexts.set(common, common.data);
+          saveParent(common.parentNode);
+        } else saveParent(common);
+      }
+      for (const item of prepared) {
+        saveBoundary(item.from.node, item.common);
+        saveBoundary(item.to.node, item.common);
+      }
+      try {
+        for (let i = prepared.length - 1; i >= 0; i--) {
+          const item = prepared[i];
+          range.setStart(item.from.node, item.from.offset);
+          range.setEnd(item.to.node, item.to.offset);
+          range.extractContents();
+          range.insertNode(item.pre);
+        }
+      } catch (error) {
+        for (const [node, children] of savedParents) node.replaceChildren(...children);
+        for (const [node, data] of savedTexts) node.data = data;
+        throw error;
+      }
+      scope.dataset.ankiFenceState = "converted";
+      return { codes: prepared.map(item => item.code), failed: false };
+    } catch (error) {
+      return fail(scope);
+    }
+  }
+  window.AnkiFencedCodeV1 = { version: VERSION, convert };
+})();
+
+  const fenceFields = Array.from(document.querySelectorAll(
+    "[data-anki-fence-field], .anki-fence-scope"));
+  const reveal = fields => {
+    for (const field of fields) {
+      if (!field.isConnected) continue;
+      for (const button of field.querySelectorAll("button[data-anki-fence-copy-pending]")) {
+        button.disabled = false;
+        button.removeAttribute("data-anki-fence-copy-pending");
+      }
+      field.removeAttribute("data-anki-fence-pending");
+    }
+  };
+  for (const field of fenceFields) {
+    try {
+      const result = window.AnkiFencedCodeV1.convert(field);
+      if (result.failed || !result.codes.length) reveal([field]);
+    } catch (_) {
+      // An unexpected converter failure is distinct from a missing highlighter.
+      // Keep the original field readable, without a later conversion attempt.
+      field.dataset.ankiFenceState = "failed";
+      if (!field.querySelector(".anki-fence-error")) {
+        const notice = document.createElement("small");
+        notice.className = "anki-fence-error";
+        notice.textContent = "코드 블록을 변환하지 못해 원문을 표시합니다.";
+        field.appendChild(notice);
+      }
+      reveal([field]);
+    }
+  }
+  const CONTROLS = "AnkiCodeControlsV1";
+  if (!window[CONTROLS]) {
+    let cardId = null, answer = false, scale = 100;
+    let root = null, first = null, toolbar = null;
+    const onToggle = event => {
+      if (event.target.tagName === "DETAILS") mount();
+    };
+    const update = () => {
+      root.style.setProperty("--anki-code-scale", String(scale / 100));
+      toolbar.querySelector("output").textContent = `${scale}%`;
+      toolbar.querySelector('[data-action="smaller"]').disabled = scale === 80;
+      toolbar.querySelector('[data-action="larger"]').disabled = scale === 140;
+      toolbar.querySelector('[data-action="reset"]').disabled = scale === 100;
+    };
+    const mount = () => {
+      const nextRoot = document.getElementById("qa") || document.body;
+      const blocks = Array.from(nextRoot.querySelectorAll(".anki-code-scope pre > code"));
+      const nextFirst = blocks.find(code => !code.closest("details:not([open]), [hidden]"))?.parentElement;
+      const id = nextRoot.querySelector("[data-anki-cid]")?.dataset.ankiCid;
+      const nextId = /^[1-9][0-9]*$/.test(id || "") ? id : null;
+      const nextAnswer = !!nextRoot.querySelector("#answer");
+      // Keep only the current card, including a replaced FrontSide DOM. Never
+      // persist preferences or infer identity from note text. A preview without
+      // CardID may retain a setting only while its exact code node survives.
+      if (nextId ? nextId !== cardId || (answer && !nextAnswer)
+        : nextRoot !== root || nextFirst !== first || cardId !== null) scale = 100;
+      cardId = nextId;
+      answer = nextAnswer;
+      if (root !== nextRoot) {
+        root?.removeEventListener("toggle", onToggle, true);
+        root?.style.removeProperty("--anki-code-scale");
+        // Native details toggles do not bubble. Keep the one toolbar reachable
+        // when optional code is expanded, without observing or rewriting code.
+        nextRoot.addEventListener("toggle", onToggle, true);
+      }
+      root = nextRoot;
+      first = nextFirst;
+      // FrontSide may carry previously rendered markup, but not its listeners.
+      for (const duplicate of root.querySelectorAll(".anki-code-controls")) {
+        if (duplicate !== toolbar) duplicate.remove();
+      }
+      if (!first) {
+        toolbar?.remove();
+        toolbar = null;
+        if (blocks.length) root.style.setProperty("--anki-code-scale", String(scale / 100));
+        else root.style.removeProperty("--anki-code-scale");
+        return;
+      }
+      if (!toolbar || !toolbar.isConnected || toolbar.nextElementSibling !== first) {
+        toolbar?.remove();
+        const bar = document.createElement("div");
+        bar.className = "anki-code-controls";
+        bar.setAttribute("role", "group");
+        bar.setAttribute("aria-label", "이 카드의 코드 글자 크기");
+        bar.innerHTML = '<button type="button" data-action="smaller" aria-label="코드 글자 작게">−</button><output aria-live="polite" aria-atomic="true">100%</output><button type="button" data-action="larger" aria-label="코드 글자 크게">+</button><button type="button" data-action="reset" aria-label="코드 글자 크기 기본값">기본</button>';
+        // Stop reviewer tap/key actions, but retain native button activation,
+        // focus and scrolling. No document-wide or code-block gesture handlers.
+        for (const name of ["pointerdown", "pointerup", "mousedown", "mouseup",
+          "touchstart", "touchend", "keydown", "keypress", "keyup"]) {
+          bar.addEventListener(name, event => event.stopPropagation());
+        }
+        bar.addEventListener("click", event => {
+          event.stopPropagation();
+          if (toolbar !== bar || !bar.isConnected) return;
+          const button = event.target.closest("button[data-action]");
+          if (!button || button.disabled) return;
+          const action = button.dataset.action;
+          scale = action === "reset" ? 100 : Math.max(80, Math.min(140,
+            scale + (action === "larger" ? 10 : -10)));
+          update();
+        });
+        first.before(bar);
+        toolbar = bar;
+      }
+      update();
+    };
+    window[CONTROLS] = { mount };
+  }
+  // Placement upgrades independently of V1's private scale/toggle lifecycle.
+  // Existing reviewer globals may have been installed by an older template.
+  const PLACEMENT = "AnkiCodePlacementV1";
+  if (!window[PLACEMENT]) {
+    const controls = window[CONTROLS];
+    const originalMount = controls.mount;
+    let root = null;
+    const currentRoot = () => document.getElementById("qa") || document.body;
+    const visible = code => {
+      if (code.closest("details:not([open]), [hidden]")) return false;
+      for (let node = code; node; node = node.parentElement) {
+        if (window.getComputedStyle(node).display === "none") return false;
+      }
+      return true;
+    };
+    const place = () => {
+      const first = Array.from(root.querySelectorAll(".anki-code-scope pre > code"))
+        .find(visible)?.parentElement;
+      let toolbar = root.querySelector(".anki-code-controls");
+      if (!first) {
+        toolbar?.remove();
+        return;
+      }
+      if (!toolbar) {
+        // Calling the saved original avoids recursion through our wrapper and
+        // restores its live buttons after all blocks were temporarily hidden.
+        originalMount.call(controls);
+        toolbar = root.querySelector(".anki-code-controls");
+      }
+      if (toolbar && toolbar.nextElementSibling !== first) first.before(toolbar);
+    };
+    const observer = new MutationObserver(() => {
+      if (root === currentRoot() && root.isConnected) place();
+    });
+    controls.mount = (...args) => {
+      originalMount.apply(controls, args);
+      const nextRoot = currentRoot();
+      if (root !== nextRoot) {
+        observer.disconnect();
+        root = nextRoot;
+        // Old V1 details handlers can recreate the toolbar at their original
+        // anchor. Reconcile that child change as well as CSS visibility changes.
+        observer.observe(root, {
+          attributes: true, childList: true, subtree: true,
+          attributeFilter: ["class", "style", "hidden", "open"]
+        });
+      }
+      place();
+    };
+    // Neither stable placement nor our own style/DOM writes rewrite code or
+    // remount controls. The following observer delivery is therefore a no-op.
+    window[PLACEMENT] = true;
+  }
+  // Copy has its own lifecycle: a reused WebView may still have the original
+  // size controls installed. Do not replace their toggle listener or scale.
+  const COPY = "AnkiCodeCopyV1";
+  if (!window[COPY]) {
+    let handles = [];
+    const events = ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart",
+      "touchend", "keydown", "keypress", "keyup", "click"];
+    const stop = event => event.stopPropagation();
+    const readText = code => {
+      // Keep text-node whitespace byte-for-byte. innerText alone would include
+      // opacity:0 answers; textContent alone would include hidden answers and
+      // lose BR/block boundaries. Never read cloze attributes or stored HTML.
+      const suppressed = node => {
+        const style = window.getComputedStyle(node);
+        return node.hidden || style.display === "none" || style.opacity === "0" ||
+          style.contentVisibility === "hidden";
+      };
+      for (let node = code; node; node = node.parentElement) {
+        if (suppressed(node)) return "";
+        if (node.tagName === "DETAILS" && !node.open) {
+          const summary = Array.from(node.children).find(child => child.tagName === "SUMMARY");
+          if (!summary?.contains(code)) return "";
+        }
+      }
+      const transparent = color => {
+        const value = (color || "").trim().toLowerCase();
+        if (value === "transparent") return true;
+        // Computed colors may retain Color 4 functions instead of rgba(). Only
+        // explicit numeric zero alpha is conclusive; unknown paint stays copied.
+        const alpha = value.match(/^(?:rgba|hsla)\([^,]+,[^,]+,[^,]+,\s*([^,()]+)\)$/)?.[1] ||
+          value.match(/^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*\/\s*([^/()]+)\)$/)?.[1];
+        return !!alpha && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?%?$/.test(alpha.trim()) &&
+          Number(alpha.trim().replace(/%$/, "")) === 0;
+      };
+      const visibleText = node => {
+        const style = window.getComputedStyle(node);
+        if (["hidden", "collapse"].includes(style.visibility) || parseFloat(style.fontSize) === 0) return false;
+        const property = name => style.getPropertyValue(name).trim();
+        const fill = property("-webkit-text-fill-color");
+        if (!transparent(!fill || fill === "currentcolor" ? style.color : fill)) return true;
+        // Transparent fill can still paint through shadow, stroke or clipped
+        // backgrounds. Decide per text node so descendants can restore styling.
+        const stroke = property("-webkit-text-stroke-width");
+        const noStroke = !stroke || parseFloat(stroke) === 0 || transparent(property("-webkit-text-stroke-color"));
+        const noShadow = !style.textShadow || style.textShadow === "none";
+        if (!noShadow || !noStroke) return true;
+        // background-clip is not inherited, but ancestor backgrounds can paint
+        // descendant glyphs. Keep uncertain paint instead of dropping text.
+        for (let ancestor = node; ancestor; ancestor = ancestor.parentElement) {
+          const paint = window.getComputedStyle(ancestor);
+          if (["background-clip", "-webkit-background-clip"].some(name => paint.getPropertyValue(name).includes("text"))) return true;
+        }
+        return false;
+      };
+      const fragments = [];
+      const blockDisplays = new Set(["block", "flow-root", "flex", "grid", "list-item",
+        "table", "table-row", "table-caption"]);
+      const visit = node => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          if (visibleText(node.parentElement)) fragments.push(node.nodeValue);
+          return;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE || suppressed(node) ||
+            ["SCRIPT", "STYLE", "TEMPLATE"].includes(node.tagName)) return;
+        const style = window.getComputedStyle(node);
+        if (node.tagName === "BR") {
+          if (!["hidden", "collapse"].includes(style.visibility)) fragments.push("\n");
+          return;
+        }
+        const boundary = node !== code && blockDisplays.has(style.display) ? (node.tagName === "P" ? 2 : 1) : 0;
+        if (boundary) fragments.push(boundary);
+        if (node.tagName === "DETAILS" && !node.open) {
+          const summary = Array.from(node.children).find(child => child.tagName === "SUMMARY");
+          if (summary) visit(summary);
+        } else for (const child of node.childNodes) visit(child);
+        if (boundary) fragments.push(boundary);
+      };
+      visit(code);
+      let text = "", boundary = 0;
+      for (const fragment of fragments) {
+        if (typeof fragment === "number") { boundary = Math.max(boundary, fragment); continue; }
+        if (!fragment) continue;
+        if (text && boundary) {
+          const existing = text.match(/\n*$/)?.[0].length || 0;
+          text += "\n".repeat(Math.max(0, boundary - existing));
+        }
+        text += fragment;
+        boundary = 0;
+      }
+      return text;
+    };
+    const attach = (root, code) => {
+      const pre = code.parentElement;
+      let shell = pre.parentElement;
+      if (!shell.classList.contains("anki-code-block")) {
+        shell = document.createElement("div");
+        shell.className = "anki-code-block";
+        pre.before(shell);
+        shell.append(pre);
+      }
+      const control = document.createElement("div");
+      control.className = "anki-code-copy";
+      control.innerHTML = '<button type="button" aria-label="코드 복사"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"><g class="anki-code-copy__icon"><rect x="7" y="7" width="9" height="10" rx="2"/><path d="M12 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></g><path class="anki-code-copy__check" d="m4 10 4 4 8-8"/></svg></button><span role="status" aria-live="polite" aria-atomic="true"></span>';
+      const panel = document.createElement("div");
+      panel.className = "anki-code-copy-manual";
+      panel.hidden = true;
+      panel.innerHTML = '<p>자동 복사가 지원되지 않습니다. 아래 코드를 선택하거나 길게 눌러 복사해 주세요.</p><textarea readonly rows="5" aria-label="복사할 코드" spellcheck="false" autocapitalize="off" autocorrect="off"></textarea>';
+      shell.append(control, panel);
+      const button = control.querySelector("button");
+      const status = control.querySelector('[role="status"]');
+      const input = panel.querySelector("textarea");
+      const cardId = root.querySelector("[data-anki-cid]")?.dataset.ankiCid;
+      const answer = !!root.querySelector("#answer");
+      let alive = true, pending = false, generation = 0, copyTimer = null, resetTimer = null;
+      const current = token => alive && generation === token && code.isConnected &&
+        control.isConnected && root.contains(code) && pre.contains(code) &&
+        (document.getElementById("qa") || document.body) === root &&
+        root.querySelector("[data-anki-cid]")?.dataset.ankiCid === cardId &&
+        !!root.querySelector("#answer") === answer;
+      const reset = () => {
+        control.dataset.state = "ready";
+        button.setAttribute("aria-label", "코드 복사");
+        status.textContent = "";
+      };
+      const settled = () => {
+        if (copyTimer !== null) clearTimeout(copyTimer);
+        copyTimer = null;
+        pending = false;
+        button.removeAttribute("aria-busy");
+      };
+      const manual = token => {
+        if (!current(token)) return;
+        settled();
+        control.dataset.state = "manual";
+        panel.hidden = false;
+        status.textContent = "자동 복사를 할 수 없습니다. 아래 코드를 직접 복사해 주세요.";
+        input.focus({ preventScroll: true });
+        input.select();
+        input.setSelectionRange(0, input.value.length);
+      };
+      const success = token => {
+        if (!current(token)) return;
+        settled();
+        control.dataset.state = "success";
+        panel.hidden = true;
+        button.setAttribute("aria-label", "코드 복사됨");
+        status.textContent = "코드를 복사했습니다.";
+        resetTimer = setTimeout(() => { if (current(token)) reset(); }, 1800);
+      };
+      const legacyCopy = payload => {
+        const temporary = document.createElement("textarea");
+        const previousFocus = document.activeElement;
+        temporary.value = payload;
+        // Textarea normalizes CRLF/CR. Use writeText instead if that would alter
+        // a programmatically supplied text node; never report a changed copy.
+        if (temporary.value !== payload) return false;
+        temporary.readOnly = true;
+        temporary.setAttribute("aria-hidden", "true");
+        temporary.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;font-size:16px;pointer-events:none;";
+        control.append(temporary);
+        try {
+          temporary.focus({ preventScroll: true });
+          temporary.select();
+          temporary.setSelectionRange(0, payload.length);
+          return typeof document.execCommand === "function" && document.execCommand("copy") === true;
+        } catch (_) {
+          return false;
+        } finally {
+          temporary.remove();
+          if (previousFocus?.isConnected && typeof previousFocus.focus === "function") previousFocus.focus({ preventScroll: true });
+        }
+      };
+      const copy = event => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (pending || !current(generation)) return;
+        if (resetTimer !== null) clearTimeout(resetTimer);
+        reset();
+        panel.hidden = true;
+        const payload = readText(code);
+        input.value = payload;
+        pending = true;
+        const token = ++generation;
+        control.dataset.state = "copying";
+        button.setAttribute("aria-busy", "true");
+        try {
+          // Keep both attempts in the user gesture. Qt may never settle the
+          // asynchronous API; a timeout exposes selectable code, not success.
+          if (legacyCopy(payload)) { success(token); return; }
+          if (window.isSecureContext && typeof window.navigator.clipboard?.writeText === "function") {
+            const result = window.navigator.clipboard.writeText(payload);
+            if (!result || typeof result.then !== "function") { manual(token); return; }
+            copyTimer = setTimeout(() => {
+              if (!current(token)) return;
+              manual(token);
+              generation++;
+            }, 1800);
+            result.then(() => success(token), () => manual(token));
+          } else manual(token);
+        } catch (_) { manual(token); }
+      };
+      for (const node of [control, panel]) {
+        for (const name of events) node.addEventListener(name, stop);
+      }
+      button.addEventListener("click", copy);
+      reset();
+      return () => {
+        alive = false;
+        generation++;
+        if (copyTimer !== null) clearTimeout(copyTimer);
+        if (resetTimer !== null) clearTimeout(resetTimer);
+        button.removeEventListener("click", copy);
+        for (const node of [control, panel]) {
+          for (const name of events) node.removeEventListener(name, stop);
+          node.remove();
+        }
+      };
+    };
+    const mount = () => {
+      for (const destroy of handles) destroy();
+      handles = [];
+      const root = document.getElementById("qa") || document.body;
+      // FrontSide can clone rendered controls without cloning listeners.
+      for (const duplicate of root.querySelectorAll(".anki-code-copy, .anki-code-copy-manual")) duplicate.remove();
+      for (const code of root.querySelectorAll(".anki-code-scope pre > code")) handles.push(attach(root, code));
+    };
+    window[COPY] = { mount };
+  }
+  const KEY = "AnkiCodeHighlightV1";
+  if (window[KEY]?.version !== 2) {
+    const records = new WeakMap();
+    const aliases = Object.freeze({
+      js: "javascript", javascript: "javascript", jsx: "javascript",
+      ts: "typescript", typescript: "typescript", tsx: "typescript",
+      html: "xml", xml: "xml", css: "css", json: "json",
+      bash: "bash", sh: "bash", shell: "bash", sql: "sql", c: "c",
+      python: "python", py: "python", java: "java", yaml: "yaml", yml: "yaml", http: "http"
+    });
+    let pending = null;
+    let generation = 0;
+    const library = () => {
+      const value = window.AnkiSyntaxHighlightLibraryV1;
+      return value && value.version === "11.12.0" ? value : null;
+    };
+    const load = () => {
+      if (library()) return Promise.resolve(library());
+      if (pending) return pending;
+      pending = new Promise(resolve => {
+        const script = document.createElement("script");
+        script.src = ASSET;
+        script.async = true;
+        script.dataset.ankiSyntaxAsset = ASSET;
+        let timer;
+        const finish = value => {
+          clearTimeout(timer);
+          script.onload = script.onerror = null;
+          script.remove();
+          resolve(value);
+        };
+        script.onload = () => finish(library());
+        script.onerror = () => finish(null);
+        timer = setTimeout(() => finish(null), 3000);
+        document.head.appendChild(script);
+      }).then(value => { pending = null; return value; });
+      return pending;
+    };
+    const render = async () => {
+      const current = ++generation;
+      const started = performance.now();
+      const nodes = Array.from(document.querySelectorAll(".anki-code-scope pre > code"));
+      const metrics = { blocks: nodes.length, highlighted: 0, skipped: 0, loadMs: 0, highlightMs: 0 };
+      if (!nodes.length) return metrics;
+      const fenced = nodes.filter(code => code.hasAttribute("data-anki-fenced"));
+      const existing = nodes.filter(code => !code.hasAttribute("data-anki-fenced"));
+      const languageOf = code => {
+        const classes = Array.from(code.classList).filter(name => name.startsWith("language-"));
+        const name = classes.length === 1 ? classes[0].slice(9).toLowerCase() : "";
+        return Object.hasOwn(aliases, name) ? aliases[name] : null;
+      };
+      // Keep unsupported and performance-skipped new blocks out of the old
+      // HTML budget. Otherwise even a plaintext fence could starve old code.
+      let newCharacters = 0, newBlocks = 0;
+      for (const code of fenced) {
+        if (code.dataset.ankiFenceHighlight) continue;
+        const size = code.textContent.length;
+        if (!languageOf(code)) code.dataset.ankiFenceHighlight = "plain";
+        else if (size > FENCE_MAX_CHARS || newCharacters + size > 16384 || newBlocks >= 32) {
+          code.dataset.ankiFenceHighlight = "skipped";
+        } else { newCharacters += size; newBlocks++; }
+      }
+      const eligible = fenced.filter(code => !["plain", "skipped", "highlighted"].includes(
+        code.dataset.ankiFenceHighlight));
+      // Plain/heavy fields have their complete display already. An unrelated
+      // old HTML block's cold loader must not keep those fields invisible.
+      const fields = new Set(fenced.map(code => code.closest(
+        "[data-anki-fence-field], .anki-fence-scope")).filter(Boolean));
+      reveal(Array.from(fields).filter(field => !eligible.some(code => field.contains(code))));
+      const loading = existing.length || eligible.length ? load() : Promise.resolve(null);
+      let timer, timedOut = false;
+      const engine = eligible.length ? await Promise.race([loading, new Promise(resolve => {
+        timer = setTimeout(() => { timedOut = true; resolve(null); }, 50);
+      })]) : await loading;
+      clearTimeout(timer);
+      if (current !== generation) return { stale: true };
+      metrics.loadMs = performance.now() - started;
+      const painting = performance.now();
+      const paint = (engine, candidates) => {
+        const painting = performance.now();
+        let characters = 0, highlighted = 0;
+        for (const code of candidates) {
+          if (!code.isConnected) continue;
+          const isFence = code.hasAttribute("data-anki-fenced");
+          if (isFence && ["plain", "skipped", "highlighted"].includes(code.dataset.ankiFenceHighlight)) continue;
+          const text = code.textContent;
+          const language = languageOf(code);
+          const previous = records.get(code);
+          if (previous && previous.html === code.innerHTML && previous.language === language) continue;
+          // Only replace markup that this exact DOM instance produced. Never flatten
+          // cloze spans, edited HTML, anchors, or other renderers' output.
+          if (code.children.length && (!previous || previous.html !== code.innerHTML)) {
+            metrics.skipped++;
+            continue;
+          }
+          if (previous) { code.textContent = text; code.classList.remove("hljs"); }
+          characters += text.length;
+          if (!engine || !language || text.length > 4096 || characters > 16384 ||
+              highlighted >= 32 || performance.now() - painting > 16) {
+            metrics.skipped++;
+            if (isFence) code.dataset.ankiFenceHighlight = engine && language ? "skipped" : "plain";
+            continue;
+          }
+          try {
+            const result = engine.highlight(text, { language, ignoreIllegals: true });
+            code.innerHTML = result.value;
+            code.classList.add("hljs");
+            records.set(code, { html: code.innerHTML, language });
+            metrics.highlighted++;
+            highlighted++;
+            if (isFence) code.dataset.ankiFenceHighlight = "highlighted";
+          } catch (_) {
+            // Loading or parsing must never prevent a question/answer from showing.
+            code.textContent = text;
+            code.classList.remove("hljs");
+            metrics.skipped++;
+            if (isFence) code.dataset.ankiFenceHighlight = "plain";
+          }
+        }
+      };
+      if (timedOut) {
+        for (const code of eligible) code.dataset.ankiFenceHighlight = "waiting";
+        // Resolving the first-display deadline must not detach the loader's
+        // onload handler. Only its current DOM can receive the late colors.
+        loading.then(value => {
+          if (current !== generation || !value) {
+            if (current === generation) for (const code of eligible) {
+              if (code.isConnected && code.dataset.ankiFenceHighlight === "waiting") code.dataset.ankiFenceHighlight = "plain";
+            }
+            return;
+          }
+          paint(value, existing);
+          paint(value, eligible.filter(code => code.dataset.ankiFenceHighlight === "waiting"));
+        });
+      } else {
+        paint(engine, existing);
+        paint(engine, fenced);
+      }
+      metrics.highlightMs = performance.now() - painting;
+      window[KEY].lastMetrics = metrics;
+      return metrics;
+    };
+    window[KEY] = { render, lastMetrics: null, version: 2 };
+  }
+  let style = document.getElementById("anki-code-style-v1");
+  if (!style) {
+    style = document.createElement("style");
+    style.id = "anki-code-style-v1";
+    document.head.appendChild(style);
+  }
+  // A synced template can change while the reviewer WebView remains alive.
+  if (style.textContent !== CSS) style.textContent = CSS;
+  let renderAttached = false;
+  try {
+    window[COPY].mount();
+    window[CONTROLS].mount();
+    // Opacity preserves layout but does not remove controls from keyboard focus.
+    // Disable only our copy buttons until their field's first display is ready,
+    // including when an older shared copy module survives in the reused WebView.
+    for (const field of fenceFields) {
+      if (!field.hasAttribute("data-anki-fence-pending")) continue;
+      for (const button of field.querySelectorAll(".anki-code-copy button")) {
+        button.disabled = true;
+        button.setAttribute("data-anki-fence-copy-pending", "");
+      }
+    }
+    // Anki reuses its WebView, including globals, across question/answer/card changes.
+    // Each script invocation gets a new generation; a pending old card cannot paint it.
+    window[KEY].render().then(metrics => {
+      if (!metrics.stale) reveal(fenceFields);
+    }, () => reveal(fenceFields));
+    renderAttached = true;
+  } finally {
+    // Setup failures must not leave the question/answer hidden. Once completion
+    // handlers are attached, keep the asynchronous readiness/stale policy above.
+    if (!renderAttached) reveal(fenceFields);
+  }
+})();
+</script>
+{{/맥락}}{{/질문}}
+<!-- anki-note-link-mobile-renderer -->
 <script>
 (() => {
   if (window.AnkiNoteLinkerIsActive) return;
   const root = document.documentElement;
   if (!root.classList.contains("iphone") && !root.classList.contains("ipad")) return;
 
-  if (window.AnkiNoteLinkerMobileVersion !== 3) {
+  if (window.AnkiNoteLinkerMobileVersion !== 4) {
     const pattern = /\[((?:[^\[]|\\\[)*?)\|nid(\d{13})\]/g;
     const inline = new Set("B STRONG I EM U S STRIKE DEL INS SPAN FONT SMALL BIG SUB SUP MARK".split(" "));
-    const excluded = "a,button,select,textarea,script,style,pre,code,svg,math,mjx-container,.MathJax,.MathJax_Preview,.katex,[contenteditable]";
+    // A failed fence field keeps its source DOM and notice through later adapters.
+    const excluded = 'a,button,select,textarea,script,style,pre,code,svg,math,mjx-container,.MathJax,.MathJax_Preview,.katex,[contenteditable],[data-anki-fence-state="failed"]';
     const escaped = (value, index) => {
       let slashes = 0;
       while (index > 0 && value[--index] === "\\") slashes++;
@@ -92,7 +1784,7 @@
       walk(container);
       flush();
     };
-    window.AnkiNoteLinkerMobileVersion = 3;
+    window.AnkiNoteLinkerMobileVersion = 4;
     window.AnkiNoteLinkerRenderMobile = () => {
       document.querySelectorAll(".linkRender").forEach(renderContainer);
     };
@@ -111,943 +1803,6 @@
   }
 })();
 </script>
-{{#질문}}<!-- anki-code-highlight-v1 -->
-<script>
-(() => {
-  const ASSET = "_anki-syntax-hljs-11.12.0-fd009500d0c826a5.min.js";
-  const CSS = "/* Scoped GitHub-inspired palette; app night mode is authoritative, not OS theme. */\n.anki-code-scope {\n  --anki-code-size: 17px;\n}\n.anki-code-scope pre {\n  box-sizing: border-box;\n  max-width: 100%;\n  min-width: 0;\n  overflow-x: auto;\n  white-space: pre;\n  overflow-wrap: normal;\n  word-break: normal;\n  tab-size: 4;\n  margin: 16px 0;\n  padding: 14px 16px;\n  border: 1px solid #d8dee4;\n  border-radius: 10px;\n  background: #f6f8fa;\n  color: #24292f;\n  text-align: left;\n  font: 400 17px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;\n  font-size: calc(var(--anki-code-size) * var(--anki-code-scale, 1));\n  -webkit-text-size-adjust: 100%;\n}\n.anki-code-controls {\n  box-sizing: border-box;\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  width: fit-content;\n  max-width: 100%;\n  margin: 10px 0 4px auto;\n  padding: 0;\n  gap: 2px;\n  border: 0;\n  background: transparent;\n  color: #57606a;\n  font: 400 11px/1 -apple-system, BlinkMacSystemFont, sans-serif;\n  -webkit-text-size-adjust: 100%;\n}\n.anki-code-controls + pre { margin-top: 0; }\n.anki-code-controls button {\n  appearance: none;\n  -webkit-appearance: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 28px;\n  min-height: 28px;\n  margin: 0;\n  padding: 0;\n  border: 0;\n  border-radius: 5px;\n  background: transparent;\n  box-shadow: none;\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  touch-action: manipulation;\n  -webkit-tap-highlight-color: transparent;\n  user-select: none;\n  -webkit-user-select: none;\n}\n.anki-code-controls button[data-action=\"smaller\"],\n.anki-code-controls button[data-action=\"larger\"] { font-size: 16px; }\n/* Keep the explicit accessible name while presenting a quiet reset icon. */\n.anki-code-controls button[data-action=\"reset\"] { font-size: 0; }\n.anki-code-controls button[data-action=\"reset\"]::before { content: \"\u21ba\"; font-size: 16px; }\n.anki-code-controls button:not(:disabled):hover,\n.anki-code-controls button:not(:disabled):active { background: #e6ebf0; }\n.anki-code-controls button:hover,\n.anki-code-controls button:active { box-shadow: none; }\n/* Desktop Anki suppresses button outlines with !important. Restore focus here. */\n.anki-code-controls button:focus-visible { outline: 2px solid #0969da !important; outline-offset: 1px; }\n.anki-code-controls button:disabled,\n.anki-code-controls button:disabled:hover { background: transparent; color: inherit; opacity: .4; cursor: default; }\n.anki-code-controls output {\n  min-width: 34px;\n  text-align: center;\n  font: inherit;\n  font-variant-numeric: tabular-nums;\n}\n@media (max-width: 600px) {\n  .anki-code-scope { --anki-code-size: 15px; }\n  .anki-code-scope pre { padding: 12px; }\n  .anki-code-controls button { min-width: 32px; min-height: 32px; }\n}\n.anki-code-scope pre > code {\n  display: block;\n  min-width: max-content;\n  padding: 0;\n  border: 0;\n  border-radius: 0;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  white-space: inherit;\n  overflow-wrap: inherit;\n  word-break: inherit;\n}\n.anki-code-scope .hljs-keyword, .anki-code-scope .hljs-selector-tag, .anki-code-scope .hljs-literal { color: #cf222e; }\n.anki-code-scope .hljs-title, .anki-code-scope .hljs-section { color: #8250df; }\n.anki-code-scope .hljs-string, .anki-code-scope .hljs-regexp { color: #0a3069; }\n.anki-code-scope .hljs-number, .anki-code-scope .hljs-attr, .anki-code-scope .hljs-variable, .anki-code-scope .hljs-type, .anki-code-scope .hljs-built_in { color: #0550ae; }\n.anki-code-scope .hljs-comment, .anki-code-scope .hljs-quote { color: #57606a; }\n.anki-code-scope .hljs-name, .anki-code-scope .hljs-selector-class, .anki-code-scope .hljs-selector-id { color: #116329; }\n.anki-code-scope .hljs-meta, .anki-code-scope .hljs-symbol, .anki-code-scope .hljs-bullet { color: #953800; }\n.anki-code-scope .hljs-emphasis { font-style: italic; }\n.anki-code-scope .hljs-strong { font-weight: 600; }\n:is(.nightMode, .night_mode) .anki-code-scope pre,\n.anki-code-scope:is(.nightMode, .night_mode) pre { background: #161b22; color: #e6edf3; border-color: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-controls {\n  color: #8b949e;\n}\n:is(.nightMode, .night_mode) .anki-code-controls button:not(:disabled):hover,\n:is(.nightMode, .night_mode) .anki-code-controls button:not(:disabled):active { background: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-controls button:focus-visible { outline-color: #79c0ff !important; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-keyword,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-tag,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-literal { color: #ff7b72; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-title,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-section { color: #d2a8ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-string,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-regexp { color: #a5d6ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-number,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-attr,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-variable,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-type,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-built_in { color: #79c0ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-comment,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-quote { color: #8b949e; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-name,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-class,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-id { color: #7ee787; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-meta,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-symbol,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-bullet { color: #ffa657; }\n\n/* Keep the existing sibling DOM: the size controller anchors its toolbar to\n * pre. Both controls share an external row without covering scrollable code. */\n.anki-code-block {\n  display: grid;\n  grid-template-areas: \"toolbar copy\" \"code code\" \"manual manual\";\n  grid-template-columns: minmax(0, 1fr) 44px;\n  gap: 4px;\n  min-width: 0;\n  margin: 16px 0;\n}\n.anki-code-block > .anki-code-controls {\n  grid-area: toolbar;\n  align-self: center;\n  justify-self: end;\n  margin: 0;\n  padding-right: 6px;\n  border-right: 1px solid #d8dee4;\n}\n.anki-code-scope .anki-code-block > pre {\n  grid-area: code;\n  margin: 0;\n}\n.anki-code-copy {\n  grid-area: copy;\n  align-self: center;\n  justify-self: end;\n  margin: 0;\n  color: #57606a;\n}\n.anki-code-copy button {\n  appearance: none;\n  -webkit-appearance: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 44px;\n  min-height: 44px;\n  margin: 0;\n  padding: 0;\n  border: 0;\n  border-radius: 6px;\n  background: transparent;\n  color: inherit;\n  box-shadow: none;\n  cursor: pointer;\n  touch-action: manipulation;\n  user-select: none;\n  -webkit-user-select: none;\n  -webkit-tap-highlight-color: transparent;\n}\n.anki-code-copy button:hover,\n.anki-code-copy button:active { background: #e6ebf0; box-shadow: none; }\n.anki-code-copy button:focus-visible { outline: 2px solid #0969da !important; outline-offset: 1px; }\n.anki-code-copy__check,\n.anki-code-copy[data-state=\"success\"] .anki-code-copy__icon { display: none; }\n.anki-code-copy[data-state=\"success\"] .anki-code-copy__check { display: block; }\n.anki-code-copy [role=\"status\"] {\n  position: absolute !important;\n  width: 1px !important;\n  height: 1px !important;\n  overflow: hidden !important;\n  clip: rect(0, 0, 0, 0) !important;\n  white-space: nowrap !important;\n}\n.anki-code-copy-manual { grid-area: manual; min-width: 0; text-align: left; }\n.anki-code-copy-manual[hidden] { display: none; }\n.anki-code-copy-manual p { margin: 8px 0; font: 400 13px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; }\n.anki-code-copy-manual textarea {\n  box-sizing: border-box;\n  width: 100%;\n  min-height: 100px;\n  padding: 10px;\n  border: 1px solid #d8dee4;\n  border-radius: 6px;\n  background: #f6f8fa;\n  color: #24292f;\n  font: 400 16px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;\n  white-space: pre;\n  overflow-wrap: normal;\n  user-select: text;\n  -webkit-user-select: text;\n}\n:is(.nightMode, .night_mode) .anki-code-copy { color: #8b949e; }\n:is(.nightMode, .night_mode) .anki-code-block > .anki-code-controls { border-color: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-copy button:hover,\n:is(.nightMode, .night_mode) .anki-code-copy button:active { background: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-copy button:focus-visible { outline-color: #79c0ff !important; }\n:is(.nightMode, .night_mode) .anki-code-copy-manual textarea { background: #161b22; color: #e6edf3; border-color: #30363d; }\n";
-  const CONTROLS = "AnkiCodeControlsV1";
-  if (!window[CONTROLS]) {
-    let cardId = null, answer = false, scale = 100;
-    let root = null, first = null, toolbar = null;
-    const onToggle = event => {
-      if (event.target.tagName === "DETAILS") mount();
-    };
-    const update = () => {
-      root.style.setProperty("--anki-code-scale", String(scale / 100));
-      toolbar.querySelector("output").textContent = `${scale}%`;
-      toolbar.querySelector('[data-action="smaller"]').disabled = scale === 80;
-      toolbar.querySelector('[data-action="larger"]').disabled = scale === 140;
-      toolbar.querySelector('[data-action="reset"]').disabled = scale === 100;
-    };
-    const mount = () => {
-      const nextRoot = document.getElementById("qa") || document.body;
-      const blocks = Array.from(nextRoot.querySelectorAll(".anki-code-scope pre > code"));
-      const nextFirst = blocks.find(code => !code.closest("details:not([open]), [hidden]"))?.parentElement;
-      const id = nextRoot.querySelector("[data-anki-cid]")?.dataset.ankiCid;
-      const nextId = /^[1-9][0-9]*$/.test(id || "") ? id : null;
-      const nextAnswer = !!nextRoot.querySelector("#answer");
-      // Keep only the current card, including a replaced FrontSide DOM. Never
-      // persist preferences or infer identity from note text. A preview without
-      // CardID may retain a setting only while its exact code node survives.
-      if (nextId ? nextId !== cardId || (answer && !nextAnswer)
-        : nextRoot !== root || nextFirst !== first || cardId !== null) scale = 100;
-      cardId = nextId;
-      answer = nextAnswer;
-      if (root !== nextRoot) {
-        root?.removeEventListener("toggle", onToggle, true);
-        root?.style.removeProperty("--anki-code-scale");
-        // Native details toggles do not bubble. Keep the one toolbar reachable
-        // when optional code is expanded, without observing or rewriting code.
-        nextRoot.addEventListener("toggle", onToggle, true);
-      }
-      root = nextRoot;
-      first = nextFirst;
-      // FrontSide may carry previously rendered markup, but not its listeners.
-      for (const duplicate of root.querySelectorAll(".anki-code-controls")) {
-        if (duplicate !== toolbar) duplicate.remove();
-      }
-      if (!first) {
-        toolbar?.remove();
-        toolbar = null;
-        if (blocks.length) root.style.setProperty("--anki-code-scale", String(scale / 100));
-        else root.style.removeProperty("--anki-code-scale");
-        return;
-      }
-      if (!toolbar || !toolbar.isConnected || toolbar.nextElementSibling !== first) {
-        toolbar?.remove();
-        const bar = document.createElement("div");
-        bar.className = "anki-code-controls";
-        bar.setAttribute("role", "group");
-        bar.setAttribute("aria-label", "이 카드의 코드 글자 크기");
-        bar.innerHTML = '<button type="button" data-action="smaller" aria-label="코드 글자 작게">−</button><output aria-live="polite" aria-atomic="true">100%</output><button type="button" data-action="larger" aria-label="코드 글자 크게">+</button><button type="button" data-action="reset" aria-label="코드 글자 크기 기본값">기본</button>';
-        // Stop reviewer tap/key actions, but retain native button activation,
-        // focus and scrolling. No document-wide or code-block gesture handlers.
-        for (const name of ["pointerdown", "pointerup", "mousedown", "mouseup",
-          "touchstart", "touchend", "keydown", "keypress", "keyup"]) {
-          bar.addEventListener(name, event => event.stopPropagation());
-        }
-        bar.addEventListener("click", event => {
-          event.stopPropagation();
-          if (toolbar !== bar || !bar.isConnected) return;
-          const button = event.target.closest("button[data-action]");
-          if (!button || button.disabled) return;
-          const action = button.dataset.action;
-          scale = action === "reset" ? 100 : Math.max(80, Math.min(140,
-            scale + (action === "larger" ? 10 : -10)));
-          update();
-        });
-        first.before(bar);
-        toolbar = bar;
-      }
-      update();
-    };
-    window[CONTROLS] = { mount };
-  }
-  // Placement upgrades independently of V1's private scale/toggle lifecycle.
-  // Existing reviewer globals may have been installed by an older template.
-  const PLACEMENT = "AnkiCodePlacementV1";
-  if (!window[PLACEMENT]) {
-    const controls = window[CONTROLS];
-    const originalMount = controls.mount;
-    let root = null;
-    const currentRoot = () => document.getElementById("qa") || document.body;
-    const visible = code => {
-      if (code.closest("details:not([open]), [hidden]")) return false;
-      for (let node = code; node; node = node.parentElement) {
-        if (window.getComputedStyle(node).display === "none") return false;
-      }
-      return true;
-    };
-    const place = () => {
-      const first = Array.from(root.querySelectorAll(".anki-code-scope pre > code"))
-        .find(visible)?.parentElement;
-      let toolbar = root.querySelector(".anki-code-controls");
-      if (!first) {
-        toolbar?.remove();
-        return;
-      }
-      if (!toolbar) {
-        // Calling the saved original avoids recursion through our wrapper and
-        // restores its live buttons after all blocks were temporarily hidden.
-        originalMount.call(controls);
-        toolbar = root.querySelector(".anki-code-controls");
-      }
-      if (toolbar && toolbar.nextElementSibling !== first) first.before(toolbar);
-    };
-    const observer = new MutationObserver(() => {
-      if (root === currentRoot() && root.isConnected) place();
-    });
-    controls.mount = (...args) => {
-      originalMount.apply(controls, args);
-      const nextRoot = currentRoot();
-      if (root !== nextRoot) {
-        observer.disconnect();
-        root = nextRoot;
-        // Old V1 details handlers can recreate the toolbar at their original
-        // anchor. Reconcile that child change as well as CSS visibility changes.
-        observer.observe(root, {
-          attributes: true, childList: true, subtree: true,
-          attributeFilter: ["class", "style", "hidden", "open"]
-        });
-      }
-      place();
-    };
-    // Neither stable placement nor our own style/DOM writes rewrite code or
-    // remount controls. The following observer delivery is therefore a no-op.
-    window[PLACEMENT] = true;
-  }
-  // Copy has its own lifecycle: a reused WebView may still have the original
-  // size controls installed. Do not replace their toggle listener or scale.
-  const COPY = "AnkiCodeCopyV1";
-  if (!window[COPY]) {
-    let handles = [];
-    const events = ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart",
-      "touchend", "keydown", "keypress", "keyup", "click"];
-    const stop = event => event.stopPropagation();
-    const readText = code => {
-      // Keep text-node whitespace byte-for-byte. innerText alone would include
-      // opacity:0 answers; textContent alone would include hidden answers and
-      // lose BR/block boundaries. Never read cloze attributes or stored HTML.
-      const suppressed = node => {
-        const style = window.getComputedStyle(node);
-        return node.hidden || style.display === "none" || style.opacity === "0" ||
-          style.contentVisibility === "hidden";
-      };
-      for (let node = code; node; node = node.parentElement) {
-        if (suppressed(node)) return "";
-        if (node.tagName === "DETAILS" && !node.open) {
-          const summary = Array.from(node.children).find(child => child.tagName === "SUMMARY");
-          if (!summary?.contains(code)) return "";
-        }
-      }
-      const transparent = color => {
-        const value = (color || "").trim().toLowerCase();
-        if (value === "transparent") return true;
-        // Computed colors may retain Color 4 functions instead of rgba(). Only
-        // explicit numeric zero alpha is conclusive; unknown paint stays copied.
-        const alpha = value.match(/^(?:rgba|hsla)\([^,]+,[^,]+,[^,]+,\s*([^,()]+)\)$/)?.[1] ||
-          value.match(/^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*\/\s*([^/()]+)\)$/)?.[1];
-        return !!alpha && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?%?$/.test(alpha.trim()) &&
-          Number(alpha.trim().replace(/%$/, "")) === 0;
-      };
-      const visibleText = node => {
-        const style = window.getComputedStyle(node);
-        if (["hidden", "collapse"].includes(style.visibility) || parseFloat(style.fontSize) === 0) return false;
-        const property = name => style.getPropertyValue(name).trim();
-        const fill = property("-webkit-text-fill-color");
-        if (!transparent(!fill || fill === "currentcolor" ? style.color : fill)) return true;
-        // Transparent fill can still paint through shadow, stroke or clipped
-        // backgrounds. Decide per text node so descendants can restore styling.
-        const stroke = property("-webkit-text-stroke-width");
-        const noStroke = !stroke || parseFloat(stroke) === 0 || transparent(property("-webkit-text-stroke-color"));
-        const noShadow = !style.textShadow || style.textShadow === "none";
-        if (!noShadow || !noStroke) return true;
-        // background-clip is not inherited, but ancestor backgrounds can paint
-        // descendant glyphs. Keep uncertain paint instead of dropping text.
-        for (let ancestor = node; ancestor; ancestor = ancestor.parentElement) {
-          const paint = window.getComputedStyle(ancestor);
-          if (["background-clip", "-webkit-background-clip"].some(name => paint.getPropertyValue(name).includes("text"))) return true;
-        }
-        return false;
-      };
-      const fragments = [];
-      const blockDisplays = new Set(["block", "flow-root", "flex", "grid", "list-item",
-        "table", "table-row", "table-caption"]);
-      const visit = node => {
-        if (node.nodeType === Node.TEXT_NODE) {
-          if (visibleText(node.parentElement)) fragments.push(node.nodeValue);
-          return;
-        }
-        if (node.nodeType !== Node.ELEMENT_NODE || suppressed(node) ||
-            ["SCRIPT", "STYLE", "TEMPLATE"].includes(node.tagName)) return;
-        const style = window.getComputedStyle(node);
-        if (node.tagName === "BR") {
-          if (!["hidden", "collapse"].includes(style.visibility)) fragments.push("\n");
-          return;
-        }
-        const boundary = node !== code && blockDisplays.has(style.display) ? (node.tagName === "P" ? 2 : 1) : 0;
-        if (boundary) fragments.push(boundary);
-        if (node.tagName === "DETAILS" && !node.open) {
-          const summary = Array.from(node.children).find(child => child.tagName === "SUMMARY");
-          if (summary) visit(summary);
-        } else for (const child of node.childNodes) visit(child);
-        if (boundary) fragments.push(boundary);
-      };
-      visit(code);
-      let text = "", boundary = 0;
-      for (const fragment of fragments) {
-        if (typeof fragment === "number") { boundary = Math.max(boundary, fragment); continue; }
-        if (!fragment) continue;
-        if (text && boundary) {
-          const existing = text.match(/\n*$/)?.[0].length || 0;
-          text += "\n".repeat(Math.max(0, boundary - existing));
-        }
-        text += fragment;
-        boundary = 0;
-      }
-      return text;
-    };
-    const attach = (root, code) => {
-      const pre = code.parentElement;
-      let shell = pre.parentElement;
-      if (!shell.classList.contains("anki-code-block")) {
-        shell = document.createElement("div");
-        shell.className = "anki-code-block";
-        pre.before(shell);
-        shell.append(pre);
-      }
-      const control = document.createElement("div");
-      control.className = "anki-code-copy";
-      control.innerHTML = '<button type="button" aria-label="코드 복사"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"><g class="anki-code-copy__icon"><rect x="7" y="7" width="9" height="10" rx="2"/><path d="M12 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></g><path class="anki-code-copy__check" d="m4 10 4 4 8-8"/></svg></button><span role="status" aria-live="polite" aria-atomic="true"></span>';
-      const panel = document.createElement("div");
-      panel.className = "anki-code-copy-manual";
-      panel.hidden = true;
-      panel.innerHTML = '<p>자동 복사가 지원되지 않습니다. 아래 코드를 선택하거나 길게 눌러 복사해 주세요.</p><textarea readonly rows="5" aria-label="복사할 코드" spellcheck="false" autocapitalize="off" autocorrect="off"></textarea>';
-      shell.append(control, panel);
-      const button = control.querySelector("button");
-      const status = control.querySelector('[role="status"]');
-      const input = panel.querySelector("textarea");
-      const cardId = root.querySelector("[data-anki-cid]")?.dataset.ankiCid;
-      const answer = !!root.querySelector("#answer");
-      let alive = true, pending = false, generation = 0, copyTimer = null, resetTimer = null;
-      const current = token => alive && generation === token && code.isConnected &&
-        control.isConnected && root.contains(code) && pre.contains(code) &&
-        (document.getElementById("qa") || document.body) === root &&
-        root.querySelector("[data-anki-cid]")?.dataset.ankiCid === cardId &&
-        !!root.querySelector("#answer") === answer;
-      const reset = () => {
-        control.dataset.state = "ready";
-        button.setAttribute("aria-label", "코드 복사");
-        status.textContent = "";
-      };
-      const settled = () => {
-        if (copyTimer !== null) clearTimeout(copyTimer);
-        copyTimer = null;
-        pending = false;
-        button.removeAttribute("aria-busy");
-      };
-      const manual = token => {
-        if (!current(token)) return;
-        settled();
-        control.dataset.state = "manual";
-        panel.hidden = false;
-        status.textContent = "자동 복사를 할 수 없습니다. 아래 코드를 직접 복사해 주세요.";
-        input.focus({ preventScroll: true });
-        input.select();
-        input.setSelectionRange(0, input.value.length);
-      };
-      const success = token => {
-        if (!current(token)) return;
-        settled();
-        control.dataset.state = "success";
-        panel.hidden = true;
-        button.setAttribute("aria-label", "코드 복사됨");
-        status.textContent = "코드를 복사했습니다.";
-        resetTimer = setTimeout(() => { if (current(token)) reset(); }, 1800);
-      };
-      const legacyCopy = payload => {
-        const temporary = document.createElement("textarea");
-        const previousFocus = document.activeElement;
-        temporary.value = payload;
-        // Textarea normalizes CRLF/CR. Use writeText instead if that would alter
-        // a programmatically supplied text node; never report a changed copy.
-        if (temporary.value !== payload) return false;
-        temporary.readOnly = true;
-        temporary.setAttribute("aria-hidden", "true");
-        temporary.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;font-size:16px;pointer-events:none;";
-        control.append(temporary);
-        try {
-          temporary.focus({ preventScroll: true });
-          temporary.select();
-          temporary.setSelectionRange(0, payload.length);
-          return typeof document.execCommand === "function" && document.execCommand("copy") === true;
-        } catch (_) {
-          return false;
-        } finally {
-          temporary.remove();
-          if (previousFocus?.isConnected && typeof previousFocus.focus === "function") previousFocus.focus({ preventScroll: true });
-        }
-      };
-      const copy = event => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (pending || !current(generation)) return;
-        if (resetTimer !== null) clearTimeout(resetTimer);
-        reset();
-        panel.hidden = true;
-        const payload = readText(code);
-        input.value = payload;
-        pending = true;
-        const token = ++generation;
-        control.dataset.state = "copying";
-        button.setAttribute("aria-busy", "true");
-        try {
-          // Keep both attempts in the user gesture. Qt may never settle the
-          // asynchronous API; a timeout exposes selectable code, not success.
-          if (legacyCopy(payload)) { success(token); return; }
-          if (window.isSecureContext && typeof window.navigator.clipboard?.writeText === "function") {
-            const result = window.navigator.clipboard.writeText(payload);
-            if (!result || typeof result.then !== "function") { manual(token); return; }
-            copyTimer = setTimeout(() => {
-              if (!current(token)) return;
-              manual(token);
-              generation++;
-            }, 1800);
-            result.then(() => success(token), () => manual(token));
-          } else manual(token);
-        } catch (_) { manual(token); }
-      };
-      for (const node of [control, panel]) {
-        for (const name of events) node.addEventListener(name, stop);
-      }
-      button.addEventListener("click", copy);
-      reset();
-      return () => {
-        alive = false;
-        generation++;
-        if (copyTimer !== null) clearTimeout(copyTimer);
-        if (resetTimer !== null) clearTimeout(resetTimer);
-        button.removeEventListener("click", copy);
-        for (const node of [control, panel]) {
-          for (const name of events) node.removeEventListener(name, stop);
-          node.remove();
-        }
-      };
-    };
-    const mount = () => {
-      for (const destroy of handles) destroy();
-      handles = [];
-      const root = document.getElementById("qa") || document.body;
-      // FrontSide can clone rendered controls without cloning listeners.
-      for (const duplicate of root.querySelectorAll(".anki-code-copy, .anki-code-copy-manual")) duplicate.remove();
-      for (const code of root.querySelectorAll(".anki-code-scope pre > code")) handles.push(attach(root, code));
-    };
-    window[COPY] = { mount };
-  }
-  const KEY = "AnkiCodeHighlightV1";
-  if (!window[KEY]) {
-    const records = new WeakMap();
-    const aliases = Object.freeze({
-      js: "javascript", javascript: "javascript", jsx: "javascript",
-      ts: "typescript", typescript: "typescript", tsx: "typescript",
-      html: "xml", xml: "xml", css: "css", json: "json",
-      bash: "bash", sh: "bash", shell: "bash", sql: "sql", c: "c",
-      python: "python", py: "python", java: "java", yaml: "yaml", yml: "yaml", http: "http"
-    });
-    let pending = null;
-    let generation = 0;
-    const library = () => {
-      const value = window.AnkiSyntaxHighlightLibraryV1;
-      return value && value.version === "11.12.0" ? value : null;
-    };
-    const load = () => {
-      if (library()) return Promise.resolve(library());
-      if (pending) return pending;
-      pending = new Promise(resolve => {
-        const script = document.createElement("script");
-        script.src = ASSET;
-        script.async = true;
-        script.dataset.ankiSyntaxAsset = ASSET;
-        let timer;
-        const finish = value => {
-          clearTimeout(timer);
-          script.onload = script.onerror = null;
-          script.remove();
-          resolve(value);
-        };
-        script.onload = () => finish(library());
-        script.onerror = () => finish(null);
-        timer = setTimeout(() => finish(null), 3000);
-        document.head.appendChild(script);
-      }).then(value => { pending = null; return value; });
-      return pending;
-    };
-    const render = async () => {
-      const current = ++generation;
-      const started = performance.now();
-      const nodes = Array.from(document.querySelectorAll(".anki-code-scope pre > code"));
-      const metrics = { blocks: nodes.length, highlighted: 0, skipped: 0, loadMs: 0, highlightMs: 0 };
-      if (!nodes.length) return metrics;
-      const engine = await load();
-      if (current !== generation) return { stale: true };
-      metrics.loadMs = performance.now() - started;
-      const painting = performance.now();
-      let characters = 0;
-      for (const code of nodes) {
-        if (!code.isConnected) continue;
-        const text = code.textContent;
-        const classes = Array.from(code.classList).filter(name => name.startsWith("language-"));
-        const name = classes.length === 1 ? classes[0].slice(9).toLowerCase() : "";
-        const language = Object.hasOwn(aliases, name) ? aliases[name] : null;
-        const previous = records.get(code);
-        if (previous && previous.html === code.innerHTML && previous.language === language) continue;
-        // Only replace markup that this exact DOM instance produced. Never flatten
-        // cloze spans, edited HTML, anchors, or other renderers' output.
-        if (code.children.length && (!previous || previous.html !== code.innerHTML)) {
-          metrics.skipped++;
-          continue;
-        }
-        if (previous) { code.textContent = text; code.classList.remove("hljs"); }
-        characters += text.length;
-        if (!engine || !language || text.length > 4096 || characters > 16384 ||
-            metrics.highlighted >= 32 || performance.now() - painting > 16) {
-          metrics.skipped++;
-          continue;
-        }
-        try {
-          const result = engine.highlight(text, { language, ignoreIllegals: true });
-          code.innerHTML = result.value;
-          code.classList.add("hljs");
-          records.set(code, { html: code.innerHTML, language });
-          metrics.highlighted++;
-        } catch (_) {
-          // Loading or parsing must never prevent a question/answer from showing.
-          code.textContent = text;
-          code.classList.remove("hljs");
-          metrics.skipped++;
-        }
-      }
-      metrics.highlightMs = performance.now() - painting;
-      window[KEY].lastMetrics = metrics;
-      return metrics;
-    };
-    window[KEY] = { render, lastMetrics: null };
-  }
-  let style = document.getElementById("anki-code-style-v1");
-  if (!style) {
-    style = document.createElement("style");
-    style.id = "anki-code-style-v1";
-    document.head.appendChild(style);
-  }
-  // A synced template can change while the reviewer WebView remains alive.
-  if (style.textContent !== CSS) style.textContent = CSS;
-  window[COPY].mount();
-  window[CONTROLS].mount();
-  // Anki reuses its WebView, including globals, across question/answer/card changes.
-  // Each script invocation gets a new generation; a pending old card cannot paint it.
-  window[KEY].render();
-})();
-</script>
-{{/질문}}{{^질문}}{{#맥락}}<!-- anki-code-highlight-v1 -->
-<script>
-(() => {
-  const ASSET = "_anki-syntax-hljs-11.12.0-fd009500d0c826a5.min.js";
-  const CSS = "/* Scoped GitHub-inspired palette; app night mode is authoritative, not OS theme. */\n.anki-code-scope {\n  --anki-code-size: 17px;\n}\n.anki-code-scope pre {\n  box-sizing: border-box;\n  max-width: 100%;\n  min-width: 0;\n  overflow-x: auto;\n  white-space: pre;\n  overflow-wrap: normal;\n  word-break: normal;\n  tab-size: 4;\n  margin: 16px 0;\n  padding: 14px 16px;\n  border: 1px solid #d8dee4;\n  border-radius: 10px;\n  background: #f6f8fa;\n  color: #24292f;\n  text-align: left;\n  font: 400 17px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;\n  font-size: calc(var(--anki-code-size) * var(--anki-code-scale, 1));\n  -webkit-text-size-adjust: 100%;\n}\n.anki-code-controls {\n  box-sizing: border-box;\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  width: fit-content;\n  max-width: 100%;\n  margin: 10px 0 4px auto;\n  padding: 0;\n  gap: 2px;\n  border: 0;\n  background: transparent;\n  color: #57606a;\n  font: 400 11px/1 -apple-system, BlinkMacSystemFont, sans-serif;\n  -webkit-text-size-adjust: 100%;\n}\n.anki-code-controls + pre { margin-top: 0; }\n.anki-code-controls button {\n  appearance: none;\n  -webkit-appearance: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 28px;\n  min-height: 28px;\n  margin: 0;\n  padding: 0;\n  border: 0;\n  border-radius: 5px;\n  background: transparent;\n  box-shadow: none;\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  touch-action: manipulation;\n  -webkit-tap-highlight-color: transparent;\n  user-select: none;\n  -webkit-user-select: none;\n}\n.anki-code-controls button[data-action=\"smaller\"],\n.anki-code-controls button[data-action=\"larger\"] { font-size: 16px; }\n/* Keep the explicit accessible name while presenting a quiet reset icon. */\n.anki-code-controls button[data-action=\"reset\"] { font-size: 0; }\n.anki-code-controls button[data-action=\"reset\"]::before { content: \"\u21ba\"; font-size: 16px; }\n.anki-code-controls button:not(:disabled):hover,\n.anki-code-controls button:not(:disabled):active { background: #e6ebf0; }\n.anki-code-controls button:hover,\n.anki-code-controls button:active { box-shadow: none; }\n/* Desktop Anki suppresses button outlines with !important. Restore focus here. */\n.anki-code-controls button:focus-visible { outline: 2px solid #0969da !important; outline-offset: 1px; }\n.anki-code-controls button:disabled,\n.anki-code-controls button:disabled:hover { background: transparent; color: inherit; opacity: .4; cursor: default; }\n.anki-code-controls output {\n  min-width: 34px;\n  text-align: center;\n  font: inherit;\n  font-variant-numeric: tabular-nums;\n}\n@media (max-width: 600px) {\n  .anki-code-scope { --anki-code-size: 15px; }\n  .anki-code-scope pre { padding: 12px; }\n  .anki-code-controls button { min-width: 32px; min-height: 32px; }\n}\n.anki-code-scope pre > code {\n  display: block;\n  min-width: max-content;\n  padding: 0;\n  border: 0;\n  border-radius: 0;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  white-space: inherit;\n  overflow-wrap: inherit;\n  word-break: inherit;\n}\n.anki-code-scope .hljs-keyword, .anki-code-scope .hljs-selector-tag, .anki-code-scope .hljs-literal { color: #cf222e; }\n.anki-code-scope .hljs-title, .anki-code-scope .hljs-section { color: #8250df; }\n.anki-code-scope .hljs-string, .anki-code-scope .hljs-regexp { color: #0a3069; }\n.anki-code-scope .hljs-number, .anki-code-scope .hljs-attr, .anki-code-scope .hljs-variable, .anki-code-scope .hljs-type, .anki-code-scope .hljs-built_in { color: #0550ae; }\n.anki-code-scope .hljs-comment, .anki-code-scope .hljs-quote { color: #57606a; }\n.anki-code-scope .hljs-name, .anki-code-scope .hljs-selector-class, .anki-code-scope .hljs-selector-id { color: #116329; }\n.anki-code-scope .hljs-meta, .anki-code-scope .hljs-symbol, .anki-code-scope .hljs-bullet { color: #953800; }\n.anki-code-scope .hljs-emphasis { font-style: italic; }\n.anki-code-scope .hljs-strong { font-weight: 600; }\n:is(.nightMode, .night_mode) .anki-code-scope pre,\n.anki-code-scope:is(.nightMode, .night_mode) pre { background: #161b22; color: #e6edf3; border-color: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-controls {\n  color: #8b949e;\n}\n:is(.nightMode, .night_mode) .anki-code-controls button:not(:disabled):hover,\n:is(.nightMode, .night_mode) .anki-code-controls button:not(:disabled):active { background: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-controls button:focus-visible { outline-color: #79c0ff !important; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-keyword,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-tag,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-literal { color: #ff7b72; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-title,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-section { color: #d2a8ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-string,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-regexp { color: #a5d6ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-number,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-attr,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-variable,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-type,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-built_in { color: #79c0ff; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-comment,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-quote { color: #8b949e; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-name,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-class,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-selector-id { color: #7ee787; }\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-meta,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-symbol,\n:is(.nightMode, .night_mode) .anki-code-scope .hljs-bullet { color: #ffa657; }\n\n/* Keep the existing sibling DOM: the size controller anchors its toolbar to\n * pre. Both controls share an external row without covering scrollable code. */\n.anki-code-block {\n  display: grid;\n  grid-template-areas: \"toolbar copy\" \"code code\" \"manual manual\";\n  grid-template-columns: minmax(0, 1fr) 44px;\n  gap: 4px;\n  min-width: 0;\n  margin: 16px 0;\n}\n.anki-code-block > .anki-code-controls {\n  grid-area: toolbar;\n  align-self: center;\n  justify-self: end;\n  margin: 0;\n  padding-right: 6px;\n  border-right: 1px solid #d8dee4;\n}\n.anki-code-scope .anki-code-block > pre {\n  grid-area: code;\n  margin: 0;\n}\n.anki-code-copy {\n  grid-area: copy;\n  align-self: center;\n  justify-self: end;\n  margin: 0;\n  color: #57606a;\n}\n.anki-code-copy button {\n  appearance: none;\n  -webkit-appearance: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 44px;\n  min-height: 44px;\n  margin: 0;\n  padding: 0;\n  border: 0;\n  border-radius: 6px;\n  background: transparent;\n  color: inherit;\n  box-shadow: none;\n  cursor: pointer;\n  touch-action: manipulation;\n  user-select: none;\n  -webkit-user-select: none;\n  -webkit-tap-highlight-color: transparent;\n}\n.anki-code-copy button:hover,\n.anki-code-copy button:active { background: #e6ebf0; box-shadow: none; }\n.anki-code-copy button:focus-visible { outline: 2px solid #0969da !important; outline-offset: 1px; }\n.anki-code-copy__check,\n.anki-code-copy[data-state=\"success\"] .anki-code-copy__icon { display: none; }\n.anki-code-copy[data-state=\"success\"] .anki-code-copy__check { display: block; }\n.anki-code-copy [role=\"status\"] {\n  position: absolute !important;\n  width: 1px !important;\n  height: 1px !important;\n  overflow: hidden !important;\n  clip: rect(0, 0, 0, 0) !important;\n  white-space: nowrap !important;\n}\n.anki-code-copy-manual { grid-area: manual; min-width: 0; text-align: left; }\n.anki-code-copy-manual[hidden] { display: none; }\n.anki-code-copy-manual p { margin: 8px 0; font: 400 13px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; }\n.anki-code-copy-manual textarea {\n  box-sizing: border-box;\n  width: 100%;\n  min-height: 100px;\n  padding: 10px;\n  border: 1px solid #d8dee4;\n  border-radius: 6px;\n  background: #f6f8fa;\n  color: #24292f;\n  font: 400 16px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;\n  white-space: pre;\n  overflow-wrap: normal;\n  user-select: text;\n  -webkit-user-select: text;\n}\n:is(.nightMode, .night_mode) .anki-code-copy { color: #8b949e; }\n:is(.nightMode, .night_mode) .anki-code-block > .anki-code-controls { border-color: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-copy button:hover,\n:is(.nightMode, .night_mode) .anki-code-copy button:active { background: #30363d; }\n:is(.nightMode, .night_mode) .anki-code-copy button:focus-visible { outline-color: #79c0ff !important; }\n:is(.nightMode, .night_mode) .anki-code-copy-manual textarea { background: #161b22; color: #e6edf3; border-color: #30363d; }\n";
-  const CONTROLS = "AnkiCodeControlsV1";
-  if (!window[CONTROLS]) {
-    let cardId = null, answer = false, scale = 100;
-    let root = null, first = null, toolbar = null;
-    const onToggle = event => {
-      if (event.target.tagName === "DETAILS") mount();
-    };
-    const update = () => {
-      root.style.setProperty("--anki-code-scale", String(scale / 100));
-      toolbar.querySelector("output").textContent = `${scale}%`;
-      toolbar.querySelector('[data-action="smaller"]').disabled = scale === 80;
-      toolbar.querySelector('[data-action="larger"]').disabled = scale === 140;
-      toolbar.querySelector('[data-action="reset"]').disabled = scale === 100;
-    };
-    const mount = () => {
-      const nextRoot = document.getElementById("qa") || document.body;
-      const blocks = Array.from(nextRoot.querySelectorAll(".anki-code-scope pre > code"));
-      const nextFirst = blocks.find(code => !code.closest("details:not([open]), [hidden]"))?.parentElement;
-      const id = nextRoot.querySelector("[data-anki-cid]")?.dataset.ankiCid;
-      const nextId = /^[1-9][0-9]*$/.test(id || "") ? id : null;
-      const nextAnswer = !!nextRoot.querySelector("#answer");
-      // Keep only the current card, including a replaced FrontSide DOM. Never
-      // persist preferences or infer identity from note text. A preview without
-      // CardID may retain a setting only while its exact code node survives.
-      if (nextId ? nextId !== cardId || (answer && !nextAnswer)
-        : nextRoot !== root || nextFirst !== first || cardId !== null) scale = 100;
-      cardId = nextId;
-      answer = nextAnswer;
-      if (root !== nextRoot) {
-        root?.removeEventListener("toggle", onToggle, true);
-        root?.style.removeProperty("--anki-code-scale");
-        // Native details toggles do not bubble. Keep the one toolbar reachable
-        // when optional code is expanded, without observing or rewriting code.
-        nextRoot.addEventListener("toggle", onToggle, true);
-      }
-      root = nextRoot;
-      first = nextFirst;
-      // FrontSide may carry previously rendered markup, but not its listeners.
-      for (const duplicate of root.querySelectorAll(".anki-code-controls")) {
-        if (duplicate !== toolbar) duplicate.remove();
-      }
-      if (!first) {
-        toolbar?.remove();
-        toolbar = null;
-        if (blocks.length) root.style.setProperty("--anki-code-scale", String(scale / 100));
-        else root.style.removeProperty("--anki-code-scale");
-        return;
-      }
-      if (!toolbar || !toolbar.isConnected || toolbar.nextElementSibling !== first) {
-        toolbar?.remove();
-        const bar = document.createElement("div");
-        bar.className = "anki-code-controls";
-        bar.setAttribute("role", "group");
-        bar.setAttribute("aria-label", "이 카드의 코드 글자 크기");
-        bar.innerHTML = '<button type="button" data-action="smaller" aria-label="코드 글자 작게">−</button><output aria-live="polite" aria-atomic="true">100%</output><button type="button" data-action="larger" aria-label="코드 글자 크게">+</button><button type="button" data-action="reset" aria-label="코드 글자 크기 기본값">기본</button>';
-        // Stop reviewer tap/key actions, but retain native button activation,
-        // focus and scrolling. No document-wide or code-block gesture handlers.
-        for (const name of ["pointerdown", "pointerup", "mousedown", "mouseup",
-          "touchstart", "touchend", "keydown", "keypress", "keyup"]) {
-          bar.addEventListener(name, event => event.stopPropagation());
-        }
-        bar.addEventListener("click", event => {
-          event.stopPropagation();
-          if (toolbar !== bar || !bar.isConnected) return;
-          const button = event.target.closest("button[data-action]");
-          if (!button || button.disabled) return;
-          const action = button.dataset.action;
-          scale = action === "reset" ? 100 : Math.max(80, Math.min(140,
-            scale + (action === "larger" ? 10 : -10)));
-          update();
-        });
-        first.before(bar);
-        toolbar = bar;
-      }
-      update();
-    };
-    window[CONTROLS] = { mount };
-  }
-  // Placement upgrades independently of V1's private scale/toggle lifecycle.
-  // Existing reviewer globals may have been installed by an older template.
-  const PLACEMENT = "AnkiCodePlacementV1";
-  if (!window[PLACEMENT]) {
-    const controls = window[CONTROLS];
-    const originalMount = controls.mount;
-    let root = null;
-    const currentRoot = () => document.getElementById("qa") || document.body;
-    const visible = code => {
-      if (code.closest("details:not([open]), [hidden]")) return false;
-      for (let node = code; node; node = node.parentElement) {
-        if (window.getComputedStyle(node).display === "none") return false;
-      }
-      return true;
-    };
-    const place = () => {
-      const first = Array.from(root.querySelectorAll(".anki-code-scope pre > code"))
-        .find(visible)?.parentElement;
-      let toolbar = root.querySelector(".anki-code-controls");
-      if (!first) {
-        toolbar?.remove();
-        return;
-      }
-      if (!toolbar) {
-        // Calling the saved original avoids recursion through our wrapper and
-        // restores its live buttons after all blocks were temporarily hidden.
-        originalMount.call(controls);
-        toolbar = root.querySelector(".anki-code-controls");
-      }
-      if (toolbar && toolbar.nextElementSibling !== first) first.before(toolbar);
-    };
-    const observer = new MutationObserver(() => {
-      if (root === currentRoot() && root.isConnected) place();
-    });
-    controls.mount = (...args) => {
-      originalMount.apply(controls, args);
-      const nextRoot = currentRoot();
-      if (root !== nextRoot) {
-        observer.disconnect();
-        root = nextRoot;
-        // Old V1 details handlers can recreate the toolbar at their original
-        // anchor. Reconcile that child change as well as CSS visibility changes.
-        observer.observe(root, {
-          attributes: true, childList: true, subtree: true,
-          attributeFilter: ["class", "style", "hidden", "open"]
-        });
-      }
-      place();
-    };
-    // Neither stable placement nor our own style/DOM writes rewrite code or
-    // remount controls. The following observer delivery is therefore a no-op.
-    window[PLACEMENT] = true;
-  }
-  // Copy has its own lifecycle: a reused WebView may still have the original
-  // size controls installed. Do not replace their toggle listener or scale.
-  const COPY = "AnkiCodeCopyV1";
-  if (!window[COPY]) {
-    let handles = [];
-    const events = ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart",
-      "touchend", "keydown", "keypress", "keyup", "click"];
-    const stop = event => event.stopPropagation();
-    const readText = code => {
-      // Keep text-node whitespace byte-for-byte. innerText alone would include
-      // opacity:0 answers; textContent alone would include hidden answers and
-      // lose BR/block boundaries. Never read cloze attributes or stored HTML.
-      const suppressed = node => {
-        const style = window.getComputedStyle(node);
-        return node.hidden || style.display === "none" || style.opacity === "0" ||
-          style.contentVisibility === "hidden";
-      };
-      for (let node = code; node; node = node.parentElement) {
-        if (suppressed(node)) return "";
-        if (node.tagName === "DETAILS" && !node.open) {
-          const summary = Array.from(node.children).find(child => child.tagName === "SUMMARY");
-          if (!summary?.contains(code)) return "";
-        }
-      }
-      const transparent = color => {
-        const value = (color || "").trim().toLowerCase();
-        if (value === "transparent") return true;
-        // Computed colors may retain Color 4 functions instead of rgba(). Only
-        // explicit numeric zero alpha is conclusive; unknown paint stays copied.
-        const alpha = value.match(/^(?:rgba|hsla)\([^,]+,[^,]+,[^,]+,\s*([^,()]+)\)$/)?.[1] ||
-          value.match(/^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*\/\s*([^/()]+)\)$/)?.[1];
-        return !!alpha && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?%?$/.test(alpha.trim()) &&
-          Number(alpha.trim().replace(/%$/, "")) === 0;
-      };
-      const visibleText = node => {
-        const style = window.getComputedStyle(node);
-        if (["hidden", "collapse"].includes(style.visibility) || parseFloat(style.fontSize) === 0) return false;
-        const property = name => style.getPropertyValue(name).trim();
-        const fill = property("-webkit-text-fill-color");
-        if (!transparent(!fill || fill === "currentcolor" ? style.color : fill)) return true;
-        // Transparent fill can still paint through shadow, stroke or clipped
-        // backgrounds. Decide per text node so descendants can restore styling.
-        const stroke = property("-webkit-text-stroke-width");
-        const noStroke = !stroke || parseFloat(stroke) === 0 || transparent(property("-webkit-text-stroke-color"));
-        const noShadow = !style.textShadow || style.textShadow === "none";
-        if (!noShadow || !noStroke) return true;
-        // background-clip is not inherited, but ancestor backgrounds can paint
-        // descendant glyphs. Keep uncertain paint instead of dropping text.
-        for (let ancestor = node; ancestor; ancestor = ancestor.parentElement) {
-          const paint = window.getComputedStyle(ancestor);
-          if (["background-clip", "-webkit-background-clip"].some(name => paint.getPropertyValue(name).includes("text"))) return true;
-        }
-        return false;
-      };
-      const fragments = [];
-      const blockDisplays = new Set(["block", "flow-root", "flex", "grid", "list-item",
-        "table", "table-row", "table-caption"]);
-      const visit = node => {
-        if (node.nodeType === Node.TEXT_NODE) {
-          if (visibleText(node.parentElement)) fragments.push(node.nodeValue);
-          return;
-        }
-        if (node.nodeType !== Node.ELEMENT_NODE || suppressed(node) ||
-            ["SCRIPT", "STYLE", "TEMPLATE"].includes(node.tagName)) return;
-        const style = window.getComputedStyle(node);
-        if (node.tagName === "BR") {
-          if (!["hidden", "collapse"].includes(style.visibility)) fragments.push("\n");
-          return;
-        }
-        const boundary = node !== code && blockDisplays.has(style.display) ? (node.tagName === "P" ? 2 : 1) : 0;
-        if (boundary) fragments.push(boundary);
-        if (node.tagName === "DETAILS" && !node.open) {
-          const summary = Array.from(node.children).find(child => child.tagName === "SUMMARY");
-          if (summary) visit(summary);
-        } else for (const child of node.childNodes) visit(child);
-        if (boundary) fragments.push(boundary);
-      };
-      visit(code);
-      let text = "", boundary = 0;
-      for (const fragment of fragments) {
-        if (typeof fragment === "number") { boundary = Math.max(boundary, fragment); continue; }
-        if (!fragment) continue;
-        if (text && boundary) {
-          const existing = text.match(/\n*$/)?.[0].length || 0;
-          text += "\n".repeat(Math.max(0, boundary - existing));
-        }
-        text += fragment;
-        boundary = 0;
-      }
-      return text;
-    };
-    const attach = (root, code) => {
-      const pre = code.parentElement;
-      let shell = pre.parentElement;
-      if (!shell.classList.contains("anki-code-block")) {
-        shell = document.createElement("div");
-        shell.className = "anki-code-block";
-        pre.before(shell);
-        shell.append(pre);
-      }
-      const control = document.createElement("div");
-      control.className = "anki-code-copy";
-      control.innerHTML = '<button type="button" aria-label="코드 복사"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"><g class="anki-code-copy__icon"><rect x="7" y="7" width="9" height="10" rx="2"/><path d="M12 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></g><path class="anki-code-copy__check" d="m4 10 4 4 8-8"/></svg></button><span role="status" aria-live="polite" aria-atomic="true"></span>';
-      const panel = document.createElement("div");
-      panel.className = "anki-code-copy-manual";
-      panel.hidden = true;
-      panel.innerHTML = '<p>자동 복사가 지원되지 않습니다. 아래 코드를 선택하거나 길게 눌러 복사해 주세요.</p><textarea readonly rows="5" aria-label="복사할 코드" spellcheck="false" autocapitalize="off" autocorrect="off"></textarea>';
-      shell.append(control, panel);
-      const button = control.querySelector("button");
-      const status = control.querySelector('[role="status"]');
-      const input = panel.querySelector("textarea");
-      const cardId = root.querySelector("[data-anki-cid]")?.dataset.ankiCid;
-      const answer = !!root.querySelector("#answer");
-      let alive = true, pending = false, generation = 0, copyTimer = null, resetTimer = null;
-      const current = token => alive && generation === token && code.isConnected &&
-        control.isConnected && root.contains(code) && pre.contains(code) &&
-        (document.getElementById("qa") || document.body) === root &&
-        root.querySelector("[data-anki-cid]")?.dataset.ankiCid === cardId &&
-        !!root.querySelector("#answer") === answer;
-      const reset = () => {
-        control.dataset.state = "ready";
-        button.setAttribute("aria-label", "코드 복사");
-        status.textContent = "";
-      };
-      const settled = () => {
-        if (copyTimer !== null) clearTimeout(copyTimer);
-        copyTimer = null;
-        pending = false;
-        button.removeAttribute("aria-busy");
-      };
-      const manual = token => {
-        if (!current(token)) return;
-        settled();
-        control.dataset.state = "manual";
-        panel.hidden = false;
-        status.textContent = "자동 복사를 할 수 없습니다. 아래 코드를 직접 복사해 주세요.";
-        input.focus({ preventScroll: true });
-        input.select();
-        input.setSelectionRange(0, input.value.length);
-      };
-      const success = token => {
-        if (!current(token)) return;
-        settled();
-        control.dataset.state = "success";
-        panel.hidden = true;
-        button.setAttribute("aria-label", "코드 복사됨");
-        status.textContent = "코드를 복사했습니다.";
-        resetTimer = setTimeout(() => { if (current(token)) reset(); }, 1800);
-      };
-      const legacyCopy = payload => {
-        const temporary = document.createElement("textarea");
-        const previousFocus = document.activeElement;
-        temporary.value = payload;
-        // Textarea normalizes CRLF/CR. Use writeText instead if that would alter
-        // a programmatically supplied text node; never report a changed copy.
-        if (temporary.value !== payload) return false;
-        temporary.readOnly = true;
-        temporary.setAttribute("aria-hidden", "true");
-        temporary.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;font-size:16px;pointer-events:none;";
-        control.append(temporary);
-        try {
-          temporary.focus({ preventScroll: true });
-          temporary.select();
-          temporary.setSelectionRange(0, payload.length);
-          return typeof document.execCommand === "function" && document.execCommand("copy") === true;
-        } catch (_) {
-          return false;
-        } finally {
-          temporary.remove();
-          if (previousFocus?.isConnected && typeof previousFocus.focus === "function") previousFocus.focus({ preventScroll: true });
-        }
-      };
-      const copy = event => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (pending || !current(generation)) return;
-        if (resetTimer !== null) clearTimeout(resetTimer);
-        reset();
-        panel.hidden = true;
-        const payload = readText(code);
-        input.value = payload;
-        pending = true;
-        const token = ++generation;
-        control.dataset.state = "copying";
-        button.setAttribute("aria-busy", "true");
-        try {
-          // Keep both attempts in the user gesture. Qt may never settle the
-          // asynchronous API; a timeout exposes selectable code, not success.
-          if (legacyCopy(payload)) { success(token); return; }
-          if (window.isSecureContext && typeof window.navigator.clipboard?.writeText === "function") {
-            const result = window.navigator.clipboard.writeText(payload);
-            if (!result || typeof result.then !== "function") { manual(token); return; }
-            copyTimer = setTimeout(() => {
-              if (!current(token)) return;
-              manual(token);
-              generation++;
-            }, 1800);
-            result.then(() => success(token), () => manual(token));
-          } else manual(token);
-        } catch (_) { manual(token); }
-      };
-      for (const node of [control, panel]) {
-        for (const name of events) node.addEventListener(name, stop);
-      }
-      button.addEventListener("click", copy);
-      reset();
-      return () => {
-        alive = false;
-        generation++;
-        if (copyTimer !== null) clearTimeout(copyTimer);
-        if (resetTimer !== null) clearTimeout(resetTimer);
-        button.removeEventListener("click", copy);
-        for (const node of [control, panel]) {
-          for (const name of events) node.removeEventListener(name, stop);
-          node.remove();
-        }
-      };
-    };
-    const mount = () => {
-      for (const destroy of handles) destroy();
-      handles = [];
-      const root = document.getElementById("qa") || document.body;
-      // FrontSide can clone rendered controls without cloning listeners.
-      for (const duplicate of root.querySelectorAll(".anki-code-copy, .anki-code-copy-manual")) duplicate.remove();
-      for (const code of root.querySelectorAll(".anki-code-scope pre > code")) handles.push(attach(root, code));
-    };
-    window[COPY] = { mount };
-  }
-  const KEY = "AnkiCodeHighlightV1";
-  if (!window[KEY]) {
-    const records = new WeakMap();
-    const aliases = Object.freeze({
-      js: "javascript", javascript: "javascript", jsx: "javascript",
-      ts: "typescript", typescript: "typescript", tsx: "typescript",
-      html: "xml", xml: "xml", css: "css", json: "json",
-      bash: "bash", sh: "bash", shell: "bash", sql: "sql", c: "c",
-      python: "python", py: "python", java: "java", yaml: "yaml", yml: "yaml", http: "http"
-    });
-    let pending = null;
-    let generation = 0;
-    const library = () => {
-      const value = window.AnkiSyntaxHighlightLibraryV1;
-      return value && value.version === "11.12.0" ? value : null;
-    };
-    const load = () => {
-      if (library()) return Promise.resolve(library());
-      if (pending) return pending;
-      pending = new Promise(resolve => {
-        const script = document.createElement("script");
-        script.src = ASSET;
-        script.async = true;
-        script.dataset.ankiSyntaxAsset = ASSET;
-        let timer;
-        const finish = value => {
-          clearTimeout(timer);
-          script.onload = script.onerror = null;
-          script.remove();
-          resolve(value);
-        };
-        script.onload = () => finish(library());
-        script.onerror = () => finish(null);
-        timer = setTimeout(() => finish(null), 3000);
-        document.head.appendChild(script);
-      }).then(value => { pending = null; return value; });
-      return pending;
-    };
-    const render = async () => {
-      const current = ++generation;
-      const started = performance.now();
-      const nodes = Array.from(document.querySelectorAll(".anki-code-scope pre > code"));
-      const metrics = { blocks: nodes.length, highlighted: 0, skipped: 0, loadMs: 0, highlightMs: 0 };
-      if (!nodes.length) return metrics;
-      const engine = await load();
-      if (current !== generation) return { stale: true };
-      metrics.loadMs = performance.now() - started;
-      const painting = performance.now();
-      let characters = 0;
-      for (const code of nodes) {
-        if (!code.isConnected) continue;
-        const text = code.textContent;
-        const classes = Array.from(code.classList).filter(name => name.startsWith("language-"));
-        const name = classes.length === 1 ? classes[0].slice(9).toLowerCase() : "";
-        const language = Object.hasOwn(aliases, name) ? aliases[name] : null;
-        const previous = records.get(code);
-        if (previous && previous.html === code.innerHTML && previous.language === language) continue;
-        // Only replace markup that this exact DOM instance produced. Never flatten
-        // cloze spans, edited HTML, anchors, or other renderers' output.
-        if (code.children.length && (!previous || previous.html !== code.innerHTML)) {
-          metrics.skipped++;
-          continue;
-        }
-        if (previous) { code.textContent = text; code.classList.remove("hljs"); }
-        characters += text.length;
-        if (!engine || !language || text.length > 4096 || characters > 16384 ||
-            metrics.highlighted >= 32 || performance.now() - painting > 16) {
-          metrics.skipped++;
-          continue;
-        }
-        try {
-          const result = engine.highlight(text, { language, ignoreIllegals: true });
-          code.innerHTML = result.value;
-          code.classList.add("hljs");
-          records.set(code, { html: code.innerHTML, language });
-          metrics.highlighted++;
-        } catch (_) {
-          // Loading or parsing must never prevent a question/answer from showing.
-          code.textContent = text;
-          code.classList.remove("hljs");
-          metrics.skipped++;
-        }
-      }
-      metrics.highlightMs = performance.now() - painting;
-      window[KEY].lastMetrics = metrics;
-      return metrics;
-    };
-    window[KEY] = { render, lastMetrics: null };
-  }
-  let style = document.getElementById("anki-code-style-v1");
-  if (!style) {
-    style = document.createElement("style");
-    style.id = "anki-code-style-v1";
-    document.head.appendChild(style);
-  }
-  // A synced template can change while the reviewer WebView remains alive.
-  if (style.textContent !== CSS) style.textContent = CSS;
-  window[COPY].mount();
-  window[CONTROLS].mount();
-  // Anki reuses its WebView, including globals, across question/answer/card changes.
-  // Each script invocation gets a new generation; a pending old card cannot paint it.
-  window[KEY].render();
-})();
-</script>
-{{/맥락}}{{/질문}}
 {{#질문}}<!-- anki-scratchpad-v1 -->
 <style>
 .anki-scratchpad { --sp-bg:#fff; --sp-text:#202124; --sp-border:#c7d1dd; --sp-button-border:#ccd6e1; --sp-button-bg:#f1f4f8; --sp-button-hover:#e8edf3; --sp-button-active:#dfe7f0; --sp-icon:#465c76; --sp-muted:#667085; --sp-focus:#708ca5; position:fixed; z-index:30; box-sizing:border-box; color:var(--sp-text); font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; text-align:left; }

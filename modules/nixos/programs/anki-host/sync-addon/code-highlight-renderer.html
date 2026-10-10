@@ -3,6 +3,39 @@
 (() => {
   const ASSET = __ANKI_SYNTAX_ASSET__;
   const CSS = __ANKI_SYNTAX_CSS__;
+  // Conservative initial bound from the pinned synthetic token-DOM benchmark;
+  // physical Mac/iPhone measurements may tighten it. Old HTML keeps its bound.
+  const FENCE_MAX_CHARS = 1024;
+  __ANKI_FENCED_CODE__
+  const fenceFields = Array.from(document.querySelectorAll(
+    "[data-anki-fence-field], .anki-fence-scope"));
+  const reveal = fields => {
+    for (const field of fields) {
+      if (!field.isConnected) continue;
+      for (const button of field.querySelectorAll("button[data-anki-fence-copy-pending]")) {
+        button.disabled = false;
+        button.removeAttribute("data-anki-fence-copy-pending");
+      }
+      field.removeAttribute("data-anki-fence-pending");
+    }
+  };
+  for (const field of fenceFields) {
+    try {
+      const result = window.AnkiFencedCodeV1.convert(field);
+      if (result.failed || !result.codes.length) reveal([field]);
+    } catch (_) {
+      // An unexpected converter failure is distinct from a missing highlighter.
+      // Keep the original field readable, without a later conversion attempt.
+      field.dataset.ankiFenceState = "failed";
+      if (!field.querySelector(".anki-fence-error")) {
+        const notice = document.createElement("small");
+        notice.className = "anki-fence-error";
+        notice.textContent = "코드 블록을 변환하지 못해 원문을 표시합니다.";
+        field.appendChild(notice);
+      }
+      reveal([field]);
+    }
+  }
   const CONTROLS = "AnkiCodeControlsV1";
   if (!window[CONTROLS]) {
     let cardId = null, answer = false, scale = 100;
@@ -363,7 +396,7 @@
     window[COPY] = { mount };
   }
   const KEY = "AnkiCodeHighlightV1";
-  if (!window[KEY]) {
+  if (window[KEY]?.version !== 2) {
     const records = new WeakMap();
     const aliases = Object.freeze({
       js: "javascript", javascript: "javascript", jsx: "javascript",
@@ -406,50 +439,105 @@
       const nodes = Array.from(document.querySelectorAll(".anki-code-scope pre > code"));
       const metrics = { blocks: nodes.length, highlighted: 0, skipped: 0, loadMs: 0, highlightMs: 0 };
       if (!nodes.length) return metrics;
-      const engine = await load();
+      const fenced = nodes.filter(code => code.hasAttribute("data-anki-fenced"));
+      const existing = nodes.filter(code => !code.hasAttribute("data-anki-fenced"));
+      const languageOf = code => {
+        const classes = Array.from(code.classList).filter(name => name.startsWith("language-"));
+        const name = classes.length === 1 ? classes[0].slice(9).toLowerCase() : "";
+        return Object.hasOwn(aliases, name) ? aliases[name] : null;
+      };
+      // Keep unsupported and performance-skipped new blocks out of the old
+      // HTML budget. Otherwise even a plaintext fence could starve old code.
+      let newCharacters = 0, newBlocks = 0;
+      for (const code of fenced) {
+        if (code.dataset.ankiFenceHighlight) continue;
+        const size = code.textContent.length;
+        if (!languageOf(code)) code.dataset.ankiFenceHighlight = "plain";
+        else if (size > FENCE_MAX_CHARS || newCharacters + size > 16384 || newBlocks >= 32) {
+          code.dataset.ankiFenceHighlight = "skipped";
+        } else { newCharacters += size; newBlocks++; }
+      }
+      const eligible = fenced.filter(code => !["plain", "skipped", "highlighted"].includes(
+        code.dataset.ankiFenceHighlight));
+      // Plain/heavy fields have their complete display already. An unrelated
+      // old HTML block's cold loader must not keep those fields invisible.
+      const fields = new Set(fenced.map(code => code.closest(
+        "[data-anki-fence-field], .anki-fence-scope")).filter(Boolean));
+      reveal(Array.from(fields).filter(field => !eligible.some(code => field.contains(code))));
+      const loading = existing.length || eligible.length ? load() : Promise.resolve(null);
+      let timer, timedOut = false;
+      const engine = eligible.length ? await Promise.race([loading, new Promise(resolve => {
+        timer = setTimeout(() => { timedOut = true; resolve(null); }, 50);
+      })]) : await loading;
+      clearTimeout(timer);
       if (current !== generation) return { stale: true };
       metrics.loadMs = performance.now() - started;
       const painting = performance.now();
-      let characters = 0;
-      for (const code of nodes) {
-        if (!code.isConnected) continue;
-        const text = code.textContent;
-        const classes = Array.from(code.classList).filter(name => name.startsWith("language-"));
-        const name = classes.length === 1 ? classes[0].slice(9).toLowerCase() : "";
-        const language = Object.hasOwn(aliases, name) ? aliases[name] : null;
-        const previous = records.get(code);
-        if (previous && previous.html === code.innerHTML && previous.language === language) continue;
-        // Only replace markup that this exact DOM instance produced. Never flatten
-        // cloze spans, edited HTML, anchors, or other renderers' output.
-        if (code.children.length && (!previous || previous.html !== code.innerHTML)) {
-          metrics.skipped++;
-          continue;
+      const paint = (engine, candidates) => {
+        const painting = performance.now();
+        let characters = 0, highlighted = 0;
+        for (const code of candidates) {
+          if (!code.isConnected) continue;
+          const isFence = code.hasAttribute("data-anki-fenced");
+          if (isFence && ["plain", "skipped", "highlighted"].includes(code.dataset.ankiFenceHighlight)) continue;
+          const text = code.textContent;
+          const language = languageOf(code);
+          const previous = records.get(code);
+          if (previous && previous.html === code.innerHTML && previous.language === language) continue;
+          // Only replace markup that this exact DOM instance produced. Never flatten
+          // cloze spans, edited HTML, anchors, or other renderers' output.
+          if (code.children.length && (!previous || previous.html !== code.innerHTML)) {
+            metrics.skipped++;
+            continue;
+          }
+          if (previous) { code.textContent = text; code.classList.remove("hljs"); }
+          characters += text.length;
+          if (!engine || !language || text.length > 4096 || characters > 16384 ||
+              highlighted >= 32 || performance.now() - painting > 16) {
+            metrics.skipped++;
+            if (isFence) code.dataset.ankiFenceHighlight = engine && language ? "skipped" : "plain";
+            continue;
+          }
+          try {
+            const result = engine.highlight(text, { language, ignoreIllegals: true });
+            code.innerHTML = result.value;
+            code.classList.add("hljs");
+            records.set(code, { html: code.innerHTML, language });
+            metrics.highlighted++;
+            highlighted++;
+            if (isFence) code.dataset.ankiFenceHighlight = "highlighted";
+          } catch (_) {
+            // Loading or parsing must never prevent a question/answer from showing.
+            code.textContent = text;
+            code.classList.remove("hljs");
+            metrics.skipped++;
+            if (isFence) code.dataset.ankiFenceHighlight = "plain";
+          }
         }
-        if (previous) { code.textContent = text; code.classList.remove("hljs"); }
-        characters += text.length;
-        if (!engine || !language || text.length > 4096 || characters > 16384 ||
-            metrics.highlighted >= 32 || performance.now() - painting > 16) {
-          metrics.skipped++;
-          continue;
-        }
-        try {
-          const result = engine.highlight(text, { language, ignoreIllegals: true });
-          code.innerHTML = result.value;
-          code.classList.add("hljs");
-          records.set(code, { html: code.innerHTML, language });
-          metrics.highlighted++;
-        } catch (_) {
-          // Loading or parsing must never prevent a question/answer from showing.
-          code.textContent = text;
-          code.classList.remove("hljs");
-          metrics.skipped++;
-        }
+      };
+      if (timedOut) {
+        for (const code of eligible) code.dataset.ankiFenceHighlight = "waiting";
+        // Resolving the first-display deadline must not detach the loader's
+        // onload handler. Only its current DOM can receive the late colors.
+        loading.then(value => {
+          if (current !== generation || !value) {
+            if (current === generation) for (const code of eligible) {
+              if (code.isConnected && code.dataset.ankiFenceHighlight === "waiting") code.dataset.ankiFenceHighlight = "plain";
+            }
+            return;
+          }
+          paint(value, existing);
+          paint(value, eligible.filter(code => code.dataset.ankiFenceHighlight === "waiting"));
+        });
+      } else {
+        paint(engine, existing);
+        paint(engine, fenced);
       }
       metrics.highlightMs = performance.now() - painting;
       window[KEY].lastMetrics = metrics;
       return metrics;
     };
-    window[KEY] = { render, lastMetrics: null };
+    window[KEY] = { render, lastMetrics: null, version: 2 };
   }
   let style = document.getElementById("anki-code-style-v1");
   if (!style) {
@@ -459,10 +547,30 @@
   }
   // A synced template can change while the reviewer WebView remains alive.
   if (style.textContent !== CSS) style.textContent = CSS;
-  window[COPY].mount();
-  window[CONTROLS].mount();
-  // Anki reuses its WebView, including globals, across question/answer/card changes.
-  // Each script invocation gets a new generation; a pending old card cannot paint it.
-  window[KEY].render();
+  let renderAttached = false;
+  try {
+    window[COPY].mount();
+    window[CONTROLS].mount();
+    // Opacity preserves layout but does not remove controls from keyboard focus.
+    // Disable only our copy buttons until their field's first display is ready,
+    // including when an older shared copy module survives in the reused WebView.
+    for (const field of fenceFields) {
+      if (!field.hasAttribute("data-anki-fence-pending")) continue;
+      for (const button of field.querySelectorAll(".anki-code-copy button")) {
+        button.disabled = true;
+        button.setAttribute("data-anki-fence-copy-pending", "");
+      }
+    }
+    // Anki reuses its WebView, including globals, across question/answer/card changes.
+    // Each script invocation gets a new generation; a pending old card cannot paint it.
+    window[KEY].render().then(metrics => {
+      if (!metrics.stale) reveal(fenceFields);
+    }, () => reveal(fenceFields));
+    renderAttached = true;
+  } finally {
+    // Setup failures must not leave the question/answer hidden. Once completion
+    // handlers are attached, keep the asynchronous readiness/stale policy above.
+    if (!renderAttached) reveal(fenceFields);
+  }
 })();
 </script>

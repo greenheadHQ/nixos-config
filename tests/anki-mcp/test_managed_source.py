@@ -1,5 +1,6 @@
 """Reviewed full templates must agree with feature sources and public version."""
 import json
+from html.parser import HTMLParser
 from pathlib import Path
 import shutil
 import subprocess
@@ -76,7 +77,8 @@ def test_build_round_trip_preserves_definition_and_actual_asset_bytes(source, tm
 def test_source_inventory_is_sorted_exact_and_excludes_unmanaged_assets():
     paths = source_paths(HOST)
     assert paths == tuple(sorted(set(paths)))
-    assert len(paths) == 15
+    assert len(paths) == 16
+    assert "sync-addon/fenced-code.js" in paths
     assert VERSION_PATH in paths
     assert all((HOST / path).is_file() for path in paths)
     assert not any(".license.txt" in path or "node_modules" in path for path in paths)
@@ -118,6 +120,7 @@ def test_version_requires_exact_schema_and_digest_without_git_provenance(source,
     ("sync-addon/card-id-button.html", "card-id-fragment-mismatch"),
     ("sync-addon/note-link-renderer.html", "note-link-fragment-mismatch"),
     ("sync-addon/code-highlight-renderer.html", "highlight-fragment-mismatch"),
+    ("sync-addon/fenced-code.js", "highlight-fragment-mismatch"),
     ("sync-addon/code-highlight.css", "highlight-fragment-mismatch"),
     ("sync-addon/text-size-controls.html", "text-size-fragment-mismatch"),
     ("sync-addon/scratchpad.html", "scratchpad-fragment-mismatch"),
@@ -282,3 +285,117 @@ def test_scratchpad_answer_marker_must_precede_frontside(source, placement):
     path.write_bytes(content)
     with pytest.raises(ManagedBundleError, match="scratchpad-answer-marker-mismatch"):
         generated_version(source)
+
+
+def test_shipped_fenced_fields_have_an_initial_gate_and_exclude_context_and_review_fields():
+    class Fields(HTMLParser):
+        def __init__(self, template):
+            super().__init__()
+            self.scopes = {}
+            self.feed(template)
+
+        def handle_starttag(self, tag, attrs):
+            values = dict(attrs)
+            field = values.get("data-anki-fence-field")
+            if field is not None:
+                assert field not in self.scopes
+                self.scopes[field] = values
+
+    definition = load_checked_source(HOST)[0]["definition"]
+    template = definition["tmpls"][0]
+    front = Fields(template["qfmt"]).scopes
+    back = Fields(template["afmt"]).scopes
+    assert set(front) == {"질문"}
+    assert set(back) == {"답", "설명", "출처"}
+    for values in [*front.values(), *back.values()]:
+        assert values.get("data-anki-fence-pending") == ""
+        assert "anki-code-scope" in values.get("class", "").split()
+    assert definition["req"] == [[0, "any", [0, 2]]]
+    assert "[data-anki-fence-pending]" in definition["css"]
+
+
+@pytest.mark.parametrize("name,old,new", [
+    ("front.html", 'data-anki-fence-field="질문"', 'data-anki-fence-field="맥락"'),
+    ("back.html", 'data-anki-fence-field="답"', 'data-anki-fence-field="검토 메모"'),
+])
+def test_managed_source_rejects_losing_a_required_fenced_field(source, name, old, new):
+    path = source / SOURCE_DIR / name
+    path.write_bytes(path.read_bytes().replace(old.encode(), new.encode(), 1))
+    with pytest.raises(ManagedBundleError, match="fenced-field-scope-mismatch"):
+        generated_version(source)
+
+
+@pytest.mark.parametrize("old,new", [
+    ('data-anki-fence-field="답" data-anki-fence-pending=""', 'data-anki-fence-field="답"'),
+    ('data-anki-fence-field="답" data-anki-fence-pending=""', 'data-anki-fence-field="답" data-anki-fence-pending="ready"'),
+    ('class="answer anki-code-scope"', 'class="answer"'),
+])
+def test_managed_source_rejects_an_answer_container_that_can_expose_unconverted_text(source, old, new):
+    path = source / SOURCE_DIR / "back.html"
+    content = path.read_bytes()
+    assert old.encode() in content
+    path.write_bytes(content.replace(old.encode(), new.encode(), 1))
+    with pytest.raises(ManagedBundleError, match="fenced-field-scope-mismatch"):
+        generated_version(source)
+
+
+def test_managed_source_rejects_mobile_links_running_before_the_fenced_converter(source):
+    path = source / SOURCE_DIR / "back.html"
+    mobile = (source / "sync-addon/note-link-renderer.html").read_bytes()
+    content = path.read_bytes()
+    assert content.count(mobile) == 1
+    content = content.replace(mobile, b"", 1)
+    marker = b"{{#" + "질문".encode() + b"}}<!-- anki-code-highlight-v1 -->"
+    assert marker in content
+    path.write_bytes(content.replace(marker, mobile + marker, 1))
+    with pytest.raises(ManagedBundleError, match="fenced-link-order-mismatch"):
+        generated_version(source)
+
+
+def test_managed_source_rejects_removing_the_initial_fenced_gate(source):
+    path = source / SOURCE_DIR / "style.css"
+    content = path.read_bytes()
+    assert b"[data-anki-fence-pending]" in content
+    path.write_bytes(content.replace(b"[data-anki-fence-pending]", b"[data-anki-fence-unused]"))
+    with pytest.raises(ManagedBundleError, match="fenced-initial-gate-missing"):
+        generated_version(source)
+
+
+@pytest.mark.parametrize("old,new", [("opacity: 0", "opacity: 1"),
+                                     ("pointer-events: none", "pointer-events: auto")])
+def test_managed_source_rejects_a_visible_or_interactive_pending_gate(source, old, new):
+    path = source / SOURCE_DIR / "style.css"
+    gate = "[data-anki-fence-pending] { opacity: 0; pointer-events: none; }"
+    content = path.read_bytes()
+    assert gate.encode() in content
+    path.write_bytes(content.replace(gate.encode(), gate.replace(old, new).encode(), 1))
+    with pytest.raises(ManagedBundleError, match="fenced-initial-gate-missing"):
+        generated_version(source)
+
+
+def test_coordinated_parser_and_templates_still_require_an_explicit_public_version_refresh(source):
+    from anki_host_fixture.code_highlighting import render_fragment
+
+    original, assets = load_checked_source(source)
+    feature = source / "sync-addon/fenced-code.js"
+    old = feature.read_bytes().decode("utf-8")
+    new = old + "\n/* reviewed parser change */\n"
+    renderer = (source / "sync-addon/code-highlight-renderer.html").read_bytes().decode("utf-8")
+    css = (source / "sync-addon/code-highlight.css").read_bytes().decode("utf-8")
+    asset = next(iter(assets))
+    previous = render_fragment(renderer, css, asset, fenced_source=old).encode("utf-8")
+    replacement = render_fragment(renderer, css, asset, fenced_source=new).encode("utf-8")
+    feature.write_bytes(new.encode("utf-8"))
+    with pytest.raises(ManagedBundleError, match="highlight-fragment-mismatch"):
+        generated_version(source)
+    for name in ("front.html", "back.html"):
+        path = source / SOURCE_DIR / name
+        content = path.read_bytes()
+        assert content.count(previous) == 2
+        path.write_bytes(content.replace(previous, replacement))
+    with pytest.raises(ManagedBundleError, match="stale-version"):
+        load_checked_source(source)
+    refresh(source)
+    changed, updated_assets = load_checked_source(source)
+    assert changed["digest"] != original["digest"]
+    assert updated_assets == assets

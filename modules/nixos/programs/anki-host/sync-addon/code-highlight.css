@@ -1,4 +1,9 @@
 /* Scoped GitHub-inspired palette; app night mode is authoritative, not OS theme. */
+:is([data-anki-fence-field], .anki-fence-scope)[data-anki-fence-pending] { opacity: 0; pointer-events: none; }
+.anki-fence-error { display: block; margin-top: 8px; font: 400 13px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; color: #57606a; }
+/* A late color pass must not change glyph metrics or code geometry. */
+.anki-code-scope pre > code[data-anki-fenced] .hljs-emphasis { font-style: inherit; }
+.anki-code-scope pre > code[data-anki-fenced] .hljs-strong { font-weight: inherit; }
 .anki-code-scope {
   --anki-code-size: 17px;
 }
