@@ -85,7 +85,7 @@ def test_template_and_field_migration_preserve_scheduling_history_tags_and_other
     assert _model(r)["req"] == original_model["req"]
     assert 'class="question anki-code-scope"' in r.col.get_card(cid).question()
     assert ASSET in r.col.get_card(cid).answer()
-    assert "window.AnkiNoteLinkerMobileVersion = 3;" in _model(r)["tmpls"][0]["afmt"]
+    assert "window.AnkiNoteLinkerMobileVersion = 4;" in _model(r)["tmpls"][0]["afmt"]
 
     patch = planner.build_field_patch(nid, original_fields, {"질문": ["javascript"]})
     r.apply("update_fields", patch["change"])

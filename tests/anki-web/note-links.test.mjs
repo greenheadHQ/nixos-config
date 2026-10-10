@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { harness, noteLinkRenderer } from "./harness.mjs";
+import { fencedCode, harness, noteLinkRenderer } from "./harness.mjs";
 
 const id = "1111111111111";
 const otherId = "2222222222222";
@@ -10,6 +10,7 @@ const marker = (title = "title", nid = id) => `[${title}|nid${nid}]`;
 const fixturePath = process.env.ANKI_NOTE_LINK_FIXTURES
   || fileURLToPath(new URL("../fixtures/anki-note-link/", import.meta.url));
 const v2 = (await readFile(`${fixturePath}/renderer-v2.html`, "utf8")).match(/<script>([\s\S]*)<\/script>/)[1];
+const v3 = (await readFile(`${fixturePath}/renderer-v3.html`, "utf8")).match(/<script>([\s\S]*)<\/script>/)[1];
 
 async function rendered(t, html, { ready = "complete", ...options } = {}) {
   const page = harness(html, { preload: false, mobile: true, ...options });
@@ -109,6 +110,45 @@ test("native TeX markers remain literal before MathJax runs", async t => {
     `\\(${marker("math")}\\) and \\[${marker("display math")}\\]`));
 });
 
+test("failed fence fields preserve all original DOM while independent fields still render links", async t => {
+  for (const field of ["질문", "답", "설명", "출처"]) {
+    const failed = `<div class="linkRender" data-anki-fence-field="${field}">`
+      + `${marker("outside fence")}<br>\`\`\`bash<br>${marker("inside fence")}<img src="fixture.png"><br>\`\`\`<br>`
+      + `<a id="existing" href="https://example.invalid/">${marker("existing anchor")}</a>`
+      + '</div>';
+    const page = harness(failed
+      + `<div class="linkRender" data-anki-fence-field="답" data-anki-fence-state="plain">${marker("normal")}</div>`,
+    { preload: false, mobile: true });
+    t.after(page.close);
+    const original = page.document.querySelector(`[data-anki-fence-field="${field}"]`);
+    const anchor = original.querySelector("#existing");
+    let called = false;
+    anchor.addEventListener("custom", () => { called = true; });
+    Object.defineProperty(page.document, "readyState", { value: "complete" });
+    page.window.eval(fencedCode);
+    assert.equal(page.window.AnkiFencedCodeV1.convert(original).failed, true);
+    assert.equal(original.dataset.ankiFenceState, "failed");
+    assert.ok(original.querySelector(".anki-fence-error"));
+    const before = original.innerHTML;
+    page.window.eval(noteLinkRenderer);
+    page.window.AnkiNoteLinkerRenderMobile();
+    assert.equal(original.innerHTML, before);
+    assert.equal(original.querySelector("#existing"), anchor);
+    anchor.dispatchEvent(new page.window.Event("custom"));
+    assert.equal(called, true);
+    assert.equal(page.document.querySelectorAll("a.noteLink").length, 1);
+    assert.equal(page.document.querySelector("a.noteLink").textContent, "normal");
+  }
+});
+
+test("a nested failed fence field cannot be reached through an outer rendering scope", async t => {
+  const failed = `<span class="linkRender" data-anki-fence-state="failed">${marker("literal")}</span>`;
+  const { document } = await rendered(t,
+    `<div class="linkRender">${marker("before")}${failed}${marker("after")}</div>`);
+  assert.equal(document.querySelector('[data-anki-fence-state="failed"]').textContent, marker("literal"));
+  assert.deepEqual(Array.from(document.querySelectorAll("a.noteLink"), link => link.textContent), ["before", "after"]);
+});
+
 test("block, break, comment, and excluded-element boundaries cannot join a marker", async t => {
   for (const html of [
     `[one<div>two</div>|nid${id}]`,
@@ -163,7 +203,7 @@ test("version two upgrades a reused WebView and newly swapped front/back content
   assert.equal(page.window.AnkiNoteLinkerMobileVersion, 2);
   assert.equal(page.document.querySelectorAll("a").length, 0);
   page.window.eval(noteLinkRenderer);
-  assert.equal(page.window.AnkiNoteLinkerMobileVersion, 3);
+  assert.equal(page.window.AnkiNoteLinkerMobileVersion, 4);
   assert.equal(page.document.querySelector("a").textContent, "first bold");
   page.document.body.innerHTML = `<div class="linkRender">${marker("second <sup>x</sup>")}</div>`;
   page.window.eval(noteLinkRenderer);
@@ -177,7 +217,7 @@ test("a pending version-two DOMContentLoaded callback invokes only the latest re
   page.window.eval(v2);
   page.window.eval(noteLinkRenderer);
   page.window.eval(noteLinkRenderer);
-  assert.equal(page.window.AnkiNoteLinkerMobileVersion, 3);
+  assert.equal(page.window.AnkiNoteLinkerMobileVersion, 4);
   assert.equal(page.window.AnkiNoteLinkerMobileRenderPending, true);
   let calls = 0;
   const original = page.window.AnkiNoteLinkerRenderMobile;
@@ -185,5 +225,46 @@ test("a pending version-two DOMContentLoaded callback invokes only the latest re
   page.document.dispatchEvent(new page.window.Event("DOMContentLoaded"));
   assert.equal(calls, 1);
   assert.equal(page.window.AnkiNoteLinkerMobileRenderPending, false);
+  assert.equal(page.document.querySelectorAll("a.noteLink").length, 1);
+});
+
+test("version three upgrades a reused WebView before newly swapped failed fields render", async t => {
+  const page = harness(`<div class="linkRender">${marker("first")}</div>`, { preload: false, mobile: true });
+  t.after(page.close);
+  Object.defineProperty(page.document, "readyState", { value: "complete" });
+  page.window.eval(v3);
+  assert.equal(page.window.AnkiNoteLinkerMobileVersion, 3);
+  assert.equal(page.document.querySelector("a").textContent, "first");
+  const oldRender = page.window.AnkiNoteLinkerRenderMobile;
+  page.document.body.innerHTML = `<div class="linkRender" data-anki-fence-state="failed">`
+    + `\`\`\`bash<br>${marker("literal")}<img><br>\`\`\` ${marker("outside fence")}</div>`
+    + `<div class="linkRender">${marker("second <sup>x</sup>")}</div>`;
+  const failed = page.document.querySelector('[data-anki-fence-state="failed"]');
+  const before = failed.innerHTML;
+  page.window.eval(noteLinkRenderer);
+  assert.equal(page.window.AnkiNoteLinkerMobileVersion, 4);
+  assert.notEqual(page.window.AnkiNoteLinkerRenderMobile, oldRender);
+  assert.equal(failed.innerHTML, before);
+  assert.equal(page.document.querySelectorAll("a.noteLink").length, 1);
+  assert.equal(page.document.querySelector("a.noteLink").textContent, "second x");
+});
+
+test("a pending version-three callback invokes the upgraded renderer once and keeps failed fields literal", async t => {
+  const page = harness(`<div class="linkRender" data-anki-fence-state="failed">${marker("literal")}</div>`
+    + `<div class="linkRender">${marker("normal")}</div>`, { preload: false, mobile: true });
+  t.after(page.close);
+  Object.defineProperty(page.document, "readyState", { value: "loading" });
+  page.window.eval(v3);
+  page.window.eval(noteLinkRenderer);
+  page.window.eval(noteLinkRenderer);
+  assert.equal(page.window.AnkiNoteLinkerMobileVersion, 4);
+  assert.equal(page.window.AnkiNoteLinkerMobileRenderPending, true);
+  let calls = 0;
+  const render = page.window.AnkiNoteLinkerRenderMobile;
+  page.window.AnkiNoteLinkerRenderMobile = () => { calls++; render(); };
+  page.document.dispatchEvent(new page.window.Event("DOMContentLoaded"));
+  assert.equal(calls, 1);
+  assert.equal(page.window.AnkiNoteLinkerMobileRenderPending, false);
+  assert.equal(page.document.querySelector('[data-anki-fence-state="failed"]').textContent, marker("literal"));
   assert.equal(page.document.querySelectorAll("a.noteLink").length, 1);
 });

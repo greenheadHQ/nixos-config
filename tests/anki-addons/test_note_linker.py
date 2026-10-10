@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import sys
+from types import SimpleNamespace
 import unittest
 
 
@@ -24,9 +25,10 @@ def load_module(path, name):
 helper = load_module(HELPER, "note_linker_html")
 
 
-def render(source):
+def render(source, *, protect_fences=False):
     return helper.replace_links_outside_literals(
-        source, PATTERN, lambda match: f"<LINK>{match.group(1)}</LINK>"
+        source, PATTERN, lambda match: f"<LINK>{match.group(1)}</LINK>",
+        protect_fences=protect_fences,
     )
 
 
@@ -116,6 +118,153 @@ class NoteLinkerLiteralTest(unittest.TestCase):
                 self.assertEqual(render(source), source)
 
 
+class NoteLinkerFenceTest(unittest.TestCase):
+    def scope(self, content, field="질문", extra=""):
+        return f'<div class="anki-code-scope" data-anki-fence-field="{field}"{extra}>{content}</div>'
+
+    def assert_fence_preserved(self, content):
+        literal = self.scope(content)
+        source = MARKER + literal + MARKER
+        expected = render(MARKER) + literal + render(MARKER)
+        self.assertEqual(render(source, protect_fences=True), expected)
+
+    def test_newlines_and_editor_break_elements_preserve_exact_source(self):
+        for content in (
+            f"```bash\n{MARKER}\n```",
+            f"```bash\r\n{MARKER}\r\n```",
+            f"```bash<br>{MARKER}<BR />```",
+            f"<div>```bash</div><div>{MARKER}</div><div>```</div>",
+            f"<p>```bash</p><p>{MARKER}</p><p>```</p>",
+            f"<div>```bash<br>{MARKER}</div><p>```</p>",
+            f"<div>```bash</div><div></div><div><br></div><div>{MARKER}</div><div>```</div>",
+        ):
+            with self.subTest(content=content):
+                self.assert_fence_preserved(content)
+
+    def test_inline_split_fences_entities_and_formatting_remain_byte_identical(self):
+        self.assert_fence_preserved(
+            '<span>``</span><b>`</b><i>bash</i><br>'
+            + f'\tconst link = "[<b>예제</b> &amp; 제목|nid1787809736976]";'
+            + '&nbsp;&lt;script&gt;\n'
+            + '<span>&#96;&#x60;&grave;</span>'
+        )
+        self.assert_fence_preserved(
+            '&#32;&#x20; &#96;&#96;&#96;bash&#10;'
+            + MARKER + '&#13;&#10;   &#x60;&#x60;&#x60;\t'
+        )
+
+    def test_long_opening_keeps_shorter_backticks_inside_code(self):
+        self.assert_fence_preserved(f"````bash\n{MARKER}\n```\n{MARKER}\n`````\t")
+
+    def test_three_leading_ascii_spaces_are_inclusive(self):
+        for count in range(4):
+            with self.subTest(count=count):
+                self.assert_fence_preserved(f"{' ' * count}```bash\n{MARKER}\n{' ' * count}```")
+
+    def test_four_spaces_tabs_and_nbsp_are_not_boundary_indentation(self):
+        for indent in ("    ", "\t", "\u00a0", "&nbsp;"):
+            literal = self.scope(f"{indent}```bash<br>{MARKER}<br>{indent}```")
+            with self.subTest(indent=indent):
+                self.assertEqual(render(literal, protect_fences=True), literal.replace(MARKER, render(MARKER)))
+
+    def test_unclosed_escaped_inline_and_tilde_examples_keep_normal_links(self):
+        for content in (
+            f"```bash<br>{MARKER}",
+            f"````bash<br>{MARKER}<br>```",
+            f"\\```bash<br>{MARKER}<br>```",
+            f"```bash {MARKER} ```",
+            f"~~~bash<br>{MARKER}<br>~~~",
+            f"```ba`sh<br>{MARKER}<br>```",
+            f"```bash<br>{MARKER}<br>```&nbsp;",
+            f"```bash<br>{MARKER}<br>``` trailing",
+        ):
+            literal = self.scope(content)
+            with self.subTest(content=content):
+                self.assertEqual(render(literal, protect_fences=True), literal.replace(MARKER, render(MARKER)))
+
+    def test_multiple_blocks_preserve_inside_links_and_render_between_them(self):
+        first = f"```bash<br>{MARKER}<br>```"
+        second = f"````<br>{MARKER}<br>````"
+        literal = self.scope(first + "<br>" + MARKER + "<br>" + second)
+        expected = self.scope(first + "<br>" + render(MARKER) + "<br>" + second)
+        self.assertEqual(render(literal, protect_fences=True), expected)
+
+    def test_opt_in_and_each_selected_field_are_required(self):
+        content = f"```bash\n{MARKER}\n```"
+        for field in ("질문", "답", "설명", "출처"):
+            literal = self.scope(content, field)
+            with self.subTest(field=field):
+                self.assertEqual(render(literal, protect_fences=True), literal)
+                self.assertEqual(render(literal), literal.replace(MARKER, render(MARKER)))
+        for literal in (
+            self.scope(content, "맥락"), self.scope(content, "검토 메모"),
+            f'<div class="anki-code-scope">{content}</div>', content,
+        ):
+            with self.subTest(literal=literal):
+                self.assertEqual(render(literal, protect_fences=True), literal.replace(MARKER, render(MARKER)))
+
+    def test_boundaries_never_join_separate_fields(self):
+        source = self.scope(f"```bash<br>{MARKER}") + self.scope(f"{MARKER}<br>```", "답")
+        self.assertEqual(render(source, protect_fences=True), source.replace(MARKER, render(MARKER)))
+
+    def test_hidden_existing_code_and_raw_script_regions_do_not_supply_fence_lines(self):
+        for excluded in (
+            f'<div hidden>```bash<br>{MARKER}</div>',
+            f'<textarea>```bash\n{MARKER}</textarea>',
+            f'<script>const example = "```bash\\n{MARKER}"</script>',
+            f'<pre><code>```bash\n{MARKER}</code></pre>',
+        ):
+            source = self.scope(excluded + "<br>" + MARKER + "<br>```")
+            with self.subTest(excluded=excluded):
+                # Fence opt-in cannot change legacy behavior in hidden/foreign DOM.
+                self.assertEqual(render(source, protect_fences=True), render(source))
+
+    def test_closed_source_fence_preserves_literal_links_across_foreign_content(self):
+        for barrier in ('<pre><code>existing</code></pre>', '<img src="fixture.png">', '<div hidden>hidden</div>'):
+            source = self.scope(f"```bash<br>{MARKER}{barrier}{MARKER}<br>```")
+            with self.subTest(barrier=barrier):
+                self.assertEqual(render(source, protect_fences=True), source)
+
+    def test_marker_overlapping_a_complete_fence_is_not_partly_rewritten(self):
+        source = self.scope('[before<br>```bash<br>body<br>```<br>after|nid1787809736976]')
+        self.assertEqual(render(source, protect_fences=True), source)
+
+    def test_missing_outer_field_end_does_not_expose_a_complete_fence(self):
+        source = '<div data-anki-fence-field="질문">```bash<br>' + MARKER + '<br>```'
+        self.assertEqual(render(source, protect_fences=True), source)
+
+    def test_nonfenced_markup_and_outside_attributes_keep_legacy_behavior(self):
+        source = self.scope(f'<p title="{MARKER}">plain {MARKER}</p><b>한글 &nbsp; &#96;</b>')
+        self.assertEqual(render(source, protect_fences=True), render(source))
+
+    def test_inline_existing_literals_and_opaque_elements_cannot_invent_an_opener(self):
+        for prefix in ('<code>prefix</code>', '<textarea>prefix</textarea>', '<img src="fixture.png">'):
+            source = self.scope(prefix + f'```bash<br>{MARKER}<br>```')
+            with self.subTest(prefix=prefix):
+                self.assertEqual(render(source, protect_fences=True), render(source))
+        self.assert_fence_preserved(f'<pre><code>prefix</code></pre>```bash<br>{MARKER}<br>```')
+
+    def test_unsafe_complete_regions_protect_source_even_if_later_dom_conversion_fails(self):
+        first = f'```bash<br>{MARKER}<br>```<br>'
+        for unsafe in ('<img src="fixture.png">', '<span aria-hidden="true">hidden</span>',
+                       '<span style="display:none">hidden</span>', '<span contenteditable>editable</span>',
+                       '<span style="visibility:collapse">hidden</span>', '<span style="opacity:0">hidden</span>',
+                       '<span class="mjx-container">math</span>', '<span class="katex-display">math</span>'):
+            source = self.scope(first + f'```bash<br>{MARKER}{unsafe}<br>```')
+            with self.subTest(unsafe=unsafe):
+                self.assertEqual(render(source, protect_fences=True), source)
+        # An unsafe, unfinished example has no basis for protecting its marker.
+        source = self.scope(first + f'```bash<br>{MARKER}<img src="fixture.png">')
+        expected = self.scope(first + f'```bash<br>{render(MARKER)}<img src="fixture.png">')
+        self.assertEqual(render(source, protect_fences=True), expected)
+
+    def test_unsupported_ancestors_and_comments_preserve_closed_source_fences(self):
+        source = self.scope(f'<blockquote><p>```bash</p><p>{MARKER}</p><p>```</p></blockquote>')
+        self.assertEqual(render(source, protect_fences=True), source)
+        self.assert_fence_preserved(f'``<!-- invisible -->`bash<br>{MARKER}<br>```')
+        self.assert_fence_preserved(f'<p>```bash<p>{MARKER}<p>```')
+
+
 @unittest.skipUnless(os.environ.get("ANKI_NOTE_LINKER_SOURCE"), "requires built Note Linker package")
 class PackagedNoteLinkerTest(unittest.TestCase):
     """Run the distribution's patched renderer without importing Qt or Anki."""
@@ -133,7 +282,8 @@ class PackagedNoteLinkerTest(unittest.TestCase):
         namespace = {"Card": object, "NOTE_LINK_PATTERN": links.NOTE_LINK_PATTERN,
                      "replace_links_outside_literals": packaged_helper.replace_links_outside_literals}
         exec(compile(ast.Module(body=[method], type_ignores=[]), "convertLink", "exec"), namespace)
-        cls.convert = staticmethod(lambda text: namespace["convertLink"](None, text, None, "reviewQuestion"))
+        cls.convert = staticmethod(lambda text, model="학습 Basic": namespace["convertLink"](
+            None, text, SimpleNamespace(note_type=lambda: {"name": model}), "reviewQuestion"))
         cls.tree = tree
         cls.source = source
         cls.pattern = links.NOTE_LINK_PATTERN
@@ -155,6 +305,14 @@ class PackagedNoteLinkerTest(unittest.TestCase):
         self.assertIn('AnkiNoteLinker-openNoteInPreviewer`+`1787809736976', rendered)
         self.assertIn('AnkiNoteLinker-openNoteInNewEditor`+`1787809736976', rendered)
         self.assertTrue(rendered.endswith(">예제 &amp; 제목</a>"))
+
+    def test_actual_renderer_protects_selected_basic_fences_only(self):
+        literal = '<div data-anki-fence-field="질문">```bash<br>' + MARKER + '<br>```</div>'
+        rendered = self.convert(literal + MARKER)
+        self.assertIn(literal, rendered)
+        self.assertEqual(rendered.count('class="noteLink"'), 1)
+        other = self.convert(literal + MARKER, "KaTeX and Markdown Cloze")
+        self.assertEqual(other.count('class="noteLink"'), 2)
 
 
 if __name__ == "__main__":

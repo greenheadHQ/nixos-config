@@ -45,7 +45,9 @@ AUTHORING_GUIDANCE = """카드 작성 원칙
   지원 표시는 javascript/js/jsx, typescript/ts/tsx, html/xml, css, json, bash/sh/shell, sql, c, python/py, java, yaml/yml, http다.
   도식·출력·자연어는 language-plaintext로 둔다. 언어를 알 수 없으면 추측해 지정하지 않는다. 미지정·미지원 언어는 단색이다.
   코드 원문의 &, <, >를 HTML text로 이스케이프하고 들여쓰기·개행을 보존한다. 구문 색칠용 span·인라인 색상·자동 줄바꿈 style은 저장하지 않는다.
-  문장 안 식별자는 일반 <code>를 유지한다. Markdown fence를 HTML 대신 저장하지 않는다.
+  문장 안 식별자는 일반 <code>를 유지한다. 자동 작성은 위 HTML 구조를 기본으로 쓴다.
+  사람이 학습 Basic의 질문·답·설명·출처에 직접 입력한 백틱 코드 블록은 원문을 유지한다.
+  백틱 지원 marker가 있는 템플릿에서 닫힌 세 개 이상 경계만 표시 때 변환하며, 구문 색칠 결과를 필드에 저장하지 않는다.
   anki_model_info에서 코드 강조 renderer 적용 여부를 확인한다. 미적용 유형과 구형 Markdown/Cloze 유형을 자동 교체하지 않는다.
 - 출처: 실제로 읽고 대조한 자료를 빠뜨리지 않고 제목·URL 또는 서지정보·장/절/쪽/그림 위치로 남기며, 필요하면 판본·버전을 붙인다.
   고정 판본·버전으로 충분한 자료에는 대조일을 쓰지 않는다. 요금·정책처럼 시간이 내용 해석에 영향을 주는 출처에만 "자료 대조일: YYYY-MM-DD"를 출처별로 적는다.

@@ -6,5 +6,8 @@
 -        return "<script>window.AnkiNoteLinkerIsActive = true</script>" + NOTE_LINK_PATTERN.sub(
 +        return "<script>window.AnkiNoteLinkerIsActive = true</script>" + replace_links_outside_literals(
 +            text, NOTE_LINK_PATTERN,
-@@ -93 +94,0 @@
+@@ -93 +95,3 @@
 -            text,
++            protect_fences=(
++                card is not None and card.note_type()["name"] == "학습 Basic"
++            ),

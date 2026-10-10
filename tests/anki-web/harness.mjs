@@ -11,8 +11,10 @@ const { JSDOM } = require("jsdom");
 export const manifest = JSON.parse(await readFile(resolve(packagePath, "dist/manifest.json"), "utf8"));
 export const bundle = await readFile(resolve(packagePath, "dist", manifest.asset.filename), "utf8");
 export const css = await readFile(resolve(addonPath, "code-highlight.css"), "utf8");
+export const fencedCode = await readFile(resolve(addonPath, "fenced-code.js"), "utf8");
 const inline = source => source.match(/<script>([\s\S]*)<\/script>/)[1];
 export const renderer = inline(await readFile(resolve(addonPath, "code-highlight-renderer.html"), "utf8"))
+  .replace("__ANKI_FENCED_CODE__", () => fencedCode)
   .replace("__ANKI_SYNTAX_ASSET__", JSON.stringify(manifest.asset.filename))
   .replace("__ANKI_SYNTAX_CSS__", JSON.stringify(css).replaceAll("<", "\\u003c"));
 export const noteLinkRenderer = inline(await readFile(resolve(addonPath, "note-link-renderer.html"), "utf8"));
@@ -44,7 +46,7 @@ export function harness(html = "", { preload = true, freezeClock = true, mobile 
   const start = () => window.eval(renderer);
   const flush = async () => {
     // Promise-only loader/render chain, including two template invocations.
-    for (let i = 0; i < 8; i++) await Promise.resolve();
+    for (let i = 0; i < 16; i++) await Promise.resolve();
   };
   return { dom, window, document, scripts, start, flush, installBundle,
     api: () => window.AnkiCodeHighlightV1,

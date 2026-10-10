@@ -5,11 +5,10 @@
   const root = document.documentElement;
   if (!root.classList.contains("iphone") && !root.classList.contains("ipad")) return;
 
-  if (window.AnkiNoteLinkerMobileVersion !== 4) {
+  if (window.AnkiNoteLinkerMobileVersion !== 3) {
     const pattern = /\[((?:[^\[]|\\\[)*?)\|nid(\d{13})\]/g;
     const inline = new Set("B STRONG I EM U S STRIKE DEL INS SPAN FONT SMALL BIG SUB SUP MARK".split(" "));
-    // A failed fence field keeps its source DOM and notice through later adapters.
-    const excluded = 'a,button,select,textarea,script,style,pre,code,svg,math,mjx-container,.MathJax,.MathJax_Preview,.katex,[contenteditable],[data-anki-fence-state="failed"]';
+    const excluded = "a,button,select,textarea,script,style,pre,code,svg,math,mjx-container,.MathJax,.MathJax_Preview,.katex,[contenteditable]";
     const escaped = (value, index) => {
       let slashes = 0;
       while (index > 0 && value[--index] === "\\") slashes++;
@@ -86,7 +85,7 @@
       walk(container);
       flush();
     };
-    window.AnkiNoteLinkerMobileVersion = 4;
+    window.AnkiNoteLinkerMobileVersion = 3;
     window.AnkiNoteLinkerRenderMobile = () => {
       document.querySelectorAll(".linkRender").forEach(renderContainer);
     };

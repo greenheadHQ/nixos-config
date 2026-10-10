@@ -14,7 +14,8 @@ from pathlib import Path, PurePosixPath
 import stat
 
 from .card_id import _guard
-from .code_highlighting import _script_json
+from . import note_links as link_templates
+from .code_highlighting import render_fragment
 from .managed_bundle import ManagedBundleError, build_bundle, canonical_model, filename
 
 SOURCE_SCHEMA_VERSION = 1
@@ -26,6 +27,7 @@ _FEATURE_FILES = (
     "sync-addon/card-id-button.html",
     "sync-addon/note-link-renderer.html",
     "sync-addon/code-highlight-renderer.html",
+    "sync-addon/fenced-code.js",
     "sync-addon/code-highlight.css",
     "sync-addon/text-size-controls.html",
     "sync-addon/scratchpad.html",
@@ -154,13 +156,33 @@ def _check_features(root: Path, definition: dict, asset_name: str) -> None:
     if (renderer.count("__ANKI_SYNTAX_ASSET__") != 1
             or renderer.count("__ANKI_SYNTAX_CSS__") != 1):
         _fail("invalid-highlight-fragment")
-    rendered = renderer.replace("__ANKI_SYNTAX_ASSET__", _script_json(asset_name)).replace(
-        "__ANKI_SYNTAX_CSS__", _script_json(css))
+    if renderer.count("__ANKI_FENCED_CODE__") != 1:
+        _fail("invalid-fenced-fragment")
+    rendered = render_fragment(renderer, css, asset_name,
+                               fenced_source=_text(root, "sync-addon/fenced-code.js"))
     guarded_highlight = _guard(rendered, mode, names)
     for side in (front, back):
         if (side.count(guarded_highlight) != 1
                 or "anki-code-highlight-v1" in side.replace(guarded_highlight, "")):
             _fail("highlight-fragment-mismatch")
+    if back.index(note_links) < back.index(guarded_highlight) + len(guarded_highlight):
+        _fail("fenced-link-order-mismatch")
+    for side, fields in ((front, ("질문",)), (back, ("답", "설명", "출처"))):
+        for field in fields:
+            if side.count(f'data-anki-fence-field="{field}"') != 1:
+                _fail("fenced-field-scope-mismatch")
+            try:
+                container = link_templates._field_container(side, "{{" + field + "}}")
+            except ValueError:
+                _fail("fenced-field-scope-mismatch")
+            attrs = dict(container["attrs"])
+            if (len(attrs) != len(container["attrs"])
+                    or attrs.get("data-anki-fence-field") != field
+                    or attrs.get("data-anki-fence-pending") != ""
+                    or "anki-code-scope" not in attrs.get("class", "").split()):
+                _fail("fenced-field-scope-mismatch")
+    if "[data-anki-fence-pending] { opacity: 0; pointer-events: none; }" not in definition["css"]:
+        _fail("fenced-initial-gate-missing")
 
     # The text-size control re-attaches inside the card ID row after that
     # script rewrites it, so it must follow the card ID fragment on the front

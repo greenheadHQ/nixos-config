@@ -28,3 +28,9 @@ img { max-width: 100%; height: auto; }
 .nightMode .context, .nightMode .source { color: #aab4c0; }
 .nightMode .explanation { background: #2b3642; }
 .nightMode code { background: #374151; }
+
+/* Applied before the first field paint; scripts release ready fields. */
+
+
+/* Applied before the first field paint; scripts release ready fields. */
+[data-anki-fence-pending] { opacity: 0; pointer-events: none; }

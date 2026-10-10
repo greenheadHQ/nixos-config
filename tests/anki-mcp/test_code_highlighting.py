@@ -1,7 +1,9 @@
 """Pure, byte-preserving code metadata and scoped template migration plans."""
 
 import copy
+from html.parser import HTMLParser
 import json
+from pathlib import Path
 
 import pytest
 
@@ -197,7 +199,7 @@ def test_exact_version_two_mobile_renderer_can_upgrade_without_losing_rollback()
     before = model()
     before["tmpls"][0]["afmt"] += previous
     entry = plan(before)["changes"][0]
-    assert "window.AnkiNoteLinkerMobileVersion = 3;" in entry["change"]["back"]
+    assert "window.AnkiNoteLinkerMobileVersion = 4;" in entry["change"]["back"]
     assert entry["original"]["back"] == before["tmpls"][0]["afmt"]
 
 
@@ -245,3 +247,124 @@ def test_all_requirement_does_not_enable_the_renderer_for_only_one_required_fiel
         result = plan(before)["changes"][0]["change"][side]
         assert "{{#질문}}{{#설명}}<!-- anki-code-highlight-v1 -->" in result
         assert result.endswith("{{/설명}}{{/질문}}")
+
+
+def _fenced_model():
+    value = model()
+    names = ("질문", "답", "맥락", "설명", "출처", "검토 메모", "노트 변천사")
+    value["flds"] = [{"name": name, "ord": i} for i, name in enumerate(names)]
+    value["req"] = [[0, "any", [0, 2]]]
+    value["tmpls"][0]["qfmt"] = (
+        '<div class="question">{{질문}}</div>'
+        '{{#맥락}}<div class="context">{{맥락}}</div>{{/맥락}}'
+        '{{#검토 메모}}<aside>{{검토 메모}}</aside>{{/검토 메모}}')
+    value["tmpls"][0]["afmt"] = (
+        '{{FrontSide}}<hr><div class="answer">{{답}}</div>'
+        '{{#설명}}<div class="explanation linkRender">{{설명}}</div>{{/설명}}'
+        '{{#출처}}<div class="source linkRender">{{출처}}</div>{{/출처}}'
+        '{{#노트 변천사}}<aside>{{노트 변천사}}</aside>{{/노트 변천사}}')
+    return value
+
+
+class _FieldScopes(HTMLParser):
+    """Inspect public plan HTML independently of the planner's container parser."""
+
+    def __init__(self, source):
+        super().__init__()
+        self.fields = {}
+        self.feed(source)
+
+    def handle_starttag(self, tag, attrs):
+        values = dict(attrs)
+        field = values.get("data-anki-fence-field")
+        if field is not None:
+            assert field not in self.fields
+            self.fields[field] = values
+
+
+def test_default_renderer_plan_enables_only_four_fields_and_preserves_cas_rollback():
+    before = _fenced_model()
+    original = copy.deepcopy(before)
+    targets = [{"template_name": "카드 1", "side": side, "field_name": field}
+               for side, field in (("front", "질문"), ("front", "맥락"),
+                                   ("back", "답"), ("back", "설명"), ("back", "출처"))]
+    entry = code.build_plan(before, targets)["changes"][0]
+    changed, rollback = entry["change"], entry["original"]
+    front, back = changed["front"], changed["back"]
+    assert before == original
+    front_scopes, back_scopes = _FieldScopes(front).fields, _FieldScopes(back).fields
+    assert set(front_scopes) == {"질문"}
+    assert set(back_scopes) == {"답", "설명", "출처"}
+    scopes = {**front_scopes, **back_scopes}
+    assert all(values.get("data-anki-fence-pending") == "" and
+               "anki-code-scope" in values.get("class", "").split()
+               for values in scopes.values())
+    assert '<div class="context anki-code-scope">{{맥락}}</div>' in front
+    assert '<aside>{{검토 메모}}</aside>' in front
+    assert '<aside>{{노트 변천사}}</aside>' in back
+    for side, key in (("front", "qfmt"), ("back", "afmt")):
+        assert "window.AnkiFencedCodeV1" in changed[side]
+        assert "__ANKI_FENCED_CODE__" not in changed[side]
+        assert "__ANKI_SYNTAX_" not in changed[side]
+        assert rollback[side] == changed["expected_" + side] == original["tmpls"][0][key]
+        assert rollback["expected_" + side] == changed[side]
+    assert changed["expected_model_id"] == rollback["expected_model_id"] == original["id"]
+    assert "css" not in changed and "fields" not in changed
+
+
+@pytest.mark.parametrize("mode", ["any", "all"])
+def test_default_renderer_gates_static_style_and_parser_with_native_generation_conditions(mode):
+    before = _fenced_model()
+    before["req"] = [[0, mode, [0, 2]]]
+    targets = [{"template_name": "카드 1", "side": side, "field_name": field}
+               for side, field in (("front", "질문"), ("back", "답"))]
+    changed = code.build_plan(before, targets)["changes"][0]["change"]
+    # Empty required fields must not produce a card just because a gate/style or
+    # parser was added. Only the native "any" rule admits a context-only card.
+    gate = (("{{#질문}}" + code.FENCE_GATE + "{{/질문}}"
+             + "{{^질문}}{{#맥락}}" + code.FENCE_GATE + "{{/맥락}}{{/질문}}")
+            if mode == "any" else "{{#질문}}{{#맥락}}" + code.FENCE_GATE + "{{/맥락}}{{/질문}}")
+    for side in ("front", "back"):
+        assert changed[side].startswith(gate)
+        if mode == "any":
+            assert "{{#질문}}<!-- anki-code-highlight-v1 -->" in changed[side]
+            assert "{{^질문}}{{#맥락}}<!-- anki-code-highlight-v1 -->" in changed[side]
+        else:
+            assert "{{#질문}}{{#맥락}}<!-- anki-code-highlight-v1 -->" in changed[side]
+            assert "{{^질문}}" not in changed[side]
+        assert changed[side].endswith("{{/맥락}}{{/질문}}")
+    assert before["req"] == [[0, mode, [0, 2]]]
+
+
+@pytest.mark.parametrize("legacy_version", [1, 2, 3])
+def test_default_renderer_runs_before_mobile_note_links_and_can_roll_back_exact_legacy_source(legacy_version):
+    previous, current = _mobile_renderers()
+    if legacy_version != 1:
+        previous = (Path(__file__).parents[1] / f"fixtures/anki-note-link/renderer-v{legacy_version}.html").read_text(encoding="utf-8")
+    before = _fenced_model()
+    before["tmpls"][0]["afmt"] += previous
+    original_back = before["tmpls"][0]["afmt"]
+    targets = [{"template_name": "카드 1", "side": "back", "field_name": field}
+               for field in ("답", "설명", "출처")]
+    entry = code.build_plan(before, targets)["changes"][0]
+    changed = entry["change"]["back"]
+    mobile_at = changed.index("<!-- anki-note-link-mobile-renderer -->")
+    assert changed.index("window.AnkiFencedCodeV1") < mobile_at
+    assert changed.rfind("{{/맥락}}{{/질문}}") < mobile_at
+    assert changed.endswith(current)
+    assert "window.AnkiNoteLinkerMobileVersion = 4;" in current
+    assert changed.count(current) == 1
+    assert entry["original"]["back"] == entry["change"]["expected_back"] == original_back
+    assert entry["original"]["expected_back"] == changed
+
+
+def test_real_renderer_rejects_duplicate_parser_slots_and_escapes_inline_script_boundaries():
+    renderer = Path(code.__file__).with_name("code-highlight-renderer.html").read_text(encoding="utf-8")
+    malformed = renderer.replace("__ANKI_FENCED_CODE__", "__ANKI_FENCED_CODE__;__ANKI_FENCED_CODE__")
+    with pytest.raises(ValueError, match="invalid-fenced-fragment"):
+        code.build_plan(model(), TARGETS, renderer=malformed)
+    rendered = code.render_fragment(renderer, CSS, ASSET,
+                                    fenced_source='/* </script><img src=x> */ window.testParser=true;')
+    assert rendered.count("</script>") == 1
+    assert "<\\/script>" in rendered
+    assert "__ANKI_FENCED_CODE__" not in rendered

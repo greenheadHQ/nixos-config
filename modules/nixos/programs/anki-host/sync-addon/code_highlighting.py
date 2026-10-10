@@ -23,8 +23,11 @@ SCOPE_CLASS = "anki-code-scope"
 _LEGACY_NOTE_LINK_SHA256 = frozenset({
     "17eaddd7b9d5192b418f19ee4a80feddcb5b6a666d01d84c302d531dcdf7ebec",  # v1
     "91445a7d0c242ec9a11237079942ba867eb3ba5c898ec561db35ddad58df58fd",  # v2
+    "922a1ccbe63b6634ef60208e3c3610a9b0742c0a3b1a3473362f1f61b1783310",  # v3
 })
 FIELDS = frozenset({"질문", "답", "맥락", "설명", "출처"})
+FENCE_FIELDS = frozenset({"질문", "답", "설명", "출처"})
+FENCE_GATE = '<style>[data-anki-fence-pending]{opacity:0;pointer-events:none}</style>\n'
 LANGUAGES = frozenset({
     "javascript", "js", "jsx", "typescript", "ts", "tsx", "xml", "html",
     "css", "json", "bash", "shell", "sh", "sql", "c", "python", "py",
@@ -35,6 +38,20 @@ LANGUAGES = frozenset({
 def _script_json(value):
     # JSON quoting alone does not protect an inline script from </script>.
     return json.dumps(value, ensure_ascii=True).replace("<", "\\u003c")
+
+
+def render_fragment(renderer, css, asset_filename, *, fenced_source=None):
+    """Inline the small reviewed parser; no second asynchronous asset is needed."""
+    if "__ANKI_FENCED_CODE__" in renderer:
+        if renderer.count("__ANKI_FENCED_CODE__") != 1:
+            raise ValueError("code-highlight-invalid-fenced-fragment")
+        if fenced_source is None:
+            fenced_source = Path(__file__).with_name("fenced-code.js").read_text(encoding="utf-8")
+        # Protect inline script boundaries even if a future code comment or
+        # literal contains an HTML closing tag. This is trusted build input.
+        renderer = renderer.replace("__ANKI_FENCED_CODE__", fenced_source.replace("</script", "<\\/script"))
+    return renderer.replace("__ANKI_SYNTAX_ASSET__", _script_json(asset_filename)).replace(
+        "__ANKI_SYNTAX_CSS__", _script_json(css))
 
 
 def _upgrade_note_links(source):
@@ -86,8 +103,8 @@ def build_plan(model, targets, *, renderer=None, css=None, asset_filename=None):
             or renderer.count("__ANKI_SYNTAX_CSS__") != 1
             or not note_links._append_safe(renderer) or not isinstance(css, str) or not css):
         raise ValueError("code-highlight-invalid-renderer")
-    rendered = renderer.replace("__ANKI_SYNTAX_ASSET__", _script_json(asset_filename)).replace(
-        "__ANKI_SYNTAX_CSS__", _script_json(css))
+    with_fences = "__ANKI_FENCED_CODE__" in renderer
+    rendered = render_fragment(renderer, css, asset_filename)
     normalized, field_names, templates = note_links._validated_model(model)
     if normalized["name"] != MODEL_NAME or normalized["type"] != 0 or "질문" not in field_names:
         raise ValueError("code-highlight-unsupported-model")
@@ -123,6 +140,10 @@ def build_plan(model, targets, *, renderer=None, css=None, asset_filename=None):
             if (template["name"], side) not in grouped:
                 continue
             source = _upgrade_note_links(change[side])
+            mobile = ""
+            if with_fences and "<!-- anki-note-link-mobile-renderer -->" in source:
+                index = source.index("<!-- anki-note-link-mobile-renderer -->")
+                mobile, source = source[index:], source[:index]
             if not note_links._append_safe(source):
                 raise ValueError("code-highlight-unfinished-template")
             for field in grouped[(template["name"], side)]:
@@ -131,11 +152,14 @@ def build_plan(model, targets, *, renderer=None, css=None, asset_filename=None):
                     raise ValueError("code-highlight-ambiguous-field")
                 container = note_links._field_container(source, token)
                 opening = note_links._add_link_class(container["opening"], container["attrs"], SCOPE_CLASS)
+                if with_fences and field in FENCE_FIELDS:
+                    opening = opening[:-1] + f' data-anki-fence-field="{field}" data-anki-fence-pending="">'
                 source = source[:container["start"]] + opening + source[container["end"]:]
             # Share native generation conditions, including context-only cards.
             # Static JS/style must not create cards whose required fields are empty.
             mode, required = requirements[template["ord"]]
-            change[side] = source + _guard(rendered, mode, required)
+            gate = _guard(FENCE_GATE, mode, required) if with_fences else ""
+            change[side] = gate + source + _guard(rendered, mode, required) + mobile
         expected = {"expected_model_id": normalized["id"]}
         changes.append({
             "template_index": template["ord"],
