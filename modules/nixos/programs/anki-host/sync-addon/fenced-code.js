@@ -1,6 +1,7 @@
 (function () {
   "use strict";
-  if (window.AnkiFencedCodeV1) return;
+  const VERSION = 1;
+  if (window.AnkiFencedCodeV1?.version === VERSION) return;
 
   const BLOCKS = new Set(["DIV", "P"]);
   const INLINE = new Set([
@@ -264,5 +265,5 @@
       return fail(scope);
     }
   }
-  window.AnkiFencedCodeV1 = { convert };
+  window.AnkiFencedCodeV1 = { version: VERSION, convert };
 })();

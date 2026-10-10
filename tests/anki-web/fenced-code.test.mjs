@@ -130,7 +130,10 @@ test("multiple blocks convert once, and a new FrontSide DOM converts independent
     const second = h.convert();
     assert.equal(second.codes[0], first.codes[0]);
     assert.equal(h.field.querySelectorAll("pre").length, 2);
+    const installed = h.window.AnkiFencedCodeV1;
+    assert.equal(typeof installed.version, "number");
     h.window.eval(source);
+    assert.equal(h.window.AnkiFencedCodeV1, installed);
     const clone = h.window.document.createElement("section");
     clone.innerHTML = html;
     h.field.after(clone);
@@ -138,6 +141,24 @@ test("multiple blocks convert once, and a new FrontSide DOM converts independent
     assert.equal(cloned.codes.length, 2);
     assert.notEqual(cloned.codes[0], first.codes[0]);
   } finally { h.close(); }
+});
+
+test("a reused WebView replaces an unversioned or older parser before rendering a new card", () => {
+  for (const version of [undefined, 0]) {
+    const h = fixture("```bash<br>next card<br>```");
+    try {
+      let staleCalls = 0;
+      const stale = { convert: () => { staleCalls++; return { codes: [], failed: false }; } };
+      if (version !== undefined) stale.version = version;
+      h.window.AnkiFencedCodeV1 = stale;
+      h.window.eval(source);
+      assert.notEqual(h.window.AnkiFencedCodeV1, stale);
+      const result = h.convert();
+      assert.equal(result.failed, false);
+      assert.equal(result.codes[0].textContent, "next card");
+      assert.equal(staleCalls, 0);
+    } finally { h.close(); }
+  }
 });
 
 test("unsupported fenced content fails the whole field before changing any original node", () => {

@@ -167,6 +167,74 @@ test("a cold engine keeps the converted field hidden until colors and copy are r
   assert.deepEqual(first, [{ field: "question", text, highlighted: true, copies: 1 }]);
 });
 
+for (const module of ["AnkiCodeCopyV1", "AnkiCodeControlsV1"]) {
+  test(`a synchronous ${module} mount failure releases every converted field before rendering starts`, async t => {
+    const texts = ["const question = 1;", "const answer = 2;"];
+    const page = fixture(t, field(fenced(texts[0])) + field(fenced(texts[1]), "answer"), { preload: false });
+    const failure = new Error(`simulated ${module} mount failure`);
+    page.window[module] = { mount() { throw failure; } };
+    let renders = 0;
+    page.window.AnkiCodeHighlightV1 = {
+      version: 2,
+      render() { renders++; return Promise.resolve({}); },
+    };
+    assert.throws(() => page.start(), error => error === failure);
+    assert.deepEqual(codes(page).map(code => code.textContent), texts);
+    assert.ok(scopes(page).every(scope => visible(page, scope)),
+      "a setup exception must not leave the whole question or answer permanently hidden");
+    assert.equal(renders, 0);
+    assert.equal(page.scripts.length, 0);
+    await page.flush();
+    assert.ok(scopes(page).every(scope => visible(page, scope)));
+  });
+}
+
+for (const stage of ["render", "render completion-handler attachment"]) {
+  test(`a synchronous ${stage} failure releases its field and re-enables mounted copy`, async t => {
+    const text = "const preservedAfterSetup = 1;";
+    const page = fixture(t, field(fenced(text)));
+    const failure = new Error(`simulated synchronous ${stage} failure`);
+    page.window.AnkiCodeHighlightV1 = {
+      version: 2,
+      render() {
+        if (stage === "render") throw failure;
+        return Object.defineProperty({}, "then", { get() { throw failure; } });
+      },
+    };
+    assert.throws(() => page.start(), error => error === failure);
+    const button = copies(page)[0];
+    assert.equal(visible(page, scopes(page)[0]), true);
+    assert.equal(codes(page)[0].textContent, text);
+    assert.equal(button.disabled, false);
+    assert.equal(button.hasAttribute("data-anki-fence-copy-pending"), false);
+    let copied;
+    page.document.execCommand = () => { copied = page.document.activeElement.value; return true; };
+    button.click();
+    assert.equal(copied, text);
+    await page.flush();
+  });
+}
+
+for (const outcome of ["ready", "rejected", "stale"]) {
+  test(`an asynchronous render remains gated until its ${outcome} result applies the existing reveal policy`, async t => {
+    const page = fixture(t, field(fenced("const pendingRender = 1;")));
+    let resolveRender, rejectRender;
+    const pending = new Promise((resolve, reject) => { resolveRender = resolve; rejectRender = reject; });
+    page.window.AnkiCodeHighlightV1 = { version: 2, render: () => pending };
+    await start(page);
+    const scope = scopes(page)[0];
+    const button = copies(page)[0];
+    assert.equal(visible(page, scope), false, "starting a Promise must not release the field synchronously");
+    assert.equal(button.disabled, true);
+    if (outcome === "rejected") rejectRender(new Error("simulated asynchronous render failure"));
+    else resolveRender({ stale: outcome === "stale" });
+    await page.flush();
+    assert.equal(visible(page, scope), outcome !== "stale");
+    assert.equal(button.disabled, outcome === "stale");
+    assert.equal(button.hasAttribute("data-anki-fence-copy-pending"), outcome === "stale");
+  });
+}
+
 test("the engine deadline first reveals plain code and later colors the same box without rebuilding its UI", async t => {
   const text = "const delayed = 'value';\n\tconsole.log(delayed);";
   const page = fixture(t, field(fenced(text)), { preload: false });

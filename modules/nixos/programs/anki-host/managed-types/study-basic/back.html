@@ -15,7 +15,8 @@
   const FENCE_MAX_CHARS = 1024;
   (function () {
   "use strict";
-  if (window.AnkiFencedCodeV1) return;
+  const VERSION = 1;
+  if (window.AnkiFencedCodeV1?.version === VERSION) return;
 
   const BLOCKS = new Set(["DIV", "P"]);
   const INLINE = new Set([
@@ -279,7 +280,7 @@
       return fail(scope);
     }
   }
-  window.AnkiFencedCodeV1 = { convert };
+  window.AnkiFencedCodeV1 = { version: VERSION, convert };
 })();
 
   const fenceFields = Array.from(document.querySelectorAll(
@@ -822,23 +823,31 @@
   }
   // A synced template can change while the reviewer WebView remains alive.
   if (style.textContent !== CSS) style.textContent = CSS;
-  window[COPY].mount();
-  window[CONTROLS].mount();
-  // Opacity preserves layout but does not remove controls from keyboard focus.
-  // Disable only our copy buttons until their field's first display is ready,
-  // including when an older shared copy module survives in the reused WebView.
-  for (const field of fenceFields) {
-    if (!field.hasAttribute("data-anki-fence-pending")) continue;
-    for (const button of field.querySelectorAll(".anki-code-copy button")) {
-      button.disabled = true;
-      button.setAttribute("data-anki-fence-copy-pending", "");
+  let renderAttached = false;
+  try {
+    window[COPY].mount();
+    window[CONTROLS].mount();
+    // Opacity preserves layout but does not remove controls from keyboard focus.
+    // Disable only our copy buttons until their field's first display is ready,
+    // including when an older shared copy module survives in the reused WebView.
+    for (const field of fenceFields) {
+      if (!field.hasAttribute("data-anki-fence-pending")) continue;
+      for (const button of field.querySelectorAll(".anki-code-copy button")) {
+        button.disabled = true;
+        button.setAttribute("data-anki-fence-copy-pending", "");
+      }
     }
+    // Anki reuses its WebView, including globals, across question/answer/card changes.
+    // Each script invocation gets a new generation; a pending old card cannot paint it.
+    window[KEY].render().then(metrics => {
+      if (!metrics.stale) reveal(fenceFields);
+    }, () => reveal(fenceFields));
+    renderAttached = true;
+  } finally {
+    // Setup failures must not leave the question/answer hidden. Once completion
+    // handlers are attached, keep the asynchronous readiness/stale policy above.
+    if (!renderAttached) reveal(fenceFields);
   }
-  // Anki reuses its WebView, including globals, across question/answer/card changes.
-  // Each script invocation gets a new generation; a pending old card cannot paint it.
-  window[KEY].render().then(metrics => {
-    if (!metrics.stale) reveal(fenceFields);
-  }, () => reveal(fenceFields));
 })();
 </script>
 {{/질문}}{{^질문}}{{#맥락}}<!-- anki-code-highlight-v1 -->
@@ -851,7 +860,8 @@
   const FENCE_MAX_CHARS = 1024;
   (function () {
   "use strict";
-  if (window.AnkiFencedCodeV1) return;
+  const VERSION = 1;
+  if (window.AnkiFencedCodeV1?.version === VERSION) return;
 
   const BLOCKS = new Set(["DIV", "P"]);
   const INLINE = new Set([
@@ -1115,7 +1125,7 @@
       return fail(scope);
     }
   }
-  window.AnkiFencedCodeV1 = { convert };
+  window.AnkiFencedCodeV1 = { version: VERSION, convert };
 })();
 
   const fenceFields = Array.from(document.querySelectorAll(
@@ -1658,23 +1668,31 @@
   }
   // A synced template can change while the reviewer WebView remains alive.
   if (style.textContent !== CSS) style.textContent = CSS;
-  window[COPY].mount();
-  window[CONTROLS].mount();
-  // Opacity preserves layout but does not remove controls from keyboard focus.
-  // Disable only our copy buttons until their field's first display is ready,
-  // including when an older shared copy module survives in the reused WebView.
-  for (const field of fenceFields) {
-    if (!field.hasAttribute("data-anki-fence-pending")) continue;
-    for (const button of field.querySelectorAll(".anki-code-copy button")) {
-      button.disabled = true;
-      button.setAttribute("data-anki-fence-copy-pending", "");
+  let renderAttached = false;
+  try {
+    window[COPY].mount();
+    window[CONTROLS].mount();
+    // Opacity preserves layout but does not remove controls from keyboard focus.
+    // Disable only our copy buttons until their field's first display is ready,
+    // including when an older shared copy module survives in the reused WebView.
+    for (const field of fenceFields) {
+      if (!field.hasAttribute("data-anki-fence-pending")) continue;
+      for (const button of field.querySelectorAll(".anki-code-copy button")) {
+        button.disabled = true;
+        button.setAttribute("data-anki-fence-copy-pending", "");
+      }
     }
+    // Anki reuses its WebView, including globals, across question/answer/card changes.
+    // Each script invocation gets a new generation; a pending old card cannot paint it.
+    window[KEY].render().then(metrics => {
+      if (!metrics.stale) reveal(fenceFields);
+    }, () => reveal(fenceFields));
+    renderAttached = true;
+  } finally {
+    // Setup failures must not leave the question/answer hidden. Once completion
+    // handlers are attached, keep the asynchronous readiness/stale policy above.
+    if (!renderAttached) reveal(fenceFields);
   }
-  // Anki reuses its WebView, including globals, across question/answer/card changes.
-  // Each script invocation gets a new generation; a pending old card cannot paint it.
-  window[KEY].render().then(metrics => {
-    if (!metrics.stale) reveal(fenceFields);
-  }, () => reveal(fenceFields));
 })();
 </script>
 {{/맥락}}{{/질문}}
