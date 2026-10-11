@@ -151,7 +151,8 @@
   "enabledPlugins": {
     "next-steps@claude-community": true,
     "cc-plugin-you-should-know@builtin": true,
-    "cc-plugin-diff@builtin": false
+    "cc-plugin-diff@builtin": false,
+    "html-plan@claude-community": true
   },
   "language": "Korean",
   "alwaysThinkingEnabled": true,
