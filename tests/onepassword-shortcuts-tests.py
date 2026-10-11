@@ -100,7 +100,7 @@ class ShortcutTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), before)
         self.assertEqual(list(self.path.parent.iterdir()), [self.path])
 
-    def test_concurrent_settings_change_is_not_overwritten(self):
+    def test_change_observed_before_replace_is_not_overwritten(self):
         read_bytes = Path.read_bytes
         reads = 0
 
@@ -123,6 +123,14 @@ class ShortcutTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 self.apply()
         self.assertEqual(self.path.read_bytes(), before)
+
+    def test_app_probe_is_scoped_to_current_user(self):
+        self.running.stop()
+        result = MODULE.subprocess.CompletedProcess([], 1)
+        with patch.object(MODULE.subprocess, "run", return_value=result) as probe:
+            self.assertFalse(MODULE.is_app_running())
+        arguments = probe.call_args.args[0]
+        self.assertEqual(arguments[arguments.index("-U") + 1], str(MODULE.os.getuid()))
 
 
 if __name__ == "__main__":
