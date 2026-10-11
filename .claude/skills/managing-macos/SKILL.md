@@ -134,6 +134,24 @@ launchd와 스크립트는 `MISE_EXEC_AUTO_INSTALL=false`로 자동 설치를 �
 실행되지 않으면 환경 오류를 기록하고 원본·사이드카를 보존한다. activation에서 mise 설치를
 실행하지 않는다.
 
+## 1Password 단축키
+
+개인/업무 Mac 공통으로 `modules/darwin/programs/onepassword`가 빠른 액세스
+`⌃⌥⌘Space`와 자동 채우기 `⌃⌥⌘\`를 관리한다. 값과 설정 파일의 home 상대 경로는
+`libraries/constants.nix`의 `onePassword`에 있다. 앱 설치 정책은 그대로 personal 전용이다.
+
+`nrs`는 기존 `settings.json`에서 두 단축키만 갱신하며 나머지 설정·보안 서명을 보존한다.
+미설정 앱의 파일을 새로 만들지 않는다. 앱 실행 중에는 SSH agent를 중단하지 않고 갱신을
+미루므로, 1Password를 완전히 종료한 뒤 `onepassword-shortcuts`를 실행하고 다시 연다.
+이미 선언값과 같으면 실행 중에도 파일을 재작성하지 않는다.
+helper 실행 중에는 앱을 종료한 상태로 유지하고 다른 도구로 같은 파일을 편집하지 않는다.
+교체 직전 재비교는 관측된 변경을 감지하지만 원자적 비교·교체를 보장하지는 않는다.
+
+macOS AppData 권한은 별도다. 접근 거부/timeout은 적용 성공이 아니며, 실제 실행 주체의
+접근을 운영자가 승인한 뒤 재시도한다. 설정 파일 전체를 Nix store에 복사하거나 symlink로
+대체하지 않는다. 검증은 `python3 tests/onepassword-shortcuts-tests.py`와 양쪽 Darwin
+평가를 사용하고, 실제 적용 뒤에는 1Password 설정 UI·HomeRow·Figma의 키 동작을 확인한다.
+
 ## 자주 발생하는 문제
 
 1. sudo 권한 필요: darwin-rebuild는 시스템 파일 수정에 sudo 필요

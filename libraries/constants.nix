@@ -293,6 +293,11 @@
     # ~/.1password/agent.sock symlink는 자동생성되지 않아 group container 경로를 직접 쓴다.
     # 사용처: ssh IdentityAgent(modules/darwin/programs/ssh) + ssh() preflight(shell/darwin.nix).
     agentSocketRelPath = "Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock";
+    settingsMacRelPath = "Library/Group Containers/2BUA8C4S2C.com.1password/Library/Application Support/1Password/Data/settings/settings.json";
+    shortcuts = {
+      quickAccess = "CmdOrCtrl+Alt+Control+Space"; # ⌃⌥⌘Space — HomeRow의 ⇧⌘Space와 분리
+      autoFill = "CmdOrCtrl+Alt+Control+\\"; # ⌃⌥⌘\ — Figma의 ⌘\와 분리
+    };
     # Mac 전용 SA token의 배포 경로 (home 상대) — 단일 소스.
     # 배포: modules/shared/programs/secrets(agenix path), 소비: gh-pat-mac(shell/darwin.nix) ·
     # op_get(shell/default.nix). literal 분산 시 경로 정책 변경이 배포/소비 경계를 따로 움직인다.

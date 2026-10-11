@@ -111,6 +111,7 @@ in
         ./programs/folder-actions
         ./programs/ghostty
         ./programs/shottr
+        ./programs/onepassword
         ./programs/keybindings
         ./programs/ssh
       ];
