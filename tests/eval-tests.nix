@@ -1076,6 +1076,15 @@ let
                 agent == null && !(hm.home.file ? ".local/bin/upload-immich.sh")
             );
         }
+        {
+          name = "Test D39 ${hostName}: 1Password 단축키는 두 Mac에서 activation/수동 helper로 관리하고 settings.json을 점유하지 않아야 함";
+          cond =
+            hasHost
+            && hm.home.activation ? applyOnePasswordShortcuts
+            && builtins.elem "writeBoundary" hm.home.activation.applyOnePasswordShortcuts.after
+            && builtins.any (pkg: nixpkgsLib.getName pkg == "onepassword-shortcuts") hm.home.packages
+            && !(hm.home.file ? ${constants.onePassword.settingsMacRelPath});
+        }
       ]
       ++ tmuxVanillaTests hostName hasHost hm
     ) expectedDarwinHosts
