@@ -148,10 +148,20 @@
     "command": "~/.claude/scripts/statusline.sh",
     "refreshInterval": 1
   },
+  "enabledPlugins": {
+    "next-steps@claude-community": true,
+    "cc-plugin-you-should-know@builtin": true,
+    "cc-plugin-diff@builtin": false
+  },
   "language": "Korean",
   "alwaysThinkingEnabled": true,
   "effortLevel": "xhigh",
-  "autoCompactWindow": 400000,
+  "modelSettings": {
+    "claude-opus-5-5": {
+      "effortLevel": "xhigh"
+    }
+  },
+  "autoCompactWindow": 600000,
   "showClearContextOnPlanAccept": true,
   "autoUpdatesChannel": "latest",
   "plansDirectory": "./.claude/plans",
@@ -164,10 +174,5 @@
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
-  "voiceEnabled": true,
-  "modelSettings": {
-    "claude-opus-5-5": {
-      "effortLevel": "xhigh"
-    }
-  }
+  "voiceEnabled": true
 }
