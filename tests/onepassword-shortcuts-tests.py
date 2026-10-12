@@ -168,8 +168,10 @@ class MainMessageTests(unittest.TestCase):
             "denied",
             "access data from other apps",
             "Full Disk Access",
-            "launchctl procinfo",
+            "launchctl procinfo $$",
             "references/tcc.md",
+            "ACL",
+            "launched this shell",
         ):
             self.assertIn(expected, message)
         self.assertNotIn("synthetic-signature", message)

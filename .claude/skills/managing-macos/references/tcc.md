@@ -218,10 +218,12 @@ PID/parent/executable 원문은 mode 0600 임시 기록으로만 확인하고 re
 
 `nrs` 같은 정상 activation도 sandbox app preference를 `defaults`로 읽거나 쓰면 responsible
 app의 `SystemPolicyAppData` prompt를 만들 수 있다. 1Password shortcuts helper가 Group Container의
-`settings.json`을 여는 것도 같은 서비스의 트리거이며, 거부되면 helper는 책임 프로세스(터미널 앱)에
-대한 App Data/FDA 승인을 안내한다. 거부된 셸의 책임 프로세스는
-`sudo launchctl procinfo <shell pid> | grep responsible`로 확인한다 (sudo 없이는 출력이 비어 있다).
-승인은 아래 System Settings 경로에서 사용자가 하며, #1093 D(Ghostty direct FDA)가 그 정책이다. 이런 호출은 권한 성공 증거로 간주하지
+`settings.json`을 여는 것도 같은 서비스의 트리거이며, 거부되면 helper는 그 셸의 책임 프로세스에
+대한 App Data/FDA 승인을 안내한다. 책임 프로세스는 보통 터미널 앱이지만 Codex App·Claude Remote
+Control 같은 launcher lineage일 수 있으므로, 거부된 셸에서
+`sudo launchctl procinfo $$ | grep responsible`로 실제 주체를 확인한다 (sudo 없이는 출력이 비어 있다).
+승인은 아래 System Settings 경로에서 사용자가 하며, #1093 D(Ghostty direct FDA)가 그 정책이다.
+TCC 승인 뒤에도 EACCES가 남으면 파일·디렉터리 mode/ACL(`ls -le`)이 원인일 수 있다. 이런 호출은 권한 성공 증거로 간주하지
 않고 outer deadline과 kill-after를 적용해 원격 activation이 무기한 대기하지 않게 한다.
 deadline은 caller만 끝내며 이미 표시된 macOS privacy popup을 dismiss하지 않는다. prompt를
 승인하지 않은 상태에서 Codex App remote child가 별도의 harmless repo fixture를 계속 처리하는지

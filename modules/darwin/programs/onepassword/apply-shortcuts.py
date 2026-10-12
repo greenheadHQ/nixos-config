@@ -11,9 +11,11 @@ import tempfile
 
 APP_RUNNING_MESSAGE = "deferred while 1Password is running; quit it and run onepassword-shortcuts"
 PERMISSION_GUIDANCE = (
-    "macOS app-data protection applies to the terminal app that is this shell's TCC responsible process. "
+    "The likely cause is macOS app-data protection (TCC), which applies to the app that launched this shell "
+    "(its responsible process: usually the terminal app, or a remote launcher such as Codex App or "
+    "Claude Remote Control). Identify it with: sudo launchctl procinfo $$ | grep responsible. "
     'Grant that app "access data from other apps" or Full Disk Access, then run onepassword-shortcuts again. '
-    "Check the responsible app: sudo launchctl procinfo <shell pid> | grep responsible. "
+    "If the denial persists, check the file and directory mode/ACL (ls -le). "
     "Runbook: .claude/skills/managing-macos/references/tcc.md"
 )
 
