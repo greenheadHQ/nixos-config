@@ -83,6 +83,7 @@ approval을 다시 비교하고, 하나라도 달라지면 restart 전에 실패
 | Claude/Codex Bash file-read subprocess | caller가 exact child에 GNU `timeout -k` 적용 |
 | Claude/Codex native Read/tool | 현재 repo-managed deadline 없음 |
 | Shottr/`nrs` defaults access | defaults helper의 code-level deadline + circuit breaker |
+| 1Password shortcuts helper의 `settings.json` read/write | `shortcuts-wrapper.sh`의 deadline 10s·kill-after 2s; 124/137은 TCC prompt 가능성으로, EPERM/EACCES는 책임 프로세스 권한 안내로 분기 (#1558) |
 
 caller timeout은 표시된 privacy popup을 dismiss하거나 allow/deny 결정을 증명하지 않는다.
 
@@ -216,7 +217,11 @@ PID/parent/executable 원문은 mode 0600 임시 기록으로만 확인하고 re
 8. fixture와 임시 프로세스를 정리하고 선택하지 않은 시험 권한이 남지 않았는지 확인한다.
 
 `nrs` 같은 정상 activation도 sandbox app preference를 `defaults`로 읽거나 쓰면 responsible
-app의 `SystemPolicyAppData` prompt를 만들 수 있다. 이런 호출은 권한 성공 증거로 간주하지
+app의 `SystemPolicyAppData` prompt를 만들 수 있다. 1Password shortcuts helper가 Group Container의
+`settings.json`을 여는 것도 같은 서비스의 트리거이며, 거부되면 helper는 책임 프로세스(터미널 앱)에
+대한 App Data/FDA 승인을 안내한다. 거부된 셸의 책임 프로세스는
+`sudo launchctl procinfo <shell pid> | grep responsible`로 확인한다 (sudo 없이는 출력이 비어 있다).
+승인은 아래 System Settings 경로에서 사용자가 하며, #1093 D(Ghostty direct FDA)가 그 정책이다. 이런 호출은 권한 성공 증거로 간주하지
 않고 outer deadline과 kill-after를 적용해 원격 activation이 무기한 대기하지 않게 한다.
 deadline은 caller만 끝내며 이미 표시된 macOS privacy popup을 dismiss하지 않는다. prompt를
 승인하지 않은 상태에서 Codex App remote child가 별도의 harmless repo fixture를 계속 처리하는지
@@ -283,6 +288,7 @@ effective state를 확인한다. enrollment 제거는 해당 enrollment가 설�
 - MDM enrollment/profile/APNs certificate 변경
 - Claude `additionalDirectories` 등 접근 경계 정책 변경 (보호 폴더 재유입은 TCC 노출 폭을 바꾼다)
 - Shottr 등 activation-time 프로세스의 sandbox container 접근 변경 (App Data attribution 재유발 가능)
+- 1Password shortcuts helper의 settings 경로·실행 주체 변경 (Group Container App Data 재유발 가능)
 - launcher lifecycle logic 변경 (responsible identity·argv·parentage에 영향)
 
 재검증은 위 [Launcher별 actual E2E recipe](#launcher별-actual-e2e-recipe)의 진입점과 lineage

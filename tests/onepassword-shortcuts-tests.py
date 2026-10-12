@@ -1,6 +1,9 @@
 """Synthetic settings only: never read the installed 1Password data."""
 
+import contextlib
+import errno
 import importlib.util
+import io
 import json
 from pathlib import Path
 import stat
@@ -131,6 +134,107 @@ class ShortcutTests(unittest.TestCase):
             self.assertFalse(MODULE.is_app_running())
         arguments = probe.call_args.args[0]
         self.assertEqual(arguments[arguments.index("-U") + 1], str(MODULE.os.getuid()))
+
+
+class MainMessageTests(unittest.TestCase):
+    """CLI boundary: each failure cause gets its own stderr guidance and exit code 1."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path = Path(self.directory.name) / "settings.json"
+        self.path.write_text(
+            json.dumps({"signedSettings": {"signature": "synthetic-signature"}}), encoding="utf-8"
+        )
+        self.running = patch.object(MODULE, "is_app_running", return_value=False)
+        self.running.start()
+        self.addCleanup(self.running.stop)
+
+    def run_main(self):
+        stderr = io.StringIO()
+        argv = ["apply-shortcuts.py", str(self.path), *DESIRED.values()]
+        with patch.object(MODULE.sys, "argv", argv), contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(
+            io.StringIO()
+        ):
+            code = MODULE.main()
+        return code, stderr.getvalue()
+
+    def test_permission_denied_explains_terminal_app_access(self):
+        denial = PermissionError(errno.EPERM, "Operation not permitted")
+        with patch.object(Path, "read_bytes", side_effect=denial):
+            code, message = self.run_main()
+        self.assertEqual(code, 1)
+        for expected in (
+            "denied",
+            "access data from other apps",
+            "Full Disk Access",
+            "launchctl procinfo",
+            "references/tcc.md",
+        ):
+            self.assertIn(expected, message)
+        self.assertNotIn("synthetic-signature", message)
+
+    def test_invalid_json_is_reported_as_invalid_json(self):
+        self.path.write_bytes(b"{invalid")
+        code, message = self.run_main()
+        self.assertEqual(code, 1)
+        self.assertIn("not valid JSON", message)
+        self.assertNotIn("access data from other apps", message)
+
+    def test_undecodable_bytes_are_reported_as_invalid_json(self):
+        self.path.write_bytes(b"\xff\xfe{")
+        code, message = self.run_main()
+        self.assertEqual(code, 1)
+        self.assertIn("not valid JSON", message)
+        self.assertNotIn("0x", message)
+
+    def test_symlink_rejection_names_the_symlink(self):
+        target = self.path.with_name("target.json")
+        self.path.rename(target)
+        self.path.symlink_to(target)
+        code, message = self.run_main()
+        self.assertEqual(code, 1)
+        self.assertIn("not a symlink", message)
+        self.assertNotIn("not valid JSON", message)
+
+    def test_non_object_settings_names_the_shape(self):
+        self.path.write_bytes(b"[]")
+        code, message = self.run_main()
+        self.assertEqual(code, 1)
+        self.assertIn("JSON object", message)
+        self.assertNotIn("not valid JSON", message)
+
+    def test_process_probe_failure_is_reported_verbatim(self):
+        probe_error = RuntimeError("could not determine whether 1Password is running")
+        with patch.object(MODULE, "is_app_running", side_effect=probe_error):
+            code, message = self.run_main()
+        self.assertEqual(code, 1)
+        self.assertIn("could not determine whether 1Password is running", message)
+        self.assertNotIn("access data from other apps", message)
+
+    def test_change_during_apply_is_reported_verbatim(self):
+        read_bytes = Path.read_bytes
+        reads = 0
+
+        def read_with_external_change(path):
+            nonlocal reads
+            reads += 1
+            if reads == 2:
+                path.write_text('{"external": true}')
+            return read_bytes(path)
+
+        with patch.object(Path, "read_bytes", read_with_external_change):
+            code, message = self.run_main()
+        self.assertEqual(code, 1)
+        self.assertIn("settings changed during apply", message)
+        self.assertNotIn("access data from other apps", message)
+
+    def test_other_os_errors_name_the_errno(self):
+        with patch.object(Path, "read_bytes", side_effect=OSError(errno.EIO, "Input/output error")):
+            code, message = self.run_main()
+        self.assertEqual(code, 1)
+        self.assertIn("EIO", message)
+        self.assertNotIn("access data from other apps", message)
 
 
 if __name__ == "__main__":

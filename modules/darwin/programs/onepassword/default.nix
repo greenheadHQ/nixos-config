@@ -13,8 +13,9 @@ let
   settingsPath = "${config.home.homeDirectory}/${constants.onePassword.settingsMacRelPath}";
   shortcuts = constants.onePassword.shortcuts;
   applyShortcuts = pkgs.writeShellScriptBin "onepassword-shortcuts" ''
-    # AppData TCC prompt가 activation을 무기한 붙잡지 않도록 실제 파일 접근을 제한한다.
-    exec ${pkgs.coreutils}/bin/timeout --kill-after=2s 10s \
+    ${builtins.readFile ./shortcuts-wrapper.sh}
+    # deadline과 timeout 안내는 shortcuts-wrapper.sh가 소유한다 (tests/suites/onepassword-shortcuts.sh).
+    onepassword_shortcuts_run ${pkgs.coreutils}/bin/timeout \
       ${pkgs.python3}/bin/python3 ${./apply-shortcuts.py} \
       ${lib.escapeShellArgs [
         settingsPath
@@ -27,7 +28,7 @@ in
   home.packages = [ applyShortcuts ];
   home.activation.applyOnePasswordShortcuts = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     if ! run ${lib.getExe applyShortcuts}; then
-      echo "Warning: 1Password shortcuts were not applied. Resolve app-data access, quit 1Password, and run onepassword-shortcuts again." >&2
+      echo "Warning: 1Password shortcuts were not applied; the helper message above names the cause and the next step." >&2
     fi
   '';
 }

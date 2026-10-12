@@ -147,10 +147,15 @@ launchd와 스크립트는 `MISE_EXEC_AUTO_INSTALL=false`로 자동 설치를 �
 helper 실행 중에는 앱을 종료한 상태로 유지하고 다른 도구로 같은 파일을 편집하지 않는다.
 교체 직전 재비교는 관측된 변경을 감지하지만 원자적 비교·교체를 보장하지는 않는다.
 
-macOS AppData 권한은 별도다. 접근 거부/timeout은 적용 성공이 아니며, 실제 실행 주체의
-접근을 운영자가 승인한 뒤 재시도한다. 설정 파일 전체를 Nix store에 복사하거나 symlink로
-대체하지 않는다. 검증은 `python3 tests/onepassword-shortcuts-tests.py`와 양쪽 Darwin
-평가를 사용하고, 실제 적용 뒤에는 1Password 설정 UI·HomeRow·Figma의 키 동작을 확인한다.
+macOS AppData 권한은 별도다. 접근 거부/timeout은 적용 성공이 아니다. helper는 권한 거부
+(EPERM/EACCES)·JSON 손상·symlink·교체 중 변경을 서로 다른 문구로 stderr에 보고하고,
+`shortcuts-wrapper.sh`는 종료 코드 124/137을 "AppData TCC prompt 가능성"으로 안내한다
+(#1558). 권한 거부의 실행 주체는 helper를 띄운 셸의 TCC 책임 프로세스, 즉 터미널 앱이다.
+책임 프로세스 확인 명령, App Data/Full Disk Access 승인 경로, 정책(#1093 D)은
+[references/tcc.md](references/tcc.md)가 소유한다. 설정 파일 전체를 Nix store에 복사하거나
+symlink로 대체하지 않는다. 검증은 `python3 tests/onepassword-shortcuts-tests.py`,
+`bash tests/run-shell-script-tests.sh`(wrapper 스위트 포함)와 양쪽 Darwin 평가를 사용하고,
+실제 적용 뒤에는 1Password 설정 UI·HomeRow·Figma의 키 동작을 확인한다.
 
 ## 자주 발생하는 문제
 
