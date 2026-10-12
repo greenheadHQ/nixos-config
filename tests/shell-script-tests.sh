@@ -33,7 +33,10 @@ done < <(find "$SCRIPT_DIR/suites" -maxdepth 1 -type f -name '*.sh' -print0 | so
 # parity 는 tests/suites/test-infra.sh 의 test_suite_function_registration_parity 가 강제한다.
 run_test "1Password shortcuts preserve mutable settings" test_onepassword_shortcuts_preserve_mutable_settings
 run_test "1Password shortcuts wrapper explains TCC timeout" test_onepassword_shortcuts_wrapper_explains_timeout
-run_test "1Password shortcuts wrapper classifies exit by elapsed time" test_onepassword_shortcuts_wrapper_classifies_exit_by_elapsed_time
+run_test "1Password shortcuts wrapper classifies exit status" test_onepassword_shortcuts_wrapper_classifies_exit_status
+run_test "1Password shortcuts real external SIGKILL" test_onepassword_shortcuts_real_external_sigkill
+run_test "1Password shortcuts real timeout TERM" test_onepassword_shortcuts_real_timeout_term
+run_test "1Password shortcuts real timeout kill-after" test_onepassword_shortcuts_real_timeout_kill_after
 run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
 run_test "wt wrapper ignores runtime HOME for real script" test_wt_wrapper_ignores_runtime_home_for_real_script
 run_test "managed plugin skill helper rejects duplicate matches" test_managed_plugin_skill_link_requires_single_match

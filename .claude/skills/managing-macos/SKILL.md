@@ -149,10 +149,13 @@ helper 실행 중에는 앱을 종료한 상태로 유지하고 다른 도구로
 
 macOS AppData 권한은 별도다. 접근 거부/timeout은 적용 성공이 아니다. helper는 권한 거부
 (EPERM/EACCES)·JSON 손상·symlink·교체 중 변경을 서로 다른 문구로 stderr에 보고하고,
-`shortcuts-wrapper.sh`는 종료 코드 124/137을 "AppData TCC prompt 가능성"으로 안내한다
-(#1558). 권한 거부의 실행 주체는 helper를 띄운 셸의 TCC 책임 프로세스다 — 보통 터미널 앱이지만,
+`shortcuts-wrapper.sh`는 124를 "AppData TCC prompt 가능성"이 있는 timeout으로 안내한다.
+137은 timeout kill-after와 외부 SIGKILL을 구분할 수 없으므로 원인을 단정하거나 권한 변경을
+권하지 않는다 (#1558). 권한 거부의 실행 주체는 helper를 띄운 셸의 TCC 책임 프로세스다 — 보통 터미널 앱이지만,
 Codex App이나 Claude Remote Control처럼 launchd 계열 launcher에서 실행했다면 그 launcher다.
-책임 프로세스 확인 명령, App Data/Full Disk Access 승인 경로, 정책(#1093 D)은
+기본 복구는 승인된 Ghostty direct 셸에서 재시도한다. 원격 launcher 접근이 필요한 경우에는
+Mac 앞에서 정확한 launcher에 대해 수동 승인·검증 절차를 별도로 따른다.
+책임 프로세스 확인 명령, App Data/Full Disk Access 승인 경로, 정책(#1093 C+D)은
 [references/tcc.md](references/tcc.md)가 소유한다. 승인 뒤에도 거부가 계속되면 파일·디렉터리의
 mode/ACL(`ls -le`)도 확인한다. 설정 파일 전체를 Nix store에 복사하거나
 symlink로 대체하지 않는다. 검증은 `python3 tests/onepassword-shortcuts-tests.py`,

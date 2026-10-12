@@ -83,7 +83,7 @@ approval을 다시 비교하고, 하나라도 달라지면 restart 전에 실패
 | Claude/Codex Bash file-read subprocess | caller가 exact child에 GNU `timeout -k` 적용 |
 | Claude/Codex native Read/tool | 현재 repo-managed deadline 없음 |
 | Shottr/`nrs` defaults access | defaults helper의 code-level deadline + circuit breaker |
-| 1Password shortcuts helper의 `settings.json` read/write | `shortcuts-wrapper.sh`의 deadline 10s·kill-after 2s; 124/137은 TCC prompt 가능성으로, EPERM/EACCES는 책임 프로세스 권한 안내로 분기 (#1558) |
+| 1Password shortcuts helper의 `settings.json` read/write | `shortcuts-wrapper.sh`의 deadline 10s·kill-after 2s; 124는 TCC prompt 가능성, 137은 원인 불명 SIGKILL, EPERM/EACCES는 책임 프로세스와 수동 복구 안내로 분기 (#1558) |
 
 caller timeout은 표시된 privacy popup을 dismiss하거나 allow/deny 결정을 증명하지 않는다.
 
@@ -219,10 +219,13 @@ PID/parent/executable 원문은 mode 0600 임시 기록으로만 확인하고 re
 `nrs` 같은 정상 activation도 sandbox app preference를 `defaults`로 읽거나 쓰면 responsible
 app의 `SystemPolicyAppData` prompt를 만들 수 있다. 1Password shortcuts helper가 Group Container의
 `settings.json`을 여는 것도 같은 서비스의 트리거이며, 거부되면 helper는 그 셸의 책임 프로세스에
-대한 App Data/FDA 승인을 안내한다. 책임 프로세스는 보통 터미널 앱이지만 Codex App·Claude Remote
+대한 수동 복구 절차를 안내한다. 책임 프로세스는 보통 터미널 앱이지만 Codex App·Claude Remote
 Control 같은 launcher lineage일 수 있으므로, 거부된 셸에서
 `sudo launchctl procinfo $$ | grep responsible`로 실제 주체를 확인한다 (sudo 없이는 출력이 비어 있다).
-승인은 아래 System Settings 경로에서 사용자가 하며, #1093 D(Ghostty direct FDA)가 그 정책이다.
+기본 복구는 #1093 D의 승인된 Ghostty direct 셸에서 helper를 재실행하는 것이다. 원격 launcher의
+접근이 꼭 필요한 경우에는 Mac 앞에서 해당 launcher의 정확한 identity를 확인하고, 위 수동
+targeted/FDA 절차의 action-time confirmation·승인·검증을 별도로 수행한다. Ghostty의 권한은
+원격 launcher에 승계되지 않는다. 승인은 아래 System Settings 경로에서 사용자가 한다.
 TCC 승인 뒤에도 EACCES가 남으면 파일·디렉터리 mode/ACL(`ls -le`)이 원인일 수 있다. 이런 호출은 권한 성공 증거로 간주하지
 않고 outer deadline과 kill-after를 적용해 원격 activation이 무기한 대기하지 않게 한다.
 deadline은 caller만 끝내며 이미 표시된 macOS privacy popup을 dismiss하지 않는다. prompt를

@@ -14,7 +14,10 @@ PERMISSION_GUIDANCE = (
     "The likely cause is macOS app-data protection (TCC), which applies to the app that launched this shell "
     "(its responsible process: usually the terminal app, or a remote launcher such as Codex App or "
     "Claude Remote Control). Identify it with: sudo launchctl procinfo $$ | grep responsible. "
-    'Grant that app "access data from other apps" or Full Disk Access, then run onepassword-shortcuts again. '
+    "For the default recovery path, retry from the approved Ghostty direct shell. "
+    'If Ghostty needs "access data from other apps" or Full Disk Access, follow the runbook to approve it in System Settings. '
+    "Remote launcher access requires separate manual approval and verification for that exact launcher; "
+    "Ghostty access does not carry over to it. "
     "If the denial persists, check the file and directory mode/ACL (ls -le). "
     "Runbook: .claude/skills/managing-macos/references/tcc.md"
 )

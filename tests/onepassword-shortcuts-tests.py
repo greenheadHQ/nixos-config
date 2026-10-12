@@ -172,9 +172,12 @@ class MainMessageTests(unittest.TestCase):
             "references/tcc.md",
             "ACL",
             "launched this shell",
+            "approved Ghostty direct shell",
+            "separate manual approval and verification",
         ):
             self.assertIn(expected, message)
         self.assertNotIn("synthetic-signature", message)
+        self.assertNotIn("Grant that app", message)
 
     def test_invalid_json_is_reported_as_invalid_json(self):
         self.path.write_bytes(b"{invalid")

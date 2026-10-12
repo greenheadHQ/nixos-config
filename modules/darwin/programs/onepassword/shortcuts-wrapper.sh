@@ -7,35 +7,31 @@
 ONEPASSWORD_SHORTCUTS_DEADLINE="10s"
 ONEPASSWORD_SHORTCUTS_KILL_AFTER="2s"
 
-# Usage: onepassword_shortcuts_explain_exit STATUS ELAPSED_SECONDS
-# GNU timeout returns 124 only when the deadline expired, but 137 whenever the helper
-# (or timeout itself) received SIGKILL — including kills by memory pressure or an
-# operator. Treat 137 as the kill-after path only once the deadline has actually
-# elapsed; otherwise name it as an external kill. Every other status stays silent.
+# Usage: onepassword_shortcuts_explain_exit STATUS
+# The Python helper only exits 0/1, so 124 identifies timeout here. Exit 137 can
+# mean timeout's kill-after or an external SIGKILL; elapsed time cannot prove the
+# cause. Every other status stays silent.
 onepassword_shortcuts_explain_exit() {
-    local status="$1" elapsed="$2" deadline_seconds="${ONEPASSWORD_SHORTCUTS_DEADLINE%s}"
+    local status="$1"
     case "$status" in
         124) ;;
         137)
-            if [ "$elapsed" -lt "$deadline_seconds" ]; then
-                echo "1Password shortcuts: helper was killed (SIGKILL) after ${elapsed}s, before the ${ONEPASSWORD_SHORTCUTS_DEADLINE} deadline; not a timeout, and no shortcuts applied. Check what killed it (memory pressure, another controller), then run onepassword-shortcuts again." >&2
-                return 0
-            fi
+            echo "1Password shortcuts: helper was killed (SIGKILL); the cause cannot be determined from exit 137 (timeout kill-after or an external kill). Check what killed it and the current shortcuts before running onepassword-shortcuts again." >&2
+            return 0
             ;;
         *) return 0 ;;
     esac
-    echo "1Password shortcuts: timed out after ${ONEPASSWORD_SHORTCUTS_DEADLINE} (possible AppData TCC prompt for the app that launched this shell); no shortcuts applied. Answer the prompt or grant that app access, then run onepassword-shortcuts again." >&2
+    echo "1Password shortcuts: timed out after ${ONEPASSWORD_SHORTCUTS_DEADLINE} (possible AppData TCC prompt for the app that launched this shell); no shortcuts applied. Retry from the approved Ghostty direct shell. If remote access is required, follow the exact-launcher manual approval and verification procedure in .claude/skills/managing-macos/references/tcc.md." >&2
 }
 
 # Usage: onepassword_shortcuts_run TIMEOUT_BIN COMMAND [ARGS...]
 # Runs the helper under the deadline. A timeout leaves the helper no chance to
-# explain itself, so the exit status and elapsed time are explained here; every
+# explain itself, so the exit status is explained here; every
 # result passes through unchanged.
 onepassword_shortcuts_run() {
-    local timeout_bin="$1" status=0 started
+    local timeout_bin="$1" status=0
     shift
-    started=$SECONDS
     "$timeout_bin" --kill-after="$ONEPASSWORD_SHORTCUTS_KILL_AFTER" "$ONEPASSWORD_SHORTCUTS_DEADLINE" "$@" || status=$?
-    onepassword_shortcuts_explain_exit "$status" "$((SECONDS - started))"
+    onepassword_shortcuts_explain_exit "$status"
     return "$status"
 }
