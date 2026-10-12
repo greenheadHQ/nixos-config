@@ -99,7 +99,7 @@ metadata writes during rendering or after background sync.
 ## Sources and updates
 
 `sources.json` records the official source URL, archive SHA-256 and modification
-timestamp. `p=260902` requests the distribution for Anki 26.09.2; **it is not an
+timestamp. The `p` parameter selects a distribution for the requested Anki version; **it is not an
 immutable add-on version URL**. The initial archives match the installed code
 byte for byte. We use those distributions rather than upstream HEAD or a
 different nixpkgs revision, preserving bundled JavaScript and vendor files.
@@ -107,6 +107,13 @@ different nixpkgs revision, preserving bundled JavaScript and vendor files.
 Note Linker uses the upstream `v.2026.08.10` release asset after AnkiWeb replaced
 its distribution. That asset is byte-identical to the original pinned archive;
 the hash and modification timestamp remain unchanged.
+
+AnkiConnect selects `p=250903` to retain the original distribution after AnkiWeb
+replaced the `p=260902` response with a JSON-RPC API rewrite. The selected archive
+is byte-identical to the original pinned archive; its hash and modification
+timestamp remain unchanged. This selector preserves the existing add-on code,
+not a downgrade of the installed Anki application. The URL is still mutable, so
+the hash continues to reject future distribution replacements.
 
 The Note Linker package applies one local rendering patch: markers inside
 `pre`, `code`, `script`, `style` and `textarea` remain literal. This prevents
