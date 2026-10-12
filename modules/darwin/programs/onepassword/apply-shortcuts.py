@@ -1,5 +1,6 @@
 """Merge only the two non-sensitive 1Password shortcuts into its mutable settings."""
 
+import errno
 import json
 import os
 from pathlib import Path
@@ -9,6 +10,17 @@ import sys
 import tempfile
 
 APP_RUNNING_MESSAGE = "deferred while 1Password is running; quit it and run onepassword-shortcuts"
+PERMISSION_GUIDANCE = (
+    "The likely cause is macOS app-data protection (TCC), which applies to the app that launched this shell "
+    "(its responsible process: usually the terminal app, or a remote launcher such as Codex App or "
+    "Claude Remote Control). Identify it with: sudo launchctl procinfo $$ | grep responsible. "
+    "For the default recovery path, retry from the approved Ghostty direct shell. "
+    'If Ghostty needs "access data from other apps" or Full Disk Access, follow the runbook to approve it in System Settings. '
+    "Remote launcher access requires separate manual approval and verification for that exact launcher; "
+    "Ghostty access does not carry over to it. "
+    "If the denial persists, check the file and directory mode/ACL (ls -le). "
+    "Runbook: .claude/skills/managing-macos/references/tcc.md"
+)
 
 
 def is_app_running():
@@ -64,6 +76,22 @@ def apply_shortcuts(path, desired):
     return "applied; reopen 1Password to use the new shortcuts"
 
 
+def failure_message(exc):
+    """Describe why nothing was applied without echoing the settings payload."""
+    # UnicodeDecodeError is also a ValueError, and its text quotes a byte of the file.
+    if isinstance(exc, (json.JSONDecodeError, UnicodeDecodeError)):
+        return "settings file is not valid JSON; no shortcuts applied. Repair or restore it from 1Password first."
+    if isinstance(exc, PermissionError):
+        code = errno.errorcode.get(exc.errno, "errno unknown")
+        return f"access to the settings file or its directory was denied ({code}); no shortcuts applied. {PERMISSION_GUIDANCE}"
+    if isinstance(exc, (ValueError, RuntimeError)):
+        # Messages this script raises itself, or interpreter errors such as RecursionError;
+        # none of them quote settings data.
+        return f"{exc}; no shortcuts applied."
+    code = errno.errorcode.get(exc.errno, "errno unknown")
+    return f"settings unavailable ({code}); no shortcuts applied."
+
+
 def main():
     if len(sys.argv) != 4:
         print("usage: apply-shortcuts.py SETTINGS QUICK_ACCESS AUTOFILL", file=sys.stderr)
@@ -73,13 +101,9 @@ def main():
             Path(sys.argv[1]),
             {"keybinds.quickAccess": sys.argv[2], "keybinds.autoFill": sys.argv[3]},
         )
-    except (OSError, ValueError, RuntimeError):
+    except (OSError, ValueError, RuntimeError) as exc:
         # Do not print the settings payload, which also holds account/security data.
-        print(
-            "1Password shortcuts: settings unavailable or invalid; no shortcuts applied. "
-            "Check app-data access and retry with 1Password closed.",
-            file=sys.stderr,
-        )
+        print(f"1Password shortcuts: {failure_message(exc)}", file=sys.stderr)
         return 1
     print(f"1Password shortcuts: {message}.")
     return 0
