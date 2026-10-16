@@ -14,7 +14,8 @@
   -webkit-text-size-adjust: 100%;
 }
 .anki-difficulty-badge[hidden], .anki-difficulty-badge__evidence[hidden] { display: none !important; }
-.anki-difficulty-badge__button {
+/* Outrank Anki Desktop's .fancy button styles on the transparent hit area. */
+.anki-difficulty-badge .anki-difficulty-badge__button {
   appearance: none;
   -webkit-appearance: none;
   box-sizing: border-box;
@@ -29,6 +30,7 @@
   border-radius: 6px;
   background: transparent;
   box-shadow: none;
+  transition: none;
   color: inherit;
   font: inherit;
   cursor: pointer;
@@ -47,7 +49,12 @@
   background: var(--difficulty-pill);
   font-weight: 600;
 }
-.anki-difficulty-badge__button:hover, .anki-difficulty-badge__button:active { background: transparent; box-shadow: none; }
+.anki-difficulty-badge .anki-difficulty-badge__button:is(:hover, :active, :focus) {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  transition: none;
+}
 .anki-difficulty-badge__button:focus-visible { outline: 2px solid var(--difficulty-focus) !important; outline-offset: 2px; }
 .anki-difficulty-badge__evidence {
   box-sizing: border-box;
@@ -343,7 +350,8 @@
   -webkit-text-size-adjust: 100%;
 }
 .anki-difficulty-badge[hidden], .anki-difficulty-badge__evidence[hidden] { display: none !important; }
-.anki-difficulty-badge__button {
+/* Outrank Anki Desktop's .fancy button styles on the transparent hit area. */
+.anki-difficulty-badge .anki-difficulty-badge__button {
   appearance: none;
   -webkit-appearance: none;
   box-sizing: border-box;
@@ -358,6 +366,7 @@
   border-radius: 6px;
   background: transparent;
   box-shadow: none;
+  transition: none;
   color: inherit;
   font: inherit;
   cursor: pointer;
@@ -376,7 +385,12 @@
   background: var(--difficulty-pill);
   font-weight: 600;
 }
-.anki-difficulty-badge__button:hover, .anki-difficulty-badge__button:active { background: transparent; box-shadow: none; }
+.anki-difficulty-badge .anki-difficulty-badge__button:is(:hover, :active, :focus) {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  transition: none;
+}
 .anki-difficulty-badge__button:focus-visible { outline: 2px solid var(--difficulty-focus) !important; outline-offset: 2px; }
 .anki-difficulty-badge__evidence {
   box-sizing: border-box;
