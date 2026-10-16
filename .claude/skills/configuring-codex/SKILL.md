@@ -164,13 +164,15 @@ trust를 하드코딩하지 않고 runtime-owned `config.toml`의 `[projects.*]`
 
 `~/.codex/config.toml`은 nix 템플릿과 Codex 앱이 함께 쓰는 파일이다. sync는 템플릿이 선언한 leaf만
 덮어쓰고(template-owned) 나머지는 보존한다(user-owned). 앱 UI가 쓰는 키를 템플릿에 두면 nrs마다
-되돌아가 UI 선택이 무효가 되므로, 경계는 다음과 같이 둔다 (2026-09-05 결정).
+되돌아가 UI 선택이 무효가 되므로, 경계는 다음과 같이 둔다 (2026-09-05 결정,
+2026-10-16 사용자 요청으로 메모리 처리 모델 두 키만 선언 소유로 추가).
 
 | 소유 | 키 | 근거 |
 |------|----|------|
 | 템플릿(선언) | `approval_policy`, `sandbox_mode`, `[features]`, `[agents]`, `[[hooks.*]]`, `[notice]` | 정책·안전 경계. 사용자가 UI로 바꾸는 값이 아니다 |
+| 템플릿(메모리 모델) | `memories.extract_model`, `memories.consolidation_model` | 사용자 요청으로 추출은 `gpt-6-luna`, 통합은 `gpt-6.1-sol`로 고정. 나머지 메모리 설정은 보존 |
 | 앱(UI persist) | `model`, `model_reasoning_effort`, `service_tier` | Desktop/TUI 선택이 최상위 키로 기록됨. 템플릿에서 제거 |
-| 앱(런타임 상태) | `[projects.*]`, `tui`, `desktop`, `memories`, `plugins`, `skills`, `marketplaces`, `notify`, `mcp_servers` | 앱이 생성·갱신. 템플릿은 선언하지 않는다 |
+| 앱(런타임 상태) | `[projects.*]`, `tui`, `desktop`, `memories`의 위 두 모델 외 설정, `plugins`, `skills`, `marketplaces`, `notify`, `mcp_servers` | 앱이 생성·갱신. 템플릿은 선언하지 않는다 |
 
 템플릿에서 키를 지워도 배포본에는 user-owned로 남는다. 배포본에서까지 영구 회수해야 하는 정책 키는
 [`retired-config-keys.txt`](../../../modules/shared/programs/codex/files/retired-config-keys.txt)에

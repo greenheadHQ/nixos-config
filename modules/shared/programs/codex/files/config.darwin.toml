@@ -16,7 +16,7 @@ personality = "pragmatic"
 # model·model_reasoning_effort는 템플릿에 두지 않는다 — Codex Desktop/TUI가 UI에서 고른 값을
 # ~/.codex/config.toml 최상위 키에 persist하므로, template-owned로 두면 nrs마다 되돌아가 UI 선택이
 # 무효가 된다(2026-09-05 Desktop 슬라이더 실측). 세션 취향(모델·effort)은 앱 UI가 단일 소스이고,
-# 이 템플릿은 정책·안전 경계(approval_policy, sandbox_mode, features, agents, hooks)만 선언한다.
+# 이 템플릿은 정책·안전 경계와 명시적으로 선택한 메모리 처리 모델을 선언한다.
 # 미지정 시 codex는 카탈로그 priority 1(frontier)과 그 모델의 기본 effort를 쓴다. 어떤 모델이
 # 어떤 effort를 지원하는지는 `codex debug models`의 supported_reasoning_levels로 확인한다.
 approval_policy = "never"
@@ -30,6 +30,11 @@ NIXOS_CONFIG_HEADLESS_SSH = "1"
 
 [notice]
 hide_full_access_warning = true
+
+# 메모리 처리 모델만 선언한다. 나머지 memories 설정은 앱이 관리하며 nrs가 보존한다.
+[memories]
+extract_model = "gpt-6-luna"
+consolidation_model = "gpt-6.1-sol"
 
 # 아래 값은 "upstream 기본이 뒤집혀도 이 값을 강제한다"는 의도의 명시 핀이다 — 현행 기본과
 # 같은 값이어도 유지한다. 재검증(현행 기본값): CODEX_HOME=$(mktemp -d) codex features list
