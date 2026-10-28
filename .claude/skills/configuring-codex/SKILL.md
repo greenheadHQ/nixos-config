@@ -170,7 +170,7 @@ trust를 하드코딩하지 않고 runtime-owned `config.toml`의 `[projects.*]`
 | 소유 | 키 | 근거 |
 |------|----|------|
 | 템플릿(선언) | `approval_policy`, `sandbox_mode`, `[features]`, `[agents]`, `[[hooks.*]]`, `[notice]` | 정책·안전 경계. 사용자가 UI로 바꾸는 값이 아니다 |
-| 템플릿(메모리 모델) | `memories.extract_model`, `memories.consolidation_model` | 사용자 요청으로 추출은 `gpt-6-luna`, 통합은 `gpt-6.1-sol`로 고정. 나머지 메모리 설정은 보존 |
+| 템플릿(메모리 모델) | `memories.extract_model`, `memories.consolidation_model` | 사용자 요청으로 추출은 `gpt-6-luna`, 통합은 `gpt-6.1-terra`로 고정. 나머지 메모리 설정은 보존 |
 | 앱(UI persist) | `model`, `model_reasoning_effort`, `service_tier` | Desktop/TUI 선택이 최상위 키로 기록됨. 템플릿에서 제거 |
 | 앱(런타임 상태) | `[projects.*]`, `tui`, `desktop`, `memories`의 위 두 모델 외 설정, `plugins`, `skills`, `marketplaces`, `notify`, `mcp_servers` | 앱이 생성·갱신. 템플릿은 선언하지 않는다 |
 

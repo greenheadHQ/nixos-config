@@ -27,7 +27,7 @@ hide_full_access_warning = true
 # 메모리 처리 모델만 선언한다. 나머지 memories 설정은 앱이 관리하며 nrs가 보존한다.
 [memories]
 extract_model = "gpt-6-luna"
-consolidation_model = "gpt-6.1-sol"
+consolidation_model = "gpt-6.1-terra"
 
 # Linux default disables `apps` to skip `codex_apps` MCP boot; use `codex-apps`
 # shell alias for opt-in connector / plugin / tool_search surface (#772).

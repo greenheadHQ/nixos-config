@@ -34,7 +34,7 @@ hide_full_access_warning = true
 # 메모리 처리 모델만 선언한다. 나머지 memories 설정은 앱이 관리하며 nrs가 보존한다.
 [memories]
 extract_model = "gpt-6-luna"
-consolidation_model = "gpt-6.1-sol"
+consolidation_model = "gpt-6.1-terra"
 
 # 아래 값은 "upstream 기본이 뒤집혀도 이 값을 강제한다"는 의도의 명시 핀이다 — 현행 기본과
 # 같은 값이어도 유지한다. 재검증(현행 기본값): CODEX_HOME=$(mktemp -d) codex features list
