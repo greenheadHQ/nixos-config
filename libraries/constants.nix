@@ -280,7 +280,7 @@
   # vault는 GUI에서 동일 이름으로 생성해야 op CLI가 조회 가능
   # ═══════════════════════════════════════════════════════════════
   onePassword = {
-    # op CLI 멀티 계정(개인+회사) 환경에서 Automation vault가 속한 개인 account 고정.
+    # op CLI 멀티 계정 환경에서 Automation vault가 속한 account 고정.
     # my.1password.com은 개인 1Password 공통 sign-in 도메인 (개인 식별 정보 아님).
     # MiniPC는 OP_SERVICE_ACCOUNT_TOKEN이 account를 결정하므로 본 값은 Mac biometric 경로 전용.
     account = "my.1password.com";

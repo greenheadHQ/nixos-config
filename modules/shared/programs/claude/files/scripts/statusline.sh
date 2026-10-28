@@ -152,7 +152,7 @@ tilde_shorten() {
 
 # bundle id → URL template 매핑. macOS LaunchServices 는 bundle id 를 lowercase
 # 로 저장하므로 입력을 lowercase 정규화 후 매칭한다. 미지원 bundle id 는 빈 출력
-# → caller 가 vscode default 로 fallback 한다. 매핑은 회사 IDE 분포
+# → caller 가 vscode default 로 fallback 한다. 매핑은 지원 IDE
 # (VSCode/Cursor/Antigravity/JetBrains 계열) 의 실측 검증된 scheme 만 포함한다 —
 # 미확정 scheme 은 추가하지 않는다 (오매핑보다 vscode fallback 이 안전한 silent
 # UX 회복 경로). VSCode 계열 fork (Cursor/Antigravity) 는 `scheme://file%s`,
@@ -206,7 +206,7 @@ known_ide_list() {
 # 옵션 C — macOS LaunchServices 에서 source-code 의 default 에디터를 조회해 IDE
 # URL template 으로 환원. defaults export → plutil json → jq 로 LSHandlers 배열을
 # 파싱한다. 조회 신호를 우선순위로 평탄화:
-#   (1) 회사 주력 확장자 (ts/tsx/kt/java/py/go/... 의 public.filename-extension)
+#   (1) 주요 소스 코드 확장자 (ts/tsx/kt/java/py/go/... 의 public.filename-extension)
 #       의 default 에디터 — 사용자가 "이 확장자는 항상 X 로" 설정한 구체적 신호.
 #       public.source-code 추상 UTI 보다 실제로 설정될 확률이 높다.
 #   (2) public.source-code UTI 의 default handler — 상위 fallback.
