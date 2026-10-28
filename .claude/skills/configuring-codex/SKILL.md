@@ -14,8 +14,9 @@ Codex CLI 호환 레이어와 프로젝트 스킬 발견 문제를 다룹니다.
 
 ## 작성 기준
 
-- 확인 날짜: 2026-09-05
-- 확인 버전: codex-cli 0.153.4 (codex-pin.json/runtime 일치 — 값의 SoT는 codex-pin.json; nix overlay — OpenAI 공식 릴리스 직핀; #890에서 mise npm backend → nix 이관)
+- CLI 버전의 SoT는 `modules/shared/programs/codex/codex-pin.json`이다 (nix overlay — OpenAI 공식 릴리스 직핀; #890에서 mise npm backend → nix 이관). 설치 버전은 아래 명령으로 별도 확인한다.
+- 확인 날짜: 2026-10-28
+- 확인 버전: codex-cli 0.164.0 (핀된 패키지의 `--version`·`--help` 검증)
 - 재검증: `jq -r .version modules/shared/programs/codex/codex-pin.json && codex --version && codex --help`
 
 ## 목적과 범위
@@ -170,9 +171,11 @@ trust를 하드코딩하지 않고 runtime-owned `config.toml`의 `[projects.*]`
 | 소유 | 키 | 근거 |
 |------|----|------|
 | 템플릿(선언) | `approval_policy`, `sandbox_mode`, `[features]`, `[agents]`, `[[hooks.*]]`, `[notice]` | 정책·안전 경계. 사용자가 UI로 바꾸는 값이 아니다 |
-| 템플릿(메모리 모델) | `memories.extract_model`, `memories.consolidation_model` | 사용자 요청으로 추출은 `gpt-6-luna`, 통합은 `gpt-6.1-sol`로 고정. 나머지 메모리 설정은 보존 |
+| 템플릿(메모리 모델) | `memories.extract_model`, `memories.consolidation_model` | 사용자 요청으로 추출은 `gpt-6-luna`, 통합은 `gpt-6.1-terra`로 고정. 나머지 메모리 설정은 보존 |
 | 앱(UI persist) | `model`, `model_reasoning_effort`, `service_tier` | Desktop/TUI 선택이 최상위 키로 기록됨. 템플릿에서 제거 |
 | 앱(런타임 상태) | `[projects.*]`, `tui`, `desktop`, `memories`의 위 두 모델 외 설정, `plugins`, `skills`, `marketplaces`, `notify`, `mcp_servers` | 앱이 생성·갱신. 템플릿은 선언하지 않는다 |
+
+`gpt-6.1-terra`는 Codex CLI 0.159.0 이상이 필요하다 ([공식 모델 문서](https://learn.chatgpt.com/docs/models)). 핀과 설치 버전은 위 재검증 명령으로 확인한다.
 
 템플릿에서 키를 지워도 배포본에는 user-owned로 남는다. 배포본에서까지 영구 회수해야 하는 정책 키는
 [`retired-config-keys.txt`](../../../modules/shared/programs/codex/files/retired-config-keys.txt)에
