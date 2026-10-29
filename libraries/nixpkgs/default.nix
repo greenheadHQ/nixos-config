@@ -17,5 +17,16 @@
   nixpkgs.overlays = [
     # VSCode 확장: open-vsx 우선, 미등록은 vscode-marketplace fallback (modules/darwin/programs/vscode/default.nix 참조)
     inputs.nix-vscode-extensions.overlays.default
+    # TS-2026-014~017: nixpkgs가 보안 수정 버전을 제공하면 임시 핀을 해제한다.
+    (final: prev: {
+      tailscale =
+        if
+          prev.stdenv.hostPlatform.system == "x86_64-linux"
+          && prev.lib.versionOlder prev.tailscale.version "1.104.4"
+        then
+          final.callPackage ./tailscale.nix { }
+        else
+          prev.tailscale;
+    })
   ];
 }
