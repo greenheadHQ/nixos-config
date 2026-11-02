@@ -19,6 +19,13 @@
     #         채널 수준의 캐시 커버리지가 Mac의 1차 방어선임.
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
+    # 사용자 공간 패키지를 유지하면서 공식 캐시의 6.18 LTS 커널만 별도로 갱신한다.
+    # 기본 커널이 eval-tests.nix의 최소 버전을 충족하면 임시 선택과 함께 제거한다.
+    nixpkgs-kernel = {
+      url = "github:NixOS/nixpkgs/0bb2eedc20e4739f29e8045034f2828ad7054f8f";
+      flake = false;
+    };
+
     nix-darwin = {
       url = "github:nix-darwin/nix-darwin";
       inputs.nixpkgs.follows = "nixpkgs";

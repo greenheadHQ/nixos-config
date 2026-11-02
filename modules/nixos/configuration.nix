@@ -2,6 +2,7 @@
 {
   config,
   pkgs,
+  inputs,
   constants,
   username,
   hostname,
@@ -15,6 +16,12 @@
   # 부트로더
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
+
+  # 사용자 공간 패키지와 독립적으로 6.18 LTS 커널 패키지 집합을 선택한다.
+  # 커널과 모듈을 같은 집합에서 가져와 ABI를 맞춘다. 기본 6.18 커널이
+  # eval-tests.nix의 최소 버전을 충족하면 이 선택과 nixpkgs-kernel input을 함께 제거한다.
+  boot.kernelPackages =
+    (import inputs.nixpkgs-kernel { system = pkgs.stdenv.hostPlatform.system; }).linuxPackages_6_18;
 
   # 커널 패닉 시 자동 재부팅 (10초 후)
   boot.kernel.sysctl."kernel.panic" = 10;

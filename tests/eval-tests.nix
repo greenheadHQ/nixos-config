@@ -1388,6 +1388,12 @@ let
   # 테스트 리스트: { name, cond } 형태 — 순서대로 평가
   tests = [
     {
+      name = "Test K1: NixOS 6.18 LTS 커널의 최소 버전 유지";
+      cond =
+        nixpkgsLib.versions.majorMinor nixosCfg.boot.kernelPackages.kernel.version == "6.18"
+        && nixpkgsLib.versionAtLeast nixosCfg.boot.kernelPackages.kernel.version "6.18.56";
+    }
+    {
       name = "Test PH1: NixOS service-lib의 stdin-config Pushover helper와 strict 소비자 배선";
       cond =
         serviceLibHasPushover nixosBase.pkgs
