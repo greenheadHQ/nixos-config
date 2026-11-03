@@ -11,8 +11,9 @@ _uc_script="$REPO_ROOT/modules/shared/scripts/update-codex.sh"
 #         이후는 $UC_TEST_PAGES_DIR/<cursor>.json. UC_TEST_GH_WARN이 있으면 stderr에 경고를 남긴다.
 #   실패: UC_TEST_GH_FAIL_EXIT가 있으면 UC_TEST_GH_FAIL_STATUS(예: "504 Gateway Timeout")로 상태 줄과
 #         UC_TEST_GH_FAIL_BODY를 내고(STATUS가 비면 응답 없음 — stdout 없음), UC_TEST_GH_FAIL_STDERR를
-#         stderr에 쓴 뒤 그 코드로 종료한다. UC_TEST_GH_FAIL_HEADERS_ONLY=1이면 빈 줄·본문 없이
-#         상태 줄과 헤더만 낸다(본문 수신 중 스트림이 끊긴 경우).
+#         stderr에 쓴 뒤 그 코드로 종료한다.
+#   호출 상한: 10회를 넘으면 99로 실패한다 — 페이지 루프 진행 가드가 깨졌을 때 테스트가
+#         무한 대기(하네스에 테스트별 시간 제한 없음) 대신 실패로 드러나게 한다.
 # 호출 로그에는 query 본문을 빼고 남기고(여러 줄이라 assertion을 흐린다), 본문은 따로 저장한다.
 _uc_install_gh_stub() {
   local path="$1"
@@ -29,6 +30,10 @@ for arg in "$@"; do
   esac
 done
 printf '%s\n' "${logged[*]}" >> "$UC_TEST_GH_LOG"
+if [ "$(wc -l < "$UC_TEST_GH_LOG")" -gt 10 ]; then
+  echo "gh stub: too many calls (pagination loop not progressing?)" >&2
+  exit 99
+fi
 if [ "${1:-}" != "api" ] || [ "${2:-}" != "-i" ] || [ "${3:-}" != "graphql" ]; then
   echo "gh stub: unexpected call: ${logged[*]}" >&2
   exit 99
@@ -37,7 +42,6 @@ emit() {
   printf 'HTTP/2.0 %s\n' "$1"
   printf 'Content-Type: application/json; charset=utf-8\r\n'
   printf 'X-Github-Request-Id: FIXTURE\r\n'
-  [ "${UC_TEST_GH_FAIL_HEADERS_ONLY:-0}" = 1 ] && return 0
   printf '\r\n'
   printf '%s' "$2"
 }
@@ -213,6 +217,21 @@ test_update_codex_graphql_rejects_stalled_cursor() {
   assert_line_count "$sandbox/gh.log" "api -i graphql -f query=<omitted> -f owner=openai -f name=codex -f cursor=CURSOR1" 1
 }
 
+# 2페이지 이후 빈 endCursor를 그대로 쓰면 cursor가 비어 첫 페이지부터 다시 받는 무한 루프가 된다.
+test_update_codex_graphql_rejects_empty_cursor_after_first_page() {
+  local sandbox
+  sandbox=$(new_sandbox)
+  _uc_prepare_sandbox "$sandbox" "0.101.0"
+  _uc_write_page "$sandbox/pages/first.json" true "CURSOR1" "[$(_uc_node rust-v0.102.0-alpha.2 true false)]"
+  _uc_write_page "$sandbox/pages/CURSOR1.json" true "" "[$(_uc_node rust-v0.102.0-alpha.1 true false)]"
+
+  _uc_run "$sandbox" -- --no-build
+
+  _uc_assert_rc "$sandbox" 1
+  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (응답 형식 이상) — hasNextPage=true인데 endCursor가 비었거나 진행하지 않는다"
+  [ "$(wc -l < "$sandbox/gh.log" | tr -d ' ')" = 2 ] || fail "expected exactly 2 gh calls, got: $(cat "$sandbox/gh.log")"
+}
+
 test_update_codex_graphql_pre_includes_prerelease_but_not_draft() {
   local sandbox
   sandbox=$(new_sandbox)
@@ -348,22 +367,49 @@ test_update_codex_reports_missing_http_response() {
   assert_contains "$(cat "$sandbox/err")" "  Post \"https://api.github.com/graphql\": dial tcp: connect: connection refused"
 }
 
-# 헤더(200)를 받은 뒤 본문 수신 중 스트림이 끊기면 빈 줄 구분자가 없다 — 상태 줄은 그래도 읽는다.
+# 헤더(200)를 받은 뒤 본문 수신 중 스트림이 끊기면 본문이 비고, $(...)가 끝 줄바꿈을 지워
+# 빈 줄 구분자가 "\r\n\r"로 남는다 — 상태 줄은 그래도 읽는다.
 test_update_codex_reports_status_when_body_stream_breaks() {
   local sandbox
   sandbox=$(new_sandbox)
   _uc_prepare_sandbox "$sandbox" "0.100.0"
 
-  _uc_run "$sandbox" \
-    UC_TEST_GH_FAIL_EXIT=1 \
-    UC_TEST_GH_FAIL_STATUS="200 OK" \
-    UC_TEST_GH_FAIL_HEADERS_ONLY=1 \
-    UC_TEST_GH_FAIL_STDERR="stream error: stream ID 1; CANCEL; received from peer" \
-    -- --no-build
+  _uc_run_gh_failure "$sandbox" "200 OK" "" \
+    "stream error: stream ID 1; CANCEL; received from peer"
 
   _uc_assert_rc "$sandbox" 1
   assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (HTTP 200 OK) — 응답 본문 수신 실패, 잠시 후 재시도"
   assert_contains "$(cat "$sandbox/err")" "  stream error: stream ID 1; CANCEL; received from peer"
+}
+
+# 쿼리 시간 초과처럼 type 없는 errors가 200으로 오면 저장소·권한 안내로 단정하지 않는다.
+test_update_codex_reports_untyped_graphql_error_on_http_200() {
+  local sandbox
+  sandbox=$(new_sandbox)
+  _uc_prepare_sandbox "$sandbox" "0.100.0"
+
+  _uc_run_gh_failure "$sandbox" "200 OK" \
+    '{"data":null,"errors":[{"message":"Something went wrong while executing your query."}]}' \
+    "gh: Something went wrong while executing your query."
+
+  _uc_assert_rc "$sandbox" 1
+  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (HTTP 200 OK, GraphQL 오류) — 아래 gh 오류 확인"
+  assert_not_contains "$(cat "$sandbox/err")" "조회 대상 저장소·권한 확인"
+}
+
+# gh가 성공(rc 0)했는데 본문이 비면 "매치 없음"이 아니라 형식 이상이다.
+test_update_codex_rejects_empty_success_body() {
+  local sandbox
+  sandbox=$(new_sandbox)
+  _uc_prepare_sandbox "$sandbox" "0.100.0"
+  : > "$sandbox/pages/first.json"
+
+  _uc_run "$sandbox" -- --no-build
+
+  _uc_assert_rc "$sandbox" 1
+  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (응답 형식 이상)"
+  assert_contains "$(cat "$sandbox/err")" "  <빈 본문>"
+  assert_not_contains "$(cat "$sandbox/err")" "매치 없음"
 }
 
 test_update_codex_reports_no_matching_tag() {

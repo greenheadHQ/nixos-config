@@ -113,7 +113,7 @@ report_gh_failure() {
     401:*) hint="인증 실패, gh auth status로 확인" ;;
     403:* | 429:* | *RATE_LIMITED*) hint="권한 부족 또는 rate limit, gh api rate_limit로 확인" ;;
     5*) hint="GitHub 서버 측 오류·시간 초과, 잠시 후 재시도" ;;
-    2*:?*) hint="조회 대상 저장소·권한 확인" ;;
+    *NOT_FOUND* | *FORBIDDEN*) hint="조회 대상 저장소·권한 확인" ;;
     2*:) hint="응답 본문 수신 실패, 잠시 후 재시도" ;;
     *) hint="아래 gh 오류 확인" ;;
   esac
@@ -128,8 +128,9 @@ while :; do
   gh_rc=0
   raw="$(gh "${gh_args[@]}" 2>"$gh_err")" || gh_rc=$?
   # -i 출력: "HTTP/2.0 504 Gateway Timeout\n" + 헤더("K: V\r\n")… + "\r\n" + 본문.
-  # 응답 자체가 없으면(네트워크·프록시 오류) 비어 있고, 헤더를 받은 뒤 본문 수신 중 스트림이 끊기면
-  # (실측: "stream error: … CANCEL") 빈 줄 구분자 없이 상태 줄·헤더만 남는다.
+  # 응답 자체가 없으면(네트워크·프록시 오류) 비어 있다. 본문이 비면(예: 헤더 수신 뒤 스트림이
+  # 끊긴 실측 "stream error: … CANCEL") $(...)가 끝 줄바꿈을 지워 구분자가 "\r\n\r"로 남으므로,
+  # 상태 줄은 구분자와 무관하게 읽고 구분자가 없으면 본문을 빈 값으로 둔다.
   http_status=""
   body="$raw"
   case "$raw" in
@@ -149,7 +150,8 @@ while :; do
     : >"$gh_err"
   fi
   # 형식 검증과 추출을 jq 한 번으로 한다. 필드 구분자는 공백류가 아닌 \x1f라 빈 필드도 보존된다.
-  if ! parsed="$(printf '%s' "$body" | jq -r --arg re "$tag_re" --argjson pre "$include_pre" '
+  # -e: 본문이 비어 jq가 아무것도 출력하지 않으면(exit 4) "매치 없음"이 아니라 형식 이상으로 잡는다.
+  if ! parsed="$(printf '%s' "$body" | jq -er --arg re "$tag_re" --argjson pre "$include_pre" '
     .data.repository.releases
     | if (.nodes | type) == "array" and (.pageInfo.hasNextPage | type) == "boolean" then .
       else error("unexpected shape") end
@@ -159,7 +161,7 @@ while :; do
                | select(.isDraft == false and ($pre == 1 or .isPrerelease == false))
                | .tagName | select(test($re))) // "") ]
     | join("\u001f")' 2>/dev/null)"; then
-    lookup_fail "응답 형식 이상" "data.repository.releases의 nodes·pageInfo가 없다" "$(printf '%.300s' "$body")"
+    lookup_fail "응답 형식 이상" "data.repository.releases의 nodes·pageInfo가 없다" "$(printf '%.300s' "${body:-<빈 본문>}")"
   fi
   IFS=$'\x1f' read -r has_next next_cursor tag <<<"$parsed"
   [ -z "$tag" ] || break
