@@ -719,6 +719,30 @@ run_test "neovim clipboard uses OSC 52 only for Linux SSH outside tmux" test_neo
 run_test "neovim SSH clipboard paste returns last copy without query" test_neovim_ssh_clipboard_paste_returns_last_copy_without_query
 run_test "neovim SSH clipboard paste before copy uses register 0" test_neovim_ssh_clipboard_paste_before_copy_uses_register_zero
 
+# ═══════════════════════════════════════════════════════════════════
+# update-codex suite (tests/suites/update-codex.sh) — GraphQL 릴리스 조회·gh 실패 보고
+# ═══════════════════════════════════════════════════════════════════
+run_test "update-codex GraphQL skips prerelease, draft and other series" test_update_codex_graphql_skips_prerelease_draft_and_other_series
+run_test "update-codex GraphQL query requests minimal fields in default order" test_update_codex_graphql_query_requests_minimal_fields_in_default_order
+run_test "update-codex GraphQL follows cursor until match" test_update_codex_graphql_follows_cursor_until_match
+run_test "update-codex GraphQL rejects stalled cursor" test_update_codex_graphql_rejects_stalled_cursor
+run_test "update-codex GraphQL rejects cyclic cursor" test_update_codex_graphql_rejects_cyclic_cursor
+run_test "update-codex GraphQL rejects empty cursor after first page" test_update_codex_graphql_rejects_empty_cursor_after_first_page
+run_test "update-codex GraphQL --pre includes prerelease but not draft" test_update_codex_graphql_pre_includes_prerelease_but_not_draft
+run_test "update-codex GraphQL new version updates pin" test_update_codex_graphql_new_version_updates_pin
+run_test "update-codex reports HTTP status on gateway timeout" test_update_codex_reports_http_status_on_gateway_timeout
+run_test "update-codex reports HTTP status when gh stderr omits it" test_update_codex_reports_http_status_when_gh_stderr_omits_it
+run_test "update-codex reports auth failure status" test_update_codex_reports_auth_failure_status
+run_test "update-codex reports forbidden as rate limit or permission" test_update_codex_reports_forbidden_as_rate_limit_or_permission
+run_test "update-codex reports GraphQL rate limit on HTTP 200" test_update_codex_reports_graphql_rate_limit_on_http_200
+run_test "update-codex reports GraphQL error with HTTP 200" test_update_codex_reports_graphql_error_with_http_200
+run_test "update-codex reports missing HTTP response" test_update_codex_reports_missing_http_response
+run_test "update-codex reports status when body stream breaks" test_update_codex_reports_status_when_body_stream_breaks
+run_test "update-codex reports untyped GraphQL error on HTTP 200" test_update_codex_reports_untyped_graphql_error_on_http_200
+run_test "update-codex rejects empty success body" test_update_codex_rejects_empty_success_body
+run_test "update-codex reports no matching tag" test_update_codex_reports_no_matching_tag
+run_test "update-codex rejects malformed GraphQL response" test_update_codex_rejects_malformed_graphql_response
+
 # 퇴역 키 로더는 tomlkit 없이도 도는 순수 셸 계약이라 아래 게이트 밖에 둔다.
 run_test "codex-config retired keys loader" test_codex_config_retired_keys_loader
 
