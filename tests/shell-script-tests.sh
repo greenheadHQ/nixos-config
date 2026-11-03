@@ -726,6 +726,7 @@ run_test "update-codex GraphQL skips prerelease, draft and other series" test_up
 run_test "update-codex GraphQL query requests minimal fields in default order" test_update_codex_graphql_query_requests_minimal_fields_in_default_order
 run_test "update-codex GraphQL follows cursor until match" test_update_codex_graphql_follows_cursor_until_match
 run_test "update-codex GraphQL rejects stalled cursor" test_update_codex_graphql_rejects_stalled_cursor
+run_test "update-codex GraphQL rejects cyclic cursor" test_update_codex_graphql_rejects_cyclic_cursor
 run_test "update-codex GraphQL rejects empty cursor after first page" test_update_codex_graphql_rejects_empty_cursor_after_first_page
 run_test "update-codex GraphQL --pre includes prerelease but not draft" test_update_codex_graphql_pre_includes_prerelease_but_not_draft
 run_test "update-codex GraphQL new version updates pin" test_update_codex_graphql_new_version_updates_pin

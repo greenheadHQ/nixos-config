@@ -122,6 +122,8 @@ report_gh_failure() {
 
 tag=""
 cursor=""
+# 받은 endCursor 이력(줄 단위). cursor에는 줄바꿈이 없으므로 "\n<cursor>\n" 포함 여부로 재등장을 판정한다.
+seen_cursors=$'\n'
 while :; do
   gh_args=(api -i graphql -f query="$release_query" -f owner="${REPO%%/*}" -f name="${REPO#*/}")
   [ -z "$cursor" ] || gh_args+=(-f cursor="$cursor")
@@ -166,10 +168,16 @@ while :; do
   IFS=$'\x1f' read -r has_next next_cursor tag <<<"$parsed"
   [ -z "$tag" ] || break
   [ "$has_next" = true ] || break
-  # 다음 페이지가 있다면서 cursor가 비었거나 제자리면 같은 페이지를 무한히 다시 받는다.
-  if [ -z "$next_cursor" ] || [ "$next_cursor" = "$cursor" ]; then
-    lookup_fail "응답 형식 이상" "hasNextPage=true인데 endCursor가 비었거나 진행하지 않는다"
-  fi
+  # 다음 페이지가 있다면서 cursor가 비었거나 이미 받은 값이면(제자리·A→B→A 순환) 같은 페이지를
+  # 무한히 다시 받는다. 빈 cursor는 첫 페이지로 되돌아가는 것과 같다.
+  [ -n "$next_cursor" ] ||
+    lookup_fail "응답 형식 이상" "hasNextPage=true인데 endCursor가 비었다"
+  case "$seen_cursors" in
+    *$'\n'"$next_cursor"$'\n'*)
+      lookup_fail "응답 형식 이상" "hasNextPage=true인데 이미 받은 endCursor가 다시 나왔다"
+      ;;
+  esac
+  seen_cursors+="$next_cursor"$'\n'
   cursor="$next_cursor"
 done
 [ -n "$tag" ] || lookup_fail "매치 없음" "$REPO 릴리스 전체에 '$tag_re'와 맞는 태그가 없다"

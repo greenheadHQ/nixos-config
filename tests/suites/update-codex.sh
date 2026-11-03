@@ -151,6 +151,8 @@ _uc_run_gh_failure() {
     -- --no-build
 }
 
+# stable 선택 계약: prerelease·draft·rust-v 외 시리즈를 건너뛰고 목록 순서의 첫 stable을 고르며,
+# 이미 최신이면 prefetch 없이 끝난다.
 test_update_codex_graphql_skips_prerelease_draft_and_other_series() {
   local sandbox nodes
   sandbox=$(new_sandbox)
@@ -213,8 +215,24 @@ test_update_codex_graphql_rejects_stalled_cursor() {
   _uc_run "$sandbox" -- --no-build
 
   _uc_assert_rc "$sandbox" 1
-  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (응답 형식 이상) — hasNextPage=true인데 endCursor가 비었거나 진행하지 않는다"
+  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (응답 형식 이상) — hasNextPage=true인데 이미 받은 endCursor가 다시 나왔다"
   assert_line_count "$sandbox/gh.log" "api -i graphql -f query=<omitted> -f owner=openai -f name=codex -f cursor=CURSOR1" 1
+}
+
+# 직전 값만 비교하면 A→B→A 순환 cursor를 놓쳐 요청을 끝없이 보낸다 — 받은 cursor 이력 전체와 비교한다.
+test_update_codex_graphql_rejects_cyclic_cursor() {
+  local sandbox
+  sandbox=$(new_sandbox)
+  _uc_prepare_sandbox "$sandbox" "0.101.0"
+  _uc_write_page "$sandbox/pages/first.json" true "CURSOR1" "[$(_uc_node rust-v0.102.0-alpha.3 true false)]"
+  _uc_write_page "$sandbox/pages/CURSOR1.json" true "CURSOR2" "[$(_uc_node rust-v0.102.0-alpha.2 true false)]"
+  _uc_write_page "$sandbox/pages/CURSOR2.json" true "CURSOR1" "[$(_uc_node rust-v0.102.0-alpha.1 true false)]"
+
+  _uc_run "$sandbox" -- --no-build
+
+  _uc_assert_rc "$sandbox" 1
+  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (응답 형식 이상) — hasNextPage=true인데 이미 받은 endCursor가 다시 나왔다"
+  [ "$(wc -l < "$sandbox/gh.log" | tr -d ' ')" = 3 ] || fail "expected exactly 3 gh calls, got: $(cat "$sandbox/gh.log")"
 }
 
 # 2페이지 이후 빈 endCursor를 그대로 쓰면 cursor가 비어 첫 페이지부터 다시 받는 무한 루프가 된다.
@@ -228,16 +246,18 @@ test_update_codex_graphql_rejects_empty_cursor_after_first_page() {
   _uc_run "$sandbox" -- --no-build
 
   _uc_assert_rc "$sandbox" 1
-  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (응답 형식 이상) — hasNextPage=true인데 endCursor가 비었거나 진행하지 않는다"
+  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (응답 형식 이상) — hasNextPage=true인데 endCursor가 비었다"
   [ "$(wc -l < "$sandbox/gh.log" | tr -d ' ')" = 2 ] || fail "expected exactly 2 gh calls, got: $(cat "$sandbox/gh.log")"
 }
 
+# --pre는 draft만 빼고 목록 순서의 첫 매치를 고른다. 조건에 맞는 prerelease를 둘 두어
+# "마지막 매치"를 고르는 회귀(alpha.0 선택)도 드러나게 한다.
 test_update_codex_graphql_pre_includes_prerelease_but_not_draft() {
   local sandbox
   sandbox=$(new_sandbox)
   _uc_prepare_sandbox "$sandbox" "0.102.0-alpha.1"
   _uc_write_page "$sandbox/pages/first.json" false "" \
-    "[$(_uc_node rust-v0.102.0-alpha.2 true true),$(_uc_node rust-v0.102.0-alpha.1 true false),$(_uc_node rust-v0.101.0 false false)]"
+    "[$(_uc_node rust-v0.102.0-alpha.2 true true),$(_uc_node rust-v0.102.0-alpha.1 true false),$(_uc_node rust-v0.102.0-alpha.0 true false),$(_uc_node rust-v0.101.0 false false)]"
 
   _uc_run "$sandbox" -- --pre --no-build
 
@@ -245,6 +265,7 @@ test_update_codex_graphql_pre_includes_prerelease_but_not_draft() {
   assert_contains "$(cat "$sandbox/out")" "이미 최신: codex 0.102.0-alpha.1 (rust-v0.102.0-alpha.1)"
 }
 
+# 새 버전이면 핀의 모든 플랫폼 asset을 prefetch해 version·tag·hash를 갱신한다.
 test_update_codex_graphql_new_version_updates_pin() {
   local sandbox pin
   sandbox=$(new_sandbox)
@@ -263,6 +284,9 @@ test_update_codex_graphql_new_version_updates_pin() {
   [ "$(jq -r '[.version, .tag, .platforms["aarch64-darwin"].hash] | join(" ")' "$pin")" = \
     "0.101.0 rust-v0.101.0 sha256-STUB-codex-package-aarch64-apple-darwin.tar.gz" ] ||
     fail "pin not updated as expected: $(cat "$pin")"
+  [ "$(jq -r '.platforms["x86_64-linux"].hash' "$pin")" = \
+    "sha256-STUB-codex-package-x86_64-unknown-linux-musl.tar.gz" ] ||
+    fail "linux pin hash not updated: $(cat "$pin")"
 }
 
 # 원래 버그(REST 504가 "gh auth/network 확인"으로 가려짐)의 회귀 테스트.
