@@ -57,82 +57,122 @@ done
 }
 
 # 최신 태그 resolve. codex repo는 rust-v 외 다른 시리즈도 릴리스하므로 releases/latest 대신
-# 명시적 필터를 쓴다: newest-first(CREATED_AT DESC)로 full-semver(stable은 alpha 제외) + non-draft
+# 명시적 필터를 쓴다: 릴리스 목록 순서(newest-first)에서 full-semver(stable은 alpha 제외) + non-draft
 # 첫 매치를 취하고, 한 페이지에 매치가 없으면 cursor로 다음 페이지를 이어 본다.
 # REST releases 목록은 쓰지 않는다 — 릴리스마다 asset 수백 개를 함께 직렬화해 per_page=100 응답이
 # GitHub 응답 시간 한도를 넘겨 HTTP 504로 실패했다(2026-11, 릴리스당 asset 최대 354개). GraphQL로
 # 태그 이름·prerelease·draft만 받으면 응답 크기가 asset 수와 무관하다.
+# orderBy는 지정하지 않는다 — 기본 순서가 REST 목록 순서와 같고(2026-11 최근 50건 일치),
+# CREATED_AT DESC는 rust-v0.165.0과 rust-v0.166.0-alpha.4의 앞뒤가 REST와 달라 --pre 첫 매치가 바뀐다.
 if [ "$include_pre" = 1 ]; then
-  node_filter='select(.isDraft == false)'
   tag_re='^rust-v[0-9]+\.[0-9]+\.[0-9]+(-.*)?$'
 else
-  node_filter='select(.isPrerelease == false and .isDraft == false)'
   tag_re='^rust-v[0-9]+\.[0-9]+\.[0-9]+$'
 fi
 # shellcheck disable=SC2016  # $owner 등은 GraphQL 변수다(셸 확장 대상 아님).
 release_query='query($owner: String!, $name: String!, $cursor: String) {
   repository(owner: $owner, name: $name) {
-    releases(first: 100, after: $cursor, orderBy: {field: CREATED_AT, direction: DESC}) {
+    releases(first: 100, after: $cursor) {
       pageInfo { hasNextPage endCursor }
       nodes { tagName isPrerelease isDraft }
     }
   }
 }'
 
-# gh의 stderr는 버리지 않는다 — 파일로 받아 실패 시 HTTP 상태와 함께 그대로 보여 주고,
-# 성공 시에도 경고가 있으면 그대로 전달한다.
+# gh stderr는 버리지 않는다 — 파일로 받아 실패 시 그대로 보여 주고, 성공 시에도 경고가 있으면 전달한다.
+# HTTP 상태는 stderr가 아니라 `gh api -i`의 상태 줄에서 읽는다: gh는 본문에 `message`가 있을 때만
+# stderr에 "(HTTP nnn)"을 붙이고, GraphQL `errors`만 있는 본문이면 5xx여도 상태를 빼기 때문이다.
 gh_err="$(mktemp "${TMPDIR:-/tmp}/update-codex-gh.XXXXXX")"
 trap 'rm -f "$gh_err"' EXIT
 
-# fail_release_lookup <gh_stdout>
-# gh 실패를 분류해 보고하고 종료한다. HTTP 오류면 gh가 stderr에 남긴 "(HTTP nnn)"을 표기하고,
-# HTTP는 성공했지만 GraphQL이 errors를 돌려준 경우와 응답이 없는 경우(네트워크·프록시)를 구분한다.
-fail_release_lookup() {
-  local body="$1" status hint
-  status="$(grep -oE 'HTTP [0-9]{3}' "$gh_err" | tail -n1 || true)"
-  case "$status" in
-    "HTTP 401") hint="인증 실패, gh auth status로 확인" ;;
-    "HTTP 403" | "HTTP 429") hint="권한 부족 또는 rate limit, gh api rate_limit로 확인" ;;
-    "HTTP 5"*) hint="GitHub 서버 측 오류·시간 초과, 잠시 후 재시도" ;;
-    "")
-      if printf '%s' "$body" | jq -e '(.errors? // []) | length > 0' >/dev/null 2>&1; then
-        status="GraphQL 오류"
-        hint="조회 대상 저장소·권한 확인"
-      else
-        status="HTTP 응답 없음"
-        hint="네트워크·프록시·gh 설정 확인"
-      fi
-      ;;
+# lookup_fail <사유> <안내> [상세]
+# 조회 실패 헤드라인을 출력하고, 상세와 아직 출력하지 않은 gh stderr를 들여써 붙인 뒤 종료한다.
+lookup_fail() {
+  echo "update-codex: 최신 릴리스 태그 조회 실패 ($1) — $2" >&2
+  [ -z "${3:-}" ] || printf '%s\n' "$3" | sed 's/^/  /' >&2
+  [ ! -s "$gh_err" ] || sed 's/^/  /' "$gh_err" >&2
+  exit 1
+}
+
+# report_gh_failure <http_status> <body>
+# gh 실패를 HTTP 상태(예: "504 Gateway Timeout", 응답이 없으면 빈 값)와 GraphQL errors로 분류해 보고한다.
+report_gh_failure() {
+  local status="$1" body="$2" gql reason hint
+  gql="$(printf '%s' "$body" | jq -r '
+    if ((.errors? // []) | length) == 0 then ""
+    else ([.errors[] | .type? // empty] | unique | join(",")) as $t
+      | "GraphQL 오류" + (if $t == "" then "" else ": " + $t end)
+    end' 2>/dev/null || true)"
+  if [ -z "$status" ]; then
+    reason="HTTP 응답 없음"
+  else
+    reason="HTTP $status${gql:+, $gql}"
+  fi
+  case "${status%% *}:$gql" in
+    :*) hint="네트워크·프록시·gh 설정 확인" ;;
+    401:*) hint="인증 실패, gh auth status로 확인" ;;
+    403:* | 429:* | *RATE_LIMITED*) hint="권한 부족 또는 rate limit, gh api rate_limit로 확인" ;;
+    5*) hint="GitHub 서버 측 오류·시간 초과, 잠시 후 재시도" ;;
+    2*:?*) hint="조회 대상 저장소·권한 확인" ;;
+    2*:) hint="응답 본문 수신 실패, 잠시 후 재시도" ;;
     *) hint="아래 gh 오류 확인" ;;
   esac
-  echo "update-codex: 최신 릴리스 태그 조회 실패 ($status) — $hint" >&2
-  sed 's/^/  /' "$gh_err" >&2
-  exit 1
+  lookup_fail "$reason" "$hint"
 }
 
 tag=""
 cursor=""
 while :; do
-  gh_args=(api graphql -f query="$release_query" -f owner="${REPO%%/*}" -f name="${REPO#*/}")
+  gh_args=(api -i graphql -f query="$release_query" -f owner="${REPO%%/*}" -f name="${REPO#*/}")
   [ -z "$cursor" ] || gh_args+=(-f cursor="$cursor")
-  page="$(gh "${gh_args[@]}" 2>"$gh_err")" || fail_release_lookup "$page"
-  [ ! -s "$gh_err" ] || cat "$gh_err" >&2
-  printf '%s' "$page" | jq -e '.data.repository.releases.nodes | type == "array"' >/dev/null 2>&1 || {
-    echo "update-codex: 최신 릴리스 태그 조회 실패 (응답 형식 이상) — data.repository.releases.nodes 없음" >&2
-    exit 1
-  }
-  tag="$(printf '%s' "$page" | jq -r --arg re "$tag_re" \
-    "first(.data.repository.releases.nodes[] | $node_filter | .tagName | select(test(\$re))) // empty")"
+  gh_rc=0
+  raw="$(gh "${gh_args[@]}" 2>"$gh_err")" || gh_rc=$?
+  # -i 출력: "HTTP/2.0 504 Gateway Timeout\n" + 헤더("K: V\r\n")… + "\r\n" + 본문.
+  # 응답 자체가 없으면(네트워크·프록시 오류) 비어 있고, 헤더를 받은 뒤 본문 수신 중 스트림이 끊기면
+  # (실측: "stream error: … CANCEL") 빈 줄 구분자 없이 상태 줄·헤더만 남는다.
+  http_status=""
+  body="$raw"
+  case "$raw" in
+    HTTP/*)
+      http_status="${raw%%$'\n'*}"
+      http_status="${http_status%$'\r'}"
+      http_status="${http_status#* }"
+      case "$raw" in
+        *$'\r\n\r\n'*) body="${raw#*$'\r\n\r\n'}" ;;
+        *) body="" ;;
+      esac
+      ;;
+  esac
+  [ "$gh_rc" = 0 ] || report_gh_failure "$http_status" "$body"
+  if [ -s "$gh_err" ]; then
+    cat "$gh_err" >&2
+    : >"$gh_err"
+  fi
+  # 형식 검증과 추출을 jq 한 번으로 한다. 필드 구분자는 공백류가 아닌 \x1f라 빈 필드도 보존된다.
+  if ! parsed="$(printf '%s' "$body" | jq -r --arg re "$tag_re" --argjson pre "$include_pre" '
+    .data.repository.releases
+    | if (.nodes | type) == "array" and (.pageInfo.hasNextPage | type) == "boolean" then .
+      else error("unexpected shape") end
+    | [ (.pageInfo.hasNextPage | tostring),
+        (.pageInfo.endCursor // ""),
+        (first(.nodes[]
+               | select(.isDraft == false and ($pre == 1 or .isPrerelease == false))
+               | .tagName | select(test($re))) // "") ]
+    | join("\u001f")' 2>/dev/null)"; then
+    lookup_fail "응답 형식 이상" "data.repository.releases의 nodes·pageInfo가 없다" "$(printf '%.300s' "$body")"
+  fi
+  IFS=$'\x1f' read -r has_next next_cursor tag <<<"$parsed"
   [ -z "$tag" ] || break
-  [ "$(printf '%s' "$page" | jq -r '.data.repository.releases.pageInfo.hasNextPage')" = true ] || break
-  cursor="$(printf '%s' "$page" | jq -r '.data.repository.releases.pageInfo.endCursor')"
+  [ "$has_next" = true ] || break
+  # 다음 페이지가 있다면서 cursor가 비었거나 제자리면 같은 페이지를 무한히 다시 받는다.
+  if [ -z "$next_cursor" ] || [ "$next_cursor" = "$cursor" ]; then
+    lookup_fail "응답 형식 이상" "hasNextPage=true인데 endCursor가 비었거나 진행하지 않는다"
+  fi
+  cursor="$next_cursor"
 done
+[ -n "$tag" ] || lookup_fail "매치 없음" "$REPO 릴리스 전체에 '$tag_re'와 맞는 태그가 없다"
 rm -f "$gh_err"
 trap - EXIT
-[ -n "$tag" ] || {
-  echo "update-codex: 최신 릴리스 태그 조회 실패 (매치 없음) — $REPO 릴리스 전체에 '$tag_re'와 맞는 태그가 없다" >&2
-  exit 1
-}
 ver="${tag#rust-v}"
 current="$(jq -r '.version' "$PIN")"
 

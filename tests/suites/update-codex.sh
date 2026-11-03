@@ -5,12 +5,15 @@
 
 _uc_script="$REPO_ROOT/modules/shared/scripts/update-codex.sh"
 
-# gh stub — `api graphql` 호출만 받는다(REST 경로가 되살아나면 99로 실패해 드러낸다).
+# gh stub — `api -i graphql` 호출만 받는다(REST 경로나 -i 누락이 생기면 99로 실패해 드러낸다).
+# 실제 `gh api -i`처럼 stdout에 상태 줄 + 헤더(CRLF) + 빈 줄 + 본문을 낸다.
 #   정상: -f cursor=<c> 인자로 페이지를 고른다. 첫 페이지(cursor 없음)는 $UC_TEST_PAGES_DIR/first.json,
 #         이후는 $UC_TEST_PAGES_DIR/<cursor>.json. UC_TEST_GH_WARN이 있으면 stderr에 경고를 남긴다.
-#   실패: UC_TEST_GH_FAIL_EXIT가 있으면 UC_TEST_GH_FAIL_STDOUT/STDERR를 내고 그 코드로 종료한다
-#         (실제 gh는 HTTP 오류 시 응답 본문을 stdout, "gh: <msg> (HTTP nnn)"을 stderr에 쓴다).
-# 호출 로그에는 query 본문을 빼고 남긴다(여러 줄이라 assertion을 흐린다).
+#   실패: UC_TEST_GH_FAIL_EXIT가 있으면 UC_TEST_GH_FAIL_STATUS(예: "504 Gateway Timeout")로 상태 줄과
+#         UC_TEST_GH_FAIL_BODY를 내고(STATUS가 비면 응답 없음 — stdout 없음), UC_TEST_GH_FAIL_STDERR를
+#         stderr에 쓴 뒤 그 코드로 종료한다. UC_TEST_GH_FAIL_HEADERS_ONLY=1이면 빈 줄·본문 없이
+#         상태 줄과 헤더만 낸다(본문 수신 중 스트림이 끊긴 경우).
+# 호출 로그에는 query 본문을 빼고 남기고(여러 줄이라 assertion을 흐린다), 본문은 따로 저장한다.
 _uc_install_gh_stub() {
   local path="$1"
   cat > "$path" <<'STUB'
@@ -20,25 +23,33 @@ cursor=""
 logged=()
 for arg in "$@"; do
   case "$arg" in
-    query=*) logged+=("query=<omitted>") ;;
+    query=*) logged+=("query=<omitted>"); printf '%s\n' "${arg#query=}" > "$UC_TEST_GH_QUERY" ;;
     cursor=*) cursor="${arg#cursor=}"; logged+=("$arg") ;;
     *) logged+=("$arg") ;;
   esac
 done
 printf '%s\n' "${logged[*]}" >> "$UC_TEST_GH_LOG"
-if [ "${1:-}" != "api" ] || [ "${2:-}" != "graphql" ]; then
+if [ "${1:-}" != "api" ] || [ "${2:-}" != "-i" ] || [ "${3:-}" != "graphql" ]; then
   echo "gh stub: unexpected call: ${logged[*]}" >&2
   exit 99
 fi
+emit() {
+  printf 'HTTP/2.0 %s\n' "$1"
+  printf 'Content-Type: application/json; charset=utf-8\r\n'
+  printf 'X-Github-Request-Id: FIXTURE\r\n'
+  [ "${UC_TEST_GH_FAIL_HEADERS_ONLY:-0}" = 1 ] && return 0
+  printf '\r\n'
+  printf '%s' "$2"
+}
 if [ -n "${UC_TEST_GH_FAIL_EXIT:-}" ]; then
-  printf '%s' "${UC_TEST_GH_FAIL_STDOUT:-}"
+  [ -z "${UC_TEST_GH_FAIL_STATUS:-}" ] || emit "$UC_TEST_GH_FAIL_STATUS" "${UC_TEST_GH_FAIL_BODY:-}"
   [ -z "${UC_TEST_GH_FAIL_STDERR:-}" ] || printf '%s\n' "$UC_TEST_GH_FAIL_STDERR" >&2
   exit "$UC_TEST_GH_FAIL_EXIT"
 fi
 page_file="$UC_TEST_PAGES_DIR/${cursor:-first}.json"
 [ -f "$page_file" ] || { echo "gh stub: no page for cursor '$cursor'" >&2; exit 99; }
 [ -z "${UC_TEST_GH_WARN:-}" ] || printf '%s\n' "$UC_TEST_GH_WARN" >&2
-cat "$page_file"
+emit "200 OK" "$(cat "$page_file")"
 STUB
   chmod +x "$path"
 }
@@ -71,7 +82,7 @@ _uc_node() {
 _uc_prepare_sandbox() {
   local sandbox="$1" version="$2" pin_dir
   pin_dir="$sandbox/flake/modules/shared/programs/codex"
-  mkdir -p "$sandbox/bin" "$sandbox/pages" "$sandbox/home" "$pin_dir"
+  mkdir -p "$sandbox/bin" "$sandbox/pages" "$sandbox/home" "$sandbox/tmp" "$pin_dir"
   : > "$sandbox/gh.log"
   : > "$sandbox/nix.log"
   jq -n --arg v "$version" '{
@@ -93,6 +104,7 @@ _uc_pin() {
 
 # _uc_run <sandbox> [VAR=value...] -- [update-codex args...]
 # stdout/stderr는 $sandbox/out, $sandbox/err에 남기고 종료 코드를 $sandbox/rc에 쓴다.
+# TMPDIR을 sandbox 안으로 돌려 gh stderr 임시 파일의 정리 여부를 검사할 수 있게 한다.
 _uc_run() {
   local sandbox="$1" rc=0
   shift
@@ -105,7 +117,9 @@ _uc_run() {
   env \
     PATH="$sandbox/bin:$PATH" \
     HOME="$sandbox/home" \
+    TMPDIR="$sandbox/tmp" \
     UC_TEST_GH_LOG="$sandbox/gh.log" \
+    UC_TEST_GH_QUERY="$sandbox/gh.query" \
     UC_TEST_NIX_LOG="$sandbox/nix.log" \
     UC_TEST_PAGES_DIR="$sandbox/pages" \
     ${envs[@]+"${envs[@]}"} \
@@ -113,11 +127,24 @@ _uc_run() {
   printf '%s\n' "$rc" > "$sandbox/rc"
 }
 
+# 종료 코드를 확인하고, 성공·실패와 무관하게 gh stderr 임시 파일이 남지 않았는지도 확인한다.
 _uc_assert_rc() {
-  local sandbox="$1" expected="$2" actual
+  local sandbox="$1" expected="$2" actual leftover
   actual="$(cat "$sandbox/rc")"
   [ "$actual" = "$expected" ] ||
     fail "expected update-codex exit $expected, got $actual (stdout: $(cat "$sandbox/out"); stderr: $(cat "$sandbox/err"))"
+  leftover="$(find "$sandbox/tmp" -name 'update-codex-gh.*' -print)"
+  [ -z "$leftover" ] || fail "gh stderr temp file left behind: $leftover"
+}
+
+# _uc_run_gh_failure <sandbox> <status|""> <body> <stderr>
+_uc_run_gh_failure() {
+  _uc_run "$1" \
+    UC_TEST_GH_FAIL_EXIT=1 \
+    UC_TEST_GH_FAIL_STATUS="$2" \
+    UC_TEST_GH_FAIL_BODY="$3" \
+    UC_TEST_GH_FAIL_STDERR="$4" \
+    -- --no-build
 }
 
 test_update_codex_graphql_skips_prerelease_draft_and_other_series() {
@@ -131,9 +158,28 @@ test_update_codex_graphql_skips_prerelease_draft_and_other_series() {
 
   _uc_assert_rc "$sandbox" 0
   assert_contains "$(cat "$sandbox/out")" "이미 최신: codex 0.101.0 (rust-v0.101.0)"
-  assert_contains "$(cat "$sandbox/gh.log")" "api graphql -f query=<omitted> -f owner=openai -f name=codex"
+  assert_contains "$(cat "$sandbox/gh.log")" "api -i graphql -f query=<omitted> -f owner=openai -f name=codex"
   assert_not_contains "$(cat "$sandbox/gh.log")" "cursor="
   [ ! -s "$sandbox/nix.log" ] || fail "fast path must not prefetch: $(cat "$sandbox/nix.log")"
+}
+
+# 쿼리 계약: 태그 이름·prerelease·draft만 받고(asset 미요청 — 504 원인), orderBy를 두지 않는다
+# (기본 순서가 REST 목록 순서와 같고 CREATED_AT 정렬은 --pre 첫 매치를 바꾼다).
+test_update_codex_graphql_query_requests_minimal_fields_in_default_order() {
+  local sandbox query
+  sandbox=$(new_sandbox)
+  _uc_prepare_sandbox "$sandbox" "0.101.0"
+  _uc_write_page "$sandbox/pages/first.json" false "" "[$(_uc_node rust-v0.101.0 false false)]"
+
+  _uc_run "$sandbox" -- --no-build
+
+  _uc_assert_rc "$sandbox" 0
+  query="$(cat "$sandbox/gh.query")"
+  assert_contains "$query" "nodes { tagName isPrerelease isDraft }"
+  assert_contains "$query" "pageInfo { hasNextPage endCursor }"
+  assert_contains "$query" "releases(first: 100, after: \$cursor)"
+  assert_not_contains "$query" "orderBy"
+  assert_not_contains "$query" "releaseAssets"
 }
 
 test_update_codex_graphql_follows_cursor_until_match() {
@@ -149,8 +195,22 @@ test_update_codex_graphql_follows_cursor_until_match() {
 
   _uc_assert_rc "$sandbox" 0
   assert_contains "$(cat "$sandbox/out")" "이미 최신: codex 0.101.0 (rust-v0.101.0)"
-  assert_line_count "$sandbox/gh.log" "api graphql -f query=<omitted> -f owner=openai -f name=codex" 1
-  assert_line_count "$sandbox/gh.log" "api graphql -f query=<omitted> -f owner=openai -f name=codex -f cursor=CURSOR1" 1
+  assert_line_count "$sandbox/gh.log" "api -i graphql -f query=<omitted> -f owner=openai -f name=codex" 1
+  assert_line_count "$sandbox/gh.log" "api -i graphql -f query=<omitted> -f owner=openai -f name=codex -f cursor=CURSOR1" 1
+}
+
+test_update_codex_graphql_rejects_stalled_cursor() {
+  local sandbox
+  sandbox=$(new_sandbox)
+  _uc_prepare_sandbox "$sandbox" "0.101.0"
+  _uc_write_page "$sandbox/pages/first.json" true "CURSOR1" "[$(_uc_node rust-v0.102.0-alpha.1 true false)]"
+  _uc_write_page "$sandbox/pages/CURSOR1.json" true "CURSOR1" "[$(_uc_node rust-v0.102.0-alpha.0 true false)]"
+
+  _uc_run "$sandbox" -- --no-build
+
+  _uc_assert_rc "$sandbox" 1
+  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (응답 형식 이상) — hasNextPage=true인데 endCursor가 비었거나 진행하지 않는다"
+  assert_line_count "$sandbox/gh.log" "api -i graphql -f query=<omitted> -f owner=openai -f name=codex -f cursor=CURSOR1" 1
 }
 
 test_update_codex_graphql_pre_includes_prerelease_but_not_draft() {
@@ -186,24 +246,38 @@ test_update_codex_graphql_new_version_updates_pin() {
     fail "pin not updated as expected: $(cat "$pin")"
 }
 
-test_update_codex_reports_http_status_from_gh_stderr() {
+# 원래 버그(REST 504가 "gh auth/network 확인"으로 가려짐)의 회귀 테스트.
+test_update_codex_reports_http_status_on_gateway_timeout() {
   local sandbox pin before
   sandbox=$(new_sandbox)
   _uc_prepare_sandbox "$sandbox" "0.100.0"
   pin="$(_uc_pin "$sandbox")"
   before="$(cat "$pin")"
 
-  _uc_run "$sandbox" \
-    UC_TEST_GH_FAIL_EXIT=1 \
-    UC_TEST_GH_FAIL_STDOUT='{"message": "We couldn'"'"'t respond to your request in time."}' \
-    UC_TEST_GH_FAIL_STDERR="gh: We couldn't respond to your request in time. (HTTP 504)" \
-    -- --no-build
+  _uc_run_gh_failure "$sandbox" "504 Gateway Timeout" \
+    '{"message": "We couldn'"'"'t respond to your request in time."}' \
+    "gh: We couldn't respond to your request in time. (HTTP 504)"
 
   _uc_assert_rc "$sandbox" 1
-  assert_contains "$(cat "$sandbox/err")" "update-codex: 최신 릴리스 태그 조회 실패 (HTTP 504) — GitHub 서버 측 오류·시간 초과"
+  assert_contains "$(cat "$sandbox/err")" "update-codex: 최신 릴리스 태그 조회 실패 (HTTP 504 Gateway Timeout) — GitHub 서버 측 오류·시간 초과, 잠시 후 재시도"
   assert_contains "$(cat "$sandbox/err")" "  gh: We couldn't respond to your request in time. (HTTP 504)"
   assert_not_contains "$(cat "$sandbox/err")" "gh auth/network 확인"
   [ "$(cat "$pin")" = "$before" ] || fail "pin must be untouched on lookup failure"
+}
+
+# gh는 errors만 있는 본문이면 5xx여도 stderr에 HTTP 상태를 쓰지 않는다 — 상태 줄에서 읽어야 한다.
+test_update_codex_reports_http_status_when_gh_stderr_omits_it() {
+  local sandbox
+  sandbox=$(new_sandbox)
+  _uc_prepare_sandbox "$sandbox" "0.100.0"
+
+  _uc_run_gh_failure "$sandbox" "502 Bad Gateway" \
+    '{"data":null,"errors":[{"message":"Something went wrong while executing your query. This may be the result of a timeout."}]}' \
+    "gh: Something went wrong while executing your query. This may be the result of a timeout."
+
+  _uc_assert_rc "$sandbox" 1
+  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (HTTP 502 Bad Gateway, GraphQL 오류) — GitHub 서버 측 오류·시간 초과, 잠시 후 재시도"
+  assert_contains "$(cat "$sandbox/err")" "  gh: Something went wrong while executing your query."
 }
 
 test_update_codex_reports_auth_failure_status() {
@@ -211,30 +285,53 @@ test_update_codex_reports_auth_failure_status() {
   sandbox=$(new_sandbox)
   _uc_prepare_sandbox "$sandbox" "0.100.0"
 
-  _uc_run "$sandbox" \
-    UC_TEST_GH_FAIL_EXIT=1 \
-    UC_TEST_GH_FAIL_STDOUT='{"message": "Bad credentials", "status": "401"}' \
-    UC_TEST_GH_FAIL_STDERR="gh: Bad credentials (HTTP 401)" \
-    -- --no-build
+  _uc_run_gh_failure "$sandbox" "401 Unauthorized" \
+    '{"message": "Bad credentials", "status": "401"}' \
+    "gh: Bad credentials (HTTP 401)"
 
   _uc_assert_rc "$sandbox" 1
-  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (HTTP 401) — 인증 실패, gh auth status로 확인"
+  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (HTTP 401 Unauthorized) — 인증 실패, gh auth status로 확인"
   assert_contains "$(cat "$sandbox/err")" "  gh: Bad credentials (HTTP 401)"
 }
 
-test_update_codex_reports_graphql_error_without_http_status() {
+test_update_codex_reports_forbidden_as_rate_limit_or_permission() {
   local sandbox
   sandbox=$(new_sandbox)
   _uc_prepare_sandbox "$sandbox" "0.100.0"
 
-  _uc_run "$sandbox" \
-    UC_TEST_GH_FAIL_EXIT=1 \
-    UC_TEST_GH_FAIL_STDOUT='{"data":{"repository":null},"errors":[{"type":"NOT_FOUND","message":"Could not resolve to a Repository"}]}' \
-    UC_TEST_GH_FAIL_STDERR="gh: Could not resolve to a Repository" \
-    -- --no-build
+  _uc_run_gh_failure "$sandbox" "403 Forbidden" \
+    '{"message": "API rate limit exceeded"}' \
+    "gh: API rate limit exceeded (HTTP 403)"
 
   _uc_assert_rc "$sandbox" 1
-  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (GraphQL 오류)"
+  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (HTTP 403 Forbidden) — 권한 부족 또는 rate limit, gh api rate_limit로 확인"
+}
+
+# GraphQL primary rate limit은 HTTP 200 + errors[].type=RATE_LIMITED로 온다.
+test_update_codex_reports_graphql_rate_limit_on_http_200() {
+  local sandbox
+  sandbox=$(new_sandbox)
+  _uc_prepare_sandbox "$sandbox" "0.100.0"
+
+  _uc_run_gh_failure "$sandbox" "200 OK" \
+    '{"errors":[{"type":"RATE_LIMITED","message":"API rate limit exceeded for user ID 1."}]}' \
+    "gh: API rate limit exceeded for user ID 1."
+
+  _uc_assert_rc "$sandbox" 1
+  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (HTTP 200 OK, GraphQL 오류: RATE_LIMITED) — 권한 부족 또는 rate limit"
+}
+
+test_update_codex_reports_graphql_error_with_http_200() {
+  local sandbox
+  sandbox=$(new_sandbox)
+  _uc_prepare_sandbox "$sandbox" "0.100.0"
+
+  _uc_run_gh_failure "$sandbox" "200 OK" \
+    '{"data":{"repository":null},"errors":[{"type":"NOT_FOUND","message":"Could not resolve to a Repository"}]}' \
+    "gh: Could not resolve to a Repository"
+
+  _uc_assert_rc "$sandbox" 1
+  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (HTTP 200 OK, GraphQL 오류: NOT_FOUND) — 조회 대상 저장소·권한 확인"
   assert_contains "$(cat "$sandbox/err")" "  gh: Could not resolve to a Repository"
 }
 
@@ -243,14 +340,30 @@ test_update_codex_reports_missing_http_response() {
   sandbox=$(new_sandbox)
   _uc_prepare_sandbox "$sandbox" "0.100.0"
 
-  _uc_run "$sandbox" \
-    UC_TEST_GH_FAIL_EXIT=1 \
-    UC_TEST_GH_FAIL_STDERR='Post "https://api.github.com/graphql": dial tcp: connect: connection refused' \
-    -- --no-build
+  _uc_run_gh_failure "$sandbox" "" "" \
+    'Post "https://api.github.com/graphql": dial tcp: connect: connection refused'
 
   _uc_assert_rc "$sandbox" 1
   assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (HTTP 응답 없음) — 네트워크·프록시·gh 설정 확인"
   assert_contains "$(cat "$sandbox/err")" "  Post \"https://api.github.com/graphql\": dial tcp: connect: connection refused"
+}
+
+# 헤더(200)를 받은 뒤 본문 수신 중 스트림이 끊기면 빈 줄 구분자가 없다 — 상태 줄은 그래도 읽는다.
+test_update_codex_reports_status_when_body_stream_breaks() {
+  local sandbox
+  sandbox=$(new_sandbox)
+  _uc_prepare_sandbox "$sandbox" "0.100.0"
+
+  _uc_run "$sandbox" \
+    UC_TEST_GH_FAIL_EXIT=1 \
+    UC_TEST_GH_FAIL_STATUS="200 OK" \
+    UC_TEST_GH_FAIL_HEADERS_ONLY=1 \
+    UC_TEST_GH_FAIL_STDERR="stream error: stream ID 1; CANCEL; received from peer" \
+    -- --no-build
+
+  _uc_assert_rc "$sandbox" 1
+  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (HTTP 200 OK) — 응답 본문 수신 실패, 잠시 후 재시도"
+  assert_contains "$(cat "$sandbox/err")" "  stream error: stream ID 1; CANCEL; received from peer"
 }
 
 test_update_codex_reports_no_matching_tag() {
@@ -270,10 +383,12 @@ test_update_codex_rejects_malformed_graphql_response() {
   local sandbox
   sandbox=$(new_sandbox)
   _uc_prepare_sandbox "$sandbox" "0.100.0"
-  printf '%s\n' '{"data":{"repository":null}}' > "$sandbox/pages/first.json"
+  printf '%s\n' '{"data":{"repository":{"releases":{"nodes":[]}}}}' > "$sandbox/pages/first.json"
 
   _uc_run "$sandbox" -- --no-build
 
   _uc_assert_rc "$sandbox" 1
-  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (응답 형식 이상)"
+  assert_contains "$(cat "$sandbox/err")" "최신 릴리스 태그 조회 실패 (응답 형식 이상) — data.repository.releases의 nodes·pageInfo가 없다"
+  # 진단용으로 받은 본문 앞부분을 함께 보여 준다.
+  assert_contains "$(cat "$sandbox/err")" '  {"data":{"repository":{"releases":{"nodes":[]}}}}'
 }
