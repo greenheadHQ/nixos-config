@@ -125,6 +125,16 @@ run_test "codex activation projection fails closed without git" test_codex_activ
 run_test "codex activation projection skips tracked dir and keeps untracked entries" test_codex_activation_projection_tracked_dir_skipped_untracked_entries_kept
 run_test "codex activation projection keeps real dir when tracking check fails" test_codex_activation_projection_keeps_real_dir_when_tracking_check_fails
 run_test "codex activation projection dry-run leaves tree unchanged" test_codex_activation_projection_dry_run_leaves_tree_unchanged
+run_test "update-codex GraphQL skips prerelease, draft and other series" test_update_codex_graphql_skips_prerelease_draft_and_other_series
+run_test "update-codex GraphQL follows cursor until match" test_update_codex_graphql_follows_cursor_until_match
+run_test "update-codex GraphQL --pre includes prerelease but not draft" test_update_codex_graphql_pre_includes_prerelease_but_not_draft
+run_test "update-codex GraphQL new version updates pin" test_update_codex_graphql_new_version_updates_pin
+run_test "update-codex reports HTTP status from gh stderr" test_update_codex_reports_http_status_from_gh_stderr
+run_test "update-codex reports auth failure status" test_update_codex_reports_auth_failure_status
+run_test "update-codex reports GraphQL error without HTTP status" test_update_codex_reports_graphql_error_without_http_status
+run_test "update-codex reports missing HTTP response" test_update_codex_reports_missing_http_response
+run_test "update-codex reports no matching tag" test_update_codex_reports_no_matching_tag
+run_test "update-codex rejects malformed GraphQL response" test_update_codex_rejects_malformed_graphql_response
 run_test "create-issue documented body lifecycle is safe" test_create_issue_documented_body_lifecycle_is_safe
 run_test "claude remote-control start requires git repo" test_claude_remote_control_start_requires_git_repo
 run_test "claude remote-control start registers manual instance" test_claude_remote_control_start_registers_manual_instance

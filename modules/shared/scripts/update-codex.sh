@@ -56,20 +56,81 @@ done
   exit 1
 }
 
-# 최신 태그 resolve. releases는 newest-first; --paginate로 전 페이지를 순회하며 full-semver
-# (stable은 alpha 제외) + non-draft를 필터해 첫 매치를 취한다(head가 파이프를 닫아 보통 첫 페이지에서
-# 종료). codex repo는 rust-v 외 다른 시리즈도 릴리스하므로 releases/latest 대신 명시적 필터를 쓴다.
+# 최신 태그 resolve. codex repo는 rust-v 외 다른 시리즈도 릴리스하므로 releases/latest 대신
+# 명시적 필터를 쓴다: newest-first(CREATED_AT DESC)로 full-semver(stable은 alpha 제외) + non-draft
+# 첫 매치를 취하고, 한 페이지에 매치가 없으면 cursor로 다음 페이지를 이어 본다.
+# REST releases 목록은 쓰지 않는다 — 릴리스마다 asset 수백 개를 함께 직렬화해 per_page=100 응답이
+# GitHub 응답 시간 한도를 넘겨 HTTP 504로 실패했다(2026-11, 릴리스당 asset 최대 354개). GraphQL로
+# 태그 이름·prerelease·draft만 받으면 응답 크기가 asset 수와 무관하다.
 if [ "$include_pre" = 1 ]; then
-  jq_filter='.[] | select(.draft==false) | .tag_name'
+  node_filter='select(.isDraft == false)'
   tag_re='^rust-v[0-9]+\.[0-9]+\.[0-9]+(-.*)?$'
 else
-  jq_filter='.[] | select(.prerelease==false and .draft==false) | .tag_name'
+  node_filter='select(.isPrerelease == false and .isDraft == false)'
   tag_re='^rust-v[0-9]+\.[0-9]+\.[0-9]+$'
 fi
-tag="$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq "$jq_filter" 2>/dev/null \
-  | grep -E "$tag_re" | head -n1 || true)"
+# shellcheck disable=SC2016  # $owner 등은 GraphQL 변수다(셸 확장 대상 아님).
+release_query='query($owner: String!, $name: String!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    releases(first: 100, after: $cursor, orderBy: {field: CREATED_AT, direction: DESC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes { tagName isPrerelease isDraft }
+    }
+  }
+}'
+
+# gh의 stderr는 버리지 않는다 — 파일로 받아 실패 시 HTTP 상태와 함께 그대로 보여 주고,
+# 성공 시에도 경고가 있으면 그대로 전달한다.
+gh_err="$(mktemp "${TMPDIR:-/tmp}/update-codex-gh.XXXXXX")"
+trap 'rm -f "$gh_err"' EXIT
+
+# fail_release_lookup <gh_stdout>
+# gh 실패를 분류해 보고하고 종료한다. HTTP 오류면 gh가 stderr에 남긴 "(HTTP nnn)"을 표기하고,
+# HTTP는 성공했지만 GraphQL이 errors를 돌려준 경우와 응답이 없는 경우(네트워크·프록시)를 구분한다.
+fail_release_lookup() {
+  local body="$1" status hint
+  status="$(grep -oE 'HTTP [0-9]{3}' "$gh_err" | tail -n1 || true)"
+  case "$status" in
+    "HTTP 401") hint="인증 실패, gh auth status로 확인" ;;
+    "HTTP 403" | "HTTP 429") hint="권한 부족 또는 rate limit, gh api rate_limit로 확인" ;;
+    "HTTP 5"*) hint="GitHub 서버 측 오류·시간 초과, 잠시 후 재시도" ;;
+    "")
+      if printf '%s' "$body" | jq -e '(.errors? // []) | length > 0' >/dev/null 2>&1; then
+        status="GraphQL 오류"
+        hint="조회 대상 저장소·권한 확인"
+      else
+        status="HTTP 응답 없음"
+        hint="네트워크·프록시·gh 설정 확인"
+      fi
+      ;;
+    *) hint="아래 gh 오류 확인" ;;
+  esac
+  echo "update-codex: 최신 릴리스 태그 조회 실패 ($status) — $hint" >&2
+  sed 's/^/  /' "$gh_err" >&2
+  exit 1
+}
+
+tag=""
+cursor=""
+while :; do
+  gh_args=(api graphql -f query="$release_query" -f owner="${REPO%%/*}" -f name="${REPO#*/}")
+  [ -z "$cursor" ] || gh_args+=(-f cursor="$cursor")
+  page="$(gh "${gh_args[@]}" 2>"$gh_err")" || fail_release_lookup "$page"
+  [ ! -s "$gh_err" ] || cat "$gh_err" >&2
+  printf '%s' "$page" | jq -e '.data.repository.releases.nodes | type == "array"' >/dev/null 2>&1 || {
+    echo "update-codex: 최신 릴리스 태그 조회 실패 (응답 형식 이상) — data.repository.releases.nodes 없음" >&2
+    exit 1
+  }
+  tag="$(printf '%s' "$page" | jq -r --arg re "$tag_re" \
+    "first(.data.repository.releases.nodes[] | $node_filter | .tagName | select(test(\$re))) // empty")"
+  [ -z "$tag" ] || break
+  [ "$(printf '%s' "$page" | jq -r '.data.repository.releases.pageInfo.hasNextPage')" = true ] || break
+  cursor="$(printf '%s' "$page" | jq -r '.data.repository.releases.pageInfo.endCursor')"
+done
+rm -f "$gh_err"
+trap - EXIT
 [ -n "$tag" ] || {
-  echo "update-codex: 최신 릴리스 태그 조회 실패 (gh auth/network 확인)" >&2
+  echo "update-codex: 최신 릴리스 태그 조회 실패 (매치 없음) — $REPO 릴리스 전체에 '$tag_re'와 맞는 태그가 없다" >&2
   exit 1
 }
 ver="${tag#rust-v}"
