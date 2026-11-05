@@ -14,7 +14,7 @@ Codex GitHub 앱의 PR 리뷰를 기다리고, 지적에 반응·답글을 남�
 
 - `reviewed_commit`: 봇이 리뷰한 커밋. 짧은 SHA일 수 있다.
 - `stale`: `reviewed_commit`과 현재 `head`가 다르다. 리뷰한 커밋을 알 수 없으면(커밋 표시 없이 👍만 남은 경우 등) `null`이다.
-- `trigger`: 이번 리뷰 주기의 트리거 종류(`kind`: `pr_opened`, `ready_for_review`, `review_request`)와 시각(`at`).
+- `trigger`: 이번 리뷰 주기의 트리거 종류(`kind`: `pr_opened`, `ready_for_review`, `push`, `review_request`)와 시각(`at`).
 - `rereview_requests`: 재리뷰 요청 코멘트 수.
 - `unhandled_threads`: 답글·반응·resolve 중 빠진 것이 있는 봇 스레드. 빠진 항목은 `missing`에 `reply`, `reaction`, `resolve`로 나온다. 이미 resolve된 스레드도 답글이나 반응이 빠졌으면 나온다. `thread_id`는 답글·resolve mutation에 쓰는 GraphQL id, `comment_id`는 반응에 쓰는 REST id, `url`은 스레드 첫 코멘트 주소다. 봇 스레드인지는 작성자 이름이 아니라 이 목록으로 판별한다.
 - `viewer`: 조회한 계정. 반응 여부를 이 계정 기준으로 보므로 반응도 이 계정으로 단다. 다른 계정으로 단 반응은 `missing`에서 빠지지 않는다.
