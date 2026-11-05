@@ -1782,15 +1782,12 @@ let
       cond = claudeSettings.env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD == "1";
     }
     {
-      # #1422: 커밋 트레일러·PR 본문에 세션 링크를 붙이는 기본 동작을 끈다. attribution.commit/pr을
-      # 설정하면 includeCoAuthoredBy=false가 무시되므로 sessionUrl 하나만 둔다. `attribution: false`
-      # 전체형은 v2.1.281 미만이 settings 파일 전체를 건너뛰게 만들어 쓰지 않는다.
-      name = "Test D28c: Claude 세션 URL attribution은 sessionUrl=false 단일 키로 꺼져 있어야 함";
-      cond =
-        (claudeSettings.attribution or null) == {
-          sessionUrl = false;
-        }
-        && claudeSettings.includeCoAuthoredBy == false;
+      # #1422: 커밋 트레일러·PR 본문에 세션 링크 등 attribution을 붙이는 기본 동작을 끈다.
+      # 93dad04a에서 deprecated된 includeCoAuthoredBy를 지우고 `attribution: false` 전체형으로 바꿨다.
+      # #1422가 전체형을 피한 근거(v2.1.281 미만은 settings 파일 전체를 건너뜀)는 설치 버전이 그
+      # 이상이면 해당하지 않는다 (2026-11 Mac 2.1.318 확인, 재확인: 각 호스트에서 `claude --version`).
+      name = "Test D28c: Claude attribution은 attribution=false 전체형으로 꺼져 있고 includeCoAuthoredBy는 없어야 함";
+      cond = (claudeSettings.attribution or null) == false && !(claudeSettings ? includeCoAuthoredBy);
     }
     {
       name = "Test D31: Claude RC의 플랫폼별 flock selector가 exact 구현을 반환해야 함";
