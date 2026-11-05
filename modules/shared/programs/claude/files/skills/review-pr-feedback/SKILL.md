@@ -112,7 +112,7 @@ Codex 봇이 작성한 일반 코멘트와 리뷰 객체 본문은 문구와 관
 - 커밋 메시지에 어떤 피드백을 반영했는지 명시한다.
 - conventional commit 형식을 따른다 (예: `fix(module): address PR feedback`).
 - 반영할 피드백이 여러 영역에 걸쳐 있으면 논리적으로 분리하여 복수 커밋으로 나눈다.
-- 푸시한 변경이 [재리뷰 요청](references/codex-review.md#재리뷰-요청) 기준에 해당하면 Codex 봇에 재리뷰를 한 번 요청한다. 요청 뒤 기다리지 않고 Step 6으로 넘어간다.
+- push하면 Codex 봇이 새 head를 자동으로 리뷰하므로 재리뷰를 요청하지 않는다. 새 리뷰를 기다리지 않고 Step 6으로 넘어간다. 새 head에 리뷰 흔적이 없을 때의 예외는 [재리뷰 요청](references/codex-review.md#재리뷰-요청)을 따른다.
 
 ### Step 6: 답글 + resolve
 
