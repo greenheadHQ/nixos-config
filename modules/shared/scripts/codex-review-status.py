@@ -25,11 +25,17 @@ GitHub에는 조회만 보낸다(GraphQL query와 head 브랜치 Activity API의
     head로 Running으로 바꾸고 1~2분 뒤 Completed로 바꾼다. 리뷰가 시작되기 전에 연달아 온 push는
     마지막 head 하나만 리뷰하고, 리뷰 도중 push가 오면 진행 중인 리뷰를 버리고 새 head로 다시 시작한다.
     push 직후 몇 초 동안은 이전 커밋의 Completed가 남아 있어 커밋을 head와 대조해야 한다.
-  - (#1568 실측) 요약 코멘트가 있는 형식에서는 지적 없이 끝난 주기에도 👍가 달리지 않았고, 👍에는
-    커밋 정보가 없다. 그래서 요약 코멘트가 있는 PR에서는 👍를 결과로 쓰지 않는다.
-  - push 시각은 GraphQL에 없어(pushedDate가 null) head 저장소의 Activity API로 읽는다. 읽지 못하면
-    (삭제된 fork, 권한 등) head 커밋 시각으로 대신한다. 커밋 시각은 push보다 이르므로 absent를 일찍
-    낼 수 있다. 그때 재리뷰를 한 번 더 요청하게 되는 쪽이 리뷰를 놓치는 쪽보다 낫다.
+  - (#1568 실측, 봇 안내문) 👍는 코드·보안 리뷰가 모두 끝난 뒤에 달리고("reacts with 👍 once all
+    reviews finish") 커밋 정보가 없다. 코드 리뷰 결과는 요약 표의 행에 커밋과 함께 오므로, 요약 코멘트가
+    있는 PR에서는 👍를 결과로 쓰지 않는다. #1477 실측의 "Completed 2~5초 뒤 👍"는 보안 리뷰가 코드
+    리뷰와 함께 끝난 경우다.
+  - (#1568 조사) push 시각은 GraphQL에 없어(pushedDate가 null) head 저장소의 Activity API로 읽는다.
+    실측에서 Activity는 push를 PR head(headRefOid)보다 먼저 기록했다. 그래도 head가 Activity의 push·
+    브랜치 생성 기록에 아직 없으면 그 head의 push 시각을 모르는 것이라 absent를 내지 않고 대기 한도까지
+    pending으로 둔다(push 직후 경합에서 재리뷰를 잘못 권하지 않기 위해서다).
+  - Activity API가 404·403·410으로 실패하면(삭제된 fork, 권한) head 커밋 시각으로 대신한다. 커밋 시각은
+    push보다 이를 수 있어 같은 이유로 absent를 내지 않는다. 그 밖의 실패는 일시 오류로 보고 조회 실패로
+    처리해 --wait가 다시 조회하게 한다.
   - (#1477 실측) 요약 코멘트의 Completed 시각은 리뷰 객체보다 2~4초 늦고 👍보다 2~5초 이르다.
     그래서 Completed인데 트리거 뒤 리뷰 객체가 없으면 지적 없음(lgtm)으로 본다.
   - (#1477 실측) 봇 계정은 표면마다 login이 다르다 (작성자 chatgpt-codex-connector, 반응 사용자
@@ -44,15 +50,21 @@ GitHub에는 조회만 보낸다(GraphQL query와 head 브랜치 Activity API의
     센다. 외부 기여 PR의 작성자는 자기 PR의 봇 지적에 답할 수 있지만 트리거와 재리뷰 횟수는
     바꾸지 못한다.
 
-재리뷰 권장(rereview_suggested)
+재리뷰 권장(rereview_suggested, #1567)
   저장소 설정이 개인 설정보다 우선하므로 push로 리뷰하지 않는 저장소가 있을 수 있다. 열린 PR에서
-  봇이 이전 커밋을 리뷰한 적이 있는데 트리거(재리뷰 요청 제외) 뒤 head에 흔적이 없으면(absent) 재리뷰
-  요청을 권한다. 요청하면 트리거가 재리뷰 요청이 되므로 같은 head에 다시 권하지 않는다.
+  봇이 head가 아닌 커밋을 리뷰한 적이 있는데 트리거(재리뷰 요청 제외) 뒤 head에 흔적이 없으면(absent)
+  재리뷰 요청을 권한다. 봇의 마지막 신호가 한도·오류·계정 안내면 권하지 않는다. 요청하면 트리거가
+  재리뷰 요청이 되므로 같은 head에 다시 권하지 않는다. 그런 저장소에서는 head마다 한 번씩 요청하게
+  되어 push마다 리뷰받는 것과 횟수가 같다. #1477의 "PR당 1회" 제한은 리뷰를 놓치지 않는 쪽을 택해
+  #1567에서 없앴다.
 
 한계
   - 같은 트리거 뒤 같은 head에 리뷰 주기가 둘이고 뒤 주기가 지적 없이 Completed 행만 남기면 앞 주기의
     리뷰 객체로 판정한다. Completed 시각은 리뷰 객체보다 늦게 찍혀 지적 없음 표시로 쓸 수 없다.
     트리거(push, 재리뷰 요청) 없이 같은 head를 다시 리뷰하는 경우라 실측에서는 보지 못했다.
+  - push 기록을 읽지 못하면(head 커밋 시각으로 대신할 때) 재리뷰 요청 뒤에 push한 head라도 커밋
+    시각이 요청보다 이르면 트리거를 재리뷰 요청으로 잡는다. 그 head에 봇이 2분 안에 흔적을 남기지 않으면
+    absent와 재리뷰 요청 경고를 내고 재리뷰는 권하지 않는다.
 """
 
 import argparse
@@ -110,8 +122,12 @@ TRIGGER_LABELS = {
     "push": "head push",
     "review_request": "재리뷰 요청 코멘트",
 }
-# Activity API의 push 기록. force push는 따로 나온다.
+# Activity API의 push 기록. force push는 따로 나온다. 브랜치 생성은 트리거가 아니지만 그때의 head를
+# 기록으로 남긴다(PR 생성 전에 만든 브랜치의 첫 head).
 PUSH_ACTIVITY_TYPES = frozenset({"push", "force_push"})
+HEAD_ACTIVITY_TYPES = PUSH_ACTIVITY_TYPES | {"branch_creation"}
+# 이 HTTP 상태로 실패하면 다시 조회해도 같으므로 head 커밋 시각으로 대신한다. 그 밖은 일시 오류다.
+PERMANENT_ACTIVITY_ERROR_RE = re.compile(r"\(HTTP (?:403|404|410|451)\)")
 MISSING_LABELS = {"reply": "답글", "reaction": "반응", "resolve": "resolve"}
 TRUSTED_ASSOCIATIONS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
 # 요약 코멘트 행 상태 가운데 리뷰 실패를 뜻하는 것. 그 밖의 모르는 상태는 진행 중으로 본다.
@@ -375,10 +391,11 @@ def fetch_snapshot(owner, name, number, deadline=None):
 
 
 def fetch_pushes(pr, deadline=None):
-    """head 브랜치의 push 기록을 Activity API로 읽는다. 읽지 못하면 (None, 사유)를 돌려준다.
+    """head 브랜치의 push·브랜치 생성 기록을 Activity API로 읽는다.
 
-    GraphQL에는 커밋의 push 시각이 없다(pushedDate가 null). 실패해도 조회 전체를 멈추지 않고, 판정은
-    head 커밋 시각으로 대신한다(evaluate 참고).
+    GraphQL에는 커밋의 push 시각이 없다(pushedDate가 null). head 저장소가 없거나(삭제된 fork) 404·403처럼
+    다시 해도 같은 실패면 (None, 사유)를 돌려주고, 판정은 head 커밋 시각으로 대신한다(evaluate 참고).
+    그 밖의 실패는 일시 오류라 ToolError로 올려 --wait가 조회 실패로 세고 다시 조회하게 한다.
     """
     repo = pr.get("headRepository") or {}
     owner = (repo.get("owner") or {}).get("login")
@@ -390,19 +407,21 @@ def fetch_pushes(pr, deadline=None):
     try:
         payload = json.loads(run_gh(["api", path], deadline))
     except ToolError as err:
-        return None, str(err)
+        if PERMANENT_ACTIVITY_ERROR_RE.search(str(err)):
+            return None, str(err)
+        raise
     except json.JSONDecodeError:
-        return None, "Activity API 응답을 JSON으로 해석하지 못했다"
+        raise ToolError("Activity API 응답을 JSON으로 해석하지 못했다") from None
     if not isinstance(payload, list):
-        return None, "Activity API 응답 형식이 예상과 다르다"
-    pushes = []
+        raise ToolError("Activity API 응답 형식이 예상과 다르다")
+    records = []
     for item in payload:
-        if not isinstance(item, dict) or item.get("activity_type") not in PUSH_ACTIVITY_TYPES:
+        if not isinstance(item, dict) or item.get("activity_type") not in HEAD_ACTIVITY_TYPES:
             continue
         if parse_ts(item.get("timestamp")) is None:
             continue
-        pushes.append({"at": item.get("timestamp"), "after": item.get("after"), "type": item.get("activity_type")})
-    return pushes, None
+        records.append({"at": item.get("timestamp"), "after": item.get("after"), "type": item.get("activity_type")})
+    return records, None
 
 
 # ─── 판정 ───
@@ -460,28 +479,30 @@ def head_commit_time(pr):
     return parse_ts(commit.get("committedDate"))
 
 
-def compute_trigger(pr, trusted_logins, pushes=None):
-    """(종류, 시각, 재리뷰 요청 수, push 시각 추정 여부)를 돌려준다.
+def compute_trigger(pr, trusted_logins, records=None):
+    """이번 리뷰 주기의 트리거를 {kind, at, requests, estimated}로 돌려준다.
 
-    pushes가 None이면 push 기록을 읽지 못한 것이라 head 커밋 시각을 push 시각으로 대신한다.
+    records는 fetch_pushes의 Activity 기록이다. None이면 읽지 못한 것이라 head 커밋 시각을 push
+    시각으로 대신하고 estimated를 참으로 둔다. requests는 인정한 재리뷰 요청 코멘트 수다.
     """
-    candidates = []
     created = parse_ts(pr.get("createdAt"))
-    if created:
-        candidates.append((created, "pr_opened"))
+    if not created:
+        raise ToolError("PR 생성 시각을 해석하지 못했다")
+    # (시각, 종류, push 시각 추정 여부)
+    candidates = [(created, "pr_opened", False)]
     for event in pr.get("readyEvents") or []:
         at = parse_ts(event.get("createdAt"))
         if at:
-            candidates.append((at, "ready_for_review"))
-    if pushes is None:
+            candidates.append((at, "ready_for_review", False))
+    if records is None:
         estimated_push = head_commit_time(pr)
         if estimated_push:
-            candidates.append((estimated_push, "push_estimated"))
+            candidates.append((estimated_push, "push", True))
     else:
-        for push in pushes:
-            at = parse_ts(push.get("at"))
-            if at:
-                candidates.append((at, "push"))
+        for record in records:
+            at = parse_ts(record.get("at"))
+            if at and record.get("type") in PUSH_ACTIVITY_TYPES:
+                candidates.append((at, "push", False))
     requests = [
         c for c in pr.get("comments") or []
         if is_trusted_comment(c, trusted_logins) and REVIEW_REQUEST_RE.search(c.get("body") or "")
@@ -489,13 +510,9 @@ def compute_trigger(pr, trusted_logins, pushes=None):
     for comment in requests:
         at = parse_ts(comment.get("createdAt"))
         if at:
-            candidates.append((at, "review_request"))
-    if not created:
-        raise ToolError("PR 생성 시각을 해석하지 못했다")
-    at, kind = max(candidates, key=lambda item: item[0])
-    if kind == "push_estimated":
-        return "push", at, len(requests), True
-    return kind, at, len(requests), False
+            candidates.append((at, "review_request", False))
+    at, kind, estimated = max(candidates, key=lambda item: item[0])
+    return {"kind": kind, "at": at, "requests": len(requests), "estimated": estimated}
 
 
 def _after(at, trigger_at):
@@ -589,7 +606,15 @@ def evaluate(snapshot, now):
     # 재리뷰 요청은 저장소 권한자와 조회 계정의 것만 센다. PR 작성자 예외는 스레드 답글에만 둔다.
     request_logins = {viewer} if viewer else set()
     reply_logins = {login for login in (viewer, (pr.get("author") or {}).get("login")) if login}
-    kind, trigger_at, request_count, push_estimated = compute_trigger(pr, request_logins, snapshot.get("pushes"))
+    records = snapshot.get("pushes")
+    trigger = compute_trigger(pr, request_logins, records)
+    kind, trigger_at = trigger["kind"], trigger["at"]
+    # head의 push 시각을 모르면(Activity에 head 기록이 아직 없거나, 커밋 시각으로 추정했으면) 흔적 없음을
+    # 단정하지 않는다. 경과 시간이 실제보다 길게 잡혀 absent와 재리뷰 권장을 일찍 낼 수 있어서다.
+    if records is None:
+        push_clock_unknown = trigger["estimated"]
+    else:
+        push_clock_unknown = not any(_stale(head, record.get("after")) is False for record in records)
     comments = pr.get("comments") or []
     bot_comments = [c for c in comments if is_bot_actor(c.get("author"))]
     reactions = [r for r in pr.get("reactions") or [] if is_bot_actor(r.get("user"))]
@@ -609,9 +634,9 @@ def evaluate(snapshot, now):
     bot_reviews = [r for r in all_bot_reviews if _for_head(head, _review_commit(r))]
     completed_rows = [row for row in all_completed_rows if _for_head(head, row["commit"])]
     legacy_comments = [c for c in all_legacy if _for_head(head, _legacy_commit(c))]
-    # 요약 코멘트가 있으면 👍는 쓰지 않는다. 커밋을 알 수 없어 이전 커밋 리뷰의 👍를 head 결과로
-    # 읽을 수 있고, 요약 표가 커밋별 결과를 알려 준다(모듈 설명의 #1568 실측).
-    has_summary = any(is_bot_actor(c.get("author")) and SUMMARY_MARKER in (c.get("body") or "") for c in comments)
+    # 요약 코멘트가 있으면 👍는 쓰지 않는다. 커밋 정보가 없고 보안 리뷰 완료에 묶여 있어, 요약 표의
+    # 커밋별 결과가 더 정확하다(모듈 설명의 #1568 실측).
+    has_summary = any(SUMMARY_MARKER in (c.get("body") or "") for c in bot_comments)
     thumbs = [] if has_summary else all_thumbs
 
     # 리뷰 주기의 시작. 보통은 트리거지만, 트리거 뒤에 봇이 새 리뷰를 시작했고(👀·Running) 그 뒤로
@@ -634,8 +659,11 @@ def evaluate(snapshot, now):
     reviews_after = sorted((r for r in bot_reviews if _after(review_time(r), cycle_start)), key=review_time)
     thumbs_after = any(_after(parse_ts(r.get("createdAt")), cycle_start) for r in thumbs)
     completed_after = sorted((row for row in completed_rows if _after(row["at"], cycle_start)), key=lambda row: row["at"])
+    # 실패·처음 보는 상태도 커밋이 적힌 결과라 head 것만 센다(이전 커밋의 실패로 head를 실패로 보지 않는다).
     unknown_after = sorted(
-        (row for row in rows if row["status"].lower() not in ("running", "completed") and _after(row["at"], cycle_start)),
+        (row for row in rows
+         if row["status"].lower() not in ("running", "completed") and _for_head(head, row["commit"])
+         and _after(row["at"], cycle_start)),
         key=lambda row: row["at"],
     )
     failed_rows = [row for row in unknown_after if FAILED_ROW_RE.match(row["status"])]
@@ -712,31 +740,43 @@ def evaluate(snapshot, now):
     elif elapsed <= ABSENT_AFTER_SECONDS:
         status, reason = "pending", "트리거 직후라 봇의 첫 신호를 기다린다 (트리거부터 %s 지남, %s 안에 흔적이 없으면 absent)" % (
             human_duration(elapsed), human_duration(ABSENT_AFTER_SECONDS))
+    elif push_clock_unknown:
+        status, reason = waiting()
+        if status == "pending":
+            reason = "head의 push 시각을 아직 알 수 없어 흔적 없음으로 단정하지 않는다. %s" % reason
     else:
         status, reason = "absent", "트리거부터 %s 지나도 head에 봇 리뷰 흔적이 없다" % human_duration(elapsed)
 
-    # 봇이 이 PR을 리뷰한 적이 있는가(어느 커밋이든, 어느 주기든). 결과 상태가 아니면 마지막으로
-    # 리뷰한 커밋을 reviewed_commit으로 알려 head와 비교하게 한다.
+    # 봇이 리뷰한 커밋 기록(어느 커밋이든, 어느 주기든). 결과 상태가 아니면 마지막으로 리뷰한 커밋을
+    # reviewed_commit으로 알려 head와 비교하게 한다.
+    known = [(review_time(r), _review_commit(r)) for r in all_bot_reviews]
+    known += [(row["at"], row["commit"]) for row in all_completed_rows]
+    known += [(parse_ts(c.get("createdAt")), _legacy_commit(c)) for c in all_legacy]
+    known = [(at, commit) for at, commit in known if at is not None and commit]
     prior_review = bool(all_bot_reviews or all_completed_rows or all_legacy or all_thumbs)
-    if status not in ("reviewed", "lgtm"):
-        known = [(review_time(r), _review_commit(r)) for r in all_bot_reviews]
-        known += [(row["at"], row["commit"]) for row in all_completed_rows]
-        known += [(parse_ts(c.get("createdAt")), _legacy_commit(c)) for c in all_legacy]
-        known = [(at, commit) for at, commit in known if at is not None and commit]
-        if known:
-            reviewed_commit = max(known, key=lambda item: item[0])[1]
+    if status not in ("reviewed", "lgtm") and known:
+        reviewed_commit = max(known, key=lambda item: item[0])[1]
     if status == "absent" and prior_review and reviewed_commit:
         reason += " (봇이 마지막으로 리뷰한 커밋 %s)" % reviewed_commit[:10]
-    if push_estimated and status in ("pending", "timeout", "absent"):
+    if trigger["estimated"] and status in ("pending", "timeout", "absent"):
         reason += ". push 기록을 읽지 못해 head 커밋 시각부터 쟀다"
-    # 머지·닫힌 PR에는 사후 재리뷰를 권하지 않는다.
-    rereview_suggested = status == "absent" and prior_review and kind != "review_request" and pr.get("state") == "OPEN"
+    # 재리뷰는 봇이 head가 아닌 커밋을 리뷰한 적이 있는 열린 PR에만 권한다. 봇의 마지막 신호가 한도·
+    # 오류·계정 안내면 요청해도 같은 안내만 돌아오므로 권하지 않는다. 머지·닫힌 PR에는 사후 재리뷰를 권하지 않는다.
+    reviewed_other_commit = any(_stale(head, commit) for _, commit in known)
+    notices = [parse_ts(c.get("createdAt")) for c in bot_comments
+               if LIMIT_RE.search(c.get("body") or "") or FAILURE_RE.search(c.get("body") or "")
+               or ACCOUNT_RE.search(c.get("body") or "")]
+    last_result = _latest([at for at, _ in known] + [parse_ts(r.get("createdAt")) for r in all_thumbs])
+    last_notice = _latest(notices)
+    notice_is_last = last_notice is not None and (last_result is None or last_notice > last_result)
+    rereview_suggested = (status == "absent" and reviewed_other_commit and not notice_is_last
+                          and kind != "review_request" and pr.get("state") == "OPEN")
 
     settings_warning = None
     if status == "absent":
         author = (pr.get("author") or {}).get("login")
         if kind == "review_request":
-            settings_warning = "재리뷰 요청 코멘트에 봇이 반응하지 않았다. 요청 문구가 정확히 한 줄인지 확인한다"
+            settings_warning = "재리뷰 요청 코멘트에 봇이 반응하지 않았다. 요청 문구가 정확히 한 줄인지와 저장소의 Codex 리뷰 설정을 확인한다"
         elif kind == "push" and prior_review:
             settings_warning = "push한 head를 봇이 리뷰하지 않았다. 저장소의 Codex 검토 트리거가 '푸시할 때마다'인지 확인한다"
         elif not prior_review and viewer and snapshot.get("owner") == viewer and author == viewer:
@@ -757,11 +797,11 @@ def evaluate(snapshot, now):
             "kind": kind,
             "at": iso(trigger_at),
             "elapsed_seconds": int(max(0, (now - trigger_at).total_seconds())),
-            "estimated": push_estimated,
+            "estimated": trigger["estimated"],
         },
         "reviewed_commit": reviewed_commit,
         "stale": _stale(head, reviewed_commit),
-        "rereview_requests": request_count,
+        "rereview_requests": trigger["requests"],
         "rereview_suggested": rereview_suggested,
         "push_error": snapshot.get("push_error"),
         "bot_threads": len(threads),

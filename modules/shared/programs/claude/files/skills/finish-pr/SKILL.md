@@ -29,8 +29,8 @@ description: |
    - `pending`: `--wait 540`을 붙여 기다린다. 이 호출은 오래 걸리므로 [상태 조회](../review-pr-feedback/references/codex-review.md#상태-조회)의 런타임별 대기 방식을 따른다. 상태가 바뀔 때까지 반복한다 (대기 한도가 지나면 `codex-review-status`가 `timeout`을 낸다).
    - 상태와 관계없이 `unhandled_threads`가 남아 있으면 머지하지 않는다. 이전 리뷰의 스레드와 이미 resolve된 스레드도 포함된다. review-pr-feedback 절차로 처리한 뒤 이 게이트부터 다시 확인한다. 그래도 같은 스레드가 남으면 머지하지 않고 STOP한다.
    - 이 게이트에서 지적을 반영해 새 커밋을 push했으면, 게이트를 다시 통과해도 바로 머지하지 않는다. 반영한 변경과 봇 상태를 사용자에게 보고하고 확인을 받는다. 답글·반응·resolve만 채웠으면 계속 진행한다.
-   - 상태는 현재 head 기준이다. 리뷰 뒤 push한 head는 push로 시작된 새 리뷰가 끝날 때까지 `pending`이다. `rereview_suggested`가 `true`면 [재리뷰 요청](../review-pr-feedback/references/codex-review.md#재리뷰-요청)대로 그 head에 한 번 요청하고 `pending`부터 다시 확인한다.
-   - `limited`·`failed`·`timeout`·`absent`(`rereview_suggested`가 없을 때): 봇 리뷰 없이 진행한다. 절차 4의 PR 후속 코멘트에 그 상태와 사유를 한 줄로 남긴다. 단 `absent`이면서 `settings_warning`이 없으면 봇을 쓰지 않는 저장소일 수 있어 남기지 않는다. `settings_warning`이 있으면 사용자 보고에 포함한다.
+   - 상태는 현재 head 기준이다. 리뷰 뒤 push한 head는 봇이 새 리뷰를 시작하면 끝날 때까지 `pending`이고, 트리거 뒤 2분이 지나도 흔적이 없으면 `absent`다. `rereview_suggested`가 `true`면 [재리뷰 요청](../review-pr-feedback/references/codex-review.md#재리뷰-요청)대로 그 head에 한 번 요청하고 `pending`부터 다시 확인한다.
+   - `limited`·`failed`·`timeout`·`absent`(`rereview_suggested`가 `false`일 때): 봇 리뷰 없이 진행한다. 절차 4의 PR 후속 코멘트에 그 상태와 사유를 한 줄로 남긴다. 단 `absent`이면서 `settings_warning`이 없으면 봇을 쓰지 않는 저장소일 수 있어 남기지 않는다. `settings_warning`이 있으면 사용자 보고에 포함한다.
    - 명령이 실패하면 원인을 고쳐 다시 조회한다. 해결하지 못하면 머지하지 않고 STOP한다.
 
 Skip 조건:

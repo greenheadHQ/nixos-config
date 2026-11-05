@@ -39,6 +39,8 @@ IMPOSTOR_REACTOR = {"login": "chatgpt-codex-connector[bot]", "databaseId": 42}
 
 HEAD = "a" * 40
 OLD = "b" * 40
+# 연속 push에서 head 앞에 거쳐 간 커밋
+MID = "c" * 40
 T0 = datetime(2026, 9, 27, 3, 0, 0, tzinfo=timezone.utc)
 LIMIT_BODY = (
     "You have reached your Codex usage limits for code reviews. You can see your limits in the "
@@ -138,10 +140,8 @@ def snapshot(pull, viewer="owner-user", owner="owner-user", pushes=None, push_er
 
 
 def push(at_s, after=HEAD, kind="push"):
+    """Activity API 기록. after는 그 push 뒤의 head다."""
     return {"at": ts(at_s), "after": after, "type": kind}
-
-
-MID = "c" * 40
 
 
 def judge(pull, now_s, **kwargs):
@@ -610,6 +610,52 @@ class PushTriggerTests(unittest.TestCase):
         self.assertIs(ignored["rereview_suggested"], False)
         self.assertIn("재리뷰", ignored["settings_warning"])
 
+    def test_head_missing_from_activity_is_not_called_absent(self):
+        # GraphQL의 head가 Activity에 아직 없으면 head의 push 시각을 모르는 것이다. 이전 push 시각부터
+        # 재면 push 몇 초 뒤에 absent와 재리뷰 권장을 낼 수 있어, 대기 한도까지 기다린다.
+        base = dict(reviews=[review(60, oid=MID)])
+        records = [push(1000, after=MID)]
+        early = judge(pr(**base), 1000 + M.ABSENT_AFTER_SECONDS + 30, pushes=records)
+        self.assertEqual(early["status"], "pending")
+        self.assertIn("push 시각을 아직 알 수 없어", early["reason"])
+        self.assertIs(early["rereview_suggested"], False)
+        self.assertEqual(judge(pr(**base), 1001 + M.PENDING_TIMEOUT_SECONDS, pushes=records)["status"], "timeout")
+        # Activity가 head를 기록하면 그 push부터 잰다.
+        caught_up = judge(pr(**base), 1200, pushes=records + [push(1150)])
+        self.assertEqual(caught_up["status"], "pending")
+        self.assertEqual(caught_up["trigger"]["at"], ts(1150))
+
+    def test_branch_creation_records_the_first_head(self):
+        # PR 생성 전에 만든 브랜치의 첫 head는 push가 아니라 브랜치 생성으로 기록된다.
+        creation = [push(-10, kind="branch_creation")]
+        result = judge(pr(), 600, pushes=creation)
+        self.assertEqual(result["trigger"]["kind"], "pr_opened")
+        self.assertEqual(result["status"], "absent")
+
+    def test_failed_row_for_another_commit_does_not_fail_the_head(self):
+        pull = pr(comments=[comment(summary_body("Failed", 1005, commit=OLD[:7]), 15)])
+        self.assertEqual(judge(pull, 1050, pushes=[push(1000)])["status"], "pending")
+        self.assertEqual(judge(pull, 1000 + M.ABSENT_AFTER_SECONDS + 1, pushes=[push(1000)])["status"], "absent")
+        failed_head = pr(comments=[comment(summary_body("Failed", 1005), 15)])
+        self.assertEqual(judge(failed_head, 1050, pushes=[push(1000)])["status"], "failed")
+
+    def test_no_rereview_suggestion_when_the_head_itself_was_reviewed(self):
+        # 같은 head를 이미 리뷰했고 draft→ready 뒤 봇이 조용하면 재리뷰를 권하지 않는다.
+        pull = pr(comments=[comment(summary_body("Completed", 60), 15)], readyEvents=[{"createdAt": ts(1000)}])
+        result = judge(pull, 1200, pushes=[push(-10, kind="branch_creation")])
+        self.assertEqual(result["status"], "absent")
+        self.assertIs(result["rereview_suggested"], False)
+
+    def test_no_rereview_suggestion_when_the_last_bot_signal_is_a_notice(self):
+        records = [push(1000)]
+        limited = pr(reviews=[review(60, oid=OLD)], comments=[comment(LIMIT_BODY, 500)])
+        result = judge(limited, 1200, pushes=records)
+        self.assertEqual(result["status"], "absent")
+        self.assertIs(result["rereview_suggested"], False)
+        # 한도 안내 뒤에 봇이 다시 리뷰했으면 한도가 풀린 것으로 본다.
+        recovered = pr(reviews=[review(60, oid=OLD), review(700, oid=OLD)], comments=[comment(LIMIT_BODY, 500)])
+        self.assertIs(judge(recovered, 1200, pushes=records)["rereview_suggested"], True)
+
     def test_no_rereview_suggestion_after_merge(self):
         base = dict(reviews=[review(60, oid=OLD)])
         for state in ("MERGED", "CLOSED"):
@@ -632,8 +678,11 @@ class PushTriggerTests(unittest.TestCase):
         estimated = judge(pr(headCommits=head_commit), 950)
         self.assertEqual(estimated["status"], "pending")
         self.assertEqual(estimated["trigger"], {"kind": "push", "at": ts(900), "elapsed_seconds": 50, "estimated": True})
-        absent = judge(pr(headCommits=head_commit), 900 + M.ABSENT_AFTER_SECONDS + 1)
-        self.assertIn("head 커밋 시각", absent["reason"])
+        # 커밋 시각은 push보다 이를 수 있어 흔적 없음을 단정하지 않고 대기 한도까지 기다린다.
+        waiting = judge(pr(headCommits=head_commit), 900 + M.ABSENT_AFTER_SECONDS + 1)
+        self.assertEqual(waiting["status"], "pending")
+        self.assertIn("head 커밋 시각", waiting["reason"])
+        self.assertEqual(judge(pr(headCommits=head_commit), 901 + M.PENDING_TIMEOUT_SECONDS)["status"], "timeout")
         # 마지막 커밋이 head가 아니면(조회 사이에 push) 추정하지 않는다.
         other = {"nodes": [{"commit": {"oid": OLD, "committedDate": ts(900)}}]}
         self.assertEqual(judge(pr(headCommits=other), 950)["trigger"]["kind"], "pr_opened")
@@ -880,6 +929,16 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result["trigger"]["at"], ts(550))
         self.assertIn("HTTP 404", result["push_error"])
         self.assert_read_only()
+
+    def test_transient_activity_failure_is_a_fetch_failure(self):
+        # 404·403이 아닌 실패는 일시 오류로 보고 조회 실패로 낸다(커밋 시각으로 조용히 넘어가지 않는다).
+        pull = pr(**self.HEAD_FIELDS)
+        failure = {"__exit__": 1, "stderr": "gh: Bad Gateway (HTTP 502)"}
+        proc = self.run_cli("7", "-R", "owner-user/repo", "--json",
+                            scenario={"main": [graphql_response(pull)], "activity": failure})
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("HTTP 502", proc.stderr)
+        self.assertEqual(proc.stdout, "")
 
     def test_text_output_lists_unhandled_threads(self):
         pull = pr(reviews=[review(115, oid=OLD)], reviewThreads=[thread(at_s=115, title="Fix the race")])
