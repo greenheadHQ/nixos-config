@@ -719,6 +719,11 @@ run_test "neovim clipboard uses OSC 52 only for Linux SSH outside tmux" test_neo
 run_test "neovim SSH clipboard paste returns last copy without query" test_neovim_ssh_clipboard_paste_returns_last_copy_without_query
 run_test "neovim SSH clipboard paste before copy uses register 0" test_neovim_ssh_clipboard_paste_before_copy_uses_register_zero
 
+# ═══════════════════════════════════════════════════════════════════
+# neovim-korean-ctrl suite (tests/suites/neovim-korean-ctrl.sh) — 한글 입력소스의 Ctrl+n/Ctrl+p
+# ═══════════════════════════════════════════════════════════════════
+run_test "neovim Korean Ctrl+n/Ctrl+p act as Ctrl+n/Ctrl+p" test_neovim_korean_ctrl_np_acts_as_ctrl_np
+
 # 퇴역 키 로더는 tomlkit 없이도 도는 순수 셸 계약이라 아래 게이트 밖에 둔다.
 run_test "codex-config retired keys loader" test_codex_config_retired_keys_loader
 

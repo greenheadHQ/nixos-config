@@ -26,6 +26,16 @@
 -- 부작용: "j" 입력 후 300ms 동안 "k" 대기 (체감상 짧음)
 vim.keymap.set("i", "jk", "<Esc>", { desc = "Esc (모바일 UX)" })
 
+-- 한글 입력소스에서 Ctrl+n / Ctrl+p (자동완성 목록 이동 등)
+-- Neovim이 켜는 kitty keyboard protocol에서 Ghostty는 Ctrl+글자를 현재 입력소스의 글자로 보낸다.
+-- 한글 두벌식에서는 Ctrl+n이 <C-ㅜ>, Ctrl+p가 <C-ㅔ>로 도착해 매핑이 없으면 'ㅜ'·'ㅔ'가 입력된다.
+-- remap으로 <C-n>/<C-p>에 넘겨 그 자리의 동작(blink.cmp 목록 이동, snacks picker 이동, 내장 완성,
+-- 명령줄 히스토리)을 그대로 쓴다. 입력소스는 바꾸지 않는다. 배경·한계: configuring-neovim 스킬의
+-- references/korean-input.md
+for jamo, key in pairs({ ["<C-ㅜ>"] = "<C-n>", ["<C-ㅔ>"] = "<C-p>" }) do
+  vim.keymap.set({ "i", "c" }, jamo, key, { remap = true, desc = key .. " (한글 입력소스)" })
+end
+
 -- Terminal 모드에서 Ctrl+\ → Normal 모드로 탈출
 -- Neovim 내장 터미널(:terminal)에서 명령을 실행하다가 Normal 모드로 돌아갈 때 사용
 -- 기본 키는 <C-\><C-n> 두 번 눌러야 하는데, 한 번으로 줄임

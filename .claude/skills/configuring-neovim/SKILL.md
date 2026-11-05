@@ -36,7 +36,7 @@ modules/shared/programs/neovim/
         ├── config/
         │   ├── lazy.lua             # lazy.nvim 부트스트랩 + extras 목록
         │   ├── options.lua          # Vim 옵션
-        │   ├── keymaps.lua          # 커스텀 키맵 (jk→Esc)
+        │   ├── keymaps.lua          # 커스텀 키맵 (jk→Esc, 한글 입력소스 Ctrl+n/p)
         │   └── autocmds.lua         # 모바일 화면 감지, FocusGained 한글 IM 전환
         └── plugins/
             ├── disabled.lua         # Mason (mason-org/), mason-nvim-dap.nvim, mini.surround (nvim-mini/), tokyonight.nvim, indent-blankline.nvim, neo-tree.nvim 비활성화
