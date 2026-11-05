@@ -7,6 +7,7 @@ tags: [ neovim, lazyvim, custom, keymap ]
   <leader>yp    상대 경로 복사 (클립보드)
   <leader>yP    절대 경로 복사 (클립보드)
   jk            Esc (Insert 모드)
+  Ctrl+n/p      한글 입력소스에서도 다음/이전 항목 (Insert·명령줄)
   Ctrl+\        터미널 Normal 모드
   <leader>C     cheatsheet 브라우저 (fzf)
 

@@ -26,6 +26,14 @@
 -- 부작용: "j" 입력 후 300ms 동안 "k" 대기 (체감상 짧음)
 vim.keymap.set("i", "jk", "<Esc>", { desc = "Esc (모바일 UX)" })
 
+-- 한글 입력소스에서 Ctrl+n / Ctrl+p (자동완성 목록 이동 등)
+-- Ghostty는 한글 두벌식의 Ctrl+n·Ctrl+p를 <C-ㅜ>·<C-ㅔ>로 보내 매핑이 없으면 'ㅜ'·'ㅔ'가 입력된다.
+-- remap으로 <C-n>/<C-p>에 넘겨 그 자리의 동작(blink.cmp 목록 이동 등)을 그대로 쓰고, 입력소스는
+-- 바꾸지 않는다. 원인·한계·재확인 방법: configuring-neovim 스킬의 references/korean-input.md
+for lhs, rhs in pairs({ ["<C-ㅜ>"] = "<C-n>", ["<C-ㅔ>"] = "<C-p>" }) do
+  vim.keymap.set({ "i", "c" }, lhs, rhs, { remap = true, desc = rhs .. " (한글 입력소스)" })
+end
+
 -- Terminal 모드에서 Ctrl+\ → Normal 모드로 탈출
 -- Neovim 내장 터미널(:terminal)에서 명령을 실행하다가 Normal 모드로 돌아갈 때 사용
 -- 기본 키는 <C-\><C-n> 두 번 눌러야 하는데, 한 번으로 줄임
