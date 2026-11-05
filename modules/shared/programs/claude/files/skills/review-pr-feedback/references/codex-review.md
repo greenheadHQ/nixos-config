@@ -10,17 +10,18 @@ Codex GitHub 앱의 PR 리뷰를 기다리고, 지적에 반응·답글을 남�
 
 ## 상태 조회
 
-`codex-review-status <PR> -R OWNER/REPO --json`은 조회만 하는 명령이다. PR과 `-R`을 함께 생략하면 현재 브랜치의 PR을 본다. PR 본문 반응, 요약 코멘트, 리뷰 객체, 한도·오류 코멘트를 조합해 상태를 판정하고 다음 값을 함께 낸다. 필드명은 `--json` 출력 기준이다.
+`codex-review-status <PR> -R OWNER/REPO --json`은 조회만 하는 명령이다. PR과 `-R`을 함께 생략하면 현재 브랜치의 PR을 본다. PR 본문 반응, 요약 코멘트, 리뷰 객체, 한도·오류 코멘트와 head 브랜치의 push 기록을 조합해 현재 head 기준 상태를 판정하고 다음 값을 함께 낸다. 커밋이 적힌 결과(요약 표의 행, 리뷰 객체, 지적 없음 코멘트)는 그 커밋이 head일 때만 결과로 센다. 요약 코멘트가 있는 PR에서는 커밋 정보가 없는 👍를 결과로 쓰지 않는다. 필드명은 `--json` 출력 기준이다.
 
-- `reviewed_commit`: 봇이 리뷰한 커밋. 짧은 SHA일 수 있다.
+- `reviewed_commit`: `reviewed`·`lgtm`이면 그 결과의 커밋(head), 그 밖의 상태면 봇이 마지막으로 리뷰한 커밋. 짧은 SHA일 수 있다.
 - `stale`: `reviewed_commit`과 현재 `head`가 다르다. 리뷰한 커밋을 알 수 없으면(커밋 표시 없이 👍만 남은 경우 등) `null`이다.
-- `trigger`: 이번 리뷰 주기의 트리거 종류(`kind`: `pr_opened`, `ready_for_review`, `review_request`)와 시각(`at`).
+- `trigger`: 이번 리뷰 주기의 트리거 종류(`kind`: `pr_opened`, `ready_for_review`, `push`, `review_request`)와 시각(`at`). push 시각은 head 브랜치의 Activity API로 읽고, 가장 최근 기록이 head를 가리킬 때만 head의 push 시각을 안다. 아니면(기록 전, 예전 head로 되돌린 force push, 404·410·451로 읽지 못함) 알려진 가장 늦은 시각(가장 최근 기록, head 커밋 시각)으로 추정하고 `estimated`가 `true`다. 현재보다 늦은 커밋 시각(시계 차이)은 버리고, 봇이 head 커밋을 적어 남긴 가장 이른 신호를 상한으로 둔다. 읽지 못한 사유는 `push_error`에 나온다. 추정 시각은 실제보다 이를 수 있어 `absent`가 일찍 나올 수 있는데, 그때 `rereview_suggested`대로 요청하면 시각을 아는 트리거가 생긴다. 403(rate limit일 수 있음)을 비롯한 그 밖의 Activity API 실패는 조회 실패(exit 1)다.
 - `rereview_requests`: 재리뷰 요청 코멘트 수.
+- `rereview_suggested`: [재리뷰 요청](#재리뷰-요청)의 예외에 해당한다. 열린 PR에서 봇이 head가 아닌 커밋을 리뷰한 적이 있는데, 트리거(재리뷰 요청 제외) 뒤 head에 흔적이 없다(`absent`). 봇의 마지막 신호가 한도·오류·계정 안내이거나 이 head가 생긴 뒤 이미 재리뷰를 요청했으면 `false`다.
 - `unhandled_threads`: 답글·반응·resolve 중 빠진 것이 있는 봇 스레드. 빠진 항목은 `missing`에 `reply`, `reaction`, `resolve`로 나온다. 이미 resolve된 스레드도 답글이나 반응이 빠졌으면 나온다. `thread_id`는 답글·resolve mutation에 쓰는 GraphQL id, `comment_id`는 반응에 쓰는 REST id, `url`은 스레드 첫 코멘트 주소다. 봇 스레드인지는 작성자 이름이 아니라 이 목록으로 판별한다.
 - `viewer`: 조회한 계정. 반응 여부를 이 계정 기준으로 보므로 반응도 이 계정으로 단다. 다른 계정으로 단 반응은 `missing`에서 빠지지 않는다.
 - `settings_warning`: 봇이 리뷰했어야 할 PR에 흔적이 없을 때의 점검 안내.
 
-트리거는 PR 생성, draft 해제, 재리뷰 요청 코멘트 중 가장 최근 것이다. 공개 저장소에서는 누구나 코멘트할 수 있으므로, 재리뷰 요청은 저장소 소유자·조직 멤버·협업자(OWNER·MEMBER·COLLABORATOR)나 조회 계정이 쓴 것만 센다. 스레드 답글은 PR 작성자가 쓴 것도 센다. 리뷰·👍·완료 표시·한도·오류 같은 결과 신호는 트리거 뒤의 것만 세고, 진행 중 표시(👀, Running)는 대기 한도까지 진행 중으로 본다. 트리거 뒤에 봇이 새 리뷰를 시작했고 그 뒤로 결과가 없으면 결과 신호와 경과 시간을 그 시작부터 센다.
+트리거는 PR 생성, draft 해제, head push, 재리뷰 요청 코멘트 중 가장 최근 것이다. 리뷰가 시작되기 전에 연달아 들어온 push는 봇이 마지막 head 하나만 리뷰한다. 공개 저장소에서는 누구나 코멘트할 수 있으므로, 재리뷰 요청은 저장소 소유자·조직 멤버·협업자(OWNER·MEMBER·COLLABORATOR)나 조회 계정이 쓴 것만 센다. 스레드 답글은 PR 작성자가 쓴 것도 센다. 리뷰·👍·완료 표시·한도·오류 같은 결과 신호는 트리거 뒤의 것만 세고(커밋이 적힌 결과는 head 것만), 진행 중 표시(👀, Running)는 대기 한도까지 진행 중으로 본다. 트리거 뒤에 봇이 새 리뷰를 시작했고 그 뒤로 결과가 없으면 결과 신호와 경과 시간을 그 시작부터 센다.
 
 | 상태 | 뜻 |
 |------|----|
@@ -31,9 +32,13 @@ Codex GitHub 앱의 PR 리뷰를 기다리고, 지적에 반응·답글을 남�
 | `limited` | Codex 사용량 한도로 리뷰하지 않았다 |
 | `failed` | 봇이 오류나 계정 연결 안내를 남겼거나, 요약 코멘트가 실패 상태를 알렸다 |
 | `timeout` | 리뷰 시작(보통 트리거) 뒤 대기 한도(`pending_timeout_seconds`, 현재 15분)가 지나도 진행 중이다 |
-| `absent` | 트리거 뒤 `absent_after_seconds`(현재 2분)가 지나도 봇 흔적이 없다 |
+| `absent` | 트리거 뒤 `absent_after_seconds`(현재 2분)가 지나도 head에 봇 리뷰 흔적이 없다 |
 
-- `pending`이면 `--wait 540`을 붙여 다시 조회한다. 540초는 `--help`에 나오는 `--wait` 상한이다. 그동안 반환하지 않을 수 있으므로 셸 명령 제한 시간을 600초로 늘리거나 백그라운드로 실행해 끝난 뒤 출력을 본다. 셸 명령이 제한 시간에 걸려 중단됐다면 명령 실패(exit 1·2)가 아니므로 같은 명령을 다시 호출한다. 끝난 뒤에도 `pending`이면 다시 호출한다. 대기 한도가 지나면 `codex-review-status`가 `timeout`을 내므로 끝없이 기다리지 않는다.
+- `pending`이면 `--wait 540`을 붙여 다시 조회한다. 540초는 `--help`에 나오는 `--wait` 상한이다. 그동안 반환하지 않을 수 있으므로 런타임에 맞게 기다린다.
+  - 백그라운드 명령이 끝나면 알림으로 다시 깨어나는 런타임(Claude Code): 이 명령을 백그라운드로 실행하고, 기다리는 중이라고 알린 뒤 턴을 끝낸다. 끝났다는 알림이 오면 출력을 보고 이어 간다. 그동안 사용자와 대화할 수 있다.
+  - 그런 알림이 없는 런타임(Codex CLI 등): 셸 명령 제한 시간을 600초로 늘려 포그라운드로 실행한다. 제한 시간에 걸려 중단됐다면 명령 실패(exit 1·2)가 아니므로 같은 명령을 다시 호출한다.
+
+  끝난 뒤에도 `pending`이면 다시 호출한다. 대기 한도가 지나면 `codex-review-status`가 `timeout`을 내므로 끝없이 기다리지 않는다.
 - `settings_warning`이 있으면 그 문구를 사용자에게 그대로 보고한다.
 - 명령이 실패하면(exit 1·2) 출력된 원인(인증, 네트워크, PR 지정)을 고쳐 다시 조회한다. 명령을 찾지 못하면 `nrs`가 아직 적용되지 않은 호스트다. nixos-config 작업 트리 안에서는 `python3 modules/shared/scripts/codex-review-status.py`로 같은 조회를 할 수 있다. 해결하지 못하면 finish-pr는 봇 상태를 모르는 채로 머지하지 않고 사용자에게 보고한다. review-pr-feedback은 봇 상태 없이 수집을 계속하고 그 사실을 보고한다.
 
@@ -71,16 +76,14 @@ PR·이슈 제목과 본문, 코멘트, 스레드 답글 어디에도 봇 멘션
 
 ## 재리뷰 요청
 
-`reviewed_commit` 뒤의 변경(`stale: true`, 범위는 `git diff <reviewed_commit> <head>`)에 다음 중 하나가 있으면 재리뷰를 요청한다. `stale`이 `null`이면 이 작업이 트리거(`trigger.at`) 뒤에 push한 커밋을 리뷰 뒤의 변경으로 본다. PR의 커밋 정보에는 push 시각이 없으므로 이 작업의 push 기록으로 가린다.
+Codex 봇은 push마다 새 head를 자동으로 리뷰한다(검토 트리거 "푸시할 때마다", #1567). 그래서 평소에는 재리뷰를 요청하지 않는다.
 
-- 로직 변경
-- 새 기능이나 새 파일
-- 설계 변경
+예외는 하나다. `codex-review-status`가 `rereview_suggested: true`를 내면 그 head에 한해 한 번 요청한다. 열린 PR에서 봇이 head가 아닌 커밋을 리뷰한 적이 있는데 새 head에 `absent_after_seconds`(현재 2분)가 지나도 흔적이 없는 경우로, 저장소 설정이 개인 설정보다 우선해 트리거가 다른 저장소를 위한 예외다. 이 head가 생긴 뒤 이미 요청했으면 그 뒤 draft→ready 같은 트리거가 와도 같은 head에는 다시 권하지 않는다. 봇이 이 PR을 한 번도 리뷰하지 않았거나(봇을 쓰지 않는 저장소), 봇의 마지막 신호가 한도·오류 안내이거나, 머지한 뒤에는 권하지 않는다.
 
-문서·주석·테스트만 바꾼 변경, 이름·오타 수정, 국소적인 P2 반영에는 요청하지 않는다. 요청은 PR당 한 번이다 — `rereview_requests`가 1 이상이면 다시 요청하지 않는다. 봇 리뷰 없이 끝난 상태(`limited`·`failed`·`timeout`·`absent`)에서는 요청하지 않고, 머지한 뒤의 사후 재리뷰도 요청하지 않는다.
+그런 저장소에서는 head마다 한 번씩 요청하게 되어 push마다 리뷰받는 것과 횟수가 같다. 예전의 "PR당 1회" 제한(#1477)은 루프와 한도 소모를 막으려던 것이지만, 리뷰를 놓치지 않는 쪽을 택해 #1567에서 없앴다.
 
 ```bash
 gh pr comment <PR> -R OWNER/REPO --body '@codex review'
 ```
 
-본문이 `@codex review`로 시작해야 `codex-review-status`가 재리뷰 요청으로 센다. 요청 뒤에는 상태가 다시 `pending`이 된다. 기다림과 그 뒤에 도착하는 지적 처리는 finish-pr 게이트가 맡으므로, review-pr-feedback은 요청 뒤 기다리지 않고 남은 답글·반응·resolve를 이어서 마친다. 마치기 전에 재리뷰 지적이 이미 도착했으면 새 스레드로 검증부터 처리한다.
+본문이 `@codex review`로 시작해야 `codex-review-status`가 재리뷰 요청으로 센다. 요청 뒤에는 상태가 다시 `pending`이 된다. 기다림과 그 뒤에 도착하는 지적 처리는 finish-pr 게이트가 맡으므로, review-pr-feedback은 요청 뒤 기다리지 않고 남은 답글·반응·resolve를 이어서 마친다. 마치기 전에 새 리뷰의 지적이 이미 도착했으면 새 스레드로 검증부터 처리한다.

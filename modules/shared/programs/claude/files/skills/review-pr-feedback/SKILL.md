@@ -112,7 +112,7 @@ Codex 봇이 작성한 일반 코멘트와 리뷰 객체 본문은 문구와 관
 - 커밋 메시지에 어떤 피드백을 반영했는지 명시한다.
 - conventional commit 형식을 따른다 (예: `fix(module): address PR feedback`).
 - 반영할 피드백이 여러 영역에 걸쳐 있으면 논리적으로 분리하여 복수 커밋으로 나눈다.
-- 푸시한 변경이 [재리뷰 요청](references/codex-review.md#재리뷰-요청) 기준에 해당하면 Codex 봇에 재리뷰를 한 번 요청한다. 요청 뒤 기다리지 않고 Step 6으로 넘어간다.
+- push하면 Codex 봇이 새 head를 자동으로 리뷰하므로 재리뷰를 요청하지 않는다. 새 리뷰를 기다리지 않고 Step 6으로 넘어간다. 새 head에 리뷰 흔적이 없을 때의 예외는 [재리뷰 요청](references/codex-review.md#재리뷰-요청)을 따른다.
 
 ### Step 6: 답글 + resolve
 
@@ -149,7 +149,7 @@ Codex 봇 스레드는 답글 전에 판정에 맞는 👍/👎 반응을 먼저
 쿼리 스니펫과 retry/실패 정책은 [references/reply-and-resolve.md](references/reply-and-resolve.md)의 "Retry policy"가 정본이다.
 `thread.id`가 null/empty인 thread는 이 단계를 건너뛰고 사용자 보고 대상으로 남긴다.
 PR 일반 코멘트는 resolve가 없으므로 이 단계를 건너뛴다.
-Codex 봇 스레드는 마지막에 `codex-review-status --json`의 `unhandled_threads`가 비었는지로 답글·반응·resolve를 한 번에 확인한다. Step 1 뒤에 새로 생긴 스레드(재리뷰 결과 등)는 빠진 항목만 채우지 않고 Step 3부터 같은 절차로 처리한다. 이미 판정한 스레드는 `missing`의 항목만 채우고 한 번 다시 조회한다. 그래도 남으면 스레드 URL과 빠진 항목을 사용자에게 보고한다.
+Codex 봇 스레드는 마지막에 `codex-review-status --json`의 `unhandled_threads`가 비었는지로 답글·반응·resolve를 한 번에 확인한다. Step 1 뒤에 새로 생긴 스레드(push 뒤 새 리뷰의 지적 등)는 빠진 항목만 채우지 않고 Step 3부터 같은 절차로 처리한다. 이미 판정한 스레드는 `missing`의 항목만 채우고 한 번 다시 조회한다. 그래도 남으면 스레드 URL과 빠진 항목을 사용자에게 보고한다.
 
 ## 검증 의무
 
