@@ -25,4 +25,4 @@
 
 - Neovim 내부에서 한글로 전환 후 Normal 모드 명령 사용 시, FocusGained가 발동하지 않아 수동으로 영문 전환 필요
 - 한글 IME 조합 지연은 macOS/터미널 레이어 문제로 Neovim 플러그인에서 해결 불가 (터미널 IME escape sequence 미지원)
-- 한글 조합 중(마지막 글자가 아직 확정되지 않은 상태)에 누른 Ctrl+n/Ctrl+p는 Ghostty가 Neovim에 보내지 않아 동작하지 않는다(Ghostty 소스 `SurfaceView_AppKit.swift`의 `keyDown` 조합 중 처리, Hammerspoon 합성 키 실측도 같음). 조합 중에는 ↓/↑를 쓴다. Ghostty는 한글 조합을 확정한 뒤 방향키를 다시 보낸다(같은 파일의 `shouldReplayCommittedPreeditKey`). 제안 목록은 대부분 영문을 입력하는 중에 뜨므로 따로 대응하지 않았다.
+- 한글 조합 중(마지막 글자가 아직 확정되지 않은 상태)에 누른 Ctrl+n/Ctrl+p는 Ghostty가 Neovim에 보내지 않아 동작하지 않는다(Ghostty 소스 `SurfaceView_AppKit.swift`의 `keyDown` 조합 중 처리, Hammerspoon 합성 키 실측도 같음). ↓/↑는 Ghostty가 한글 조합을 확정한 뒤 다시 보내도록 되어 있어 대신 쓸 수 있다(같은 파일의 `shouldReplayCommittedPreeditKey`, 소스 기준이며 실측하지 않음). 제안 목록은 대부분 영문을 입력하는 중에 뜨므로 따로 대응하지 않았다.

@@ -27,13 +27,11 @@
 vim.keymap.set("i", "jk", "<Esc>", { desc = "Esc (모바일 UX)" })
 
 -- 한글 입력소스에서 Ctrl+n / Ctrl+p (자동완성 목록 이동 등)
--- Neovim이 켜는 kitty keyboard protocol에서 Ghostty는 Ctrl+글자를 현재 입력소스의 글자로 보낸다.
--- 한글 두벌식에서는 Ctrl+n이 <C-ㅜ>, Ctrl+p가 <C-ㅔ>로 도착해 매핑이 없으면 'ㅜ'·'ㅔ'가 입력된다.
--- remap으로 <C-n>/<C-p>에 넘겨 그 자리의 동작(blink.cmp 목록 이동, snacks picker 이동, 내장 완성,
--- 명령줄 히스토리)을 그대로 쓴다. 입력소스는 바꾸지 않는다. 배경·한계: configuring-neovim 스킬의
--- references/korean-input.md
-for jamo, key in pairs({ ["<C-ㅜ>"] = "<C-n>", ["<C-ㅔ>"] = "<C-p>" }) do
-  vim.keymap.set({ "i", "c" }, jamo, key, { remap = true, desc = key .. " (한글 입력소스)" })
+-- Ghostty는 한글 두벌식의 Ctrl+n·Ctrl+p를 <C-ㅜ>·<C-ㅔ>로 보내 매핑이 없으면 'ㅜ'·'ㅔ'가 입력된다.
+-- remap으로 <C-n>/<C-p>에 넘겨 그 자리의 동작(blink.cmp 목록 이동 등)을 그대로 쓰고, 입력소스는
+-- 바꾸지 않는다. 원인·한계·재확인 방법: configuring-neovim 스킬의 references/korean-input.md
+for lhs, rhs in pairs({ ["<C-ㅜ>"] = "<C-n>", ["<C-ㅔ>"] = "<C-p>" }) do
+  vim.keymap.set({ "i", "c" }, lhs, rhs, { remap = true, desc = rhs .. " (한글 입력소스)" })
 end
 
 -- Terminal 모드에서 Ctrl+\ → Normal 모드로 탈출

@@ -108,6 +108,8 @@ nrs                     # Home Manager가 심볼릭 링크 재생성
 
 외부 앱에서 한글을 쓰다가 Neovim으로 돌아왔을 때 Normal 모드에서 키맵이 동작하지 않는 문제.
 
+한글 입력소스에서 Ctrl+n/Ctrl+p가 목록을 움직이지 않고 'ㅜ'·'ㅔ'를 입력하면 [korean-input.md](korean-input.md)의 "Insert·명령줄의 Ctrl+n / Ctrl+p"를 본다.
+
 macism 설치 (`modules/darwin/programs/homebrew.nix`에서 선언적 관리 — `nrs` 시 자동 설치):
 ```nix
 # homebrew.nix — 서드파티 tap formula는 전체 경로 필수

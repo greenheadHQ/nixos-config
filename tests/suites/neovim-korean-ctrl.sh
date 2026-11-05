@@ -6,11 +6,13 @@
 #
 # Ghostty는 Neovim이 켜는 kitty keyboard protocol에서 Ctrl+글자를 현재 입력소스의 글자로 보낸다.
 # 한글 두벌식에서 Ctrl+n은 CSI 12636;5u(<C-ㅜ>), Ctrl+p는 CSI 12628;5u(<C-ㅔ>)이고, 각 누름 뒤에
-# 놓음 이벤트(:3)가 따라온다. 이 바이트는 2026-11 Ghostty 1.4.0 + nvim 0.12.5 실측값이다.
+# 놓음 이벤트(:3)가 따라온다. 이 바이트는 2026-11 Ghostty 1.4.0 + nvim 0.12.5 실측값이다. 터미널
+# 인코딩이 바뀌었는지는 .claude/skills/configuring-neovim/references/korean-input.md의 재확인 절차로 본다.
 # 바깥 headless nvim이 pty 안에 자식 nvim(--clean)을 띄워 배포되는 keymaps.lua를 읽힌 뒤 이 바이트를
-# 그대로 넣는다. 그래서 TUI의 CSI u 해석부터 매핑까지 실제 경로를 지난다. blink.cmp는 Insert 모드
-# <C-n>/<C-p>를 버퍼 로컬 매핑으로 걸므로 같은 모양의 probe 매핑으로 대신한다. 실제 Ghostty의
-# 한글 입력기 동작(조합 중 Ctrl 키를 버리는 것 등)은 headless로 재현하지 못한다.
+# 그대로 넣는다. 그래서 TUI의 CSI u 해석부터 매핑까지 실제 경로를 지난다. blink.cmp 플러그인 없이
+# 돌도록 blink가 거는 매핑과 같은 모양(Insert는 버퍼 로컬, 명령줄은 전역, 둘 다 noremap expr에
+# replace_keycodes=false)의 probe 매핑으로 대신한다. 실제 Ghostty의 한글 입력기 동작(조합 중 Ctrl
+# 키를 버리는 것 등)은 headless로 재현하지 못한다.
 
 _NVIM_KOREAN_CTRL_KEYMAPS="modules/shared/programs/neovim/files/nvim/lua/config/keymaps.lua"
 
@@ -24,6 +26,8 @@ _nvim_korean_ctrl_require_nvim() {
 _nvim_korean_ctrl_write_probe() {
   cat >"$1/probe.lua" <<'EOF'
 local keymaps = arg[1]
+-- 소켓은 sandbox가 아니라 nvim 임시 디렉토리에 둔다. macOS의 긴 $TMPDIR 아래 sandbox 경로는
+-- Unix 소켓 경로 길이 제한(104바이트)에 걸릴 수 있다. 이 디렉토리는 바깥 nvim이 끝날 때 지운다.
 local sock = vim.fn.tempname() .. ".sock"
 local job = vim.fn.jobstart({ vim.v.progpath, "--clean", "-i", "NONE", "-n", "--listen", sock }, {
   pty = true,
@@ -80,10 +84,30 @@ local CTRL_N = "\27[12636;5u\27[12636;5:3u" -- Ghostty, 한글 두벌식 Ctrl+n 
 local CTRL_P = "\27[12628;5u\27[12628;5:3u" -- Ghostty, 한글 두벌식 Ctrl+p (누름 + 놓음)
 local ESC = "\27[27u"
 
+-- blink.cmp keymap/apply.lua의 apply.set과 같은 모양: noremap expr, replace_keycodes=false.
+-- fallback이 참이면 blink의 fallback처럼 원래 키를 돌려줘 내장 동작으로 넘긴다.
+lua([[
+  _G.blink_like = function(mode, key, name, opts)
+    local fallback = opts.fallback and vim.api.nvim_replace_termcodes(key, true, true, true) or nil
+    local set = mode == "c" and vim.api.nvim_set_keymap
+      or function(...) vim.api.nvim_buf_set_keymap(0, ...) end
+    set(mode, key, "", {
+      callback = function()
+        _G.hits[name] = _G.hits[name] + 1
+        return fallback
+      end,
+      expr = true,
+      noremap = true,
+      silent = mode ~= "c",
+      replace_keycodes = false,
+    })
+  end
+]])
+
 -- 1) blink.cmp처럼 Insert 모드 <C-n>/<C-p>가 버퍼 로컬로 매핑된 경우: 그 매핑이 한 번씩 불린다.
 lua([[
-  vim.keymap.set("i", "<C-n>", function() _G.hits.n = _G.hits.n + 1 end, { buffer = 0 })
-  vim.keymap.set("i", "<C-p>", function() _G.hits.p = _G.hits.p + 1 end, { buffer = 0 })
+  _G.blink_like("i", "<C-n>", "n", {})
+  _G.blink_like("i", "<C-p>", "p", {})
 ]])
 send("i")
 send(CTRL_N)
@@ -112,6 +136,20 @@ emit("cmdline_prev", vim.fn.json_encode(send(CTRL_P).cmdline))
 emit("cmdline_next", vim.fn.json_encode(send(CTRL_N).cmdline))
 send(ESC)
 
+-- 4) blink.cmp 명령줄처럼 전역 cmap이 있고 그 fallback이 원래 키를 돌려주는 경우: 매핑이 한 번씩
+--    불리고, 돌려준 키가 다시 매핑되지 않은 채 내장 히스토리 이동으로 이어진다.
+lua([[
+  _G.hits = { n = 0, p = 0 }
+  _G.blink_like("c", "<C-n>", "n", { fallback = true })
+  _G.blink_like("c", "<C-p>", "p", { fallback = true })
+]])
+send(":")
+emit("blink_cmdline_prev", vim.fn.json_encode(send(CTRL_P).cmdline))
+emit("blink_cmdline_next", vim.fn.json_encode(send(CTRL_N).cmdline))
+hits = lua("return _G.hits")
+emit("blink_cmdline_hits", ("n:%d,p:%d"):format(hits.n, hits.p))
+send(ESC)
+
 pcall(vim.rpcrequest, ch, "nvim_command", "qa!")
 pcall(vim.fn.jobstop, job)
 EOF
@@ -138,4 +176,8 @@ test_neovim_korean_ctrl_np_acts_as_ctrl_np() {
   # 명령줄: Ctrl+p는 이전 히스토리를, Ctrl+n은 입력하던 빈 줄을 돌려준다.
   assert_file_contains "$sandbox/out" "cmdline_prev=\"echo 'from history'\""
   assert_file_contains "$sandbox/out" 'cmdline_next=""'
+  # blink 모양의 전역 cmap: 누름마다 한 번 불리고, fallback 키는 내장 히스토리로 간다.
+  assert_file_contains "$sandbox/out" "blink_cmdline_prev=\"echo 'from history'\""
+  assert_file_contains "$sandbox/out" 'blink_cmdline_next=""'
+  assert_file_contains "$sandbox/out" "blink_cmdline_hits=n:1,p:1"
 }
