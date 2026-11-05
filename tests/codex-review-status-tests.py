@@ -610,20 +610,37 @@ class PushTriggerTests(unittest.TestCase):
         self.assertIs(ignored["rereview_suggested"], False)
         self.assertIn("재리뷰", ignored["settings_warning"])
 
-    def test_head_missing_from_activity_is_not_called_absent(self):
-        # GraphQL의 head가 Activity에 아직 없으면 head의 push 시각을 모르는 것이다. 이전 push 시각부터
-        # 재면 push 몇 초 뒤에 absent와 재리뷰 권장을 낼 수 있어, 대기 한도까지 기다린다.
-        base = dict(reviews=[review(60, oid=MID)])
+    def test_head_missing_from_activity_uses_the_latest_known_time(self):
+        # GraphQL의 head가 Activity에 아직 없으면 head의 push 시각을 모른다. 이전 push(1000)보다 늦은 head
+        # 커밋 시각(1140)을 push 시각으로 추정해, 이전 push부터 재서 곧바로 absent를 내지 않는다.
+        base = dict(reviews=[review(60, oid=MID)], headCommits={"nodes": [{"commit": {"oid": HEAD, "committedDate": ts(1140)}}]})
         records = [push(1000, after=MID)]
-        early = judge(pr(**base), 1000 + M.ABSENT_AFTER_SECONDS + 30, pushes=records)
+        early = judge(pr(**base), 1160, pushes=records)
         self.assertEqual(early["status"], "pending")
-        self.assertIn("push 시각을 아직 알 수 없어", early["reason"])
-        self.assertIs(early["rereview_suggested"], False)
-        self.assertEqual(judge(pr(**base), 1001 + M.PENDING_TIMEOUT_SECONDS, pushes=records)["status"], "timeout")
+        self.assertEqual(early["trigger"], {"kind": "push", "at": ts(1140), "elapsed_seconds": 20, "estimated": True})
+        # 추정 시각부터 2분이 지나도 흔적이 없으면 absent다. 리뷰 시작 전에 timeout으로 끝나지는 않는다.
+        late = judge(pr(**base), 1140 + M.PENDING_TIMEOUT_SECONDS + 1, pushes=records)
+        self.assertEqual(late["status"], "absent")
+        self.assertIs(late["rereview_suggested"], True)
+        self.assertIn("추정", late["reason"])
         # Activity가 head를 기록하면 그 push부터 잰다.
         caught_up = judge(pr(**base), 1200, pushes=records + [push(1150)])
-        self.assertEqual(caught_up["status"], "pending")
-        self.assertEqual(caught_up["trigger"]["at"], ts(1150))
+        self.assertEqual(caught_up["trigger"], {"kind": "push", "at": ts(1150), "elapsed_seconds": 50, "estimated": False})
+
+    def test_force_push_back_to_an_earlier_head_is_judged_from_the_newest_record(self):
+        # HEAD → MID → (force push로) HEAD. Activity가 되돌림을 아직 기록하지 않았으면 예전 HEAD 기록으로
+        # push 시각을 안다고 보지 않는다.
+        records = [push(100), push(1000, after=MID)]
+        result = judge(pr(reviews=[review(1060, oid=MID)]), 1100, pushes=records)
+        self.assertIs(result["trigger"]["estimated"], True)
+        self.assertEqual(result["trigger"]["at"], ts(1000))
+        self.assertEqual(result["status"], "pending")
+
+    def test_merging_another_pr_into_the_head_branch_counts_as_a_push(self):
+        records = [push(100, after=MID), push(1000, kind="pr_merge")]
+        result = judge(pr(reviews=[review(150, oid=MID)]), 1050, pushes=records)
+        self.assertEqual(result["trigger"], {"kind": "push", "at": ts(1000), "elapsed_seconds": 50, "estimated": False})
+        self.assertEqual(result["status"], "pending")
 
     def test_branch_creation_records_the_first_head(self):
         # PR 생성 전에 만든 브랜치의 첫 head는 push가 아니라 브랜치 생성으로 기록된다.
@@ -663,6 +680,24 @@ class PushTriggerTests(unittest.TestCase):
             self.assertEqual(result["status"], "absent", state)
             self.assertIs(result["rereview_suggested"], False, state)
 
+    def test_a_later_head_push_after_a_manual_request_is_suggested_again(self):
+        base = dict(reviews=[review(60, oid=OLD)], reviewThreads=[thread(at_s=60)])
+        requested = pr(comments=[comment("@codex review", 1300, author=ME)], **base)
+        result = judge(requested, 1400 + M.ABSENT_AFTER_SECONDS + 1, pushes=[push(1000, after=MID), push(1400)])
+        self.assertEqual(result["status"], "absent")
+        self.assertEqual(result["trigger"]["kind"], "push")
+        self.assertEqual(result["rereview_requests"], 1)
+        self.assertIs(result["rereview_suggested"], True)
+
+    def test_no_second_suggestion_for_the_same_head_after_draft_and_ready(self):
+        # 이 head에 이미 요청했으면 그 뒤 draft→ready로 트리거가 바뀌어도 다시 권하지 않는다.
+        pull = pr(reviews=[review(60, oid=OLD)], comments=[comment("@codex review", 1300, author=ME)],
+                  readyEvents=[{"createdAt": ts(1500)}])
+        result = judge(pull, 1500 + M.ABSENT_AFTER_SECONDS + 1, pushes=[push(1000)])
+        self.assertEqual(result["status"], "absent")
+        self.assertEqual(result["trigger"]["kind"], "ready_for_review")
+        self.assertIs(result["rereview_suggested"], False)
+
     def test_no_rereview_suggestion_when_the_bot_never_reviewed_this_pr(self):
         result = judge(pr(), 1200, pushes=[push(1000)])
         self.assertEqual(result["status"], "absent")
@@ -678,16 +713,22 @@ class PushTriggerTests(unittest.TestCase):
         estimated = judge(pr(headCommits=head_commit), 950)
         self.assertEqual(estimated["status"], "pending")
         self.assertEqual(estimated["trigger"], {"kind": "push", "at": ts(900), "elapsed_seconds": 50, "estimated": True})
-        # 커밋 시각은 push보다 이를 수 있어 흔적 없음을 단정하지 않고 대기 한도까지 기다린다.
-        waiting = judge(pr(headCommits=head_commit), 900 + M.ABSENT_AFTER_SECONDS + 1)
-        self.assertEqual(waiting["status"], "pending")
-        self.assertIn("head 커밋 시각", waiting["reason"])
-        self.assertEqual(judge(pr(headCommits=head_commit), 901 + M.PENDING_TIMEOUT_SECONDS)["status"], "timeout")
+        # 추정 시각부터 2분이 지나도 흔적이 없으면 absent다(오래된 커밋이라도 리뷰 전에 timeout으로 끝나지 않는다).
+        absent = judge(pr(headCommits=head_commit), 900 + M.PENDING_TIMEOUT_SECONDS + 1)
+        self.assertEqual(absent["status"], "absent")
+        self.assertIn("head 커밋", absent["reason"])
+        # 커밋 시각이 미래(시계 차이)면 현재 시각으로 제한한다.
+        future = {"nodes": [{"commit": {"oid": HEAD, "committedDate": ts(5000)}}]}
+        clamped = judge(pr(headCommits=future), 950)
+        self.assertEqual(clamped["trigger"]["at"], ts(950))
+        self.assertEqual(clamped["status"], "pending")
         # 마지막 커밋이 head가 아니면(조회 사이에 push) 추정하지 않는다.
         other = {"nodes": [{"commit": {"oid": OLD, "committedDate": ts(900)}}]}
         self.assertEqual(judge(pr(headCommits=other), 950)["trigger"]["kind"], "pr_opened")
-        # push 기록을 읽었으면 커밋 시각은 쓰지 않는다.
-        self.assertEqual(judge(pr(headCommits=head_commit), 950, pushes=[])["trigger"]["kind"], "pr_opened")
+        # push 기록이 head를 가리키면 커밋 시각은 쓰지 않는다.
+        known = judge(pr(headCommits=head_commit), 950, pushes=[push(-10, kind="branch_creation")])
+        self.assertEqual(known["trigger"]["kind"], "pr_opened")
+        self.assertIs(known["trigger"]["estimated"], False)
 
 
 class ThreadTests(unittest.TestCase):
@@ -896,7 +937,7 @@ class CliTests(unittest.TestCase):
     def test_push_activity_moves_the_trigger_with_a_read_only_get(self):
         pull = pr(comments=[comment(summary_body("Completed", 60, commit=OLD[:7]), 21)], **self.HEAD_FIELDS)
         activity = [
-            {"activity_type": "pr_merge", "timestamp": ts(500), "before": OLD, "after": HEAD},
+            {"activity_type": "branch_deletion", "timestamp": ts(500), "before": HEAD, "after": "0" * 40},
             {"activity_type": "force_push", "timestamp": ts(450), "before": OLD, "after": HEAD},
             {"activity_type": "push", "timestamp": ts(400), "before": OLD, "after": OLD},
             {"activity_type": "branch_creation", "timestamp": ts(10), "before": "0" * 40, "after": OLD},
@@ -906,7 +947,7 @@ class CliTests(unittest.TestCase):
                             scenario={"main": [graphql_response(pull)], "activity": activity})
         self.assertEqual(proc.returncode, 0, proc.stderr)
         result = json.loads(proc.stdout)
-        # force push도 push로 세고, 병합·브랜치 생성과 시각이 깨진 기록은 무시한다.
+        # force push도 push로 세고, 브랜치 삭제와 시각이 깨진 기록은 무시한다.
         self.assertEqual(result["trigger"], {"kind": "push", "at": ts(450), "elapsed_seconds": 150, "estimated": False})
         self.assertEqual(result["status"], "absent")
         self.assertIs(result["rereview_suggested"], True)
@@ -933,12 +974,12 @@ class CliTests(unittest.TestCase):
     def test_transient_activity_failure_is_a_fetch_failure(self):
         # 404·403이 아닌 실패는 일시 오류로 보고 조회 실패로 낸다(커밋 시각으로 조용히 넘어가지 않는다).
         pull = pr(**self.HEAD_FIELDS)
-        failure = {"__exit__": 1, "stderr": "gh: Bad Gateway (HTTP 502)"}
-        proc = self.run_cli("7", "-R", "owner-user/repo", "--json",
-                            scenario={"main": [graphql_response(pull)], "activity": failure})
-        self.assertEqual(proc.returncode, 1)
-        self.assertIn("HTTP 502", proc.stderr)
-        self.assertEqual(proc.stdout, "")
+        for stderr in ("gh: Bad Gateway (HTTP 502)", "gh: API rate limit exceeded for user (HTTP 403)"):
+            proc = self.run_cli("7", "-R", "owner-user/repo", "--json",
+                                scenario={"main": [graphql_response(pull)], "activity": {"__exit__": 1, "stderr": stderr}})
+            self.assertEqual(proc.returncode, 1, stderr)
+            self.assertIn(stderr.split("(")[-1].rstrip(")"), proc.stderr)
+            self.assertEqual(proc.stdout, "")
 
     def test_text_output_lists_unhandled_threads(self):
         pull = pr(reviews=[review(115, oid=OLD)], reviewThreads=[thread(at_s=115, title="Fix the race")])

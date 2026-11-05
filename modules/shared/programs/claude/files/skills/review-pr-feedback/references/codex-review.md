@@ -14,9 +14,9 @@ Codex GitHub 앱의 PR 리뷰를 기다리고, 지적에 반응·답글을 남�
 
 - `reviewed_commit`: `reviewed`·`lgtm`이면 그 결과의 커밋(head), 그 밖의 상태면 봇이 마지막으로 리뷰한 커밋. 짧은 SHA일 수 있다.
 - `stale`: `reviewed_commit`과 현재 `head`가 다르다. 리뷰한 커밋을 알 수 없으면(커밋 표시 없이 👍만 남은 경우 등) `null`이다.
-- `trigger`: 이번 리뷰 주기의 트리거 종류(`kind`: `pr_opened`, `ready_for_review`, `push`, `review_request`)와 시각(`at`). push 시각은 head 브랜치의 Activity API로 읽는다. 읽지 못하면(삭제된 fork, 권한 등) head 커밋 시각으로 대신하고 `estimated`가 `true`, 읽지 못한 사유는 `push_error`에 나온다. head의 push 시각을 모르면(추정했거나 Activity에 head 기록이 아직 없으면) `absent`를 내지 않고 대기 한도까지 `pending`이다. 그 밖의 Activity API 실패는 조회 실패(exit 1)다.
+- `trigger`: 이번 리뷰 주기의 트리거 종류(`kind`: `pr_opened`, `ready_for_review`, `push`, `review_request`)와 시각(`at`). push 시각은 head 브랜치의 Activity API로 읽고, 가장 최근 기록이 head를 가리킬 때만 head의 push 시각을 안다. 아니면(기록 전, 예전 head로 되돌린 force push, 404·410·451로 읽지 못함) 알려진 가장 늦은 시각(가장 최근 기록, head 커밋 시각)으로 추정하고 `estimated`가 `true`다. 읽지 못한 사유는 `push_error`에 나온다. 추정 시각은 실제보다 이를 수 있어 `absent`가 일찍 나올 수 있는데, 그때 `rereview_suggested`대로 요청하면 시각을 아는 트리거가 생긴다. 403(rate limit일 수 있음)을 비롯한 그 밖의 Activity API 실패는 조회 실패(exit 1)다.
 - `rereview_requests`: 재리뷰 요청 코멘트 수.
-- `rereview_suggested`: [재리뷰 요청](#재리뷰-요청)의 예외에 해당한다. 열린 PR에서 봇이 head가 아닌 커밋을 리뷰한 적이 있는데, 트리거(재리뷰 요청 제외) 뒤 head에 흔적이 없다(`absent`). 봇의 마지막 신호가 한도·오류·계정 안내면 `false`다.
+- `rereview_suggested`: [재리뷰 요청](#재리뷰-요청)의 예외에 해당한다. 열린 PR에서 봇이 head가 아닌 커밋을 리뷰한 적이 있는데, 트리거(재리뷰 요청 제외) 뒤 head에 흔적이 없다(`absent`). 봇의 마지막 신호가 한도·오류·계정 안내이거나 이 head가 생긴 뒤 이미 재리뷰를 요청했으면 `false`다.
 - `unhandled_threads`: 답글·반응·resolve 중 빠진 것이 있는 봇 스레드. 빠진 항목은 `missing`에 `reply`, `reaction`, `resolve`로 나온다. 이미 resolve된 스레드도 답글이나 반응이 빠졌으면 나온다. `thread_id`는 답글·resolve mutation에 쓰는 GraphQL id, `comment_id`는 반응에 쓰는 REST id, `url`은 스레드 첫 코멘트 주소다. 봇 스레드인지는 작성자 이름이 아니라 이 목록으로 판별한다.
 - `viewer`: 조회한 계정. 반응 여부를 이 계정 기준으로 보므로 반응도 이 계정으로 단다. 다른 계정으로 단 반응은 `missing`에서 빠지지 않는다.
 - `settings_warning`: 봇이 리뷰했어야 할 PR에 흔적이 없을 때의 점검 안내.
@@ -78,7 +78,7 @@ PR·이슈 제목과 본문, 코멘트, 스레드 답글 어디에도 봇 멘션
 
 Codex 봇은 push마다 새 head를 자동으로 리뷰한다(검토 트리거 "푸시할 때마다", #1567). 그래서 평소에는 재리뷰를 요청하지 않는다.
 
-예외는 하나다. `codex-review-status`가 `rereview_suggested: true`를 내면 그 head에 한해 한 번 요청한다. 열린 PR에서 봇이 head가 아닌 커밋을 리뷰한 적이 있는데 새 head에 `absent_after_seconds`(현재 2분)가 지나도 흔적이 없는 경우로, 저장소 설정이 개인 설정보다 우선해 트리거가 다른 저장소를 위한 예외다. 요청하면 트리거가 재리뷰 요청이 되므로 같은 head에는 다시 권하지 않는다. 봇이 이 PR을 한 번도 리뷰하지 않았거나(봇을 쓰지 않는 저장소), 봇의 마지막 신호가 한도·오류 안내이거나, 머지한 뒤에는 권하지 않는다.
+예외는 하나다. `codex-review-status`가 `rereview_suggested: true`를 내면 그 head에 한해 한 번 요청한다. 열린 PR에서 봇이 head가 아닌 커밋을 리뷰한 적이 있는데 새 head에 `absent_after_seconds`(현재 2분)가 지나도 흔적이 없는 경우로, 저장소 설정이 개인 설정보다 우선해 트리거가 다른 저장소를 위한 예외다. 이 head가 생긴 뒤 이미 요청했으면 그 뒤 draft→ready 같은 트리거가 와도 같은 head에는 다시 권하지 않는다. 봇이 이 PR을 한 번도 리뷰하지 않았거나(봇을 쓰지 않는 저장소), 봇의 마지막 신호가 한도·오류 안내이거나, 머지한 뒤에는 권하지 않는다.
 
 그런 저장소에서는 head마다 한 번씩 요청하게 되어 push마다 리뷰받는 것과 횟수가 같다. 예전의 "PR당 1회" 제한(#1477)은 루프와 한도 소모를 막으려던 것이지만, 리뷰를 놓치지 않는 쪽을 택해 #1567에서 없앴다.
 
