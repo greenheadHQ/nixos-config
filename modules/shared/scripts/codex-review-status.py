@@ -32,7 +32,8 @@ GitHub에는 조회만 보낸다(GraphQL query와 head 브랜치 Activity API의
   - (#1568 조사) push 시각은 GraphQL에 없어(pushedDate가 null) head 저장소의 Activity API로 읽는다.
     실측에서 Activity는 push를 PR head(headRefOid)보다 먼저 기록했다. 가장 최근 기록이 head를 가리킬 때만
     head의 push 시각을 안다. 아니면(아직 기록 전, 예전 head로 되돌린 force push, 읽지 못함) 알려진 가장 늦은
-    시각(가장 최근 기록, head 커밋 시각, 현재 시각을 넘지 않게)으로 추정한다(trigger.estimated).
+    시각(가장 최근 기록, head 커밋 시각)으로 추정한다(trigger.estimated). 현재보다 늦은 시각은 시계 차이라
+    버리고, 봇이 head 커밋을 적어 남긴 가장 이른 신호를 상한으로 둬 조회마다 트리거가 밀리지 않게 한다.
   - 추정한 시각은 실제 push보다 이를 수 있어 absent가 일찍 나올 수 있다. timeout은 봇이 리뷰를 시작한
     뒤에만 내므로 리뷰 전에 timeout으로 끝나지는 않는다. 일찍 난 absent에서 재리뷰를 요청하면 시각을 아는
     트리거가 생겨, 끝없이 기다리지도 리뷰를 놓치지도 않는다.
@@ -483,15 +484,18 @@ def head_commit_time(pr):
     return parse_ts(commit.get("committedDate"))
 
 
-def compute_trigger(pr, trusted_logins, records=None, now=None):
+def compute_trigger(pr, trusted_logins, records=None, now=None, head_signals=()):
     """이번 리뷰 주기의 트리거를 {kind, at, requests, request_times, estimated, head_since}로 돌려준다.
 
     records는 fetch_pushes의 Activity 기록이다(None이면 읽지 못했다). 가장 최근 기록이 head를 가리키면
     head의 push 시각을 안다. 아니면(아직 기록되지 않았거나, 예전 head로 되돌렸거나, 읽지 못했으면) push
     시각을 모르는 것이라, 알려진 가장 늦은 시각(가장 최근 기록, head 커밋 시각)을 push 시각으로 대신한다.
-    추정값은 now를 넘지 않게 한다. estimated는 어느 트리거가 고르든 head의 push 시각을 모른다는 뜻이다.
-    head_since는 head가 생긴 시각(알거나 추정한 push 시각, 둘 다 없으면 PR 생성 시각)이다. requests는
-    인정한 재리뷰 요청 코멘트 수다.
+    head는 이미 push됐으므로 now보다 늦은 시각(시계가 앞선 커밋 시각 등)은 근거에서 뺀다. now로 줄이면
+    조회할 때마다 트리거가 밀려 끝나지 않는다. head_signals는 봇이 head 커밋을 적어 남긴 신호의 시각이다.
+    push는 그보다 늦을 수 없어, 가장 최근 기록 뒤의 가장 이른 신호를 추정값의 상한으로 쓴다(가장 최근
+    기록보다 앞선 신호는 같은 커밋이 예전에 head였을 때의 것일 수 있다). estimated는 어느 트리거가
+    고르든 head의 push 시각을 모른다는 뜻이다. head_since는 head가 생긴 시각(알거나 추정한 push 시각,
+    둘 다 없으면 PR 생성 시각)이다. requests는 인정한 재리뷰 요청 코멘트 수다.
     """
     created = parse_ts(pr.get("createdAt"))
     if not created:
@@ -513,11 +517,13 @@ def compute_trigger(pr, trusted_logins, records=None, now=None):
         if newest[1].get("type") in PUSH_ACTIVITY_TYPES:
             candidates.append((newest[0], "push", False))
     else:
-        lower_bounds = [t for t in (newest[0] if newest else None, head_commit_time(pr)) if t is not None]
+        floor = newest[0] if newest else None
+        lower_bounds = [t for t in (floor, head_commit_time(pr)) if t is not None and (now is None or t <= now)]
+        seen = [t for t in head_signals if t is not None and (floor is None or t >= floor)]
         if lower_bounds:
             estimate = max(lower_bounds)
-            if now is not None and estimate > now:
-                estimate = now
+            if seen and estimate > min(seen):
+                estimate = min(seen)
             head_since = estimate
             candidates.append((estimate, "push", True))
     requests = [
@@ -629,8 +635,6 @@ def evaluate(snapshot, now):
     # 재리뷰 요청은 저장소 권한자와 조회 계정의 것만 센다. PR 작성자 예외는 스레드 답글에만 둔다.
     request_logins = {viewer} if viewer else set()
     reply_logins = {login for login in (viewer, (pr.get("author") or {}).get("login")) if login}
-    trigger = compute_trigger(pr, request_logins, snapshot.get("pushes"), now)
-    kind, trigger_at = trigger["kind"], trigger["at"]
     comments = pr.get("comments") or []
     bot_comments = [c for c in comments if is_bot_actor(c.get("author"))]
     reactions = [r for r in pr.get("reactions") or [] if is_bot_actor(r.get("user"))]
@@ -647,6 +651,12 @@ def evaluate(snapshot, now):
     all_completed_rows = [row for row in rows if row["status"].lower() == "completed"]
     all_legacy = [c for c in bot_comments if LEGACY_LGTM_RE.search(c.get("body") or "")]
     all_thumbs = [r for r in reactions if r.get("content") == "THUMBS_UP"]
+    # 봇이 head 커밋을 적어 남긴 신호(요약 표의 모든 행, 리뷰 객체, 지적 없음 코멘트). push 시각 추정의 상한이다.
+    head_signals = [row["at"] for row in rows if _stale(head, row["commit"]) is False]
+    head_signals += [review_time(r) for r in all_bot_reviews if _stale(head, _review_commit(r)) is False]
+    head_signals += [parse_ts(c.get("createdAt")) for c in all_legacy if _stale(head, _legacy_commit(c)) is False]
+    trigger = compute_trigger(pr, request_logins, snapshot.get("pushes"), now, head_signals)
+    kind, trigger_at = trigger["kind"], trigger["at"]
     bot_reviews = [r for r in all_bot_reviews if _for_head(head, _review_commit(r))]
     completed_rows = [row for row in all_completed_rows if _for_head(head, row["commit"])]
     legacy_comments = [c for c in all_legacy if _for_head(head, _legacy_commit(c))]

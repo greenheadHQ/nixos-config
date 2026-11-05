@@ -635,6 +635,11 @@ class PushTriggerTests(unittest.TestCase):
         self.assertIs(result["trigger"]["estimated"], True)
         self.assertEqual(result["trigger"]["at"], ts(1000))
         self.assertEqual(result["status"], "pending")
+        # 예전에 HEAD였을 때의 리뷰(가장 최근 기록보다 앞섬)는 되돌린 HEAD의 결과도, 추정의 상한도 아니다.
+        earlier = judge(pr(reviews=[review(150), review(1060, oid=MID)]), 1300, pushes=records)
+        self.assertEqual(earlier["trigger"]["at"], ts(1000))
+        self.assertEqual(earlier["status"], "absent")
+        self.assertIs(earlier["rereview_suggested"], True)
 
     def test_merging_another_pr_into_the_head_branch_counts_as_a_push(self):
         records = [push(100, after=MID), push(1000, kind="pr_merge")]
@@ -717,11 +722,13 @@ class PushTriggerTests(unittest.TestCase):
         absent = judge(pr(headCommits=head_commit), 900 + M.PENDING_TIMEOUT_SECONDS + 1)
         self.assertEqual(absent["status"], "absent")
         self.assertIn("head 커밋", absent["reason"])
-        # 커밋 시각이 미래(시계 차이)면 현재 시각으로 제한한다.
+        # 커밋 시각이 미래(시계 차이)면 근거에서 뺀다. 현재 시각으로 줄이면 조회마다 트리거가 밀린다.
         future = {"nodes": [{"commit": {"oid": HEAD, "committedDate": ts(5000)}}]}
-        clamped = judge(pr(headCommits=future), 950)
-        self.assertEqual(clamped["trigger"]["at"], ts(950))
-        self.assertEqual(clamped["status"], "pending")
+        first, later = judge(pr(headCommits=future), 950), judge(pr(headCommits=future), 1950)
+        self.assertEqual(first["trigger"]["kind"], "pr_opened")
+        self.assertIs(first["trigger"]["estimated"], True)
+        self.assertEqual(first["trigger"]["at"], later["trigger"]["at"])
+        self.assertEqual(first["status"], "absent")
         # 마지막 커밋이 head가 아니면(조회 사이에 push) 추정하지 않는다.
         other = {"nodes": [{"commit": {"oid": OLD, "committedDate": ts(900)}}]}
         self.assertEqual(judge(pr(headCommits=other), 950)["trigger"]["kind"], "pr_opened")
@@ -729,6 +736,16 @@ class PushTriggerTests(unittest.TestCase):
         known = judge(pr(headCommits=head_commit), 950, pushes=[push(-10, kind="branch_creation")])
         self.assertEqual(known["trigger"]["kind"], "pr_opened")
         self.assertIs(known["trigger"]["estimated"], False)
+
+    def test_a_future_dated_head_commit_does_not_hide_the_head_review(self):
+        # 시계가 하루 앞선 커밋. 그 시각이 지나기 전에도 뒤에도, 끝난 head 리뷰를 그대로 결과로 본다.
+        future = {"nodes": [{"commit": {"oid": HEAD, "committedDate": ts(86400)}}]}
+        done = comment(summary_body("Completed", 1000, trigger="New commits"), 1000)
+        for now_s in (1100, 2100, 10000, 90000):
+            result = judge(pr(headCommits=future, comments=[done]), now_s, pushes=[push(-10, after=OLD)])
+            self.assertEqual(result["status"], "lgtm", now_s)
+        # 그 시각이 지나면 커밋 시각이 근거가 되지만, 봇이 head를 처음 적은 시각보다 늦을 수는 없다.
+        self.assertEqual(result["trigger"]["at"], ts(1000))
 
 
 class ThreadTests(unittest.TestCase):
