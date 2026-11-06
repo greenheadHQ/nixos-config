@@ -1,6 +1,6 @@
 # Codex 리뷰 봇 처리
 
-Codex GitHub 앱의 PR 리뷰를 기다리고, 지적에 반응·답글을 남기고, 머지 전에 확인하는 절차의 정본이다. review-pr-feedback과 finish-pr가 이 문서를 따른다.
+Codex GitHub 앱의 PR 리뷰를 기다리고, 지적에 반응·답글을 남기고, 머지 전에 확인하는 절차의 정본이다. create-pr, review-pr-feedback, finish-pr가 이 문서를 따른다.
 
 ## 봇 식별
 
@@ -12,6 +12,8 @@ Codex GitHub 앱의 PR 리뷰를 기다리고, 지적에 반응·답글을 남�
 
 `codex-review-status <PR> -R OWNER/REPO --json`은 조회만 하는 명령이다. PR과 `-R`을 함께 생략하면 현재 브랜치의 PR을 본다. PR 본문 반응, 요약 코멘트, 리뷰 객체, 한도·오류 코멘트와 head 브랜치의 push 기록을 조합해 현재 head 기준 상태를 판정하고 다음 값을 함께 낸다. 커밋이 적힌 결과(요약 표의 행, 리뷰 객체, 지적 없음 코멘트)는 그 커밋이 head일 때만 결과로 센다. 요약 코멘트가 있는 PR에서는 커밋 정보가 없는 👍를 결과로 쓰지 않는다. 필드명은 `--json` 출력 기준이다.
 
+- `pr_state`: PR 상태(`OPEN`, `MERGED`, `CLOSED`).
+- `reason`: 상태의 사유. 사람이 읽는 문장이다.
 - `reviewed_commit`: `reviewed`·`lgtm`이면 그 결과의 커밋(head), 그 밖의 상태면 봇이 마지막으로 리뷰한 커밋. 짧은 SHA일 수 있다.
 - `stale`: `reviewed_commit`과 현재 `head`가 다르다. 리뷰한 커밋을 알 수 없으면(커밋 표시 없이 👍만 남은 경우 등) `null`이다.
 - `trigger`: 이번 리뷰 주기의 트리거 종류(`kind`: `pr_opened`, `ready_for_review`, `push`, `review_request`)와 시각(`at`). push 시각은 head 브랜치의 Activity API로 읽고, 가장 최근 기록이 head를 가리킬 때만 head의 push 시각을 안다. 아니면(기록 전, 예전 head로 되돌린 force push, 404·410·451로 읽지 못함) 알려진 가장 늦은 시각(가장 최근 기록, head 커밋 시각)으로 추정하고 `estimated`가 `true`다. 현재보다 늦은 커밋 시각(시계 차이)은 버리고, 봇이 head 커밋을 적어 남긴 가장 이른 신호를 상한으로 둔다. 읽지 못한 사유는 `push_error`에 나온다. 추정 시각은 실제보다 이를 수 있어 `absent`가 일찍 나올 수 있는데, 그때 `rereview_suggested`대로 요청하면 시각을 아는 트리거가 생긴다. 403(rate limit일 수 있음)을 비롯한 그 밖의 Activity API 실패는 조회 실패(exit 1)다.
@@ -40,7 +42,7 @@ Codex GitHub 앱의 PR 리뷰를 기다리고, 지적에 반응·답글을 남�
 
   끝난 뒤에도 `pending`이면 다시 호출한다. 대기 한도가 지나면 `codex-review-status`가 `timeout`을 내므로 끝없이 기다리지 않는다.
 - `settings_warning`이 있으면 그 문구를 사용자에게 그대로 보고한다.
-- 명령이 실패하면(exit 1·2) 출력된 원인(인증, 네트워크, PR 지정)을 고쳐 다시 조회한다. 명령을 찾지 못하면 `nrs`가 아직 적용되지 않은 호스트다. nixos-config 작업 트리 안에서는 `python3 modules/shared/scripts/codex-review-status.py`로 같은 조회를 할 수 있다. 해결하지 못하면 finish-pr는 봇 상태를 모르는 채로 머지하지 않고 사용자에게 보고한다. review-pr-feedback은 봇 상태 없이 수집을 계속하고 그 사실을 보고한다.
+- 명령이 실패하면(exit 1·2) 출력된 원인(인증, 네트워크, PR 지정)을 고쳐 다시 조회한다. 명령을 찾지 못하면 `nrs`가 아직 적용되지 않은 호스트다. nixos-config 작업 트리 안에서는 `python3 modules/shared/scripts/codex-review-status.py`로 같은 조회를 할 수 있다. 해결하지 못하면 finish-pr는 봇 상태를 모르는 채로 머지하지 않고 사용자에게 보고한다. review-pr-feedback은 봇 상태 없이 수집을 계속하고 그 사실을 보고한다. create-pr는 대기를 멈추고 그 사실을 보고한다.
 
 ## 지적 처리
 
@@ -86,4 +88,4 @@ Codex 봇은 push마다 새 head를 자동으로 리뷰한다(검토 트리거 "
 gh pr comment <PR> -R OWNER/REPO --body '@codex review'
 ```
 
-본문이 `@codex review`로 시작해야 `codex-review-status`가 재리뷰 요청으로 센다. 요청 뒤에는 상태가 다시 `pending`이 된다. 기다림과 그 뒤에 도착하는 지적 처리는 finish-pr 게이트가 맡으므로, review-pr-feedback은 요청 뒤 기다리지 않고 남은 답글·반응·resolve를 이어서 마친다. 마치기 전에 새 리뷰의 지적이 이미 도착했으면 새 스레드로 검증부터 처리한다.
+본문이 `@codex review`로 시작해야 `codex-review-status`가 재리뷰 요청으로 센다. 요청 뒤에는 상태가 다시 `pending`이 된다. 기다림과 그 뒤에 도착하는 지적 처리는 create-pr의 리뷰 대기나 finish-pr 게이트가 맡으므로, review-pr-feedback은 요청 뒤 기다리지 않고 남은 답글·반응·resolve를 이어서 마친다. 마치기 전에 새 리뷰의 지적이 이미 도착했으면 새 스레드로 검증부터 처리한다.

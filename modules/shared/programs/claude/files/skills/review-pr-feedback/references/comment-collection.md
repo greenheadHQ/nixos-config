@@ -42,7 +42,8 @@ gh api graphql \
               root: comments(first: 1) {
                 nodes {
                   id
-                  author { login }
+                  url
+                  author { __typename login }
                   body
                   createdAt
                 }
@@ -52,7 +53,8 @@ gh api graphql \
                 pageInfo { hasPreviousPage startCursor }
                 nodes {
                   id
-                  author { login }
+                  url
+                  author { __typename login }
                   body
                   createdAt
                 }
@@ -96,10 +98,10 @@ gh api --paginate "/repos/$OWNER/$REPO/issues/$PR_NUMBER/comments"
 
 # review 요약 — state와 body 함께 수집 (actionable 분기 근거)
 gh api --paginate "/repos/$OWNER/$REPO/pulls/$PR_NUMBER/reviews" \
-  --jq '.[] | {id, state, body, user: .user.login, user_id: .user.id, html_url}'
+  --jq '.[] | {id, state, body, user: .user.login, user_id: .user.id, user_type: .user.type, html_url}'
 ```
 
-- Issue comment에는 `id`, `user.login`, `user.id`, `body`만 본다.
+- Issue comment에는 `id`, `html_url`, `user.login`, `user.id`, `user.type`, `body`만 본다.
 - 작성자가 Codex 봇(`chatgpt-codex-connector[bot]`, `user.id` 199175422)인 일반 코멘트와 review body는 요약 표·한도·오류 같은 상태 신호다. 아래 state 분기보다 앞서 답글 대상에서 뺀다. 봇의 지적은 review thread로 온다 ([codex-review.md](codex-review.md#지적-처리)).
 - Review summary는 `state`와 `body`를 함께 본다. body가 비어 있지 않으면 state를 primary로 분기한다.
 
@@ -139,7 +141,7 @@ gh api --paginate "/repos/$OWNER/$REPO/pulls/$PR_NUMBER/reviews" \
 | 축 | 이유 |
 |----|------|
 | 파일별 | 관련 코드 근처 코멘트를 한 번에 검토 |
-| 리뷰어별 | CodeRabbit / 인간 / 다른 AI 리뷰어의 패턴을 파악 |
+| 리뷰어별 | CodeRabbit / 사람 / 다른 AI 리뷰어의 패턴을 파악 |
 | `thread.id` 보관 | Step 6의 `addPullRequestReviewThreadReply` / `resolveReviewThread` mutation 입력 |
 | `comment.id` 보관 | 개별 코멘트 단위로 reply하려는 경우 REST 엔드포인트에 필요 |
 
