@@ -101,7 +101,7 @@ gh api --paginate "/repos/$OWNER/$REPO/pulls/$PR_NUMBER/reviews" \
   --jq '.[] | {id, state, body, user: .user.login, user_id: .user.id, user_type: .user.type, html_url}'
 ```
 
-- Issue comment에는 `id`, `html_url`, `user.login`, `user.id`, `user.type`, `body`만 본다.
+- Issue comment에는 `id`, `node_id`, `html_url`, `updated_at`, `user.login`, `user.id`, `user.type`, `body`만 본다.
 - 작성자가 Codex 봇(`chatgpt-codex-connector[bot]`, `user.id` 199175422)인 일반 코멘트와 review body는 요약 표·한도·오류 같은 상태 신호다. 아래 state 분기보다 앞서 답글 대상에서 뺀다. 봇의 지적은 review thread로 온다 ([codex-review.md](codex-review.md#지적-처리)).
 - Review summary는 `state`와 `body`를 함께 본다. body가 비어 있지 않으면 state를 primary로 분기한다.
 

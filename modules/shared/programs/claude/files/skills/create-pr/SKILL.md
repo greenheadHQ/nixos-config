@@ -37,11 +37,11 @@ description: |
 2. 결과를 본다. 이 결과가 이번 바퀴의 상태다. 뒤의 처리에서 다시 조회한 값으로 바꾸지 않는다. 아래를 순서대로 확인한다.
    - `pr_state`가 `OPEN`이 아니거나 상태가 `draft`면 멈춘다.
    - 상태가 `pending`이면 1로 돌아간다.
-   - `rereview_suggested`가 `true`면 [재리뷰 요청](../review-pr-feedback/references/codex-review.md#재리뷰-요청)대로 그 head에 한 번 요청하고 1로 돌아간다.
+   - `rereview_suggested`가 `true`면 [재리뷰 요청](../review-pr-feedback/references/codex-review.md#재리뷰-요청)대로 그 head에 한 번 요청하고 1로 돌아간다. 요청을 게시하지 못하면 멈춘다.
 3. 처리한다. 상태와 관계없이 [review-pr-feedback](../review-pr-feedback/SKILL.md) 절차를 [봇 전용 범위](../review-pr-feedback/SKILL.md#처리-범위)로 실행한다. Codex 봇뿐 아니라 그 시점에 달린 CodeRabbit 같은 다른 봇의 지적도 함께 처리한다. 처리할 것이 없으면 그 절차의 no-op 규칙대로 끝난다. 처리 중 `update`로 본문을 갱신해도 따로 보고하지 않고 이 바퀴를 이어 간다.
-4. 이어 갈지 정한다. 이번 바퀴의 상태가 `reviewed`나 `lgtm`이고 코드를 push했으면 새 head의 리뷰를 기다리러 1로 돌아간다. 그 밖에는 멈춘다.
-   - 코드 push가 없다. head 리뷰가 지적 없음으로 끝났거나 지적을 모두 기각한 경우다.
-   - 상태가 `limited`·`failed`·`timeout`·`absent`다. 이번 바퀴에 push했어도 멈춘다.
+4. 이어 갈지 정한다. `gh pr view <PR> -R OWNER/REPO --json headRefOid`로 현재 head를 본다. 이번 바퀴의 상태가 `reviewed`나 `lgtm`이고 현재 head가 대기 결과의 `head`와 다르면 새 head의 리뷰를 기다리러 1로 돌아간다. 이번 바퀴의 반영 push뿐 아니라 다른 사람의 push도 여기에 든다. 그 밖에는 멈춘다.
+   - head가 그대로다. head 리뷰가 지적 없음으로 끝났거나 지적을 모두 기각해 코드 push가 없는 경우다.
+   - 상태가 `limited`·`failed`·`timeout`·`absent`다. head가 바뀌었어도 멈춘다.
 
 ### 마지막 보고
 
