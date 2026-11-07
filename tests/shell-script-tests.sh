@@ -41,6 +41,23 @@ run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
 run_test "wt wrapper ignores runtime HOME for real script" test_wt_wrapper_ignores_runtime_home_for_real_script
 run_test "managed plugin skill helper rejects duplicate matches" test_managed_plugin_skill_link_requires_single_match
 run_test "rebuild-common exports public API" test_rebuild_common_exports_public_api
+run_test "result cleanup preserves path boundaries" test_cleanup_build_artifacts_preserves_path_boundaries
+run_test "result cleanup reports search failure" test_cleanup_build_artifacts_reports_search_failure
+run_test "gitleaks CI scans commits without changing checkout" test_gitleaks_ci_scans_commits_without_mutating_checkout
+run_test "gitleaks CI detects committed content with empty staging" test_gitleaks_ci_detects_committed_content_with_empty_staging
+run_test "gitleaks CI keeps deleted commit content in scope" test_gitleaks_ci_keeps_deleted_commit_content_in_scope
+run_test "gitleaks CI scans renamed paths and preserves allowlist" test_gitleaks_ci_scans_renamed_paths_and_preserves_allowlist
+run_test "gitleaks CI scans merge-only additions" test_gitleaks_ci_scans_merge_only_additions
+run_test "gitleaks CI preserves base exceptions after merge" test_gitleaks_ci_preserves_base_exceptions_after_merge
+run_test "gitleaks CI preserves conflict resolution fingerprints" test_gitleaks_ci_preserves_conflict_resolution_fingerprints
+run_test "gitleaks CI keeps deleted side commit content in scope" test_gitleaks_ci_keeps_deleted_side_commit_content_in_scope
+run_test "gitleaks CI rejects octopus merges" test_gitleaks_ci_rejects_octopus_merges
+run_test "gitleaks CI preserves commit fingerprint exceptions" test_gitleaks_ci_preserves_commit_fingerprint_exceptions
+run_test "gitleaks CI rejects invalid policy material" test_gitleaks_ci_rejects_invalid_policy_material
+run_test "gitleaks CI rejects scanner errors without raw output" test_gitleaks_ci_rejects_scanner_errors_without_raw_output
+run_test "gitleaks CI rejects internal git log failure" test_gitleaks_ci_rejects_git_log_failure_reported_as_success
+run_test "gitleaks CI preserves Git adapter exit and delegation" test_gitleaks_ci_preserves_git_adapter_exit_and_delegation
+run_test "gitleaks CI rejects bad refs and limits history" test_gitleaks_ci_rejects_bad_refs_and_limits_history
 run_test "nrs-lock status without lock" test_nrs_lock_status_without_lock
 run_test "nrs-lock retains stopped process before timeout" test_nrs_lock_status_retains_stopped_process_before_timeout
 run_test "nrs-lock stale after timeout with stopped process" test_nrs_lock_status_stale_after_timeout_with_stopped_process
@@ -389,6 +406,8 @@ run_test "darwin nrs no-change releases worktree lock" test_darwin_nrs_no_change
 run_test "darwin nrs no-change activates when Codex artifact missing" test_darwin_nrs_no_changes_activates_when_codex_artifact_missing
 run_test "darwin nrs no-change skips relink without HM gcroot" test_darwin_nrs_no_changes_skips_relink_without_hm_gcroot
 run_test "darwin nrs no-change restores when HM gcroot present" test_darwin_nrs_no_changes_restores_when_hm_gcroot_present
+run_test "nixos nrs no-change preserves links without HM gcroot" test_nixos_nrs_no_changes_preserves_links_without_hm_gcroot
+run_test "nixos nrs no-change restores when HM gcroot present" test_nixos_nrs_no_changes_restores_when_hm_gcroot_present
 run_test "cmd_fix_dangling probe matrix calls restore only on dangling" test_cmd_fix_dangling_probe_matrix
 run_test "cmd_fix_dangling propagates restore failure" test_cmd_fix_dangling_propagates_restore_failure
 run_test "nrs-relink fix-dangling CLI no-ops when probes are healthy" test_nrs_relink_cli_fix_dangling_noop_when_probes_healthy
@@ -595,6 +614,7 @@ run_test "test runtime profile rejects invalid prepared runtime" test_runtime_pr
 run_test "test runtime profile concurrent run prepares once" test_runtime_profile_concurrent_run_prepares_once
 run_test "tomlkit bootstrap reuses validated snapshot source profile" test_tomlkit_bootstrap_uses_validated_snapshot_source_profile
 run_test "tomlkit bootstrap rejects mismatched snapshot source profile" test_tomlkit_bootstrap_rejects_mismatched_snapshot_source_profile
+run_test "tomlkit fallback preserves runtime and arguments" test_tomlkit_bootstrap_fallback_preserves_runtime_and_arguments
 run_test "Shottr defaults helper bounds and short-circuits TCC access" test_shottr_defaults_helper_behavior
 run_test "Shottr secret writer uses stdin without argv exposure" test_shottr_secret_writer_uses_stdin_without_argv
 run_test "Shottr license refresh helper scrubs child environment" test_shottr_license_refresh_helper_scrubs_child_environment
@@ -732,6 +752,7 @@ run_test "codex-config retired keys loader" test_codex_config_retired_keys_loade
 # codex-config 섹션만 skip + profile runner 안내 (기본 shell suite 진입은 유지).
 if codex_config_tomlkit_available; then
   run_test "codex-config sync fixtures" test_codex_config_sync_fixtures
+  run_test "codex-config sync normalizes types without repeated writes" test_codex_config_sync_type_normalization
   run_test "codex-config sync no-op preserves bytes" test_codex_config_sync_noop_preserves_bytes
   run_test "codex-config sync rewrites on bad mode" test_codex_config_sync_rejects_bad_mode
   run_test "codex-config sync rewrites on symlink" test_codex_config_sync_rejects_symlink
