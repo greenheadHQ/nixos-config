@@ -724,12 +724,10 @@ pinning_guard_findings_text_for_path() {
 # unscanned. This extracts the referenced file path(s) from the command text so
 # callers can rescan the file contents too.
 #
-# Not a full shell parser — a conservative (over-matching allowed) scan of a
-# fixed flag inventory. Quoted values (single/double) have the quotes
-# stripped; a quoted value containing whitespace is not supported (the
-# command is naively split on whitespace first). Callers must treat a
-# nonexistent "path" as a parse false-positive, not a scan target (the
-# underlying shell command would fail on it anyway).
+# 고정된 파일 전달 옵션의 정적 단어만 추출한다. 작은/큰따옴표와 escape를 처리하고,
+# 확장이 필요한 단어는 건너뛴다. 중첩 치환은 경계만 찾으며 내용을 실행하지 않는다.
+# 전체 셸 문법이나 heredoc·실행 중 cwd 변경을 해석하지 않으므로, 없는 경로를 건너뛰는
+# 기존 호출부 계약을 유지한다. 공백·따옴표는 경로에 포함할 수 있지만 개행은 미지원이다.
 #
 # Runs entirely in awk (no shell array/glob surface) so this stays safely
 # sourceable from both bash (production hooks) and zsh (drift-check tooling).
@@ -747,38 +745,139 @@ pinning_guard_findings_text_for_path() {
 pinning_extract_body_file_paths() {
   local cmd="${1:-}"
   [ -n "$cmd" ] || return 0
+  # 정적 셸 단어만 읽는다. 인용/escape는 해제하되 확장은 실행하지 않는다.
+  # 동적 단어·미완성 인용·개행 포함 경로는 반환하지 않는다. 줄 단위 경로를 받는
+  # 호출부의 없는 파일 건너뜀/읽기 실패 거부 정책은 그대로 유지한다.
   printf '%s\n' "$cmd" | awk -v sq="'" -v dq='"' '
-    function strip_quotes(v,    n, first, last) {
-      n = length(v)
-      if (n < 2) return v
-      first = substr(v, 1, 1)
-      last = substr(v, n, 1)
-      if ((first == dq && last == dq) || (first == sq && last == sq)) {
-        return substr(v, 2, n - 2)
+    function finish_word() {
+      if (started) {
+        words[++count] = word
+        literal[count] = !dynamic
       }
-      return v
+      word = ""; started = dynamic = 0
+    }
+    function skip_backticks(start,    i, c) {
+      for (i = start + 1; i <= length(command); i++) {
+        c = substr(command, i, 1)
+        if (c == "\\") i++
+        else if (c == "`") return i
+      }
+      return i
+    }
+    # 치환 내부 옵션을 외부 옵션으로 오인하지 않도록 끝 경계까지만 건너뛴다.
+    # 값은 만들지 않으며 중첩 치환도 동일하게 불투명한 구간으로 취급한다.
+    function skip_expansion(start,    opening, closing, depth, quote, i, c, following) {
+      opening = substr(command, start, 1)
+      closing = opening == "(" ? ")" : "}"
+      depth = 1
+      for (i = start + 1; i <= length(command); i++) {
+        c = substr(command, i, 1)
+        following = substr(command, i + 1, 1)
+        if (quote == sq) {
+          if (c == sq) quote = ""
+        } else if (c == "\\") {
+          i++
+        } else if (c == "`") {
+          i = skip_backticks(i)
+        } else if (c == "$" && (following == "(" || following == "{")) {
+          i = skip_expansion(i + 1)
+        } else if (quote == dq) {
+          if (c == dq) quote = ""
+        } else if (c == sq || c == dq) {
+          quote = c
+        } else if (c == opening) {
+          depth++
+        } else if (c == closing && --depth == 0) {
+          return i
+        }
+      }
+      return i
+    }
+    function tokenize(    i, c, following, quote) {
+      for (i = 1; i <= length(command); i++) {
+        c = substr(command, i, 1)
+        following = substr(command, i + 1, 1)
+        if (quote == sq) {
+          if (c == sq) quote = ""
+          else word = word c
+          if (c == "\n") dynamic = 1
+          continue
+        }
+        if (c == "\\") {
+          if (following == "") { dynamic = 1; break }
+          # 줄 연속은 제거될 뿐 새 단어를 시작하지 않는다.
+          if (following == "\n") { i++; continue }
+          started = 1
+          if (quote == dq && following != "$" && following != "`" && following != dq && following != "\\" && following != "\n") {
+            word = word c
+          } else {
+            if (following != "\n") word = word following
+            i++
+          }
+          continue
+        }
+        if (quote == dq && c == dq) { quote = ""; continue }
+        if (quote == "" && (c == sq || c == dq)) { quote = c; started = 1; continue }
+        if (c == "`" || (c == "$" && (following ~ /[[:alnum:]_@*#?$!{(^=~+-]/ ||
+            (quote == "" && (following == sq || following == dq))))) {
+          started = dynamic = 1
+          if (c == "`") i = skip_backticks(i)
+          else if (following == "(" || following == "{") i = skip_expansion(i + 1)
+          continue
+        }
+        if (quote == "") {
+          if ((c == "<" || c == ">") && following == "(") {
+            started = dynamic = 1
+            i = skip_expansion(i + 1)
+            continue
+          }
+          if (c ~ /[ \t\r\n]/) { finish_word(); continue }
+          if (c ~ /[;|&()<>]/) {
+            finish_word()
+            words[++count] = c
+            literal[count] = 0
+            continue
+          }
+          if (c == "#" && !started) {
+            while (i <= length(command) && substr(command, i, 1) != "\n") i++
+            continue
+          }
+          if (c ~ /[*?\[\]{}]/ || (c == "~" && !started)) dynamic = 1
+        }
+        started = 1
+        if (c == "\n") dynamic = 1
+        word = word c
+      }
+      if (quote != "") dynamic = 1
+      finish_word()
     }
     function emit_field_or_path(v,    at) {
       if (index(v, "=") == 0) {
-        print strip_quotes(v)
+        print v
         return
       }
       at = index(v, "=@")
       if (at > 0) print substr(v, at + 2)
     }
-    {
-      n = split($0, words, /[ \t]+/)
+    { command = command (NR > 1 ? "\n" : "") $0 }
+    END {
+      tokenize()
       i = 1
-      while (i <= n) {
+      while (i <= count) {
         w = words[i]
-        if (w == "--body-file" || w == "--file") {
-          if (i + 1 <= n) { print strip_quotes(words[i + 1]); i++ }
+        if (!literal[i]) { i++; continue }
+        if (w == "--body-file" || w == "--file" || w == "-F" || w == "--field") {
+          if (i + 1 <= count) {
+            i++
+            if (literal[i] && words[i] != "") {
+              if (w == "-F" || w == "--field") emit_field_or_path(words[i])
+              else print words[i]
+            }
+          }
         } else if (w ~ /^--body-file=/) {
-          sub(/^--body-file=/, "", w); print strip_quotes(w)
+          sub(/^--body-file=/, "", w); if (w != "") print w
         } else if (w ~ /^--file=/) {
-          sub(/^--file=/, "", w); print strip_quotes(w)
-        } else if (w == "-F" || w == "--field") {
-          if (i + 1 <= n) { emit_field_or_path(strip_quotes(words[i + 1])); i++ }
+          sub(/^--file=/, "", w); if (w != "") print w
         }
         i++
       }
