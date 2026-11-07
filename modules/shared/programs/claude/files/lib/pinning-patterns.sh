@@ -748,9 +748,10 @@ pinning_extract_body_file_paths() {
   # 정적 셸 단어만 읽는다. 인용/escape는 해제하되 확장은 실행하지 않는다.
   # 동적 단어·미완성 인용·개행 포함 경로는 반환하지 않는다. 줄 단위 경로를 받는
   # 호출부의 없는 파일 건너뜀/읽기 실패 거부 정책은 그대로 유지한다.
-  # 닫힌 치환 본문은 직접 게시 명령만 별도로 검사한다. here-doc의 종료/작업 폴더/
-  # 함수·별칭·임의 wrapper는 해석하지 않는다. 치환 안의 here-doc은 그 스코프를 검사에서
-  # 제외하지만, 최상위 here-doc 본문은 명령과 구분하지 않고 그대로 읽는다(과다 검사 방향).
+  # 닫힌 치환 본문은 직접 게시 명령만 별도로 검사한다. here-doc은 종료 구분자를 읽어
+  # 본문을 따로 떼어 낸다. 본문 속 인용·괄호는 바깥 명령과 치환 경계를 바꾸지 않으며,
+  # 본문이 실행될 수도 있으므로(bash <<EOF 등) 본문 안의 게시 명령은 별도 스코프로 검사한다.
+  # 작업 폴더·함수·별칭·임의 wrapper는 해석하지 않는다.
   printf '%s\n' "$cmd" | awk -v sq="'" -v dq='"' '
     function finish_word(end) {
       if (started) {
@@ -817,9 +818,62 @@ pinning_extract_body_file_paths() {
       }
       return i
     }
+    # here-doc 연산자(<< 또는 <<-) 뒤의 종료 구분자를 읽는다. 인용과 escape는 제거한다.
+    # 성공하면 hd_delim, hd_strip, hd_end(구분자의 마지막 문자 위치)를 채운다.
+    function parse_heredoc(at,    i, c, q, delim) {
+      i = at + 2
+      hd_strip = substr(command, i, 1) == "-"
+      if (hd_strip) i++
+      while (substr(command, i, 1) == " " || substr(command, i, 1) == "\t") i++
+      delim = ""; q = ""
+      for (; i <= length(command); i++) {
+        c = substr(command, i, 1)
+        if (q != "") {
+          if (c == q) q = ""
+          else delim = delim c
+          continue
+        }
+        if (c == sq || c == dq) { q = c; continue }
+        if (c == "\\") { i++; delim = delim substr(command, i, 1); continue }
+        if (index(" \t\r\n;|&()<>", c) > 0) break
+        delim = delim c
+      }
+      if (q != "" || delim == "" || index(delim, "\n") > 0) return 0
+      hd_delim = delim
+      hd_end = i - 1
+      return 1
+    }
+    # start는 here-doc 연산자가 있던 줄을 끝내는 개행 위치다. 대기 중인 본문을 순서대로
+    # 건너뛰고, collect면 각 본문을 별도 제한 스코프로 등록한다. 마지막으로 소비한 위치를
+    # 돌려준다. 종료 줄이 없으면 셸처럼 입력 끝까지를 본문으로 본다.
+    function consume_heredocs(start, collect, n, delims, strips,    k, pos, rest, line_end, line, body_start, found) {
+      pos = start
+      for (k = 1; k <= n; k++) {
+        body_start = pos + 1
+        found = 0
+        while (pos < length(command)) {
+          rest = substr(command, pos + 1)
+          line_end = index(rest, "\n")
+          line = line_end ? substr(rest, 1, line_end - 1) : rest
+          if (strips[k]) sub(/^\t+/, "", line)
+          if (line == delims[k]) {
+            if (collect) scopes[++scope_count] = substr(command, body_start, pos + 1 - body_start)
+            pos = line_end ? pos + line_end : length(command)
+            found = 1
+            break
+          }
+          pos = line_end ? pos + line_end : length(command)
+        }
+        if (!found) {
+          if (collect) scopes[++scope_count] = substr(command, body_start)
+          return length(command) + 1
+        }
+      }
+      return pos
+    }
     # 치환값은 만들지 않는다. 완전히 닫힌 실행 본문만 별도 스코프로 검사한다.
     # 그 본문 안의 자식은 다음 토큰화에서 찾으므로 중복 등록하지 않는다.
-    function skip_expansion(start, collect, arithmetic,    opening, closing, depth, quote, i, c, following, command_scope, before, word_boundary) {
+    function skip_expansion(start, collect, arithmetic,    opening, closing, depth, quote, i, c, following, command_scope, before, word_boundary, pend_n, pend_delim, pend_strip) {
       opening = substr(command, start, 1)
       closing = opening == "(" ? ")" : "}"
       command_scope = opening == "(" && !arithmetic && !(substr(command, start - 1, 1) == "$" && substr(command, start + 1, 1) == "(")
@@ -848,13 +902,22 @@ pinning_extract_body_file_paths() {
           i = skip_expansion(i, collect && !command_scope, 1)
           word_boundary = 0
         } else if (command_scope && quote == "" && c == "#" && word_boundary) {
-          while (i <= length(command) && substr(command, i, 1) != "\n") i++
+          # 개행은 남겨 두어 대기 중인 here-doc 본문을 다음 반복에서 처리한다.
+          while (i < length(command) && substr(command, i + 1, 1) != "\n") i++
         } else if (command_scope && quote == "" && c == "<" && following == "<") {
           if (substr(command, i, 3) == "<<<") { i += 2; word_boundary = 1; continue }
-          # 종료 구분자를 해석하지 않고 남은 입력을 불투명하게 둔다. 데이터 속의
-          # 닫는 괄호나 명령을 실행 스코프로 승격시키지 않는다.
-          scope_count = before
-          return length(command) + 1
+          # 종료 구분자를 읽어 다음 줄부터의 본문을 건너뛴다. 본문 속 닫는 괄호나 인용이
+          # 치환 경계를 바꾸지 않는다. 구분자를 읽지 못하면 남은 입력을 불투명하게 둔다.
+          if (!parse_heredoc(i)) { scope_count = before; return length(command) + 1 }
+          pend_delim[++pend_n] = hd_delim
+          pend_strip[pend_n] = hd_strip
+          i = hd_end
+          word_boundary = 0
+        } else if (command_scope && quote == "" && c == "\n" && pend_n > 0) {
+          i = consume_heredocs(i, 0, pend_n, pend_delim, pend_strip)
+          pend_n = 0
+          if (i > length(command)) { scope_count = before; return i }
+          word_boundary = 1
         } else if (c == "`") {
           i = skip_backticks(i, collect && !command_scope, quote)
           word_boundary = 0
@@ -888,7 +951,7 @@ pinning_extract_body_file_paths() {
         value ~ /^.\.\..$/ ||
         (value != ".." && value ~ /^-?[0-9]*\.\.-?[0-9]*(\.\.-?[0-9]*)?$/)
     }
-    function tokenize(    i, c, following, quote, range) {
+    function tokenize(    i, c, following, quote, range, hd_n, hd_delims, hd_strips) {
       for (i = 1; i <= length(command); i++) {
         c = substr(command, i, 1)
         if (!started) { word_start = i; word_scopes_before = scope_count }
@@ -949,10 +1012,19 @@ pinning_extract_body_file_paths() {
             separator(")", i + 1)
             continue
           }
-          if (scope > 1 && c == "<" && following == "<") {
+          if (c == "<" && following == "<") {
             if (substr(command, i, 3) == "<<<") { start_redirection(i, 1); i += 2; continue }
-            unsupported_scope = 1
-            break
+            if (parse_heredoc(i)) {
+              # 구분자는 argv가 아니다. 본문은 이 줄이 끝나는 개행에서 따로 떼어 낸다.
+              start_redirection(i, 1)
+              redirect_target = 0
+              hd_delims[++hd_n] = hd_delim
+              hd_strips[hd_n] = hd_strip
+              i = hd_end
+              continue
+            }
+            # 구분자를 읽지 못한 내부 스코프는 실행 범위를 추측하지 않는다.
+            if (scope > 1) { unsupported_scope = 1; break }
           }
           if ((c == "<" || c == ">") && following == "(") {
             started = dynamic = 1
@@ -974,8 +1046,10 @@ pinning_extract_body_file_paths() {
             continue
           }
           if (index(" \t\r\n", c) > 0) {
-            if (c == "\n") separator(c, i)
-            else finish_word(i)
+            if (c == "\n") {
+              separator(c, i)
+              if (hd_n > 0) { i = consume_heredocs(i, 1, hd_n, hd_delims, hd_strips); hd_n = 0 }
+            } else finish_word(i)
             continue
           }
           if (index(";|&()<>", c) > 0) {
@@ -985,6 +1059,7 @@ pinning_extract_body_file_paths() {
           if (c == "#" && !started) {
             while (i <= length(command) && substr(command, i, 1) != "\n") i++
             separator("\n", i)
+            if (hd_n > 0 && i <= length(command)) { i = consume_heredocs(i, 1, hd_n, hd_delims, hd_strips); hd_n = 0 }
             continue
           }
           # 리터럴 중괄호/닫는 대괄호는 파일명의 일부다. 인용되지 않은 쉼표
