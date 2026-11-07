@@ -41,6 +41,8 @@ run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
 run_test "wt wrapper ignores runtime HOME for real script" test_wt_wrapper_ignores_runtime_home_for_real_script
 run_test "managed plugin skill helper rejects duplicate matches" test_managed_plugin_skill_link_requires_single_match
 run_test "rebuild-common exports public API" test_rebuild_common_exports_public_api
+run_test "result cleanup preserves path boundaries" test_cleanup_build_artifacts_preserves_path_boundaries
+run_test "result cleanup reports search failure" test_cleanup_build_artifacts_reports_search_failure
 run_test "gitleaks CI scans commits without changing checkout" test_gitleaks_ci_scans_commits_without_mutating_checkout
 run_test "gitleaks CI detects committed content with empty staging" test_gitleaks_ci_detects_committed_content_with_empty_staging
 run_test "gitleaks CI keeps deleted commit content in scope" test_gitleaks_ci_keeps_deleted_commit_content_in_scope
@@ -404,6 +406,8 @@ run_test "darwin nrs no-change releases worktree lock" test_darwin_nrs_no_change
 run_test "darwin nrs no-change activates when Codex artifact missing" test_darwin_nrs_no_changes_activates_when_codex_artifact_missing
 run_test "darwin nrs no-change skips relink without HM gcroot" test_darwin_nrs_no_changes_skips_relink_without_hm_gcroot
 run_test "darwin nrs no-change restores when HM gcroot present" test_darwin_nrs_no_changes_restores_when_hm_gcroot_present
+run_test "nixos nrs no-change preserves links without HM gcroot" test_nixos_nrs_no_changes_preserves_links_without_hm_gcroot
+run_test "nixos nrs no-change restores when HM gcroot present" test_nixos_nrs_no_changes_restores_when_hm_gcroot_present
 run_test "cmd_fix_dangling probe matrix calls restore only on dangling" test_cmd_fix_dangling_probe_matrix
 run_test "cmd_fix_dangling propagates restore failure" test_cmd_fix_dangling_propagates_restore_failure
 run_test "nrs-relink fix-dangling CLI no-ops when probes are healthy" test_nrs_relink_cli_fix_dangling_noop_when_probes_healthy
@@ -748,6 +752,7 @@ run_test "codex-config retired keys loader" test_codex_config_retired_keys_loade
 # codex-config 섹션만 skip + profile runner 안내 (기본 shell suite 진입은 유지).
 if codex_config_tomlkit_available; then
   run_test "codex-config sync fixtures" test_codex_config_sync_fixtures
+  run_test "codex-config sync normalizes types without repeated writes" test_codex_config_sync_type_normalization
   run_test "codex-config sync no-op preserves bytes" test_codex_config_sync_noop_preserves_bytes
   run_test "codex-config sync rewrites on bad mode" test_codex_config_sync_rejects_bad_mode
   run_test "codex-config sync rewrites on symlink" test_codex_config_sync_rejects_symlink
