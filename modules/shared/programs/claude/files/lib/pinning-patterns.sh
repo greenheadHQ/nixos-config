@@ -754,7 +754,13 @@ pinning_extract_body_file_paths() {
         words[++count] = word
         literal[count] = !dynamic
       }
-      word = ""; started = dynamic = 0
+      word = ""; started = dynamic = brace_depth = 0
+    }
+    # 확장 시작 기호와 다음 문자 사이에서 실제로 제거되는 줄연속만 잇는다.
+    function join_continuations_after(position) {
+      while (substr(command, position + 1, 2) == "\\\n") {
+        command = substr(command, 1, position) substr(command, position + 3)
+      }
     }
     function skip_backticks(start,    i, c) {
       for (i = start + 1; i <= length(command); i++) {
@@ -772,6 +778,7 @@ pinning_extract_body_file_paths() {
       depth = 1
       for (i = start + 1; i <= length(command); i++) {
         c = substr(command, i, 1)
+        if (quote != sq && index("$<>", c) > 0) join_continuations_after(i)
         following = substr(command, i + 1, 1)
         if (quote == sq) {
           if (c == sq) quote = ""
@@ -779,7 +786,8 @@ pinning_extract_body_file_paths() {
           i++
         } else if (c == "`") {
           i = skip_backticks(i)
-        } else if (c == "$" && (following == "(" || following == "{")) {
+        } else if ((c == "$" && (following == "(" || following == "{")) ||
+            (quote == "" && (c == "<" || c == ">") && following == "(")) {
           i = skip_expansion(i + 1)
         } else if (quote == dq) {
           if (c == dq) quote = ""
@@ -793,9 +801,20 @@ pinning_extract_body_file_paths() {
       }
       return i
     }
-    function tokenize(    i, c, following, quote) {
+    function brace_range(raw, value) {
+      # Bash 범위는 원문, zsh 범위는 인용/escape 해제 후 값으로 판별한다.
+      # zsh는 끝점/간격이 빈 숫자 범위에서도 중괄호를 제거한다.
+      return raw ~ /^[+-]?[0-9]+\.\.[+-]?[0-9]+(\.\.[+-]?[0-9]+)?$/ ||
+        raw ~ /^[a-zA-Z]\.\.[a-zA-Z]\.\.[+-]?[0-9]+$/ ||
+        value ~ /^.\.\..$/ ||
+        (value != ".." && value ~ /^-?[0-9]*\.\.-?[0-9]*(\.\.-?[0-9]*)?$/)
+    }
+    function tokenize(    i, c, following, quote, range) {
       for (i = 1; i <= length(command); i++) {
         c = substr(command, i, 1)
+        # 확장 시작 기호의 다음 문자를 판별하기 전에 줄연속을 잇는다.
+        # 이미 escape된 기호는 앞선 반복에서 소비됐고 작은따옴표는 보존한다.
+        if (quote != sq && index("$<>", c) > 0) join_continuations_after(i)
         following = substr(command, i + 1, 1)
         if (quote == sq) {
           if (c == sq) quote = ""
@@ -805,8 +824,13 @@ pinning_extract_body_file_paths() {
         }
         if (c == "\\") {
           if (following == "") { dynamic = 1; break }
-          # 줄 연속은 제거될 뿐 새 단어를 시작하지 않는다.
-          if (following == "\n") { i++; continue }
+          # 줄 연속은 제거될 뿐 새 단어를 시작하지 않는다. 범위 판정에 쓰는
+          # 원문에서도 같은 구간을 제거한다. 작은따옴표 내부는 위에서 보존된다.
+          if (following == "\n") {
+            command = substr(command, 1, i - 1) substr(command, i + 2)
+            i--
+            continue
+          }
           started = 1
           if (quote == dq && following != "$" && following != "`" && following != dq && following != "\\" && following != "\n") {
             word = word c
@@ -831,8 +855,8 @@ pinning_extract_body_file_paths() {
             i = skip_expansion(i + 1)
             continue
           }
-          if (c ~ /[ \t\r\n]/) { finish_word(); continue }
-          if (c ~ /[;|&()<>]/) {
+          if (index(" \t\r\n", c) > 0) { finish_word(); continue }
+          if (index(";|&()<>", c) > 0) {
             finish_word()
             words[++count] = c
             literal[count] = 0
@@ -842,7 +866,21 @@ pinning_extract_body_file_paths() {
             while (i <= length(command) && substr(command, i, 1) != "\n") i++
             continue
           }
-          if (c ~ /[*?\[\]{}]/ || (c == "~" && !started)) dynamic = 1
+          # 리터럴 중괄호/닫는 대괄호는 파일명의 일부다. 인용되지 않은 쉼표
+          # 목록 또는 범위가 있는 중괄호만 확장으로 본다.
+          if (c == "{") {
+            brace_start[++brace_depth] = length(word) + 2
+            brace_raw_start[brace_depth] = i + 1
+            brace_comma[brace_depth] = 0
+          } else if (c == "," && brace_depth > 0) {
+            brace_comma[brace_depth] = 1
+          } else if (c == "}" && brace_depth > 0) {
+            range = substr(word, brace_start[brace_depth])
+            if (brace_comma[brace_depth] ||
+                brace_range(substr(command, brace_raw_start[brace_depth], i - brace_raw_start[brace_depth]), range)) dynamic = 1
+            brace_depth--
+          }
+          if (index("*?[", c) > 0 || (c == "~" && !started)) dynamic = 1
         }
         started = 1
         if (c == "\n") dynamic = 1
