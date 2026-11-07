@@ -56,14 +56,26 @@ _host_state_load_registered_worktrees() {
   fi
 }
 
+# Git이 출력 끝에 붙인 개행 하나만 지워 경로 자체의 끝 개행을 보존한다(nrs-relink와 같은 방식).
+_host_state_capture_path() {
+  local captured
+  captured="$("$@" && printf .)" || return 1
+  captured="${captured%.}"
+  _HOST_STATE_REPLY="${captured%$'\n'}"
+}
+
 # 등록 경로가 지금도 같은 저장소의 worktree일 때만 인정한다. 등록만 남고 그 자리에
-# 다른 저장소가 생긴 경우는 nrs-relink와 같이 소유 근거가 없는 것으로 본다.
+# 다른 저장소가 생겼거나 다른 worktree의 하위 디렉터리가 된 경우는 nrs-relink와 같이
+# 소유 근거가 없는 것으로 본다.
 _host_state_worktree_belongs_to_main() {
-  local root="$1" main_common candidate_common candidate_top
-  main_common="$(git -C "$MAIN_REPO_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
-  candidate_common="$(git -C "$root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
-  candidate_top="$(git -C "$root" rev-parse --show-toplevel 2>/dev/null)" || return 1
-  [ -n "$main_common" ] && [ "$candidate_common" = "$main_common" ] && [ "$candidate_top" = "$root" ]
+  local root="$1" main_common candidate_common
+  _host_state_capture_path git -C "$MAIN_REPO_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || return 1
+  main_common="$_HOST_STATE_REPLY"
+  _host_state_capture_path git -C "$root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || return 1
+  candidate_common="$_HOST_STATE_REPLY"
+  [ -n "$main_common" ] && [ "$candidate_common" = "$main_common" ] || return 1
+  _host_state_capture_path git -C "$root" rev-parse --show-toplevel 2>/dev/null || return 1
+  [ "$_HOST_STATE_REPLY" = "$root" ]
 }
 
 _resolved_target_in_registered_worktree() {

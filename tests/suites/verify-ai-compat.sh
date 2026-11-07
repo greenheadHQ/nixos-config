@@ -233,6 +233,30 @@ STUB
     assert_contains "$(cat "$sandbox/warn-$mode.log" 2>/dev/null)" "Git worktree 목록을 읽지 못해"
   done
 
+  # 경로 끝 개행은 nrs-relink처럼 보존해 비교한다.
+  local external_nl external_nl_real nested nested_real
+  external_nl="$sandbox/repo-newline"$'\n'
+  add_fixture_worktree "$repo_root" "$external_nl" external-newline
+  mkdir -p "$external_nl/$suffix"
+  external_nl_real="$(cd "$external_nl" && pwd -P && printf .)"
+  external_nl_real="${external_nl_real%.}"
+  external_nl_real="${external_nl_real%$'\n'}"
+  [[ "$external_nl_real" == *$'\n' ]] || fail "fixture path must keep its trailing newline"
+  _HOST_STATE_WORKTREES_LOADED=0
+  resolved_target_matches_repo_suffix "$external_nl_real/$suffix" "$main_real/$suffix" "$suffix" \
+    || fail "registered worktree whose path ends with a newline must be accepted"
+
+  # 등록 경로가 같은 저장소의 다른 작업 트리 하위 디렉터리가 되면 top-level이 다르다.
+  nested="$repo_root/nested-worktree"
+  add_fixture_worktree "$repo_root" "$nested" nested-example
+  rm -f "$nested/.git"
+  mkdir -p "$nested/$suffix"
+  nested_real="$(cd "$nested" && pwd -P)"
+  _HOST_STATE_WORKTREES_LOADED=0
+  if resolved_target_matches_repo_suffix "$nested_real/$suffix" "$main_real/$suffix" "$suffix"; then
+    fail "registered path that is no longer a worktree top-level must be rejected"
+  fi
+
   # 등록만 남고 그 자리에 다른 저장소가 생긴 경로는 같은 저장소의 worktree가 아니다.
   rm -rf "$external"
   mkdir -p "$external"
