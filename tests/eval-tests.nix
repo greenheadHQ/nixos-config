@@ -1094,6 +1094,18 @@ let
   # 같은 옵션(immichBackup·karakeepBackup·backup.enable 인스턴스)을 따르고, 백업 유닛이 있으면 그
   # 유닛이 실제로 쓰는 BACKUP_DIR·INSTANCES를 봐야 한다.
   smokeEnvOf = cfg: cfg.systemd.services.homeserver-smoke-test.environment;
+  smokeMirrorWiringOk =
+    cfg:
+    let
+      enabled = cfg.homeserver.immichOriginalsMirror.enable && cfg.homeserver.immich.enable;
+      smoke = cfg.systemd.services.homeserver-smoke-test;
+      successFile = smoke.environment.IMMICH_ORIGINALS_LAST_SUCCESS_FILE;
+    in
+    if enabled then
+      successFile == cfg.systemd.services.immich-originals-mirror.environment.LAST_SUCCESS_FILE
+      && builtins.elem "-${builtins.dirOf successFile}" smoke.serviceConfig.ReadOnlyPaths
+    else
+      successFile == "";
   smokeBackupWiringOk =
     cfg:
     let
@@ -1121,8 +1133,9 @@ let
   # 늘리므로 조합은 둘로 줄였다: 두 조합 모두 immich·karakeep 중 한쪽만 꺼야 한쪽 옵션을 다른 쪽
   # 변수에 잘못 건 배선이 드러나고, anki 비활성 두 경로(백업 인스턴스 0개·ankiHost 비활성)를 하나씩 얹는다.
   smokeBackupVariant = modules: (nixosBase.extendModules { inherit modules; }).config;
-  # A: immichBackup 끔 + anki 백업 인스턴스 0개(인스턴스는 두고 backup.enable만 끔)
+  # A: Immich·immichBackup 끔 + anki 백업 인스턴스 0개(인스턴스는 두고 backup.enable만 끔)
   smokeImmichAnkiOff = smokeBackupVariant [
+    { homeserver.immich.enable = nixpkgsLib.mkForce false; }
     { homeserver.immichBackup.enable = nixpkgsLib.mkForce false; }
     {
       homeserver.ankiHost.instances = nixpkgsLib.mapAttrs (_: _: {
@@ -1130,10 +1143,14 @@ let
       }) nixosCfg.homeserver.ankiHost.instances;
     }
   ];
-  # B: karakeepBackup 끔 + ankiHost 비활성
+  # B: 원본 미러·karakeepBackup 끔 + ankiHost 비활성
   smokeKarakeepAnkiOff = smokeBackupVariant [
+    { homeserver.immichOriginalsMirror.enable = nixpkgsLib.mkForce false; }
     { homeserver.karakeepBackup.enable = nixpkgsLib.mkForce false; }
     { homeserver.ankiHost.enable = nixpkgsLib.mkForce false; }
+  ];
+  smokeMirrorTimerOff = smokeBackupVariant [
+    { systemd.timers.immich-originals-mirror.enable = nixpkgsLib.mkForce false; }
   ];
 
   # ── #1369: 백업 대상 HDD(mediaData)가 nofail이라 미마운트여도 부팅은 계속되므로,
@@ -2235,6 +2252,39 @@ let
         smokeBackupWiringOk smokeKarakeepAnkiOff
         && (smokeEnvOf smokeKarakeepAnkiOff).KARAKEEP_BACKUP_DIR == ""
         && (smokeEnvOf smokeKarakeepAnkiOff).ANKI_BACKUP_INSTANCES == "";
+    }
+    {
+      name = "Test SM4: 원본 미러의 성공 기록은 목적지 밖의 비공개 상태 디렉터리에 쓰고 스모크와 경로를 공유해야 함";
+      cond =
+        let
+          stateName = constants.paths.immichOriginalsMirrorStateRelPath;
+          stateDir = "/var/lib/${stateName}";
+          env = immichOriginalsMirror.environment;
+        in
+        smokeMirrorWiringOk nixosCfg
+        && immichOriginalsMirror.serviceConfig.StateDirectory == stateName
+        && immichOriginalsMirror.serviceConfig.StateDirectoryMode == "0700"
+        && builtins.elem stateDir immichOriginalsMirror.serviceConfig.ReadWritePaths
+        && env.LAST_SUCCESS_FILE == "${stateDir}/last-success"
+        && !(nixpkgsLib.hasPrefix "${env.DEST_DIR}/" env.LAST_SUCCESS_FILE)
+        && !(nixpkgsLib.hasPrefix "${env.SRC_DIR}/" env.LAST_SUCCESS_FILE);
+    }
+    {
+      name = "Test SM5: Immich 또는 원본 미러를 끄면 성공 기록 검사를 제외해야 함";
+      cond =
+        smokeMirrorWiringOk smokeImmichAnkiOff
+        && smokeMirrorWiringOk smokeKarakeepAnkiOff
+        && !(smokeImmichAnkiOff.systemd.services ? immich-originals-mirror)
+        && !(smokeKarakeepAnkiOff.systemd.services ? immich-originals-mirror);
+    }
+    {
+      name = "Test SM6: 원본 미러 타이머만 꺼도 실행 누락을 탐지할 성공 기록 검사를 유지해야 함";
+      cond =
+        smokeMirrorWiringOk smokeMirrorTimerOff
+        && !smokeMirrorTimerOff.systemd.timers.immich-originals-mirror.enable
+        &&
+          (smokeEnvOf smokeMirrorTimerOff).IMMICH_ORIGINALS_LAST_SUCCESS_FILE == (smokeEnvOf nixosCfg)
+          .IMMICH_ORIGINALS_LAST_SUCCESS_FILE;
     }
     {
       name = "Test KB1: karakeep-singlefile-bridge의 TimeoutStopSec(${toString karakeepSinglefileBridgeSvc.serviceConfig.TimeoutStopSec}s)이 브리지 소스의 drain 상한 기본값(${toString karakeepSinglefileBridgeDrainDefaultSec}s)보다 커야 함 — 짧으면 systemd가 정상 drain을 못 기다리고 SIGKILL로 끊는다";
