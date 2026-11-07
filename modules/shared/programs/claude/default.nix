@@ -25,8 +25,13 @@ in
   #   (vscode/files/keybindings.json + vscode/default.nix CIR 참조).
   home.activation.installClaudeCode = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     if [ ! -f "$HOME/.local/bin/claude" ]; then
-      echo "Installing Claude Code binary..."
-      ${pkgs.curl}/bin/curl -fsSL https://claude.ai/install.sh | ${pkgs.bash}/bin/bash
+      # 다운로드와 설치 프로세스 모두 dry-run에서는 시작하지 않는다.
+      if [ -n "''${DRY_RUN_CMD:-}" ]; then
+        echo "Would install Claude Code binary (dry-run)."
+      else
+        echo "Installing Claude Code binary..."
+        ${pkgs.curl}/bin/curl -fsSL https://claude.ai/install.sh | ${pkgs.bash}/bin/bash
+      fi
     else
       echo "Claude Code already installed at $HOME/.local/bin/claude"
     fi
