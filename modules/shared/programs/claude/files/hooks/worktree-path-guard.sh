@@ -26,8 +26,9 @@ COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
 
 WORKTREE_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 MAIN_REPO=$(cd "$COMMON_DIR/.." 2>/dev/null && pwd) || exit 0
-# 이전 설치의 내부 worktree 컨테이너에만 쓰기 예외를 둔다.
-# 외부 Git worktree는 일반 경로 보호 규칙을 그대로 적용한다.
+# 저장소 내부 worktree 컨테이너(claude --worktree, Claude RC의 --spawn worktree 세션,
+# 이전 설치가 만든 worktree)에만 형제 worktree 쓰기 예외를 둔다.
+# 저장소 밖 Git worktree는 일반 경로 보호 규칙을 그대로 적용한다.
 WORKTREES_CONTAINER="$MAIN_REPO/.claude/worktrees"
 
 # 대상 파일의 실제 경로 확인 (심링크 해석)

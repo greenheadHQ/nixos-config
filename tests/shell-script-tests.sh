@@ -73,6 +73,7 @@ run_test "nrs missing parents preserve unsafe ancestors" test_nrs_missing_parent
 run_test "nrs HMF listing failure never mutates entries" test_nrs_hmf_listing_failure_never_mutates_entries
 run_test "nrs external worktree relink rejects other repository" test_nrs_external_worktree_relink_rejects_other_repository
 run_test "nrs restore preserves user entries" test_nrs_restore_preserves_user_entries
+run_test "nrs relink reports preserved entries separately" test_nrs_relink_reports_preserved_entries_separately
 run_test "nrs deleted registered worktree restores dangling mapping" test_nrs_deleted_registered_worktree_restores_dangling_mapping
 run_test "nrs replaced worktree and similar prefix are preserved" test_nrs_replaced_worktree_and_similar_prefix_are_preserved
 run_test "nrs partial git listing cannot mutate links" test_nrs_partial_git_listing_cannot_mutate_links
@@ -252,6 +253,7 @@ run_test "verify-ai-compat projection obstructions are actionable" test_verify_a
 run_test "verify-ai-compat host-state positive fixture" test_verify_ai_compat_host_state_positive_fixture
 run_test "verify-ai-compat host-state detects non-executable hook" test_verify_ai_compat_host_state_detects_non_executable_hook
 run_test "verify-ai-compat host-state detects bad symlink targets" test_verify_ai_compat_host_state_detects_bad_symlink_targets
+run_test "verify-ai-compat accepts registered external worktree targets" test_verify_ai_compat_resolved_target_accepts_registered_external_worktree
 run_test "verify-ai-compat host-state detects removed oracle reference" test_verify_ai_compat_host_state_detects_removed_oracle_reference
 run_test "verify-ai-compat oracle accepts large use-site" test_verify_ai_compat_oracle_accepts_large_use_site
 run_test "verify-ai-compat oracle detects removed assignment" test_verify_ai_compat_oracle_detects_removed_assignment

@@ -180,6 +180,58 @@ test_verify_ai_compat_host_state_positive_fixture() {
   assert_contains "$output" "USED-BY oracle 통과: demo-lib.sh"
 }
 
+# nrs-relink가 저장소 밖 등록 worktree로 옮긴 링크는 같은 저장소의 등록 목록으로만 인정한다.
+test_verify_ai_compat_resolved_target_accepts_registered_external_worktree() {
+  local sandbox repo_root external sibling suffix main_real external_real sibling_real stub_dir real_git mode
+  sandbox="$(new_sandbox)"
+  repo_root="$sandbox/repo"
+  external="$sandbox/repo-example"
+  sibling="$sandbox/repo-unregistered"
+  suffix="modules/shared/programs/claude/files/skills/demo"
+  create_git_fixture_repo "$repo_root"
+  add_fixture_worktree "$repo_root" "$external" external-example
+  mkdir -p "$external/$suffix" "$sibling/$suffix"
+  main_real="$(cd "$repo_root" && pwd -P)"
+  external_real="$(cd "$external" && pwd -P)"
+  sibling_real="$(cd "$sibling" && pwd -P)"
+
+  local MAIN_REPO_ROOT="$main_real" REPO_ROOT_REAL="$main_real" _HOST_STATE_WORKTREES_LOADED=0
+  local -a _HOST_STATE_WORKTREES=()
+  resolved_target_matches_repo_suffix "$external_real/$suffix" "$main_real/$suffix" "$suffix" \
+    || fail "registered external worktree target must be accepted"
+  if resolved_target_matches_repo_suffix "$sibling_real/$suffix" "$main_real/$suffix" "$suffix"; then
+    fail "unregistered sibling with the same suffix must be rejected"
+  fi
+
+  # 조회 실패와 잘린 출력은 등록 근거로 쓰지 않는다.
+  real_git="$(command -v git)"
+  stub_dir="$sandbox/stub-bin"
+  mkdir -p "$stub_dir"
+  cat > "$stub_dir/git" <<'STUB'
+#!/usr/bin/env bash
+if [[ "$*" == *'worktree list'* ]]; then
+  printf 'worktree %s\0' "$HOST_STATE_STUB_ROOT"
+  if [[ "$HOST_STATE_STUB_MODE" == truncated ]]; then
+    printf 'worktree %s' "$HOST_STATE_STUB_ROOT"
+    exit 0
+  fi
+  exit 1
+fi
+exec "$HOST_STATE_REAL_GIT" "$@"
+STUB
+  chmod +x "$stub_dir/git"
+  for mode in failed truncated; do
+    if (
+      export PATH="$stub_dir:$PATH" HOST_STATE_REAL_GIT="$real_git" \
+        HOST_STATE_STUB_ROOT="$external_real" HOST_STATE_STUB_MODE="$mode"
+      _HOST_STATE_WORKTREES_LOADED=0
+      resolved_target_matches_repo_suffix "$external_real/$suffix" "$main_real/$suffix" "$suffix"
+    ); then
+      fail "worktree listing ($mode) must not grant acceptance"
+    fi
+  done
+}
+
 _verify_ai_compat_non_executable_hook_check() {
   _check_hook_executable ".codex/hooks/pinning-guard.sh"
 }

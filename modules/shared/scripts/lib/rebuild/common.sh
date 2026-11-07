@@ -11,16 +11,17 @@ log_error() { echo -e "${RED}$1${NC}"; }
 detect_worktree() {
     local git_toplevel git_common_dir main_common_dir
     # sentinel은 Git 출력의 마지막 구분 개행만 제거하여 경로 자체의 개행을 보존한다.
-    git_toplevel=$(git rev-parse --show-toplevel 2>/dev/null && printf '\001') || return 0
-    git_toplevel=${git_toplevel%$'\001'}
+    # 제어 문자 패턴 제거는 오래된 Bash에서 결과가 달라질 수 있어 일반 문자를 쓴다.
+    git_toplevel=$(git rev-parse --show-toplevel 2>/dev/null && printf .) || return 0
+    git_toplevel=${git_toplevel%.}
     git_toplevel=${git_toplevel%$'\n'}
     [[ "$git_toplevel" == "$FLAKE_PATH" ]] && return 0
 
-    git_common_dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null && printf '\001') || return 0
-    git_common_dir=${git_common_dir%$'\001'}
+    git_common_dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null && printf .) || return 0
+    git_common_dir=${git_common_dir%.}
     git_common_dir=${git_common_dir%$'\n'}
-    main_common_dir=$(git -C "$FLAKE_PATH" rev-parse --path-format=absolute --git-common-dir 2>/dev/null && printf '\001') || return 0
-    main_common_dir=${main_common_dir%$'\001'}
+    main_common_dir=$(git -C "$FLAKE_PATH" rev-parse --path-format=absolute --git-common-dir 2>/dev/null && printf .) || return 0
+    main_common_dir=${main_common_dir%.}
     main_common_dir=${main_common_dir%$'\n'}
     [[ "$git_common_dir" == "$main_common_dir" ]] || return 0
 

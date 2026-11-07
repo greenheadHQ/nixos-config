@@ -58,10 +58,18 @@
 Git 조회 실패로 삭제 범위를 넓히지 않으며, 과거 내부 worktree의 dangling 링크도
 같은 정확한 매핑 검사를 거친다. 재빌드 전 검사는 링크를 먼저 삭제하지 않는다.
 
-현재 Home Manager 매핑에 없는 worktree 전용 entry는 경고와 함께 보존한다.
+현재 Home Manager 매핑에 없는 worktree 전용 entry는 보존한다. 등록 worktree를
+가리키는 링크 경고는 `~/.claude`·`~/.codex` 아래 깊이 3까지만 훑으므로, 그 밖의
+out-of-store 경로(예: macOS VSCode 설정)에 남은 링크는 경고 없이 보존될 수 있다.
 이후 activation이 충돌을 보고하면 해당 링크와 worktree 선언을 확인한 뒤 별도로
-옮겨 둔다. worktree 경로 전체를 근거로 한 자동 삭제는 하지 않는다. Git 등록까지
-제거된 외부 worktree 링크도 소유 근거를 확인할 수 없어 같은 수동 확인이 필요하다.
+옮겨 둔다. worktree 경로 전체를 근거로 한 자동 삭제는 하지 않는다.
+
+Git 등록까지 제거된 외부 worktree를 가리키는 링크도 소유 근거를 확인할 수 없어
+`restore`가 보존한다. 그래서 worktree를 지우기 전에 `nrs-relink restore`로 먼저
+되돌려야 한다. 이미 끊긴 링크가 남았다면 `nrs-relink status`의 `[DANGLING]` 항목을
+확인하고, 그 대상이 더는 필요 없을 때 해당 링크만 지운 뒤 `nrs-relink restore`를
+실행한다. 해결 전까지 셸 프롬프트의 자동 복구가 매번 restore를 다시 시도하므로
+프롬프트가 느려질 수 있다.
 
 ## Rules
 

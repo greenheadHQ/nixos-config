@@ -6,6 +6,7 @@
 #   nrs-relink relink       # ~/.claude/* 등을 현재 worktree로 전환
 #   nrs-relink restore      # nix store 체인으로 복원
 #   nrs-relink status       # 현재 심링크 상태 표시
+#   nrs-relink needs-restore # 복원 필요 여부만 읽기 검사 (rc 0=필요, 1=불필요, 2=근거 조회 실패)
 #   nrs-relink fix-dangling  # dangling 감지 시에만 조건부 restore (#294)
 
 set -euo pipefail
@@ -17,10 +18,11 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # Git이 경로 뒤에 덧붙인 개행만 제거하여 경로 끝의 개행을 보존한다.
+# sentinel은 일반 문자를 쓴다 — 제어 문자 패턴 제거는 오래된 Bash에서 결과가 달라질 수 있다.
 _capture_path() {
     local captured
-    captured=$("$@" && printf '\001') || return 1
-    REPLY=${captured%$'\001'}
+    captured=$("$@" && printf .) || return 1
+    REPLY=${captured%.}
     REPLY=${REPLY%$'\n'}
 }
 
@@ -28,8 +30,8 @@ _capture_path() {
 # -n으로 출력 구분자를 없애고 sentinel만 제거해야 GNU/BSD 모두 경로를 보존한다.
 _capture_link_target() {
     local captured
-    captured=$(readlink -n "$1" && printf '\001') || return 1
-    REPLY=${captured%$'\001'}
+    captured=$(readlink -n "$1" && printf .) || return 1
+    REPLY=${captured%.}
 }
 
 _safe_relative_path() {
@@ -306,24 +308,30 @@ cmd_relink() {
     }
 
     _load_oos_entries "$hmf" || return 1
-    local relinked=0 skipped=0 entry_index home_rel repo_rel
+    local relinked=0 skipped=0 preserved=0 entry_index home_rel repo_rel
     for ((entry_index=0; entry_index<OOS_ENTRY_COUNT; entry_index++)); do
         home_rel=${OOS_HOME_RELS[entry_index]}
         repo_rel=${OOS_REPO_RELS[entry_index]}
         [[ -z "$home_rel" ]] && continue
         local wt_target="$worktree/$repo_rel"
-        if [[ -e "$wt_target" || -L "$wt_target" ]] && _can_replace_entry "$home_rel" "$repo_rel" "$hmf"; then
+        if [[ ! -e "$wt_target" && ! -L "$wt_target" ]]; then
+            echo -e "${YELLOW}  skip: $home_rel (not in worktree)${NC}"
+            ((++skipped))
+        elif _can_replace_entry "$home_rel" "$repo_rel" "$hmf"; then
             ln -sfn "$wt_target" "$HOME/$home_rel"
             ((++relinked))
         else
-            echo -e "${YELLOW}  skip: $home_rel (not in worktree)${NC}"
-            ((++skipped))
+            echo -e "${YELLOW}  skip: $home_rel (preserved user or unverified entry)${NC}"
+            ((++preserved))
         fi
     done
 
     echo -e "${GREEN}Relinked $relinked symlink(s) to worktree${NC}"
     if [[ $skipped -gt 0 ]]; then
         echo -e "${YELLOW}  ($skipped skipped — not present in worktree)${NC}"
+    fi
+    if [[ $preserved -gt 0 ]]; then
+        echo -e "${YELLOW}  ($preserved preserved — user or unverified entry; inspect nrs-relink status)${NC}"
     fi
 
     # Post-relink: nix store 심링크 체인 무결성 검증 (warn only, non-blocking)
@@ -490,7 +498,7 @@ case "${1:-}" in
     needs-restore) cmd_needs_restore ;;
     fix-dangling) cmd_fix_dangling ;;
     *)
-        echo "Usage: nrs-relink {relink|restore|status|fix-dangling}" >&2
+        echo "Usage: nrs-relink {relink|restore|status|needs-restore|fix-dangling}" >&2
         exit 1
         ;;
 esac

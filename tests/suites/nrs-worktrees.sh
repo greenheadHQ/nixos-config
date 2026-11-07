@@ -178,6 +178,17 @@ test_nrs_restore_preserves_user_entries() {
   done
 }
 
+test_nrs_relink_reports_preserved_entries_separately() {
+  local sandbox home_dir repo_root hmf worktree_root output
+  setup_nrs_worktree_fixture
+  printf 'personal\n' > "$home_dir/.claude/CLAUDE.md"
+  output=$(cd "$worktree_root" || exit; run_nrs_worktree_fixture relink 2>&1)
+  [[ "$(cat "$home_dir/.claude/CLAUDE.md")" == personal ]] || fail 'relink overwrote a regular file'
+  assert_contains "$output" 'skip: .claude/CLAUDE.md (preserved user or unverified entry)'
+  assert_contains "$output" '(1 preserved'
+  assert_not_contains "$output" 'not in worktree'
+}
+
 test_nrs_deleted_registered_worktree_restores_dangling_mapping() {
   local sandbox home_dir repo_root hmf worktree_root
   setup_nrs_worktree_fixture

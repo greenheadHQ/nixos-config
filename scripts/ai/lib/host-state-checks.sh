@@ -22,6 +22,44 @@ _report_missing_projection_link() {
   fi
 }
 
+# MAIN_REPO_ROOT 저장소에 등록된 worktree 경로를 한 번만 NUL 구분으로 읽는다.
+# 조회 실패나 마지막 레코드가 잘린 출력은 빈 목록으로 둔다 — 인정 범위만 줄어드는
+# fail-closed 방향이다. 같은 저장소에 등록되지 않은 형제 경로는 인정하지 않는다.
+_HOST_STATE_WORKTREES_LOADED=0
+_HOST_STATE_WORKTREES=()
+_host_state_load_registered_worktrees() {
+  [ "$_HOST_STATE_WORKTREES_LOADED" = 1 ] && return 0
+  _HOST_STATE_WORKTREES_LOADED=1
+  _HOST_STATE_WORKTREES=()
+  [ -n "$MAIN_REPO_ROOT" ] || return 0
+  local listing record="" rc=0
+  local -a paths=()
+  listing="$(mktemp "${TMPDIR:-/tmp}/host-state-worktrees.XXXXXX")" || return 0
+  git -C "$MAIN_REPO_ROOT" worktree list --porcelain -z > "$listing" 2>/dev/null || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    while IFS= read -r -d '' record; do
+      case "$record" in
+        "worktree /"*) paths+=("${record#worktree }") ;;
+      esac
+      record=""
+    done < "$listing"
+  fi
+  rm -f "$listing"
+  [ "$rc" -eq 0 ] && [ -z "$record" ] || return 0
+  if [ "${#paths[@]}" -gt 0 ]; then
+    _HOST_STATE_WORKTREES=("${paths[@]}")
+  fi
+}
+
+_resolved_target_in_registered_worktree() {
+  local resolved="$1" expected_suffix="$2" root
+  _host_state_load_registered_worktrees
+  for root in ${_HOST_STATE_WORKTREES[@]+"${_HOST_STATE_WORKTREES[@]}"}; do
+    [ "$resolved" = "$root/$expected_suffix" ] && return 0
+  done
+  return 1
+}
+
 resolved_target_matches_repo_suffix() {
   local resolved="$1"
   local expected="$2"
@@ -51,6 +89,10 @@ resolved_target_matches_repo_suffix() {
         return 0
         ;;
     esac
+    # nrs-relink는 저장소 밖에 등록된 Git worktree로도 링크를 옮긴다.
+    if _resolved_target_in_registered_worktree "$resolved" "$expected_suffix"; then
+      return 0
+    fi
   fi
 
   if [ -n "$REPO_ROOT_REAL" ]; then
