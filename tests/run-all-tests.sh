@@ -88,6 +88,9 @@ run_driver "karakeep-bridge-tests" bash tests/run-karakeep-bridge-tests.sh
 #     PR #929 도입 이후 어떤 러너·훅·CI 에도 연결되지 않아 실행 경로가 0이었다.
 run_driver "issuing-codex-pairing-code-tests" bash tests/run-issuing-codex-pairing-code-tests.sh
 
+# 공개 recipient 헤더 검사기의 합성 회귀만 실행한다. 실제 암호문 일치 검사는 별도 명령이다.
+run_driver "secret-recipient-tests" bash tests/run-secret-recipient-tests.sh
+
 # 7e) anki-mcp-tests — 원격 MCP 서버(anki_mcp)의 순수 함수·OAuth provider·승인 폼·sync 트리거 규칙을 hermetic
 #     pytest로 검증한다 (AnkiConnect·systemctl은 fake). 런타임은 flake 패키지 ankiMcpTestEnv(핀된 mcp SDK).
 run_driver "anki-mcp-tests" bash tests/run-anki-mcp-tests.sh
