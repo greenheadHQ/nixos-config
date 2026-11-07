@@ -110,7 +110,7 @@ cleanup() {
   fi
   send_notification "$SERVICE_DISPLAY_NAME Update" "업데이트 실패: 스크립트 오류 발생.${recovery_msg}" 1
 }
-trap cleanup ERR
+service_install_error_trap cleanup
 
 # ─── 0. 현재 이미지 digest 저장 + 최신 버전 조회 ─────────────────
 echo "=== $SERVICE_DISPLAY_NAME Update ==="

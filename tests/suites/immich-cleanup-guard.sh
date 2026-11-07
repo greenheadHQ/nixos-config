@@ -11,9 +11,12 @@ setup_immich_cleanup_fixture() {
   mkdir -p "$bin"
   printf 'IMMICH_API_KEY=test-key\n' > "$sandbox/api-key"
   printf 'PUSHOVER_TOKEN=x\nPUSHOVER_USER=x\n' > "$sandbox/pushover"
-  # 알림 대역: notify-fail 표식이 있으면 실패를 돌려준다 (알림 실패가 정리 결과를 바꾸는지 검사용).
+  # 오류 처리와 fail-soft 계약은 실제 라이브러리를 쓴다. 전송 경계만 대체하여
+  # notify-fail 표식이 있으면 실패를 돌려준다.
   cat > "$sandbox/service-lib" <<'EOF'
-send_notification() {
+# shellcheck source=/dev/null
+source "$IMMICH_CLEANUP_TEST_SERVICE_LIB"
+_service_send_notification() {
   printf '%s\n' "$2" >> "$NOTIFICATION_LOG"
   if [ -e "$NOTIFY_FAIL_MARKER" ]; then
     return 7
@@ -115,6 +118,7 @@ run_immich_cleanup_fixture() {
     ALBUM_NAME="Claude Code Temp" \
     PUSHOVER_CRED_FILE="$sandbox/pushover" \
     SERVICE_LIB="$sandbox/service-lib" \
+    IMMICH_CLEANUP_TEST_SERVICE_LIB="$REPO_ROOT/modules/nixos/lib/service-lib.sh" \
     NOTIFICATION_LOG="$sandbox/notifications.log" \
     REQUEST_LOG="$sandbox/requests.log" \
     DELETE_LOG="$sandbox/deletes.log" \
@@ -288,32 +292,54 @@ test_immich_cleanup_notification_failure_keeps_delete_failure() {
 }
 
 test_immich_cleanup_unexpected_failure_sends_single_error_notification() {
-  local mode sandbox output rc real_jq
+  local mode failure pattern sandbox output rc real_jq
   real_jq="$(command -v jq)"
-  for mode in notify-ok notify-fail; do
-    sandbox="$(new_sandbox)"
-    setup_immich_cleanup_fixture "$sandbox" paginated
-    [[ "$mode" == notify-ok ]] || : > "$sandbox/notify-fail"
-    # 예상하지 못한 명령 실패: 스크립트 본문의 DELETE body 생성(force 포함 jq -n)만 rc 5로 실패하고,
-    # 나머지 jq 호출(대역 curl 포함)은 실제 jq에 맡긴다.
-    cat > "$sandbox/bin/jq" <<EOS
+  for failure in function substitution; do
+    for mode in notify-ok notify-fail; do
+      sandbox="$(new_sandbox)"
+      setup_immich_cleanup_fixture "$sandbox" paginated
+      [[ "$mode" == notify-ok ]] || : > "$sandbox/notify-fail"
+      # 함수 안 검색 body와 최상위 DELETE body 생성의 실패를 각각 주입한다.
+      # 나머지 jq 호출(대역 curl 포함)은 실제 jq에 맡긴다.
+      pattern='force: true'
+      [[ "$failure" != function ]] || pattern='albumIds:'
+      cat > "$sandbox/bin/jq" <<EOS
 #!/usr/bin/env bash
 case "\$*" in
-  *"force: true"*) exit 5 ;;
+  *"$pattern"*) exit 5 ;;
 esac
 exec "$real_jq" "\$@"
 EOS
-    chmod +x "$sandbox/bin/jq"
+      chmod +x "$sandbox/bin/jq"
 
-    if output=$(run_immich_cleanup_fixture "$sandbox" 2>&1); then rc=0; else rc=$?; fi
+      if output=$(run_immich_cleanup_fixture "$sandbox" 2>&1); then rc=0; else rc=$?; fi
 
-    # 원래 실패 코드(5)로 끝나고, 요약 알림 없이 ERR trap 알림만 한 번 나간다.
-    # 알림이 실패(7)해도 종료 코드는 5다.
-    [[ "$rc" == 5 ]] || fail "unexpected failure ($mode): expected exit 5, got $rc"
-    assert_not_contains "$output" "Cleanup completed."
-    assert_immich_cleanup_only_notification "$sandbox" "unexpected failure ($mode)" "오류 발생: 스크립트 실패"
-    assert_line_count "$sandbox/requests.log" "page=1" 1
-    assert_line_count "$sandbox/requests.log" "page=2" 1
-    [[ ! -e "$sandbox/deletes.log" ]] || fail "unexpected failure ($mode) must stop before asset delete"
+      # 원래 실패 코드(5)로 끝나고, 요약 알림 없이 ERR trap 알림만 한 번 나간다.
+      # 알림이 실패(7)해도 종료 코드는 5다.
+      [[ "$rc" == 5 ]] || fail "unexpected failure ($failure/$mode): expected exit 5, got $rc"
+      assert_not_contains "$output" "Cleanup completed."
+      assert_immich_cleanup_only_notification "$sandbox" "unexpected failure ($mode)" "오류 발생: 스크립트 실패"
+      if [[ "$failure" == function ]]; then
+        [[ ! -e "$sandbox/requests.log" ]] || fail "failed search body must stop before API request"
+      else
+        assert_line_count "$sandbox/requests.log" "page=1" 1
+        assert_line_count "$sandbox/requests.log" "page=2" 1
+      fi
+      [[ ! -e "$sandbox/deletes.log" ]] || fail "unexpected failure ($mode) must stop before asset delete"
+    done
   done
+}
+
+test_immich_cleanup_reported_failure_keeps_single_notification_when_send_fails() {
+  local sandbox output rc
+  sandbox=$(new_sandbox)
+  setup_immich_cleanup_fixture "$sandbox" invalid-id
+  : > "$sandbox/notify-fail"
+
+  if output=$(run_immich_cleanup_fixture "$sandbox" 2>&1); then rc=0; else rc=$?; fi
+
+  [[ "$rc" == 1 ]] || fail "reported failure must keep exit 1 when notification fails (got $rc)"
+  assert_immich_cleanup_only_notification "$sandbox" "reported failure" "앨범 asset ID 응답 형식 오류"
+  assert_not_contains "$output" "Cleanup completed."
+  [[ ! -e "$sandbox/deletes.log" ]] || fail "reported failure must stop before asset delete"
 }

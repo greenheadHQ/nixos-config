@@ -4,6 +4,28 @@
 # 주의: set -euo pipefail은 호출 스크립트가 선언 (라이브러리에서 선언하지 않음)
 # 주의: subshell($(...))에서 호출 금지 — 전역변수 손실 방지
 
+# 전파된 예상 밖 실패는 등록한 부모 셸에서 한 번만 처리한다. Nix Bash로 배포되는
+# 소비자가 명시적으로 등록할 때만 errtrace를 켠다(source만 하는 소비자는 불변).
+# 자식은 알림/복구 없이 실패 코드로 끝나 명령 치환·파이프의 부모에게 실패를 전달한다.
+# if/|| 등에서 명시적으로 처리한 실패와 exit는 ERR 대상이 아니다. 기다리지 않는
+# process substitution의 실패까지 부모에게 전파하는 기능은 아니다.
+service_install_error_trap() {
+  _SERVICE_ERROR_OWNER="$BASHPID"
+  _SERVICE_ERROR_CALLBACK=("$@")
+  set -E
+  trap '_service_handle_error "$?"' ERR
+}
+
+_service_handle_error() {
+  local failure_status="$1"
+  # 복구·알림 실패가 trap을 재호출하거나 원래 종료 코드를 바꾸지 않게 한다.
+  trap - ERR
+  if [[ "$BASHPID" == "$_SERVICE_ERROR_OWNER" ]]; then
+    "${_SERVICE_ERROR_CALLBACK[@]}" >&2 || true
+  fi
+  exit "$failure_status"
+}
+
 # ═══════════════════════════════════════════════════════════════
 # Pushover 알림 전송
 # 기본 priority: -1 (무음) — cleanup-script.sh가 기본값에 의존

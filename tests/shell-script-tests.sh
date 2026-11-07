@@ -566,6 +566,7 @@ run_test "immich cleanup partial delete failure exits nonzero" test_immich_clean
 run_test "immich cleanup all delete failure exits nonzero" test_immich_cleanup_all_delete_failure_exits_nonzero
 run_test "immich cleanup notification failure keeps delete failure" test_immich_cleanup_notification_failure_keeps_delete_failure
 run_test "immich cleanup unexpected failure sends single error notification" test_immich_cleanup_unexpected_failure_sends_single_error_notification
+run_test "immich cleanup reported failure keeps one notification when send fails" test_immich_cleanup_reported_failure_keeps_single_notification_when_send_fails
 
 # homeserver-smoke-test suite (tests/suites/homeserver-smoke-test.sh) — 종료 코드·알림 계약 (#1387)
 run_test "smoke test all pass exits zero without notification" test_smoke_test_all_pass_exits_zero_without_notification
@@ -642,6 +643,14 @@ run_test "version-check release body line limit matches head boundary" test_vers
 run_test "version-check release body CRLF line split matches head" test_version_check_release_body_crlf_line_split_matches_head
 run_test "version-check release body unicode boundary not corrupted" test_version_check_release_body_unicode_boundary_not_corrupted
 run_test "version-check invalid GitHub JSON does not send false success notification" test_version_check_invalid_github_json_does_not_send_false_success_notification
+run_test "version-check function and substitution failures notify once" test_version_checks_function_and_substitution_failures_notify_once
+run_test "update function failures notify once without restart" test_update_function_failures_notify_once_without_restart
+run_test "update substitution failures keep status and recover once" test_update_substitution_failures_keep_status_and_recover_once
+run_test "update startup failure preserves recovery and single notification" test_update_startup_failure_preserves_recovery_and_single_notification
+run_test "update explicit failures do not send duplicate notifications" test_update_explicit_failures_do_not_send_duplicate_notifications
+run_test "reported backup failure does not retry failed recovery" test_uptime_reported_backup_failure_does_not_retry_failed_recovery
+run_test "update success preserves single notification" test_update_success_preserves_single_notification
+run_test "service error handler preserves nested status and callback failure" test_service_error_handler_preserves_nested_status_and_callback_failure
 
 # git-cleanup suite (tests/suites/git-cleanup.sh) — 날짜 계산 도구 선택 계약 (#1376)
 run_test "git-cleanup BSD-only date dry-run succeeds" test_git_cleanup_bsd_only_date_dry_run_succeeds
