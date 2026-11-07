@@ -149,7 +149,13 @@ Staleness 방지: `rebuild-common.sh`의 `@flakePath@`는 `nixosConfigDefaultPat
 
 ## 보안
 
-- Touch ID sudo 인증: 터미널에서 sudo 실행 시 Touch ID 사용
+- Touch ID PAM은 활성화되어 있습니다. 현재 기본 사용자에게는
+  `modules/darwin/configuration.nix`에서 `ALL=(ALL) NOPASSWD: ALL`을 선언하므로,
+  해당 규칙이 적용된 sudo 명령은 인증을 요구하지 않습니다. 다른 사용자나 변경된 규칙의
+  동작까지 같다고 가정하지 않습니다.
+- 선언과 실제 적용 상태는 별개입니다. 의심스러우면 대상 명령의 `sudo -n -ll <명령>`
+  출력에서 `Options: !authenticate`를 확인합니다. 조회 성공 코드만으로 인증 면제를
+  판단하거나 무관한 `sudo -n true`의 결과를 다른 명령에 적용하지 않습니다.
 
 ## Dock
 
@@ -434,7 +440,10 @@ done
 brew list --cask
 ```
 
-주의: SSH non-interactive 세션에서는 xattr 권한 문제나 sudo 프롬프트로 adopt가 실패할 수 있습니다. 실패 시 Mac 터미널에서 직접 재시도하세요.
+adopt 실패 시 오류를 읽고 xattr·앱 소유권 등 파일 권한 문제와 sudo 인증 문제를 구분합니다.
+현재 NOPASSWD 규칙이 대상 사용자·명령에 적용됐다면 인증 프롬프트를 실패 원인으로
+가정하지 않습니다. 규칙 적용이 의심스러우면 위 보안 절의 조회 기준으로 확인합니다.
+Mac 터미널에서 직접 재시도하더라도 파일 권한 문제가 해결된다고 보장하지 않습니다.
 
 ## 폴더 액션 (launchd)
 
