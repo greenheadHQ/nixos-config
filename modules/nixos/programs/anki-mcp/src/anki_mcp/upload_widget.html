@@ -151,6 +151,9 @@
     let body = {};
     try { body = await response.json(); } catch (err) { body = {}; }
     if (!response.ok) throw failure(response.status, body);
+    if (!body || !["applied", "not-applied", "unknown"].includes(body.state)) {
+      throw new UploadError("저장됐는지 확인하지 못했습니다. 이미 저장됐을 수 있으니 최근 작업을 확인해 주세요.", true);
+    }
     return body;
   };
 
@@ -184,7 +187,7 @@
       return { name, receipt };
     } catch (err) {
       const error = err.message || String(err);
-      line(tag + error, "bad");
+      line(tag + error, err.unknown ? "muted" : "bad");
       return { name, error, unknown: Boolean(err.unknown) };
     }
   };
