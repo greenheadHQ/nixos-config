@@ -1091,6 +1091,12 @@ pinning_extract_body_file_paths() {
     function publishing_command(first, last,    i, section, action, endpoint, executable) {
       i = first
       git_options_start = data_only_command = 0
+      # 명령 위치의 셸 예약어(제어문 시작·부정·중괄호 그룹·time)는 명령 이름이 아니다.
+      # 예약어는 할당보다 앞에서만 인식되므로 할당 접두어보다 먼저 건너뛴다.
+      while (i <= last && literal[i] && words[i] ~ /^(if|then|else|elif|do|while|until|!|[{]|time)$/) {
+        i++
+        if (words[i - 1] == "time" && literal[i] && words[i] == "-p") i++
+      }
       while (i <= last && assignment[i]) i++
       if (literal[i] && words[i] == "command") {
         i++
