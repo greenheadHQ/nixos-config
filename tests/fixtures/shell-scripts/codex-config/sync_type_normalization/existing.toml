@@ -1,0 +1,23 @@
+enabled = 1
+disabled = 0
+integer = 1.0
+fraction = 1
+flags = [1, 0]
+nested = [[1.0, 0], [2, 1]]
+records = [{ enabled = 1, count = 1.0 }]
+user_setting = "keep"
+
+[features]
+fixture = 1
+user_feature = false
+
+[projects."fixture-project"]
+trust_level = "trusted"
+
+[[hooks.SessionStart]]
+marker = "managed"
+enabled = true
+
+[[hooks.UserPromptSubmit]]
+marker = "user"
+enabled = false
