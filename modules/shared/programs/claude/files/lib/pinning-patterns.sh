@@ -753,10 +753,13 @@ pinning_extract_body_file_paths() {
   printf '%s\n' "$cmd" | awk -v sq="'" -v dq='"' '
     function finish_word(end) {
       if (started) {
-        words[++count] = word
-        literal[count] = !dynamic
-        unknown_shape[count] = shape_unknown
-        assignment[count] = substr(command, word_start, end - word_start) ~ /^[A-Za-z_][A-Za-z0-9_]*=/
+        if (!redirect_target) {
+          words[++count] = word
+          literal[count] = !dynamic
+          unknown_shape[count] = shape_unknown
+          assignment[count] = substr(command, word_start, end - word_start) ~ /^[A-Za-z_][A-Za-z0-9_]*=/
+        }
+        redirect_target = 0
       }
       word = ""; started = dynamic = brace_depth = shape_unknown = 0
     }
@@ -765,6 +768,15 @@ pinning_extract_body_file_paths() {
       words[++count] = c
       literal[count] = 0
       boundary[count] = index(";|&()\n", c) > 0
+      if (boundary[count]) redirect_target = 0
+    }
+    # 일반 리디렉션의 대상은 argv가 아니다. 붙어 있는 인용 없는 IO 번호만 함께 뺀다.
+    # 대상 안의 명령 치환 스코프는 토큰화 중 이미 수집하므로 그대로 남는다.
+    function start_redirection(at, allow_fd) {
+      if (allow_fd && started && substr(command, word_start, at - word_start) ~ /^[0-9]+$/) {
+        word = ""; started = dynamic = brace_depth = shape_unknown = 0
+      } else finish_word(at)
+      redirect_target = 1
     }
     # 확장 시작 기호와 다음 문자 사이에서 실제로 제거되는 줄연속만 잇는다.
     function join_continuations_after(position) {
@@ -795,12 +807,21 @@ pinning_extract_body_file_paths() {
       }
       return i
     }
+    # ANSI-C 인용은 escape를 포함한 끝 경계만 찾는다. 값은 해독하지 않고 동적으로 둔다.
+    function skip_ansi_quote(start,    i, c) {
+      for (i = start + 1; i <= length(command); i++) {
+        c = substr(command, i, 1)
+        if (c == "\\") i++
+        else if (c == sq) return i
+      }
+      return i
+    }
     # 치환값은 만들지 않는다. 완전히 닫힌 실행 본문만 별도 스코프로 검사한다.
     # 그 본문 안의 자식은 다음 토큰화에서 찾으므로 중복 등록하지 않는다.
-    function skip_expansion(start, collect,    opening, closing, depth, quote, i, c, following, command_scope, before, word_boundary) {
+    function skip_expansion(start, collect, arithmetic,    opening, closing, depth, quote, i, c, following, command_scope, before, word_boundary) {
       opening = substr(command, start, 1)
       closing = opening == "(" ? ")" : "}"
-      command_scope = opening == "(" && !(substr(command, start - 1, 1) == "$" && substr(command, start + 1, 1) == "(")
+      command_scope = opening == "(" && !arithmetic && !(substr(command, start - 1, 1) == "$" && substr(command, start + 1, 1) == "(")
       before = scope_count
       depth = word_boundary = 1
       for (i = start + 1; i <= length(command); i++) {
@@ -817,6 +838,13 @@ pinning_extract_body_file_paths() {
             continue
           }
           i++
+          word_boundary = 0
+        } else if (quote == "" && c == "$" && following == sq) {
+          i = skip_ansi_quote(i + 1)
+          word_boundary = 0
+        } else if (opening == "(" && quote == "" && c == "(" && following == "(") {
+          # 산술식의 <<는 heredoc이 아니다. 평가 없이 괄호 경계만 소비한다.
+          i = skip_expansion(i, collect && !command_scope, 1)
           word_boundary = 0
         } else if (command_scope && quote == "" && c == "#" && word_boundary) {
           while (i <= length(command) && substr(command, i, 1) != "\n") i++
@@ -839,7 +867,7 @@ pinning_extract_body_file_paths() {
         } else if (c == sq || c == dq) {
           quote = c
           word_boundary = 0
-        } else if (c == opening) {
+        } else if (opening == "(" && c == opening) {
           depth++
           word_boundary = 1
         } else if (c == closing && --depth == 0) {
@@ -901,7 +929,8 @@ pinning_extract_body_file_paths() {
           word = word "\001"
           if (c == "`") i = skip_backticks(i, 1, quote)
           else if (following == "(" || following == "{") i = skip_expansion(i + 1, 1)
-          else if (following == sq || following == dq) shape_unknown = 1
+          else if (following == sq) { shape_unknown = 1; i = skip_ansi_quote(i + 1) }
+          else if (following == dq) shape_unknown = 1
           else {
             if (following ~ /^[@*#?$!0-9-]$/) { i++; continue }
             while (substr(command, i + 1, 1) ~ /^[\^=~+]$/) i++
@@ -913,8 +942,14 @@ pinning_extract_body_file_paths() {
           continue
         }
         if (quote == "") {
+          if (c == "(" && following == "(") {
+            separator(c, i)
+            i = skip_expansion(i, 1, 1)
+            separator(")", i + 1)
+            continue
+          }
           if (scope > 1 && c == "<" && following == "<") {
-            if (substr(command, i, 3) == "<<<") { separator(c, i); i += 2; continue }
+            if (substr(command, i, 3) == "<<<") { start_redirection(i, 1); i += 2; continue }
             unsupported_scope = 1
             break
           }
@@ -923,6 +958,18 @@ pinning_extract_body_file_paths() {
             word = word "\001"
             i = skip_expansion(i + 1, 1)
             if (i > length(command)) scope_count = word_scopes_before
+            continue
+          }
+          if (c == "&" && following == ">") {
+            start_redirection(i, 0)
+            i++
+            if (substr(command, i + 1, 1) == ">") i++
+            continue
+          }
+          if ((c == "<" || c == ">") && !(c == "<" && following == "<")) {
+            start_redirection(i, 1)
+            if (following == c || following == "&" || (c == ">" && following == "|") ||
+                (c == "<" && following == ">")) i++
             continue
           }
           if (index(" \t\r\n", c) > 0) {
@@ -996,6 +1043,7 @@ pinning_extract_body_file_paths() {
       while (i <= last) {
         w = words[i]
         if (!literal[i]) { i++; continue }
+        if (kind == "git" && w == "--") break
         if (w == "--body-file" || w == "--file" || w == "-F" || w == "--field") {
           if (i + 1 <= last) {
             i++
@@ -1021,7 +1069,7 @@ pinning_extract_body_file_paths() {
         # 정적으로 확인하고, 본문 경로의 literal 조건은 별도로 유지한다.
         if (option ~ /^(-[Cc].+|--(git-dir|work-tree|namespace|config-env|exec-path)=)/) continue
         if (!literal[i]) return 0
-        if (option == "commit") return 1
+        if (option == "commit") { git_options_start = i + 1; return 1 }
         if (option ~ /^(-C|-c|--git-dir|--work-tree|--namespace|--config-env)$/) { i++; continue }
         if (option ~ /^(-p|-P|--paginate|--no-pager|--no-replace-objects|--no-lazy-fetch|--no-optional-locks|--no-advice|--bare|--literal-pathspecs|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs)$/) continue
         return 0
@@ -1040,15 +1088,20 @@ pinning_extract_body_file_paths() {
       }
       return ""
     }
-    function publishing_command(first, last,    i, section, action, endpoint) {
+    function publishing_command(first, last,    i, section, action, endpoint, executable) {
       i = first
+      git_options_start = data_only_command = 0
       while (i <= last && assignment[i]) i++
       if (literal[i] && words[i] == "command") {
         i++
+        if (literal[i] && words[i] == "-p") i++
         if (literal[i] && words[i] == "--") i++
       }
       if (i > last || !literal[i]) return ""
-      if (words[i] == "git") return git_commit_command(i + 1, last) ? "git" : ""
+      data_only_command = words[i] == "printf"
+      executable = words[i]
+      if (substr(executable, 1, 1) == "/") sub(/^.*\//, "", executable)
+      if (executable == "git") return git_commit_command(i + 1, last) ? "git" : ""
       if (words[i] != "gh" || !literal[i + 1]) return ""
       section = words[i + 1]; action = words[i + 2]
       if (section == "pr") return literal[i + 2] && action ~ /^(create|edit|comment|review|merge)$/ ? section " " action : ""
@@ -1062,7 +1115,9 @@ pinning_extract_body_file_paths() {
       for (last = 1; last <= count + 1; last++) {
         if (last > count || boundary[last]) {
           kind = publishing_command(first, last - 1)
-          if (!restricted || kind != "") scan_options(first, last - 1, kind)
+          # printf 데이터는 제외하되, 인자 안에서 수집한 실행 스코프는 별도로 검사한다.
+          if (!data_only_command && (!restricted || kind != ""))
+            scan_options(kind == "git" ? git_options_start : first, last - 1, kind)
           first = last + 1
         }
       }
@@ -1078,7 +1133,7 @@ pinning_extract_body_file_paths() {
         for (key in unknown_shape) delete unknown_shape[key]
         for (key in assignment) delete assignment[key]
         for (key in boundary) delete boundary[key]
-        word = ""; count = started = dynamic = brace_depth = shape_unknown = unsupported_scope = 0
+        word = ""; count = started = dynamic = brace_depth = shape_unknown = unsupported_scope = redirect_target = 0
         before = scope_count
         tokenize()
         if (unsupported_scope) scope_count = before

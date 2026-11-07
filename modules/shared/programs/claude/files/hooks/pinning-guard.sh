@@ -131,7 +131,7 @@ case "$TOOL_NAME" in
     while IFS= read -r body_file; do
       [ -n "$body_file" ] || continue
       [ -e "$body_file" ] || continue
-      if ! cat "$body_file" > "$SCAN_DIR/new.txt" 2>/dev/null; then
+      if ! cat -- "$body_file" > "$SCAN_DIR/new.txt" 2>/dev/null; then
         _deny_with_reason "[pinning-guard] failed to read $body_file referenced via --body-file; denying by fail-closed policy."
       fi
       findings="$(pinning_findings_text "$SCAN_DIR/new.txt")"

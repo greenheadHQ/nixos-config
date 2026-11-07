@@ -1199,6 +1199,34 @@ test_pinning_body_file_static_paths() {
     [ ! -e "$sandbox/tokenization-side-effect" ] || fail "body path parser executed command substitution"
   done < <(jq -c '.[]' "$matrix")
 
+  # 바깥 파일에서 먼저 거부되면 내부 파일 누락을 숨길 수 있으므로 각각 따로 검사한다.
+  command_text='gh pr create --title "$(gh issue create --body-file inner.md)" --body-file outer.md'
+  printf '%s' "$command_text" | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
+  for label in outer inner; do
+    printf 'clean\n' > "$sandbox/outer.md"
+    printf 'clean\n' > "$sandbox/inner.md"
+    printf '%s\n' "$denied_content" > "$sandbox/$label.md"
+    for hook in "${hooks[@]}"; do
+      (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" "$hook" \
+        < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
+      [ ! -s "$stderr_log" ] || fail "independent body path guard wrote stderr"
+      assert_eq "$(jq -r '.hookSpecificOutput.permissionDecision' "$stdout_log")" deny "each body file must be inspected"
+      output=$(jq -r '.hookSpecificOutput.permissionDecisionReason' "$stdout_log")
+      [[ "$output" == *"$label.md (via --body-file)"* ]] || fail "guard denied a different body file"
+    done
+  done
+
+  # printf에 넘긴 정적 데이터는 파일이 실제로 있어도 게시 본문이 아니다.
+  printf '%s\n' "$denied_content" > "$sandbox/example draft.md"
+  printf 'clean\n' > "$sandbox/clean.md"
+  command_text="printf '%s\\n' --body-file 'example draft.md'; gh issue create --body-file clean.md"
+  printf '%s' "$command_text" | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
+  for hook in "${hooks[@]}"; do
+    (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" "$hook" \
+      < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
+    [ ! -s "$stderr_log" ] && [ ! -s "$stdout_log" ] || fail "printf data must not block a clean publication"
+  done
+
   # 없는 파일은 건너뛰되, 존재하는 대상을 읽지 못하면 기존 fail-closed 계약을 지킨다.
   # 디렉터리는 권한 우회 여부와 무관하게 cat이 실패하므로 읽기 실패 대역으로 쓴다.
   mkdir "$sandbox/unreadable body.md"
