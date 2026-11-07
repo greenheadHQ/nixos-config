@@ -60,6 +60,10 @@ fi
 
 # ERR trap — 컨테이너 자동 복구
 cleanup() {
+  # 미리보기의 조회 실패는 원래 오류만 전달하고 서비스 복구·알림을 실행하지 않는다.
+  if $DRY_RUN; then
+    return 0
+  fi
   local recovery_msg=""
   if ! podman container inspect "$CONTAINER_NAME" --format '{{.State.Running}}' 2>/dev/null | grep -q true; then
     echo "Restarting container after failure..."

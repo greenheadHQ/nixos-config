@@ -682,6 +682,7 @@ run_test "copyparty-update rejects unknown option with env wired" test_copyparty
 run_test "copyparty-update rejects excess argument with env wired" test_copyparty_update_rejects_excess_argument_with_env
 run_test "copyparty-update no-args preserves existing update flow" test_copyparty_update_no_args_preserves_existing_update_flow
 run_test "copyparty-update --dry-run skips mutating boundaries" test_copyparty_update_dry_run_skips_mutating_boundaries
+run_test "copyparty-update failed dry-run preserves stopped service" test_copyparty_update_dry_run_failure_preserves_stopped_service
 run_test "uptime-kuma-update --help exits 0 without side effects" test_uptime_kuma_update_help_flag_exits_zero_without_side_effects
 run_test "uptime-kuma-update rejects unknown option" test_uptime_kuma_update_rejects_unknown_option
 run_test "uptime-kuma-update rejects excess argument" test_uptime_kuma_update_rejects_excess_argument
@@ -691,6 +692,7 @@ run_test "uptime-kuma-update rejects unknown option with env wired" test_uptime_
 run_test "uptime-kuma-update rejects excess argument with env wired" test_uptime_kuma_update_rejects_excess_argument_with_env
 run_test "uptime-kuma-update no-args preserves existing update flow" test_uptime_kuma_update_no_args_preserves_existing_update_flow
 run_test "uptime-kuma-update --dry-run skips mutating boundaries" test_uptime_kuma_update_dry_run_skips_mutating_boundaries
+run_test "uptime-kuma-update failed dry-run preserves stopped service" test_uptime_kuma_update_dry_run_failure_preserves_stopped_service
 run_test "karakeep-update --help exits 0 without side effects" test_karakeep_update_help_flag_exits_zero_without_side_effects
 run_test "karakeep-update rejects unknown option" test_karakeep_update_rejects_unknown_option
 run_test "karakeep-update rejects excess argument" test_karakeep_update_rejects_excess_argument
@@ -701,6 +703,7 @@ run_test "karakeep-update rejects excess argument with env wired" test_karakeep_
 run_test "karakeep-update no-args still requires ack-bridge-risk" test_karakeep_update_no_args_still_requires_ack_bridge_risk
 run_test "karakeep-update ack-bridge-risk preserves existing update flow" test_karakeep_update_ack_bridge_risk_preserves_existing_update_flow
 run_test "karakeep-update --dry-run skips mutating boundaries" test_karakeep_update_dry_run_skips_mutating_boundaries
+run_test "karakeep-update failed dry-run preserves stopped service" test_karakeep_update_dry_run_failure_preserves_stopped_service
 
 # ═══════════════════════════════════════════════════════════════════
 # add-host.sh — NixOS 분기 default.nix 생성 (#1382)
