@@ -11,7 +11,7 @@ pkgs.testers.runNixOSTest {
   nodes.machine = {
     # 실제 디스크 대신 VM 내부의 합성 bind mount를 사용한다. 부팅 때는 마운트하지 않는다.
     virtualisation.fileSystems.${mountPoint} = {
-      device = "/srv/copyparty-mount-source";
+      device = "/srv/copyparty-mount-source/data";
       fsType = "none";
       options = [
         "bind"
@@ -46,13 +46,17 @@ pkgs.testers.runNixOSTest {
         machine.succeed("test -d " + quoted_mount)
         machine.fail("mountpoint -q " + quoted_mount)
         machine.succeed("test ! -e /srv/copyparty-mount-source")
+        # systemd는 없는 bind source를 자동 생성하므로 부모를 일반 파일로 막아 ENOTDIR를 보장한다.
+        machine.succeed("touch /srv/copyparty-mount-source")
+        machine.succeed("test -f /srv/copyparty-mount-source")
         machine.fail("systemctl start copyparty-fixture.service")
         machine.succeed("systemctl is-failed " + mount_unit)
         machine.succeed("test ! -e /run/copyparty-started")
 
     with subtest("마운트가 성공하면 같은 서비스가 시작한다"):
-        machine.succeed("mkdir -p /srv/copyparty-mount-source")
-        machine.succeed("touch /srv/copyparty-mount-source/fixture-data")
+        machine.succeed("rm /srv/copyparty-mount-source")
+        machine.succeed("mkdir -p /srv/copyparty-mount-source/data")
+        machine.succeed("touch /srv/copyparty-mount-source/data/fixture-data")
         machine.succeed("systemctl reset-failed " + mount_unit + " copyparty-fixture.service")
         machine.succeed("systemctl start copyparty-fixture.service")
         machine.wait_for_unit("copyparty-fixture.service")
