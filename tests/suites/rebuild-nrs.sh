@@ -1430,7 +1430,7 @@ run_nixos_no_change_gcroot_nrs() {
 test_nixos_nrs_no_changes_preserves_links_without_hm_gcroot() {
   local sandbox home_dir repo_root worktree_root stub_dir current_target relink_log lock_file output
   setup_nixos_no_change_gcroot_fixture
-  # 복원이 실제로 실패하는 대역으로, guard 없이는 링크가 제거되는 경로를 검증한다.
+  # 복원 실패 대역을 두고, HMF 근거가 없으면 복원을 호출하지 않는지 검증한다.
   printf '\nexit 1\n' >> "$home_dir/.local/bin/nrs-relink"
   output=$(run_nixos_no_change_gcroot_nrs)
 
@@ -1450,7 +1450,12 @@ test_nixos_nrs_no_changes_restores_when_hm_gcroot_present() {
 
   assert_contains "$output" 'No changes to apply'
   assert_file_contains "$relink_log" restore
-  [[ ! -L "$home_dir/.claude/CLAUDE.md" ]] || fail "expected stale link cleanup before restore"
+  assert_line_count "$relink_log" restore 1
+  assert_file_contains "$relink_log" needs-restore
+  # 호출만 기록하는 gate fixture다. 실제 복원은 external-worktree 회귀에서 검증한다.
+  # 복원기 호출 전 선삭제하지 않아 실패해도 기존 링크를 잃지 않아야 한다.
+  [[ "$(readlink "$home_dir/.claude/CLAUDE.md")" == "$worktree_root/CLAUDE.md" ]] || fail "expected existing link preserved until restore replaces it"
+  assert_file_contains "$home_dir/.claude/CLAUDE.md" 'preserved source'
   assert_file_contains "$worktree_root/CLAUDE.md" 'preserved source'
 }
 
