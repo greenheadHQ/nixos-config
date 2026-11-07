@@ -41,6 +41,21 @@ run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
 run_test "wt wrapper ignores runtime HOME for real script" test_wt_wrapper_ignores_runtime_home_for_real_script
 run_test "managed plugin skill helper rejects duplicate matches" test_managed_plugin_skill_link_requires_single_match
 run_test "rebuild-common exports public API" test_rebuild_common_exports_public_api
+run_test "gitleaks CI scans commits without changing checkout" test_gitleaks_ci_scans_commits_without_mutating_checkout
+run_test "gitleaks CI detects committed content with empty staging" test_gitleaks_ci_detects_committed_content_with_empty_staging
+run_test "gitleaks CI keeps deleted commit content in scope" test_gitleaks_ci_keeps_deleted_commit_content_in_scope
+run_test "gitleaks CI scans renamed paths and preserves allowlist" test_gitleaks_ci_scans_renamed_paths_and_preserves_allowlist
+run_test "gitleaks CI scans merge-only additions" test_gitleaks_ci_scans_merge_only_additions
+run_test "gitleaks CI preserves base exceptions after merge" test_gitleaks_ci_preserves_base_exceptions_after_merge
+run_test "gitleaks CI preserves conflict resolution fingerprints" test_gitleaks_ci_preserves_conflict_resolution_fingerprints
+run_test "gitleaks CI keeps deleted side commit content in scope" test_gitleaks_ci_keeps_deleted_side_commit_content_in_scope
+run_test "gitleaks CI rejects octopus merges" test_gitleaks_ci_rejects_octopus_merges
+run_test "gitleaks CI preserves commit fingerprint exceptions" test_gitleaks_ci_preserves_commit_fingerprint_exceptions
+run_test "gitleaks CI rejects invalid policy material" test_gitleaks_ci_rejects_invalid_policy_material
+run_test "gitleaks CI rejects scanner errors without raw output" test_gitleaks_ci_rejects_scanner_errors_without_raw_output
+run_test "gitleaks CI rejects internal git log failure" test_gitleaks_ci_rejects_git_log_failure_reported_as_success
+run_test "gitleaks CI preserves Git adapter exit and delegation" test_gitleaks_ci_preserves_git_adapter_exit_and_delegation
+run_test "gitleaks CI rejects bad refs and limits history" test_gitleaks_ci_rejects_bad_refs_and_limits_history
 run_test "nrs-lock status without lock" test_nrs_lock_status_without_lock
 run_test "nrs-lock retains stopped process before timeout" test_nrs_lock_status_retains_stopped_process_before_timeout
 run_test "nrs-lock stale after timeout with stopped process" test_nrs_lock_status_stale_after_timeout_with_stopped_process
