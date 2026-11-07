@@ -93,6 +93,7 @@ run_driver "issuing-codex-pairing-code-tests" bash tests/run-issuing-codex-pairi
 run_driver "anki-mcp-tests" bash tests/run-anki-mcp-tests.sh
 
 run_driver "anki-card-links-tests" bash tests/run-anki-card-links-tests.sh
+run_driver "finder-ghostty-tests" bash tests/run-finder-ghostty-tests.sh
 
 run_driver "anki-code-highlight-tests" bash tests/run-anki-code-highlight-tests.sh
 
