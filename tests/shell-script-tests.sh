@@ -474,6 +474,10 @@ run_test "karakeep fallback-sync selects exact fragment among variants" test_kar
 run_test "karakeep fallback-sync fragment preserves path and query rules" test_karakeep_fallback_sync_fragment_preserves_path_and_query_rules
 run_test "karakeep fallback-sync upload failure preserves queue" test_karakeep_fallback_sync_upload_failure_preserves_queue_and_records_notify_state
 run_test "karakeep fallback-sync GC removes expired state" test_karakeep_fallback_sync_gc_removes_only_expired_state_entries
+run_test "karakeep fallback-sync state lookup errors stop and retry" test_karakeep_fallback_sync_state_lookup_errors_stop_and_retry
+run_test "karakeep fallback-sync notify errors preserve other keys" test_karakeep_fallback_sync_notify_state_errors_preserve_other_keys
+run_test "karakeep fallback-sync notify timestamp validation" test_karakeep_fallback_sync_notify_timestamp_validation
+run_test "karakeep fallback-sync GC errors preserve originals" test_karakeep_fallback_sync_gc_errors_preserve_original_and_remove_temps
 run_test "karakeep fallback-sync unmatched notification is deduplicated" test_karakeep_fallback_sync_unmatched_notification_is_deduplicated
 run_test "karakeep fallback-sync canonical beats body link in either queue order" test_karakeep_fallback_sync_canonical_beats_body_link_in_either_queue_order
 run_test "karakeep fallback-sync body link without identifier is held" test_karakeep_fallback_sync_body_link_without_identifier_is_held

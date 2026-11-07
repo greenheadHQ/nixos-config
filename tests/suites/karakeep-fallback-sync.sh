@@ -68,7 +68,242 @@ _karakeep_fallback_sync_run() {
     FALLBACK_SYNC_TEST_NOTIFICATIONS="$sandbox/notifications.log" \
     FALLBACK_SYNC_TEST_HTTP_CODE="${FALLBACK_SYNC_TEST_HTTP_CODE:-200}" \
     FALLBACK_SYNC_TEST_CURL_EXIT="${FALLBACK_SYNC_TEST_CURL_EXIT:-0}" \
+    FALLBACK_SYNC_TEST_FAULT_MODE="${FALLBACK_SYNC_TEST_FAULT_MODE:-}" \
+    FALLBACK_SYNC_TEST_FAULT_TARGET="${FALLBACK_SYNC_TEST_FAULT_TARGET:-}" \
+    FALLBACK_SYNC_TEST_SANDBOX="$sandbox" \
     bash -eu -o pipefail "$_karakeep_fallback_sync_script" > "$stdout_path" 2> "$stderr_path"
+}
+
+# 실제 스크립트의 각 상태 접근 단계만 실패시킨다. GC 뒤 조회 실패와 GC 자체 실패를 구분한다.
+_karakeep_fallback_sync_install_state_faults() {
+  local sandbox="$1" real_awk real_cat real_mv
+  real_awk=$(command -v awk)
+  real_cat=$(command -v cat)
+  real_mv=$(command -v mv)
+  cat > "$sandbox/stub-bin/awk" <<STUB
+#!/usr/bin/env bash
+set -euo pipefail
+last="\${!#}"
+mode="\${FALLBACK_SYNC_TEST_FAULT_MODE:-}"
+target="\${FALLBACK_SYNC_TEST_FAULT_TARGET:-}"
+if [[ "\$mode" == notify-* && "\$mode" != notify-upload-read && "\$*" == *og:url* ]]; then exit 2; fi
+if [[ "\$last" == */fallback-notify-state.tsv && "\$*" == *key=* ]]; then
+  : > "\$FALLBACK_SYNC_TEST_SANDBOX/notification-phase"
+  if [[ "\$mode" == notify-timestamp && "\$*" == *'\$1 == key'* ]]; then
+    cat "\$FALLBACK_SYNC_TEST_SANDBOX/queried-timestamp"
+    exit 0
+  fi
+  if [[ ( "\$mode" == notify-read || "\$mode" == notify-upload-read ) && "\$*" == *'\$1 == key'* ]]; then exit 2; fi
+  if [[ "\$mode" == notify-transform && "\$*" == *'\$1 != key'* ]]; then
+    printf 'partial\n'
+    exit 2
+  fi
+fi
+if [[ "\$last" == */"\$target" ]]; then
+  if [[ "\$mode" == lookup && "\$*" == *hash=* ]] ||
+     [[ "\$mode" == gc-read && "\$*" == *cutoff=* ]] ||
+     [[ "\$mode" == gc-write && "\$*" == *cutoff=* ]]; then
+    printf 'partial\n'
+    exit 2
+  fi
+fi
+exec "$real_awk" "\$@"
+STUB
+  cat > "$sandbox/stub-bin/cat" <<STUB
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${FALLBACK_SYNC_TEST_FAULT_MODE:-}" == gc-read && "\${!#}" == */"\$FALLBACK_SYNC_TEST_FAULT_TARGET" ]]; then
+  printf 'partial\n'
+  exit 2
+fi
+exec "$real_cat" "\$@"
+STUB
+  cat > "$sandbox/stub-bin/mv" <<STUB
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${!#}" == */"\${FALLBACK_SYNC_TEST_FAULT_TARGET:-}" ]]; then
+  if [[ "\${FALLBACK_SYNC_TEST_FAULT_MODE:-}" == gc-rename ]] ||
+     [[ "\${FALLBACK_SYNC_TEST_FAULT_MODE:-}" == notify-rename && -e "\$FALLBACK_SYNC_TEST_SANDBOX/notification-phase" ]]; then
+    exit 2
+  fi
+fi
+exec "$real_mv" "\$@"
+STUB
+  chmod +x "$sandbox/stub-bin/awk" "$sandbox/stub-bin/cat" "$sandbox/stub-bin/mv"
+  cat >> "$sandbox/service-lib" <<'STUB'
+printf() {
+  if [[ "${FALLBACK_SYNC_TEST_FAULT_MODE:-}" == gc-write && "${2:-}" == fault-row ]] ||
+     [[ "${FALLBACK_SYNC_TEST_FAULT_MODE:-}" == notify-write && "${2:-}" == match-error:* ]]; then
+    builtin printf 'partial-write\n'
+    return 1
+  fi
+  builtin printf "$@"
+}
+STUB
+}
+
+_karakeep_fallback_sync_assert_state_error_preserved() {
+  local sandbox="$1" state_name
+  [ ! -s "$sandbox/notifications.log" ] || fail "상태 확인 실패 시 일반 알림을 보내면 안 된다"
+  cmp -s "$sandbox/queue-before" "$sandbox/state/failed-urls.txt" || fail "상태 오류가 큐를 변경했다"
+  for state_name in fallback-processed.tsv fallback-unmatched-notified.tsv fallback-notify-state.tsv; do
+    cmp -s "$sandbox/$state_name.before" "$sandbox/state/$state_name" || fail "상태 오류가 원본을 변경했다: $state_name"
+  done
+  [ -z "$(find "$sandbox/state" -maxdepth 1 -name 'tmp.*' -print)" ] || fail "상태 오류 뒤 임시 파일이 남았다"
+  assert_contains "$(cat "$sandbox/stderr")" "Fallback sync state error"
+}
+
+_karakeep_fallback_sync_snapshot_state() {
+  local sandbox="$1" state_name
+  for state_name in fallback-processed.tsv fallback-unmatched-notified.tsv fallback-notify-state.tsv; do
+    touch "$sandbox/state/$state_name"
+    cp "$sandbox/state/$state_name" "$sandbox/$state_name.before"
+  done
+}
+
+test_karakeep_fallback_sync_state_lookup_errors_stop_and_retry() {
+  local sandbox state_name present file_hash now rc
+  for state_name in fallback-processed.tsv fallback-unmatched-notified.tsv; do
+    for present in yes no; do
+      sandbox=$(new_sandbox)
+      _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+      _karakeep_fallback_sync_write_queue "$sandbox" "https://example.com/fixture"
+      if [ "$state_name" = fallback-processed.tsv ]; then
+        printf '<link rel="canonical" href="https://example.com/fixture">\n' > "$sandbox/fallback/archive.html"
+      else
+        printf '<title>합성 자료</title>\n' > "$sandbox/fallback/archive.html"
+      fi
+      if [ "$present" = yes ]; then
+        file_hash=$(sha256sum "$sandbox/fallback/archive.html" | cut -d ' ' -f 1)
+        now=$(date +%s)
+        if [ "$state_name" = fallback-processed.tsv ]; then
+          printf '%s\thttps://example.com/fixture\t%s\t%s\n' "$file_hash" "$sandbox/fallback/archive.html" "$now" > "$sandbox/state/$state_name"
+        else
+          printf '%s\t%s\t%s\n' "$file_hash" "$now" "$sandbox/fallback/archive.html" > "$sandbox/state/$state_name"
+        fi
+      fi
+      _karakeep_fallback_sync_snapshot_state "$sandbox"
+      _karakeep_fallback_sync_install_state_faults "$sandbox"
+      rc=0
+      FALLBACK_SYNC_TEST_FAULT_MODE=lookup FALLBACK_SYNC_TEST_FAULT_TARGET="$state_name" \
+        _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" || rc=$?
+      [ "$rc" -ne 0 ] || fail "상태 조회 오류가 성공으로 종료됐다: $state_name/$present"
+      [ ! -s "$sandbox/curl.log" ] || fail "상태 확인 실패 뒤 업로드했다"
+      _karakeep_fallback_sync_assert_state_error_preserved "$sandbox"
+
+      _karakeep_fallback_sync_run "$sandbox" "$sandbox/retry.stdout" "$sandbox/retry.stderr" || fail "조회 복구 뒤 재시도가 실패했다"
+      if [ "$present" = yes ]; then
+        [ ! -s "$sandbox/curl.log" ] && [ ! -s "$sandbox/notifications.log" ] || fail "기존 기록을 무시하고 재처리했다"
+      elif [ "$state_name" = fallback-processed.tsv ]; then
+        _karakeep_fallback_sync_assert_relinked "$sandbox" "https://example.com/fixture"
+      else
+        _karakeep_fallback_sync_assert_held "$sandbox" "원문 식별자 없음"
+      fi
+    done
+  done
+}
+
+test_karakeep_fallback_sync_notify_state_errors_preserve_other_keys() {
+  local sandbox phase now rc curl_exit
+  for phase in read transform write rename upload-read; do
+    sandbox=$(new_sandbox)
+    _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+    _karakeep_fallback_sync_write_queue "$sandbox" "https://example.com/fixture"
+    printf '<link rel="canonical" href="https://example.com/fixture">\n' > "$sandbox/fallback/archive.html"
+    now=$(date +%s)
+    printf 'other-first\t%s\nother-last\t%s\n' "$now" "$now" > "$sandbox/state/fallback-notify-state.tsv"
+    _karakeep_fallback_sync_snapshot_state "$sandbox"
+    _karakeep_fallback_sync_install_state_faults "$sandbox"
+    rc=0
+    curl_exit=0
+    [ "$phase" != upload-read ] || curl_exit=7
+    FALLBACK_SYNC_TEST_FAULT_MODE="notify-$phase" FALLBACK_SYNC_TEST_FAULT_TARGET=fallback-notify-state.tsv FALLBACK_SYNC_TEST_CURL_EXIT="$curl_exit" \
+      _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" || rc=$?
+    [ "$rc" -ne 0 ] || fail "알림 억제 상태 오류가 성공으로 종료됐다: $phase"
+    if [ "$phase" = upload-read ]; then
+      # 업로드 실패를 알리는 별도 호출부도 상태 오류를 최상위까지 전달해야 한다.
+      [ "$(wc -l < "$sandbox/curl.log" | tr -d ' ')" = 1 ] || fail "실패한 업로드를 반복했다"
+    else
+      [ ! -s "$sandbox/curl.log" ] || fail "판정 실패 뒤 업로드했다"
+    fi
+    _karakeep_fallback_sync_assert_state_error_preserved "$sandbox"
+    : > "$sandbox/curl.log"
+    _karakeep_fallback_sync_run "$sandbox" "$sandbox/retry.stdout" "$sandbox/retry.stderr" || fail "상태 복구 뒤 재시도가 실패했다"
+    _karakeep_fallback_sync_assert_relinked "$sandbox" "https://example.com/fixture"
+  done
+}
+
+test_karakeep_fallback_sync_notify_timestamp_validation() {
+  local sandbox previous expected now rc notification_count
+  now=$(date +%s)
+  while IFS=$'\t' read -r previous expected; do
+    sandbox=$(new_sandbox)
+    _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+    _karakeep_fallback_sync_write_queue "$sandbox" "https://example.com/fixture"
+    printf '<link rel="canonical" href="https://example.com/fixture">\n' > "$sandbox/fallback/archive.html"
+    printf 'other-first\t%s\nother-last\t%s\n' "$now" "$now" > "$sandbox/state/fallback-notify-state.tsv"
+    _karakeep_fallback_sync_snapshot_state "$sandbox"
+    _karakeep_fallback_sync_install_state_faults "$sandbox"
+    # GC 뒤의 조회 값만 바꿔 시각 손상을 주입한다. 없음은 빈 조회 결과다.
+    [ "$previous" != absent ] || previous=""
+    printf '%s\n' "$previous" > "$sandbox/queried-timestamp"
+    rc=0
+    FALLBACK_SYNC_TEST_FAULT_MODE=notify-timestamp FALLBACK_SYNC_TEST_FAULT_TARGET=fallback-notify-state.tsv \
+      _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" || rc=$?
+    [ ! -s "$sandbox/curl.log" ] || fail "판정 실패 뒤 업로드했다"
+    cmp -s "$sandbox/queue-before" "$sandbox/state/failed-urls.txt" || fail "시각 판정이 큐를 변경했다"
+    [ ! -s "$sandbox/state/fallback-processed.tsv" ] && [ ! -s "$sandbox/state/fallback-unmatched-notified.tsv" ] \
+      || fail "판정 실패를 처리·보류 기록에 남겼다"
+    if [ "$expected" = error ]; then
+      [ "$rc" -ne 0 ] || fail "잘못된 억제 시각을 정상 처리했다: $previous"
+      _karakeep_fallback_sync_assert_state_error_preserved "$sandbox"
+    elif [ "$expected" = suppress ]; then
+      [ "$rc" -eq 0 ] && [ ! -s "$sandbox/notifications.log" ] || fail "정상 억제 시각을 무시했다: $previous"
+      cmp -s "$sandbox/fallback-notify-state.tsv.before" "$sandbox/state/fallback-notify-state.tsv" \
+        || fail "억제 중인 기록을 교체했다"
+    else
+      [ "$rc" -eq 0 ] || fail "정상 알림 허용 시각을 거부했다: $previous"
+      notification_count=$(grep -Fc send_notification "$sandbox/notifications.log" || true)
+      [ "$notification_count" = 1 ] || fail "정상 시각·기록 없음에서 알림을 허용하지 않았다"
+      grep -Fq "match-error:" "$sandbox/state/fallback-notify-state.tsv" || fail "허용한 알림 기록이 없다"
+      [ "$(grep -Fc 'other-' "$sandbox/state/fallback-notify-state.tsv")" = 2 ] || fail "다른 알림 키를 잃었다"
+    fi
+  done <<CASES
+08	error
+9999999999999999999	error
+1000000000000000000	error
+absent	allow
+0	allow
+$((now - 3600))	allow
+$now	suppress
+999999999999999999	suppress
+CASES
+}
+
+test_karakeep_fallback_sync_gc_errors_preserve_original_and_remove_temps() {
+  local sandbox phase state_name now rc
+  for state_name in fallback-processed.tsv fallback-unmatched-notified.tsv fallback-notify-state.tsv; do
+    for phase in read write rename; do
+      sandbox=$(new_sandbox)
+      _karakeep_fallback_sync_prepare_sandbox "$sandbox"
+      _karakeep_fallback_sync_write_queue "$sandbox" "https://example.com/fixture"
+      printf '<title>합성 자료</title>\n' > "$sandbox/fallback/archive.html"
+      now=$(date +%s)
+      case "$state_name" in
+        fallback-processed.tsv) printf 'fault-row\thttps://example.com/fixture\t%s\t%s\n' "$sandbox/fallback/archive.html" "$now" ;;
+        fallback-unmatched-notified.tsv) printf 'fault-row\t%s\t%s\n' "$now" "$sandbox/fallback/archive.html" ;;
+        fallback-notify-state.tsv) printf 'fault-row\t%s\n' "$now" ;;
+      esac > "$sandbox/state/$state_name"
+      _karakeep_fallback_sync_snapshot_state "$sandbox"
+      _karakeep_fallback_sync_install_state_faults "$sandbox"
+      rc=0
+      FALLBACK_SYNC_TEST_FAULT_MODE="gc-$phase" FALLBACK_SYNC_TEST_FAULT_TARGET="$state_name" \
+        _karakeep_fallback_sync_run "$sandbox" "$sandbox/stdout" "$sandbox/stderr" || rc=$?
+      [ "$rc" -ne 0 ] || fail "GC 오류가 성공으로 종료됐다: $state_name/$phase"
+      [ ! -s "$sandbox/curl.log" ] || fail "GC 실패 뒤 업로드했다"
+      _karakeep_fallback_sync_assert_state_error_preserved "$sandbox"
+    done
+  done
 }
 
 # SingleFile 확장 기본 출력처럼 저장 주석을 <html> 직후에 두고 각 줄 끝에 공백을 남긴다.
