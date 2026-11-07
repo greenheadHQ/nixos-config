@@ -26,6 +26,12 @@ Mac에는 nix-darwin을 쓰고, macOS와 NixOS의 사용자 설정은 Home Manag
 
 **Mac 자동화.** [Hammerspoon](./modules/darwin/programs/hammerspoon/)으로 입력 소스 전환, 한글 입력 중 터미널 단축키 처리, Finder의 현재 폴더에서 Ghostty 열기를 구현했습니다. [폴더 액션](./modules/darwin/programs/folder-actions/)은 launchd로 비디오 압축과 GIF 변환을 처리하고, 개인용 Mac에서는 스크린샷을 Immich에 업로드합니다.
 
+**Ghostty와 함께 쓰는 Rex.** 개인 Mac의 공식 Rex Beta 앱은 초대 페이지의 DMG로 설치하고 앱 자체 업데이터로 갱신합니다. [Home Manager](./modules/darwin/programs/rex/)는 앱에 포함된 CLI, 분할 단축키, terminfo와 SSH 호환 설정을 관리합니다. 업무 Mac에는 적용하지 않으며 Ghostty와 기존 실행 단축키는 유지합니다. [MiniPC 개인 서버](./modules/nixos/programs/rex/)는 기존 사용자 계정으로 실행되고 로그아웃 뒤에도 세션을 유지합니다. 원격 접속은 Rex 내장 Tailscale을 통해 등록한 본인 계정만 허용합니다.
+
+MiniPC의 최초 적용 후 `rex server status`에 나오는 링크에서 기존 개인 Tailscale 계정으로 로그인합니다. 등록된 실제 주소를 확인한 뒤 Mac의 Rex에서 **Add Remote Host…**로 연결합니다. 로그인 상태는 Nix store 밖의 사용자 상태 디렉터리에 저장되며, 익명 TCP 포트나 공개 주소는 열지 않습니다. `rex-minipc`라는 별도 Tailscale 장치를 쓰므로 기존 MiniPC 서비스의 주소·포트에는 영향을 주지 않습니다.
+
+`nrs`는 살아 있는 Rex 서버를 재시작하지 않습니다. MiniPC 바이너리 업데이트 후에는 `rex ls`로 세션을 확인하고, 세션을 모두 정리한 다음 `systemctl --user restart rex`로 새 버전을 실행합니다. Mac 앱 업데이트 후에는 `rex version`과 `rex terminfo status`를 확인합니다. Mac의 CLI는 앱 버전을 따르고 terminfo는 `flake.lock`에 고정되므로, 터미널 정의가 바뀐 업데이트에서는 공식 Rex input도 함께 갱신해야 합니다.
+
 **홈서버와 Anki.** MiniPC에는 사진용 Immich, 북마크용 Karakeep, 파일용 Copyparty 설정이 있습니다. [홈서버 옵션](./modules/nixos/options/homeserver.nix)으로 서비스를 구성하고 [NixOS 설정](./modules/nixos/configuration.nix)에서 활성화합니다. [Anki 호스트](./modules/nixos/programs/anki-host/README.md)에는 동기화, 백업, 채팅 앱에서 노트를 조회하고 수정하는 MCP 서버가 포함되어 있습니다.
 
 **Claude Code와 Codex.** [Claude](./modules/shared/programs/claude/)와 [Codex](./modules/shared/programs/codex/) 모듈에서 설정, 훅, 공통 스킬을 관리합니다. [저장소 전용 스킬](./.claude/skills/)에는 이 환경을 관리하는 절차를 두어, 설정과 함께 유지합니다.

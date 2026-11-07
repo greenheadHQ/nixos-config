@@ -40,6 +40,7 @@ in
     ../shared/programs/yazi # TUI 파일 매니저
 
     # NixOS 전용
+    ./programs/rex # 사용자 계정의 영속 터미널 서버
     ./programs/ssh-client # macOS SSH 접속 설정
   ];
 
