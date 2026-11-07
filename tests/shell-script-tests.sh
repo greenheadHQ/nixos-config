@@ -732,6 +732,7 @@ run_test "codex-config retired keys loader" test_codex_config_retired_keys_loade
 # codex-config 섹션만 skip + profile runner 안내 (기본 shell suite 진입은 유지).
 if codex_config_tomlkit_available; then
   run_test "codex-config sync fixtures" test_codex_config_sync_fixtures
+  run_test "codex-config sync normalizes types without repeated writes" test_codex_config_sync_type_normalization
   run_test "codex-config sync no-op preserves bytes" test_codex_config_sync_noop_preserves_bytes
   run_test "codex-config sync rewrites on bad mode" test_codex_config_sync_rejects_bad_mode
   run_test "codex-config sync rewrites on symlink" test_codex_config_sync_rejects_symlink
