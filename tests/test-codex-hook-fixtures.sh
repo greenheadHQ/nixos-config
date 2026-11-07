@@ -1156,6 +1156,96 @@ $stderr_head"
   done
 }
 
+test_pinning_body_file_static_paths() {
+  local sandbox fixture command_text expected actual shell hook content body_file label output denied_content
+  sandbox=$(new_hook_sandbox)
+  local matrix="$FIXTURE_DIR/body-file-paths.json"
+  local stdout_log="$sandbox/body-path-stdout.log" stderr_log="$sandbox/body-path-stderr.log"
+  local hooks=(
+    "$REPO_ROOT/modules/shared/programs/claude/files/hooks/pinning-guard.sh"
+    "$REPO_ROOT/modules/shared/programs/codex/files/hooks/pinning-guard.sh"
+  )
+  denied_content=$(jq -r '._fixture_existing_content' "$FIXTURE_DIR/stdin/pretooluse-pinning-guard-codex-bash-bodyfile-deny.json")
+  for shell in bash zsh; do
+    command -v "$shell" >/dev/null || fail "body path fixture requires $shell"
+  done
+  while IFS= read -r fixture; do
+    command_text=$(printf '%s' "$fixture" | jq -r .command)
+    expected=$(printf '%s' "$fixture" | jq -r '.paths[]')
+    for shell in bash zsh; do
+      actual=$(cd "$sandbox" && BODY_TEST_VALUE=body.md "$shell" -f -c \
+        '. "$1"; pinning_extract_body_file_paths "$2"' _ "$PINNING_LIB_REPO_FILE" "$command_text")
+      assert_eq "$actual" "$expected" "body path tokenization: $shell / $command_text"
+    done
+    printf '%s' "$command_text" | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
+    for content in '검증된 변경 내용입니다.' "$denied_content"; do
+      while IFS= read -r body_file; do
+        [ -n "$body_file" ] || continue
+        printf '%s\n' "$content" > "$sandbox/$body_file"
+      done <<< "$expected"
+      for hook in "${hooks[@]}"; do
+        (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "BODY_TEST_VALUE=body.md" "$hook" \
+          < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
+        [ ! -s "$stderr_log" ] || fail "body path guard wrote stderr"
+        if [ -n "$expected" ] && [ "$content" = "$denied_content" ]; then
+          assert_eq "$(jq -r '.hookSpecificOutput.permissionDecision' "$stdout_log")" deny "body path guard must inspect content"
+          output=$(jq -r '.hookSpecificOutput.permissionDecisionReason' "$stdout_log")
+          [[ "$output" == *'(via --body-file)'* ]] || fail "guard denied something other than the body file"
+        else
+          [ ! -s "$stdout_log" ] || fail "clean or unsupported body path should pass"
+        fi
+      done
+    done
+    [ ! -e "$sandbox/tokenization-side-effect" ] || fail "body path parser executed command substitution"
+  done < <(jq -c '.[]' "$matrix")
+
+  # 바깥 파일에서 먼저 거부되면 내부 파일 누락을 숨길 수 있으므로 각각 따로 검사한다.
+  command_text='gh pr create --title "$(gh issue create --body-file inner.md)" --body-file outer.md'
+  printf '%s' "$command_text" | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
+  for label in outer inner; do
+    printf 'clean\n' > "$sandbox/outer.md"
+    printf 'clean\n' > "$sandbox/inner.md"
+    printf '%s\n' "$denied_content" > "$sandbox/$label.md"
+    for hook in "${hooks[@]}"; do
+      (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" "$hook" \
+        < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
+      [ ! -s "$stderr_log" ] || fail "independent body path guard wrote stderr"
+      assert_eq "$(jq -r '.hookSpecificOutput.permissionDecision' "$stdout_log")" deny "each body file must be inspected"
+      output=$(jq -r '.hookSpecificOutput.permissionDecisionReason' "$stdout_log")
+      [[ "$output" == *"$label.md (via --body-file)"* ]] || fail "guard denied a different body file"
+    done
+  done
+
+  # printf에 넘긴 정적 데이터는 파일이 실제로 있어도 게시 본문이 아니다.
+  printf '%s\n' "$denied_content" > "$sandbox/example draft.md"
+  printf 'clean\n' > "$sandbox/clean.md"
+  command_text="printf '%s\\n' --body-file 'example draft.md'; gh issue create --body-file clean.md"
+  printf '%s' "$command_text" | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
+  for hook in "${hooks[@]}"; do
+    (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" "$hook" \
+      < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
+    [ ! -s "$stderr_log" ] && [ ! -s "$stdout_log" ] || fail "printf data must not block a clean publication"
+  done
+
+  # 없는 파일은 건너뛰되, 존재하는 대상을 읽지 못하면 기존 fail-closed 계약을 지킨다.
+  # 디렉터리는 권한 우회 여부와 무관하게 cat이 실패하므로 읽기 실패 대역으로 쓴다.
+  mkdir "$sandbox/unreadable body.md"
+  for label in missing unreadable; do
+    printf 'gh pr create --body-file "%s body.md"' "$label" \
+      | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
+    for hook in "${hooks[@]}"; do
+      (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" "$hook" \
+        < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
+      [ ! -s "$stderr_log" ] || fail "body path read failure wrote stderr"
+      if [ "$label" = unreadable ]; then
+        assert_eq "$(jq -r '.hookSpecificOutput.permissionDecision' "$stdout_log")" deny "body path read failure must deny"
+      else
+        [ ! -s "$stdout_log" ] || fail "missing body file should keep the existing pass contract"
+      fi
+    done
+  done
+}
+
 test_pretooluse_pinning_guard_meta_behavioral() {
   local clean_fixture="$FIXTURE_DIR/stdin/pretooluse-pinning-guard-codex-applypatch-clean.json"
   local sandbox stdout_log stderr_log exit_code unexpected event decision reason
@@ -2110,6 +2200,8 @@ run_test "pinning-alert behavioral (#606)" \
   test_pinning_alert_behavioral
 run_test "pretooluse pinning-guard behavioral (#587)" \
   test_pretooluse_pinning_guard_behavioral
+run_test "pinning body file static paths (#1586)" \
+  test_pinning_body_file_static_paths
 run_test "pretooluse pinning-guard meta behavioral (#587)" \
   test_pretooluse_pinning_guard_meta_behavioral
 run_test "commit-msg pinning behavioral" \
