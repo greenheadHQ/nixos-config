@@ -117,6 +117,8 @@ run_test "wt plugin manifest GC keeps orphans when backup fails" test_wt_plugin_
 run_test "wt cleanup removes exact Claude local plugin manifest entries" test_wt_cleanup_removes_exact_claude_local_plugin_manifest_entries
 run_test "wt cleanup stops when plugin manifest cleanup fails" test_wt_cleanup_stops_when_plugin_manifest_cleanup_fails
 run_test "wt plugin manifest missing and invalid inputs are safe" test_wt_plugin_manifest_missing_and_invalid_are_safe
+run_test "Claude install activation respects dry-run" test_claude_install_activation_respects_dry_run
+run_test "Claude install activation propagates failures" test_claude_install_activation_propagates_failures
 run_test "codex activation .agents symlink guard static" test_codex_activation_agents_symlink_guard_static
 run_test "codex activation AGENTS keeps real entries" test_codex_activation_agents_keeps_real_entries
 run_test "codex activation AGENTS link contract" test_codex_activation_agents_link_contract
