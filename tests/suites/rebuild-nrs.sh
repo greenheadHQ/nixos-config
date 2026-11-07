@@ -180,6 +180,49 @@ EOF
   chmod +x "$stub_dir/sudo"
 }
 
+test_cleanup_build_artifacts_preserves_path_boundaries() {
+  local sandbox fixture_root target output name
+  sandbox=$(new_sandbox)
+  fixture_root="$sandbox/"$'repo space\'"\\\nline'
+  target="$sandbox/target"
+  mkdir -p "$fixture_root/nested" "$fixture_root/result-directory" "$target"
+  printf 'target content\n' > "$target/keep"
+  printf 'ordinary result\n' > "$fixture_root/result-file"
+  printf 'unrelated content\n' > "$fixture_root/spaced"
+  ln -s "$target" "$fixture_root/nested/result"
+  ln -s "$target" "$fixture_root/other-link"
+
+  local -a names=(result 'result spaced' "result'quote" 'result"quote' 'result\slash' $'result\nnewline')
+  for name in "${names[@]}"; do
+    ln -s "$target" "$fixture_root/$name"
+  done
+  output=$(
+    cd "$fixture_root"
+    # shellcheck source=/dev/null
+    source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/preview.sh"
+    log_info() { printf '%s\n' "$*"; }
+    FLAKE_PATH="$fixture_root" cleanup_build_artifacts
+  )
+  for name in "${names[@]}"; do
+    [[ ! -L "$fixture_root/$name" ]] || fail "expected result symlink to be removed"
+  done
+  assert_contains "$output" 'Removed 6 result symlink(s)'
+  assert_file_contains "$fixture_root/spaced" 'unrelated content'
+  assert_file_contains "$fixture_root/result-file" 'ordinary result'
+  assert_file_contains "$target/keep" 'target content'
+  [[ -d "$fixture_root/result-directory" ]] || fail "expected result directory to survive"
+  [[ -L "$fixture_root/nested/result" ]] || fail "expected nested result link to survive"
+  [[ -L "$fixture_root/other-link" ]] || fail "expected unrelated link to survive"
+
+  output=$(
+    # shellcheck source=/dev/null
+    source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/preview.sh"
+    log_info() { printf '%s\n' "$*"; }
+    FLAKE_PATH="$fixture_root" cleanup_build_artifacts
+  )
+  [[ -z "$output" ]] || fail "expected empty cleanup to be a quiet no-op"
+}
+
 test_rebuild_common_exports_public_api() {
   local sandbox output
   sandbox=$(new_sandbox)
@@ -1331,6 +1374,49 @@ test_darwin_nrs_no_changes_restores_when_hm_gcroot_present() {
   assert_contains "$output" "Restoring symlinks to nix store chain"
   assert_file_contains "$relink_log" "restore"
   [[ ! -L "$home_dir/.claude/CLAUDE.md" ]] || fail "expected stale worktree symlink to be removed when HM gcroot is present"
+}
+
+setup_nixos_no_change_gcroot_fixture() {
+  setup_darwin_no_change_gcroot_fixture
+  install_platform_nrs_entrypoint "$sandbox" nixos
+  cp "$stub_dir/darwin-rebuild" "$stub_dir/nixos-rebuild"
+  mkdir -p "$worktree_root"
+  printf 'preserved source\n' > "$worktree_root/CLAUDE.md"
+}
+
+run_nixos_no_change_gcroot_nrs() {
+  HOME="$home_dir" \
+  PATH="$stub_dir:$FIXTURE_DIR/bin:$PATH" \
+  DARWIN_CURRENT_SYSTEM="$current_target" \
+  NRS_RELINK_LOG="$relink_log" \
+  "$home_dir/.local/bin/nrs" --offline 2>&1
+}
+
+test_nixos_nrs_no_changes_preserves_links_without_hm_gcroot() {
+  local sandbox home_dir repo_root worktree_root stub_dir current_target relink_log lock_file output
+  setup_nixos_no_change_gcroot_fixture
+  # 복원이 실제로 실패하는 대역으로, guard 없이는 링크가 제거되는 경로를 검증한다.
+  printf '\nexit 1\n' >> "$home_dir/.local/bin/nrs-relink"
+  output=$(run_nixos_no_change_gcroot_nrs)
+
+  assert_contains "$output" 'Skipping symlink restore'
+  [[ ! -s "$relink_log" ]] || fail "expected no restore attempt without HM gcroot"
+  [[ -L "$home_dir/.claude/CLAUDE.md" ]] || fail "expected existing symlink to survive"
+  [[ "$(readlink "$home_dir/.claude/CLAUDE.md")" == "$worktree_root/CLAUDE.md" ]] || fail "expected unchanged link target"
+  assert_file_contains "$home_dir/.claude/CLAUDE.md" 'preserved source'
+  assert_file_contains "$worktree_root/CLAUDE.md" 'preserved source'
+}
+
+test_nixos_nrs_no_changes_restores_when_hm_gcroot_present() {
+  local sandbox home_dir repo_root worktree_root stub_dir current_target relink_log lock_file output
+  setup_nixos_no_change_gcroot_fixture
+  mkdir -p "$home_dir/.local/state/home-manager/gcroots/current-home"
+  output=$(run_nixos_no_change_gcroot_nrs)
+
+  assert_contains "$output" 'No changes to apply'
+  assert_file_contains "$relink_log" restore
+  [[ ! -L "$home_dir/.claude/CLAUDE.md" ]] || fail "expected stale link cleanup before restore"
+  assert_file_contains "$worktree_root/CLAUDE.md" 'preserved source'
 }
 
 test_darwin_nrs_no_changes_activates_when_codex_artifact_missing() {

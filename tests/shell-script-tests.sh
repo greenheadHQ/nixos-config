@@ -41,6 +41,7 @@ run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
 run_test "wt wrapper ignores runtime HOME for real script" test_wt_wrapper_ignores_runtime_home_for_real_script
 run_test "managed plugin skill helper rejects duplicate matches" test_managed_plugin_skill_link_requires_single_match
 run_test "rebuild-common exports public API" test_rebuild_common_exports_public_api
+run_test "result cleanup preserves path boundaries" test_cleanup_build_artifacts_preserves_path_boundaries
 run_test "nrs-lock status without lock" test_nrs_lock_status_without_lock
 run_test "nrs-lock retains stopped process before timeout" test_nrs_lock_status_retains_stopped_process_before_timeout
 run_test "nrs-lock stale after timeout with stopped process" test_nrs_lock_status_stale_after_timeout_with_stopped_process
@@ -389,6 +390,8 @@ run_test "darwin nrs no-change releases worktree lock" test_darwin_nrs_no_change
 run_test "darwin nrs no-change activates when Codex artifact missing" test_darwin_nrs_no_changes_activates_when_codex_artifact_missing
 run_test "darwin nrs no-change skips relink without HM gcroot" test_darwin_nrs_no_changes_skips_relink_without_hm_gcroot
 run_test "darwin nrs no-change restores when HM gcroot present" test_darwin_nrs_no_changes_restores_when_hm_gcroot_present
+run_test "nixos nrs no-change preserves links without HM gcroot" test_nixos_nrs_no_changes_preserves_links_without_hm_gcroot
+run_test "nixos nrs no-change restores when HM gcroot present" test_nixos_nrs_no_changes_restores_when_hm_gcroot_present
 run_test "cmd_fix_dangling probe matrix calls restore only on dangling" test_cmd_fix_dangling_probe_matrix
 run_test "cmd_fix_dangling propagates restore failure" test_cmd_fix_dangling_propagates_restore_failure
 run_test "nrs-relink fix-dangling CLI no-ops when probes are healthy" test_nrs_relink_cli_fix_dangling_noop_when_probes_healthy

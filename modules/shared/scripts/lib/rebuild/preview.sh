@@ -42,15 +42,18 @@ preview_changes() {
 # 빌드 아티팩트 정리
 #───────────────────────────────────────────────────────────────────────────────
 cleanup_build_artifacts() {
-    local links
-    links=$(find "$FLAKE_PATH" -maxdepth 1 -name 'result*' -type l 2>/dev/null)
-    local count
-    count=$(echo "$links" | grep -c . 2>/dev/null || true)
+    local link count=0
+    # NUL을 셸 변수에 담거나 경로를 다시 토큰화하지 않는다.
+    while IFS= read -r -d '' link; do
+        [[ -L "$link" ]] || continue
+        if [[ "$count" -eq 0 ]]; then
+            log_info "🧹 Cleaning up build artifacts..."
+        fi
+        rm -f -- "$link"
+        ((++count))
+    done < <(find "$FLAKE_PATH" -maxdepth 1 -name 'result*' -type l -print0 2>/dev/null)
 
     if [[ "$count" -gt 0 ]]; then
-        log_info "🧹 Cleaning up build artifacts..."
-        # result는 일반 사용자 build로 생성되어 사용자 소유
-        echo "$links" | xargs rm -f
         log_info "  ✓ Removed $count result symlink(s)"
     fi
 }
