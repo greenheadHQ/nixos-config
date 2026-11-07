@@ -23,8 +23,8 @@ _report_missing_projection_link() {
 }
 
 # MAIN_REPO_ROOT 저장소에 등록된 worktree 경로를 한 번만 NUL 구분으로 읽는다.
-# 조회 실패나 마지막 레코드가 잘린 출력은 빈 목록으로 둔다 — 인정 범위만 줄어드는
-# fail-closed 방향이다. 같은 저장소에 등록되지 않은 형제 경로는 인정하지 않는다.
+# 조회 실패나 마지막 레코드가 잘린 출력은 빈 목록으로 두고 그 사실을 경고한다 —
+# 인정 범위만 줄어드는 fail-closed 방향이다. 등록되지 않은 형제 경로는 인정하지 않는다.
 _HOST_STATE_WORKTREES_LOADED=0
 _HOST_STATE_WORKTREES=()
 _host_state_load_registered_worktrees() {
@@ -45,17 +45,33 @@ _host_state_load_registered_worktrees() {
     done < "$listing"
   fi
   rm -f "$listing"
-  [ "$rc" -eq 0 ] && [ -z "$record" ] || return 0
+  if [ "$rc" -ne 0 ] || [ -n "$record" ]; then
+    if declare -F warn >/dev/null; then
+      warn "Git worktree 목록을 읽지 못해 외부 worktree를 가리키는 링크는 인정하지 않음"
+    fi
+    return 0
+  fi
   if [ "${#paths[@]}" -gt 0 ]; then
     _HOST_STATE_WORKTREES=("${paths[@]}")
   fi
+}
+
+# 등록 경로가 지금도 같은 저장소의 worktree일 때만 인정한다. 등록만 남고 그 자리에
+# 다른 저장소가 생긴 경우는 nrs-relink와 같이 소유 근거가 없는 것으로 본다.
+_host_state_worktree_belongs_to_main() {
+  local root="$1" main_common candidate_common candidate_top
+  main_common="$(git -C "$MAIN_REPO_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
+  candidate_common="$(git -C "$root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
+  candidate_top="$(git -C "$root" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  [ -n "$main_common" ] && [ "$candidate_common" = "$main_common" ] && [ "$candidate_top" = "$root" ]
 }
 
 _resolved_target_in_registered_worktree() {
   local resolved="$1" expected_suffix="$2" root
   _host_state_load_registered_worktrees
   for root in ${_HOST_STATE_WORKTREES[@]+"${_HOST_STATE_WORKTREES[@]}"}; do
-    [ "$resolved" = "$root/$expected_suffix" ] && return 0
+    [ "$resolved" = "$root/$expected_suffix" ] || continue
+    _host_state_worktree_belongs_to_main "$root" && return 0
   done
   return 1
 }

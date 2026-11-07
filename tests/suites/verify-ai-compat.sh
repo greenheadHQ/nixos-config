@@ -203,7 +203,7 @@ test_verify_ai_compat_resolved_target_accepts_registered_external_worktree() {
     fail "unregistered sibling with the same suffix must be rejected"
   fi
 
-  # 조회 실패와 잘린 출력은 등록 근거로 쓰지 않는다.
+  # 조회 실패와 잘린 출력은 등록 근거로 쓰지 않고, 그 사실을 경고한다.
   real_git="$(command -v git)"
   stub_dir="$sandbox/stub-bin"
   mkdir -p "$stub_dir"
@@ -224,12 +224,25 @@ STUB
     if (
       export PATH="$stub_dir:$PATH" HOST_STATE_REAL_GIT="$real_git" \
         HOST_STATE_STUB_ROOT="$external_real" HOST_STATE_STUB_MODE="$mode"
+      warn() { printf 'WARN: %s\n' "$*" >> "$sandbox/warn-$HOST_STATE_STUB_MODE.log"; }
       _HOST_STATE_WORKTREES_LOADED=0
       resolved_target_matches_repo_suffix "$external_real/$suffix" "$main_real/$suffix" "$suffix"
     ); then
       fail "worktree listing ($mode) must not grant acceptance"
     fi
+    assert_contains "$(cat "$sandbox/warn-$mode.log" 2>/dev/null)" "Git worktree 목록을 읽지 못해"
   done
+
+  # 등록만 남고 그 자리에 다른 저장소가 생긴 경로는 같은 저장소의 worktree가 아니다.
+  rm -rf "$external"
+  mkdir -p "$external"
+  HOME="$sandbox/home" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+    git -C "$external" -c core.hooksPath=/dev/null -c init.templateDir= init --quiet
+  mkdir -p "$external/$suffix"
+  _HOST_STATE_WORKTREES_LOADED=0
+  if resolved_target_matches_repo_suffix "$external_real/$suffix" "$main_real/$suffix" "$suffix"; then
+    fail "registered path replaced by another repository must be rejected"
+  fi
 }
 
 _verify_ai_compat_non_executable_hook_check() {
