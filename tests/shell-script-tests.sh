@@ -46,10 +46,15 @@ run_test "gitleaks CI detects committed content with empty staging" test_gitleak
 run_test "gitleaks CI keeps deleted commit content in scope" test_gitleaks_ci_keeps_deleted_commit_content_in_scope
 run_test "gitleaks CI scans renamed paths and preserves allowlist" test_gitleaks_ci_scans_renamed_paths_and_preserves_allowlist
 run_test "gitleaks CI scans merge-only additions" test_gitleaks_ci_scans_merge_only_additions
+run_test "gitleaks CI preserves base exceptions after merge" test_gitleaks_ci_preserves_base_exceptions_after_merge
+run_test "gitleaks CI preserves conflict resolution fingerprints" test_gitleaks_ci_preserves_conflict_resolution_fingerprints
+run_test "gitleaks CI keeps deleted side commit content in scope" test_gitleaks_ci_keeps_deleted_side_commit_content_in_scope
+run_test "gitleaks CI rejects octopus merges" test_gitleaks_ci_rejects_octopus_merges
 run_test "gitleaks CI preserves commit fingerprint exceptions" test_gitleaks_ci_preserves_commit_fingerprint_exceptions
 run_test "gitleaks CI rejects invalid policy material" test_gitleaks_ci_rejects_invalid_policy_material
 run_test "gitleaks CI rejects scanner errors without raw output" test_gitleaks_ci_rejects_scanner_errors_without_raw_output
 run_test "gitleaks CI rejects internal git log failure" test_gitleaks_ci_rejects_git_log_failure_reported_as_success
+run_test "gitleaks CI preserves Git adapter exit and delegation" test_gitleaks_ci_preserves_git_adapter_exit_and_delegation
 run_test "gitleaks CI rejects bad refs and limits history" test_gitleaks_ci_rejects_bad_refs_and_limits_history
 run_test "nrs-lock status without lock" test_nrs_lock_status_without_lock
 run_test "nrs-lock retains stopped process before timeout" test_nrs_lock_status_retains_stopped_process_before_timeout

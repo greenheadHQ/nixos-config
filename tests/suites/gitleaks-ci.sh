@@ -55,6 +55,23 @@ _gitleaks_ci_run() {
   esac
 }
 
+_gitleaks_ci_record_fingerprint_exceptions() {
+  local repo="$1" base="$2" head="$3" report rc=0
+  report="$(dirname "$repo")/redacted-fingerprints.json"
+  (cd "$repo" && gitleaks git . --no-banner --redact=100 --config .gitleaks.toml \
+    --log-opts="-m --no-renames ${base}..${head}" --report-format json --report-path "$report" \
+    >/dev/null 2>&1) || rc=$?
+  [ "$rc" -eq 1 ] || fail "fingerprint fixture did not detect its synthetic input"
+  python3 - "$report" "$repo/.gitleaksignore" <<'PY'
+import json
+from pathlib import Path
+import sys
+findings = json.loads(Path(sys.argv[1]).read_text())
+assert findings and all(finding["Commit"] for finding in findings)
+Path(sys.argv[2]).write_text("\n".join(sorted({finding["Fingerprint"] for finding in findings})) + "\n")
+PY
+}
+
 test_gitleaks_ci_scans_commits_without_mutating_checkout() {
   local repo base head before after
   repo=$(_gitleaks_ci_repo)
@@ -128,6 +145,86 @@ test_gitleaks_ci_scans_merge_only_additions() {
   _gitleaks_ci_commit "$repo"
   head=$(_gitleaks_ci_git "$repo" rev-parse HEAD)
   _gitleaks_ci_run "$repo" "$base" "$head" 10
+}
+
+test_gitleaks_ci_preserves_base_exceptions_after_merge() {
+  local repo initial base head
+  repo=$(_gitleaks_ci_repo)
+  initial=$(_gitleaks_ci_git "$repo" rev-parse HEAD)
+  _gitleaks_ci_git "$repo" checkout -qb feature
+  printf 'feature\n' > "$repo/feature.txt"
+  _gitleaks_ci_commit "$repo"
+  _gitleaks_ci_git "$repo" checkout -q main
+  cat "$(dirname "$repo")/token" > "$repo/accepted-base.txt"
+  _gitleaks_ci_commit "$repo"
+  head=$(_gitleaks_ci_git "$repo" rev-parse HEAD)
+  _gitleaks_ci_record_fingerprint_exceptions "$repo" "$initial" "$head"
+  _gitleaks_ci_commit "$repo"
+  base=$(_gitleaks_ci_git "$repo" rev-parse HEAD)
+  _gitleaks_ci_git "$repo" checkout -q feature
+  _gitleaks_ci_git "$repo" merge --no-ff --no-edit main >/dev/null 2>&1
+  head=$(_gitleaks_ci_git "$repo" rev-parse HEAD)
+  _gitleaks_ci_run "$repo" "$base" "$head" 0
+}
+
+test_gitleaks_ci_preserves_conflict_resolution_fingerprints() {
+  local repo base head merge_rc=0
+  repo=$(_gitleaks_ci_repo)
+  _gitleaks_ci_git "$repo" checkout -qb side
+  printf 'side\n' > "$repo/README.md"
+  _gitleaks_ci_commit "$repo"
+  _gitleaks_ci_git "$repo" checkout -q main
+  printf 'main\n' > "$repo/README.md"
+  _gitleaks_ci_commit "$repo"
+  base=$(_gitleaks_ci_git "$repo" rev-parse HEAD)
+  _gitleaks_ci_git "$repo" merge --no-ff --no-commit side >/dev/null 2>&1 || merge_rc=$?
+  [ "$merge_rc" -eq 1 ] || fail "fixture did not create a merge conflict"
+  # 실제 patch 내용의 remerge 접두사는 제거하면 안 된다.
+  { printf 'remerge '; cat "$(dirname "$repo")/token"; } > "$repo/README.md"
+  _gitleaks_ci_commit "$repo"
+  head=$(_gitleaks_ci_git "$repo" rev-parse HEAD)
+  _gitleaks_ci_run "$repo" "$base" "$head" 10
+  # 일반 Git diff로 만든 commit/path/line fingerprint가 remerge 검사에도 동일해야 한다.
+  _gitleaks_ci_record_fingerprint_exceptions "$repo" "$base" "$head"
+  _gitleaks_ci_commit "$repo"
+  head=$(_gitleaks_ci_git "$repo" rev-parse HEAD)
+  _gitleaks_ci_run "$repo" "$base" "$head" 0
+}
+
+test_gitleaks_ci_keeps_deleted_side_commit_content_in_scope() {
+  local repo base head
+  repo=$(_gitleaks_ci_repo)
+  base=$(_gitleaks_ci_git "$repo" rev-parse HEAD)
+  _gitleaks_ci_git "$repo" checkout -qb side
+  cat "$(dirname "$repo")/token" > "$repo/removed-side.txt"
+  _gitleaks_ci_commit "$repo"
+  rm "$repo/removed-side.txt"
+  _gitleaks_ci_commit "$repo"
+  _gitleaks_ci_git "$repo" checkout -q main
+  printf 'main\n' > "$repo/main.txt"
+  _gitleaks_ci_commit "$repo"
+  _gitleaks_ci_git "$repo" merge --no-ff --no-edit side >/dev/null 2>&1
+  head=$(_gitleaks_ci_git "$repo" rev-parse HEAD)
+  _gitleaks_ci_run "$repo" "$base" "$head" 10
+}
+
+test_gitleaks_ci_rejects_octopus_merges() {
+  local repo base head branch
+  repo=$(_gitleaks_ci_repo)
+  base=$(_gitleaks_ci_git "$repo" rev-parse HEAD)
+  for branch in side-one side-two; do
+    _gitleaks_ci_git "$repo" checkout -qb "$branch" "$base"
+    printf '%s\n' "$branch" > "$repo/$branch.txt"
+    _gitleaks_ci_commit "$repo"
+  done
+  _gitleaks_ci_git "$repo" checkout -q main
+  printf 'main\n' > "$repo/main.txt"
+  _gitleaks_ci_commit "$repo"
+  _gitleaks_ci_git "$repo" merge --no-ff --no-commit side-one side-two >/dev/null 2>&1
+  cat "$(dirname "$repo")/token" > "$repo/octopus-only.txt"
+  _gitleaks_ci_commit "$repo"
+  head=$(_gitleaks_ci_git "$repo" rev-parse HEAD)
+  _gitleaks_ci_run "$repo" "$base" "$head" 2
 }
 
 test_gitleaks_ci_preserves_commit_fingerprint_exceptions() {
@@ -236,6 +333,37 @@ EOF
   chmod +x "$stub/git"
   PATH="$stub:$PATH" FIXTURE_REAL_GIT="$real_git" FIXTURE_GIT_LOG_MARKER="$marker" \
     FIXTURE_ERROR_VALUE="$(dirname "$repo")/token" _gitleaks_ci_run "$repo" "$base" "$head" 2
+  assert_file_contains "$marker" called
+}
+
+test_gitleaks_ci_preserves_git_adapter_exit_and_delegation() {
+  local repo base stub real_git marker
+  repo=$(_gitleaks_ci_repo)
+  base=$(_gitleaks_ci_git "$repo" rev-parse HEAD)
+  real_git=$(command -v git)
+  stub="$(dirname "$repo")/bin"
+  marker="$(dirname "$repo")/git-log-called"
+  mkdir "$stub"
+  cat > "$stub/git" <<'EOF'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [ "$arg" = log ]; then
+    printf 'called\n' > "$FIXTURE_GIT_LOG_MARKER"
+    exit 29
+  fi
+done
+exec "$FIXTURE_REAL_GIT" "$@"
+EOF
+  cat > "$stub/gitleaks" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+# log 외 호출은 원래 Git으로 위임하고, stderr 없는 log 실패도 필터가 덮지 않아야 한다.
+git -C "$2" rev-parse --verify HEAD >/dev/null
+git -C "$2" log
+EOF
+  chmod +x "$stub/git" "$stub/gitleaks"
+  PATH="$stub:$PATH" FIXTURE_REAL_GIT="$real_git" FIXTURE_GIT_LOG_MARKER="$marker" \
+    _gitleaks_ci_run "$repo" "$base" "$base" 2
   assert_file_contains "$marker" called
 }
 
