@@ -191,6 +191,7 @@ run_test "claude remote-control maint rejects mismatched started version" test_c
 run_test "claude remote-control maint restart records verified version" test_claude_remote_control_maint_restart_records_verified_version
 run_test "claude remote-control maint default policy preserves live drift" test_claude_remote_control_maint_default_policy_preserves_live_drift
 run_test "claude remote-control maint confirmed drift binds exact snapshot" test_claude_remote_control_maint_confirmed_drift_binds_exact_snapshot
+run_test "claude remote-control recovery doc propagates candidate failures" test_claude_remote_control_recovery_doc_propagates_candidate_failures
 run_test "claude remote-control maint reports lock setup failure" test_claude_remote_control_maint_reports_lock_setup_failure
 run_test "claude remote-control maint waits for parent lock release" test_claude_remote_control_maint_waits_for_parent_lock_release
 run_test "claude remote-control maint restart rejects mismatched version" test_claude_remote_control_maint_restart_rejects_mismatched_version
