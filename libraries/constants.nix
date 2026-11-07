@@ -46,6 +46,13 @@
     podmanSubnet = "10.88.0.0/16";
   };
 
+  # Rex 앱은 공식 DMG/자체 업데이터가 관리하고, CLI·설정은 Home Manager가 연결한다.
+  rex = rec {
+    macAppPath = "/Applications/Rex Beta.app";
+    minipcTailnetHostname = "rex-minipc";
+    minipcTailnetFqdn = "${minipcTailnetHostname}.tail420ece.ts.net";
+  };
+
   # ═══════════════════════════════════════════════════════════════
   # 도메인 및 리버스 프록시
   # ═══════════════════════════════════════════════════════════════

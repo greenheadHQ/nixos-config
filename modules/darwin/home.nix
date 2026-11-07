@@ -110,6 +110,7 @@ in
         ./programs/vscode
         ./programs/folder-actions
         ./programs/ghostty
+        ./programs/rex
         ./programs/shottr
         ./programs/onepassword
         ./programs/keybindings

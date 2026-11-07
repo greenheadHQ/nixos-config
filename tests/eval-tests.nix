@@ -2254,6 +2254,37 @@ let
   ++ darwinIntentTests
   ++ [
     {
+      name = "Rex: 개인 서버는 익명 TCP와 타인 계정을 허용하지 않아야 함";
+      cond =
+        nixosHm.services.rex.enable
+        && !nixosHm.services.rex.allowAnonymous
+        && nixosHm.services.rex.extraListen == [ ]
+        && nixosHm.services.rex.tailscale.enable
+        && !nixosHm.services.rex.tailscale.allowTailnetMembers
+        && nixosHm.services.rex.tailscale.advertiseTags == [ ]
+        && nixosHm.services.rex.tailscale.authKeyFile == null;
+    }
+    {
+      name = "Rex: 로그아웃과 nrs가 실행 중인 개인 세션을 종료하지 않아야 함";
+      cond =
+        nixosCfg.users.users.greenhead.linger
+        && nixosHm.systemd.user.services.rex.Unit.X-SwitchMethod == "keep-old"
+        && nixosHm.systemd.user.services.rex.Service.Restart == "on-failure";
+    }
+    {
+      name = "Rex: Mac 설정은 개인 호스트에만 적용하고 별도 서버 서비스를 만들지 않아야 함";
+      cond = builtins.all (
+        name:
+        let
+          home = builtins.head (builtins.attrValues darwinCfgs.${name}.config.home-manager.users);
+          personal = builtins.elem name personalDarwinHosts;
+        in
+        home.programs.rex.enable == personal
+        && !home.services.rex.enable
+        && (home.xdg.configFile ? "rex/init.lua") == personal
+      ) expectedDarwinHosts;
+    }
+    {
       name = "Desktop Anki add-ons are personal-only and do not enable the prefs/collection-owning Anki module";
       cond = builtins.all (
         name:

@@ -36,6 +36,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # 공식 바이너리와 개인 서버용 Home Manager 모듈. lock으로 버전을 고정한다.
+    rex = {
+      url = "https://pkgs.superlogical.com/rex/nix/preview.tar.gz";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # Age 기반 secrets 관리 (agenix)
     agenix = {
       url = "github:ryantm/agenix";

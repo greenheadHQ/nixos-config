@@ -19,6 +19,7 @@ local inputEnglish = "com.apple.keylayout.ABC"
 -- 앱 감지 헬퍼
 local terminalBundleIDs = {
     ["com.mitchellh.ghostty"] = true,
+    ["com.superlogical.rex"] = true,
     ["com.apple.Terminal"] = true,
     ["dev.warp.Warp-Stable"] = true,
     ["com.googlecode.iterm2"] = true,
