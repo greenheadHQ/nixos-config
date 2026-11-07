@@ -137,14 +137,34 @@ def parse_response_headers(headers_path: str) -> str:
     return content_type
 
 
-def run_curl(cmd: list[str]) -> tuple[int | None, bytes, str, str | None]:
+def curl_config_value(value: str) -> str:
+    # curl config의 quoted string으로만 전달한다. 폼 개행은 curl이 원문으로 복원한다.
+    # argv에서 거절되던 NUL도 stdin으로 옮긴 뒤 조용히 잘리지 않도록 거절한다.
+    if "\x00" in value:
+        raise ValueError("Invalid curl config value")
+    return (value.replace("\\", "\\\\").replace('"', '\\"')
+            .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t"))
+
+
+def authorization_config(auth_header: str) -> str:
+    # 헤더의 줄바꿈은 폼 값과 달리 추가 헤더가 되므로 escape 전에 거절한다.
+    if any(char in auth_header for char in ("\r", "\n", "\x00")):
+        raise ValueError("Invalid Authorization header")
+    return f'header = "Authorization: {curl_config_value(auth_header)}"\n'
+
+
+def run_curl(cmd: list[str], config_input: str) -> tuple[int | None, bytes, str, str | None]:
     body_fd, body_path = tempfile.mkstemp(prefix="karakeep-bridge-body-")
     header_fd, header_path = tempfile.mkstemp(prefix="karakeep-bridge-header-")
     os.close(body_fd)
     os.close(header_fd)
     try:
         full_cmd = [
-            *cmd,
+            cmd[0],
+            "-q",  # 사용자 curlrc의 trace 등으로 stdin 자격이 출력되는 것을 막는다.
+            "--config",
+            "-",
+            *cmd[1:],
             "-D",
             header_path,
             "-o",
@@ -152,14 +172,16 @@ def run_curl(cmd: list[str]) -> tuple[int | None, bytes, str, str | None]:
             "-w",
             "%{http_code}",
         ]
-        result = subprocess.run(full_cmd, capture_output=True, text=True, timeout=REQUEST_TIMEOUT_SEC + 10)
+        result = subprocess.run(full_cmd, input=config_input, capture_output=True,
+                                text=True, timeout=REQUEST_TIMEOUT_SEC + 10)
         if result.returncode != 0:
-            err = (result.stderr or result.stdout or "").strip()
+            # subprocess 진단에는 config 원문이 섞일 수 있으므로 내용 대신 종료 코드만 쓴다.
+            err = f"exit {result.returncode}" if (result.stderr or result.stdout or "").strip() else ""
             return None, b"", "application/json", f"curl failed: {err}"
 
         status_text = (result.stdout or "").strip()
         if not status_text.isdigit():
-            return None, b"", "application/json", f"unexpected curl status output: {status_text}"
+            return None, b"", "application/json", "unexpected curl status output"
 
         status_code = int(status_text)
         with open(body_path, "rb") as fp:
@@ -191,24 +213,22 @@ def send_pushover(message: str, priority: int = 0) -> None:
         return
     cmd = [
         "curl",
+        "-q",
         "-sf",
         "--proto",
         "=https",
         "--max-time",
         "10",
-        "--form-string",
-        f"token={PUSHOVER_TOKEN}",
-        "--form-string",
-        f"user={PUSHOVER_USER}",
-        "--form-string",
-        "title=Karakeep",
-        "--form-string",
-        f"message={message}",
-        "--form-string",
-        f"priority={priority}",
+        "--config",
+        "-",
         "https://api.pushover.net/1/messages.json",
     ]
-    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    fields = [("token", PUSHOVER_TOKEN), ("user", PUSHOVER_USER), ("title", "Karakeep"),
+              ("message", message), ("priority", str(priority))]
+    config_input = "".join(f'form-string = "{curl_config_value(f"{key}={value}")}"\n'
+                           for key, value in fields)
+    subprocess.run(cmd, input=config_input, text=True, stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL, check=False)
 
 
 def format_created_at(value) -> str:
@@ -230,6 +250,7 @@ def parse_ifexists_mode(query: str) -> str:
 
 
 def create_link_bookmark(auth_header: str, source_url: str, title_value: str) -> tuple[int | None, bytes, str, str | None]:
+    config_input = authorization_config(auth_header)
     payload = {
         "type": "link",
         "url": source_url,
@@ -246,8 +267,6 @@ def create_link_bookmark(auth_header: str, source_url: str, title_value: str) ->
         "-X",
         "POST",
         "-H",
-        f"Authorization: {auth_header}",
-        "-H",
         "Content-Type: application/json",
         "-H",
         "Accept: application/json",
@@ -255,10 +274,11 @@ def create_link_bookmark(auth_header: str, source_url: str, title_value: str) ->
         json.dumps(payload, ensure_ascii=False),
         f"{KARAKEEP_BASE_URL}/api/v1/bookmarks",
     ]
-    return run_curl(cmd)
+    return run_curl(cmd, config_input)
 
 
 def upload_asset(auth_header: str, temp_path: str, original_name: str) -> tuple[str | None, int | None, str | None]:
+    config_input = authorization_config(auth_header)
     upload_asset_cmd = [
         "curl",
         "-sS",
@@ -267,14 +287,12 @@ def upload_asset(auth_header: str, temp_path: str, original_name: str) -> tuple[
         "-X",
         "POST",
         "-H",
-        f"Authorization: {auth_header}",
-        "-H",
         "Accept: application/json",
         "-F",
         f"file=@{temp_path};filename={original_name};type=text/html",
         f"{KARAKEEP_BASE_URL}/api/v1/assets",
     ]
-    status, body, _, err = run_curl(upload_asset_cmd)
+    status, body, _, err = run_curl(upload_asset_cmd, config_input)
     if err:
         return None, status, f"asset upload failed ({err})"
     if status is None or status < 200 or status >= 300:
@@ -476,7 +494,13 @@ class SingleFileBridgeHandler(BaseHTTPRequestHandler):
             return
 
         ifexists_mode = parse_ifexists_mode(parsed.query)
-        auth_header = (self.headers.get("Authorization") or "").strip()
+        auth_header = self.headers.get("Authorization") or ""
+        try:
+            authorization_config(auth_header)
+        except ValueError:
+            self.respond_json(400, {"error": "Invalid Authorization header"})
+            return
+        auth_header = auth_header.strip()
         if not auth_header.lower().startswith("bearer "):
             self.respond_json(401, {"error": "Missing Bearer token"})
             return
@@ -561,15 +585,13 @@ class SingleFileBridgeHandler(BaseHTTPRequestHandler):
                     "-X",
                     "POST",
                     "-H",
-                    f"Authorization: {auth_header}",
-                    "-H",
                     "Accept: application/json",
                 ]
                 for key, value in fields:
                     cmd.extend(["--form-string", f"{key}={value}"])
                 cmd.extend(["-F", f"file=@{temp_path};filename={original_name};type=text/html", endpoint])
 
-                status, body, content_type, err = run_curl(cmd)
+                status, body, content_type, err = run_curl(cmd, authorization_config(auth_header))
                 if err:
                     self.respond_json(502, {"error": err})
                     return
