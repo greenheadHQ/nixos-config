@@ -617,9 +617,9 @@ run_test "managing-secrets host add workflow checks recipients per target" test_
 run_test "managing-secrets group parser accepts inline key lists" test_managing_secrets_group_parser_accepts_inline_key_lists
 
 # ═══════════════════════════════════════════════════════════════════
-# neovim-clipboard suite (tests/suites/neovim-clipboard.sh) — 직접 SSH의 OSC 52 복사 (#1453)
+# neovim-clipboard suite (tests/suites/neovim-clipboard.sh) — tmux 밖 SSH의 OSC 52 복사 (#1453)
 # ═══════════════════════════════════════════════════════════════════
-run_test "neovim clipboard uses OSC 52 only for direct Linux SSH" test_neovim_clipboard_osc52_only_for_linux_ssh
+run_test "neovim clipboard uses OSC 52 only for Linux SSH outside tmux" test_neovim_clipboard_osc52_only_for_linux_ssh_outside_tmux
 run_test "neovim SSH clipboard paste returns last copy without query" test_neovim_ssh_clipboard_paste_returns_last_copy_without_query
 run_test "neovim SSH clipboard paste before copy uses register 0" test_neovim_ssh_clipboard_paste_before_copy_uses_register_zero
 

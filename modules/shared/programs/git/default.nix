@@ -153,7 +153,7 @@ in
       "CLAUDE.local.md"
       "CLAUDE.local.*.md"
 
-      # wt 워크트리 관리
+      # 퇴역한 커스텀 wt가 기존 checkout에 남겼을 수 있는 파일 — 잔재가 커밋되지 않도록 무시를 유지
       ".wt-parent"
       ".wt-last"
       ".agents/skills/wt-plugin--*"

@@ -14,7 +14,7 @@ Mac에는 nix-darwin을 쓰고, macOS와 NixOS의 사용자 설정은 Home Manag
 
 | 위치 | 내용 |
 | --- | --- |
-| [modules/shared](./modules/shared/) | 머신 간에 공유하는 셸, Git, Neovim 등의 설정 |
+| [modules/shared](./modules/shared/) | 머신 간에 공유하는 셸, Git, Neovim, tmux 등의 설정 |
 | [modules/darwin](./modules/darwin/) | macOS 환경설정, 데스크톱 앱, 자동화 |
 | [modules/nixos](./modules/nixos/) | NixOS 시스템 설정과 홈서버 서비스 |
 | [hosts](./hosts/) | 하드웨어와 디스크 구성 |

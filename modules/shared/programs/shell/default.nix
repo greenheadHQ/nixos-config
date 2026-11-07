@@ -196,6 +196,11 @@ in
           unset _mise_shims
         fi
 
+        # tmux 내부에서 clear 시 history buffer도 함께 삭제
+        if [ -n "$TMUX" ]; then
+          alias clear='clear && tmux clear-history'
+        fi
+
         # 동적 delta side-by-side 제어 (터미널 너비 기반)
         # 좁은 터미널(< 120컬럼)에서 side-by-side 자동 비활성화
         # precmd: 매 프롬프트 전 실행 → 터미널 리사이즈 즉시 반영
@@ -367,13 +372,15 @@ in
       #─────────────────────────────────────────────────────────────────────────
       ''
         # push: 텍스트를 Pushover로 iPhone에 전송 (Unix-like)
-        # 사용법: push <텍스트> 또는 echo "text" | push
+        # 사용법: push <텍스트> | echo "text" | push | tmux buffer
         push() {
           local text
           if [ $# -gt 0 ]; then
             text="$*"
           elif [ ! -t 0 ]; then
             text=$(cat)
+          elif [ -n "$TMUX" ]; then
+            text=$(tmux save-buffer - 2>/dev/null)
           fi
           [ -z "$text" ] && { echo "Usage: push <text> or pipe input"; return 1; }
 

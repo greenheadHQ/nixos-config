@@ -504,9 +504,19 @@ fi
 # SSH 세션(Termius 등)에서는 OSC 8 hyperlink가 클릭 불가하므로 외부 링크(Jira/Slack/Figma)는
 # 평문 URL로 출력(print_icon SSH 분기)해 클라이언트 URL regex 감지에 맡기고, 로컬 파일
 # (Memo/Plan/Memory)은 텍스트만 표기. SSH_CONNECTION은 sshd가 export하며 자식 프로세스에 상속.
-# SSH_CONNECTION이 있는 직접 SSH 세션에서 간결한 표시를 사용한다.
+# 감지: SSH_CONNECTION 직접 + tmux 세션 환경 폴백(tmux attach 대응).
 IS_SSH=false
 [ -n "${SSH_CONNECTION:-}" ] && IS_SSH=true
+# tmux attach 폴백: SSH 밖에서 시작한 tmux에 SSH로 attach하면, 이미 떠 있던 pane의
+# 프로세스는 갱신된 SSH_CONNECTION을 물려받지 못한다 (fork 모델 — update-environment는
+# 새 pane에만 주입). tmux 세션 환경을 조회해 보강한다. 값이 있을 때(SSH_CONNECTION=?*)만
+# SSH로 판정 — 로컬 클라이언트 재attach 시 tmux가 남기는 제거표시(-SSH_CONNECTION)는
+# 배제해, 데스크톱 재attach 시 OSC 8 동작으로 자동 복귀한다.
+if ! $IS_SSH && command -v tmux >/dev/null 2>&1; then
+  case "$(tmux show-environment SSH_CONNECTION 2>/dev/null)" in
+    SSH_CONNECTION=?*) IS_SSH=true ;;
+  esac
+fi
 
 # 256-color 고정 그레이 — 터미널 팔레트 의존 \e[90m 대신 사용
 MUTED="38;5;242"

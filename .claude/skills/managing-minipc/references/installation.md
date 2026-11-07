@@ -225,7 +225,7 @@ cd ~/Workspace/nixos-config && nrs
 | HDD 데이터 보존 | `ls /mnt/data` | 재설치 전 미디어 데이터가 그대로 존재 |
 | 서비스 상태 | `systemctl --failed` | 실패 유닛 0개 |
 | Tailscale | `tailscale status` | 온라인, IP가 `constants.network.minipcTailscaleIP`와 일치 |
-| 개발 도구 | `atuin doctor`, `claude --version` | 각 명령이 버전/상태를 출력 (`atuin status`는 v1 404라 쓰지 않는다) |
+| 개발 도구 | `tmux -V`, `atuin doctor`, `claude --version` | 각 명령이 버전/상태를 출력 (`atuin status`는 v1 404라 쓰지 않는다) |
 | Mac에서 접속 | (Mac에서) `ssh minipc` | 접속 성공 |
 
 > 파티션 번호(p1/p2/p3)는 disko가 만드는 순서에 달려 있으므로 문서 값을 믿지 말고 `lsblk` 출력을 그대로 읽는다. 아래 복구 절차의 장치 이름도 이 출력으로 대조한 뒤 사용한다.

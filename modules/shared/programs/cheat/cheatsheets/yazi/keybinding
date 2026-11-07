@@ -44,5 +44,5 @@ Tip
 - 한글 2벌식 IME 활성 시에도 [mgr] 단일 키는 대부분 동작 (q, v, o, p 등 소문자 + Q, O, P, G). shift 변형이 동일 자모가 되는 키(H, L, V, K, J, Y, X, D, S, Z, N)와 다중 키 시퀀스(gg, m m)는 영문 IME 필요.
 - git.yazi 플러그인이 파일 옆 linemode 에 git 상태(M/A/D/? 등) 표시. `m m/s/p/b/o/n` 으로 linemode 전환.
 - `z` = fzf, `Z` = zoxide. 자주 반대로 기억하니 주의.
-- Ghostty + SSH 이미지 프리뷰는 Ghostty `shell-integration-features=ssh-env` + sshd `AcceptEnv` 전제 (이 레포에 이미 구성). 프리뷰 안 뜨면 이 두 설정부터 확인.
+- Ghostty + tmux + SSH 이미지 프리뷰는 tmux `allow-passthrough on` + Ghostty `shell-integration-features=ssh-env` + sshd `AcceptEnv` 3축 전제 (이 레포에 이미 구성). 프리뷰 안 뜨면 이 3축부터 확인.
 - 전체 기본 키는 yazi 실행 후 `~` 로 내장 help 에서 조회 (`f` 로 필터).

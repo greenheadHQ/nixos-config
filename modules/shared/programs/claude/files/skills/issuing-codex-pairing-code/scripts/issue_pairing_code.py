@@ -16,15 +16,12 @@ import dataclasses
 import datetime as dt
 import hashlib
 import json
-import math
 import os
 import platform
 import re
-import select
 import secrets
 import shlex
 import shutil
-import signal
 import socket
 import stat
 import struct
@@ -37,8 +34,7 @@ from typing import Any
 
 
 WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-RUNTIME_KIND = "codex-pairing-runtime-v1"
-CONTROL_LIMIT = 4096
+DEFAULT_SESSION = "codex-pair-bg"
 CLIENT_NAME = "issuing-codex-pairing-code"
 CLIENT_VERSION = "1.0.0"
 MOCK_EXPIRES_AT = 1893456000
@@ -71,37 +67,8 @@ class PairingError(RuntimeError):
 class RuntimePaths:
     root: Path
     socket_path: Path
-    control_path: Path
-    instance_id: str
-
-
-@dataclasses.dataclass
-class HelperServer:
-    """발급 완료 전에는 호출자 연결을, 완료 후에는 명시적 정리를 따른다."""
-
-    process: subprocess.Popen[bytes]
-    lease: socket.socket
-    paths: RuntimePaths
-    timeout: float
-
-    def retain(self) -> None:
-        _send_control(self.lease, {"action": "retain"})
-        if _receive_control(self.lease) != {"state": "retained"}:
-            raise PairingError("helper ownership handoff failed")
-        self.lease.close()
-
-    def abort(self) -> None:
-        # 인계 전 EOF는 supervisor가 직접 생성한 자식의 회수를 요청한다.
-        self.lease.close()
-        try:
-            cleanup_runtime(self.paths.root, self.timeout)
-        except PairingError:
-            pass
-        try:
-            self.process.wait(timeout=self.timeout + 3)
-        except subprocess.TimeoutExpired as error:
-            # 저장 PID나 부모 프로세스 트리 추측으로 종료하지 않는다.
-            raise PairingError("helper shutdown could not be confirmed") from error
+    log_path: Path
+    session_name: str
 
 
 @dataclasses.dataclass(frozen=True)
@@ -123,7 +90,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--mock",
         action="store_true",
-        help="Return deterministic fixture output without live Codex or sockets.",
+        help="Return deterministic fixture output without live Codex, tmux, or sockets.",
     )
     parser.add_argument(
         "--json",
@@ -136,21 +103,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=10.0,
         help="Timeout in seconds for app-server startup and RPC waits.",
     )
-    parser.add_argument(
-        "--cleanup", type=Path,
-        help="Stop only the helper instance owning this private runtime directory.",
-    )
-    parser.add_argument("--supervise-fd", type=int, help=argparse.SUPPRESS)
-    args = parser.parse_args(argv)
-    if not math.isfinite(args.timeout) or args.timeout <= 0:
-        parser.error("--timeout must be a positive finite number")
-    if args.cleanup is not None and (args.mock or args.user_requested_code or args.json):
-        parser.error("--cleanup cannot be combined with issuance flags")
-    if args.supervise_fd is not None and (
-        args.cleanup is not None or args.mock or args.user_requested_code or args.json
-    ):
-        parser.error("internal supervisor mode cannot be combined with other actions")
-    return args
+    return parser.parse_args(argv)
 
 
 def ensure_consent(args: argparse.Namespace) -> None:
@@ -188,7 +141,7 @@ def select_codex_binary() -> Path:
 
     for candidate in candidates:
         if candidate.is_file() and os.access(candidate, os.X_OK):
-            return candidate.resolve()
+            return candidate
 
     raise PairingError(
         "could not find an executable Codex binary; set CODEX_PAIRING_CODEX_BIN"
@@ -331,6 +284,7 @@ def _ensure_schema_contains(
 
 
 def make_private_runtime_paths() -> RuntimePaths:
+    session_name = f"{DEFAULT_SESSION}-{os.getpid()}-{secrets.token_hex(4)}"
     runtime_override = os.environ.get("CODEX_PAIRING_RUNTIME_DIR")
     if runtime_override:
         base = Path(runtime_override).expanduser()
@@ -338,393 +292,34 @@ def make_private_runtime_paths() -> RuntimePaths:
         base = Path("/private/tmp") if platform.system() == "Darwin" else Path(tempfile.gettempdir())
 
     old_umask = os.umask(0o077)
-    root: Path | None = None
-    root_fd = -1
-    root_identity: tuple[int, int] | None = None
-    created: dict[str, tuple[int, int]] = {}
     try:
         base.mkdir(mode=0o700, parents=True, exist_ok=True)
-        root = Path(tempfile.mkdtemp(prefix="codex-pairing-code-", dir=str(base.resolve())))
-        root_identity = _identity(root.lstat())
-        root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        if _identity(os.fstat(root_fd)) != root_identity:
-            raise OSError("private helper runtime changed during creation")
-        instance_id = secrets.token_hex(16)
-        # 원본 worktree가 나중에 정리되어도 같은 구현으로 명시적 정리가 가능하다.
-        for name, content in (
-            ("helper.py", Path(__file__).read_bytes()),
-            ("owner.json", json.dumps({"kind": RUNTIME_KIND, "instance": instance_id}).encode()),
-        ):
-            file_fd = os.open(
-                name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-                0o600, dir_fd=root_fd,
-            )
-            created[name] = _identity(os.fstat(file_fd))
-            with os.fdopen(file_fd, "wb") as output:
-                output.write(content)
-    except OSError:
-        if root_fd != -1:
-            for name, identity in created.items():
-                try:
-                    if _identity(os.stat(name, dir_fd=root_fd, follow_symlinks=False)) == identity:
-                        os.unlink(name, dir_fd=root_fd)
-                except OSError:
-                    pass
-        removed = root is None
-        try:
-            if root is not None and _identity(root.lstat()) == root_identity:
-                root.rmdir()
-                removed = True
-        except FileNotFoundError:
-            removed = True
-        except OSError:
-            pass
-        message = "private helper runtime could not be created"
-        if not removed:
-            message += f"; inspect the preserved runtime manually: {root}"
-        raise PairingError(message) from None
+        root = Path(tempfile.mkdtemp(prefix="codex-pairing-code-", dir=str(base)))
     finally:
-        if root_fd != -1:
-            os.close(root_fd)
         os.umask(old_umask)
+
+    st = root.stat()
+    if st.st_uid != os.getuid():
+        raise PairingError(f"runtime directory is not owned by current user: {root}")
+    if stat.S_IMODE(st.st_mode) & 0o077:
+        root.chmod(0o700)
+
     return RuntimePaths(
         root=root,
         socket_path=root / "app.sock",
-        control_path=root / "control.sock",
-        instance_id=instance_id,
+        log_path=root / "app-server.log",
+        session_name=session_name,
     )
 
 
-def _identity(info: os.stat_result) -> tuple[int, int]:
-    return info.st_dev, info.st_ino
-
-
-@dataclasses.dataclass
-class PrivateRuntime:
-    paths: RuntimePaths
-    fd: int
-    identity: tuple[int, int]
-    marker_identity: tuple[int, int]
-    helper_identity: tuple[int, int]
-
-    def close(self) -> None:
-        os.close(self.fd)
-
-
-def _read_owner(fd: int) -> tuple[str, tuple[int, int]]:
-    marker_fd = os.open(
-        "owner.json", os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW, dir_fd=fd
+def _tmux_has_session(session_name: str) -> bool:
+    result = run_checked(
+        ["tmux", "has-session", "-t", session_name],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=2,
     )
-    with os.fdopen(marker_fd, "r", encoding="utf-8") as marker:
-        info = os.fstat(marker.fileno())
-        if (
-            not stat.S_ISREG(info.st_mode)
-            or info.st_uid != os.getuid()
-            or stat.S_IMODE(info.st_mode) != 0o600
-            or info.st_size > CONTROL_LIMIT
-        ):
-            raise PairingError("invalid helper ownership marker")
-        try:
-            value = json.load(marker)
-        except (ValueError, UnicodeError, RecursionError) as error:
-            raise PairingError("invalid helper ownership marker") from error
-    if (
-        not isinstance(value, dict)
-        or set(value) != {"kind", "instance"}
-        or value.get("kind") != RUNTIME_KIND
-        or not isinstance(value.get("instance"), str)
-        or re.fullmatch(r"[0-9a-f]{32}", value["instance"]) is None
-    ):
-        raise PairingError("invalid helper ownership marker")
-    return value["instance"], _identity(info)
-
-
-def _open_runtime(root: Path) -> PrivateRuntime:
-    fd = -1
-    try:
-        # canonical 경로만 수용해 상위 또는 마지막 요소의 symlink 우회도 거부한다.
-        if (
-            not root.is_absolute()
-            or str(root) != os.path.realpath(root)
-            or not root.name.startswith("codex-pairing-code-")
-        ):
-            raise PairingError("cleanup requires the original private helper runtime")
-        fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        info = os.fstat(fd)
-        if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
-            raise PairingError("helper runtime ownership or permissions changed")
-        instance_id, marker_identity = _read_owner(fd)
-        helper_identity = _helper_identity(fd)
-        paths = RuntimePaths(root, root / "app.sock", root / "control.sock", instance_id)
-        return PrivateRuntime(paths, fd, _identity(info), marker_identity, helper_identity)
-    except (OSError, ValueError, TypeError, PairingError) as error:
-        if fd != -1:
-            os.close(fd)
-        raise PairingError("private helper runtime could not be verified") from error
-
-
-def _helper_identity(fd: int) -> tuple[int, int]:
-    info = os.stat("helper.py", dir_fd=fd, follow_symlinks=False)
-    if (
-        not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-        or stat.S_IMODE(info.st_mode) != 0o600
-    ):
-        raise PairingError("private helper copy could not be verified")
-    return _identity(info)
-
-
-def _verify_runtime(runtime: PrivateRuntime) -> None:
-    info = runtime.paths.root.lstat()
-    instance_id, marker_identity = _read_owner(runtime.fd)
-    if (
-        not stat.S_ISDIR(info.st_mode)
-        or _identity(info) != runtime.identity
-        or info.st_uid != os.getuid()
-        or stat.S_IMODE(info.st_mode) != 0o700
-        or marker_identity != runtime.marker_identity
-        or _helper_identity(runtime.fd) != runtime.helper_identity
-        or instance_id != runtime.paths.instance_id
-    ):
-        raise PairingError("helper runtime changed; refusing cleanup")
-
-
-def _socket_identity(runtime: PrivateRuntime, name: str) -> tuple[int, int]:
-    info = os.stat(name, dir_fd=runtime.fd, follow_symlinks=False)
-    if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid():
-        raise PairingError("helper socket could not be verified")
-    return _identity(info)
-
-
-def _remove_runtime(
-    runtime: PrivateRuntime, owned_sockets: dict[str, tuple[int, int]]
-) -> bool:
-    """검증 시점의 소유권·inode 일치를 요구하며 추가 파일·변경된 runtime은 보존한다."""
-    try:
-        _verify_runtime(runtime)
-        for name, expected in owned_sockets.items():
-            try:
-                if _socket_identity(runtime, name) != expected:
-                    return False
-            except FileNotFoundError:
-                pass
-        # 알 수 없는 파일이 있으면 표식도 남겨 후속 수동 확인이 가능하게 한다.
-        if set(os.listdir(runtime.fd)) - {"owner.json", "helper.py", *owned_sockets}:
-            return False
-        for name in owned_sockets:
-            try:
-                os.unlink(name, dir_fd=runtime.fd)
-            except FileNotFoundError:
-                pass
-        _verify_runtime(runtime)
-        os.unlink("helper.py", dir_fd=runtime.fd)
-        os.unlink("owner.json", dir_fd=runtime.fd)
-        os.rmdir(runtime.paths.root)
-        return True
-    except (OSError, ValueError, TypeError, PairingError):
-        return False
-
-
-def _send_control(connection: socket.socket, message: dict[str, Any]) -> None:
-    payload = json.dumps(message, separators=(",", ":")).encode()
-    if len(payload) > CONTROL_LIMIT:
-        raise PairingError("helper control message exceeds the size limit")
-    connection.sendall(payload + b"\n")
-
-
-def _receive_control(connection: socket.socket) -> dict[str, Any]:
-    data = bytearray()
-    original_timeout = connection.gettimeout()
-    deadline = time.monotonic() + (original_timeout if original_timeout is not None else 2)
-    try:
-        while len(data) <= CONTROL_LIMIT:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise PairingError("helper control request timed out")
-            connection.settimeout(remaining)
-            chunk = connection.recv(1)
-            if not chunk:
-                raise PairingError("helper control connection closed")
-            if chunk == b"\n":
-                try:
-                    message = json.loads(data)
-                except (ValueError, UnicodeError, RecursionError) as error:
-                    raise PairingError("invalid helper control response") from error
-                if not isinstance(message, dict):
-                    raise PairingError("invalid helper control response")
-                return message
-            data.extend(chunk)
-        raise PairingError("helper control message exceeds the size limit")
-    finally:
-        connection.settimeout(original_timeout)
-
-
-def cleanup_runtime(root: Path, timeout: float = 10.0) -> None:
-    runtime = _open_runtime(root)
-    try:
-        _verify_runtime(runtime)
-        _socket_identity(runtime, "control.sock")
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-            connection.settimeout(timeout + 3)
-            connection.connect(str(runtime.paths.control_path))
-            _send_control(connection, {"action": "stop", "instance": runtime.paths.instance_id})
-            try:
-                result = _receive_control(connection)
-            except PairingError as error:
-                raise PairingError("helper cleanup completion could not be confirmed") from error
-        if result != {"state": "stopped", "removed": True}:
-            if result.get("state") == "stopped":
-                raise PairingError("helper stopped; changed or additional runtime files were preserved")
-            raise PairingError("helper cleanup refused; ownership could not be verified")
-    except (OSError, ValueError, TypeError) as error:
-        raise PairingError("helper cleanup completion could not be confirmed") from error
-    finally:
-        runtime.close()
-
-
-def _stop_child(child: subprocess.Popen[bytes]) -> None:
-    # 이 프로세스가 직접 생성해 아직 wait하지 않은 자식만 종료한다.
-    # 외부 PID나 프로세스 목록·프로세스 그룹을 정리 대상으로 사용하지 않는다.
-    if child.poll() is None:
-        child.terminate()
-        try:
-            child.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            child.kill()
-            child.wait()
-
-
-def _run_supervisor(fd: int) -> int:
-    runtime: PrivateRuntime | None = None
-    child: subprocess.Popen[bytes] | None = None
-    listener: socket.socket | None = None
-    requester: socket.socket | None = None
-    owned_sockets: dict[str, tuple[int, int]] = {}
-    lease: socket.socket | None = None
-    retained = False
-    ready = False
-    owns_runtime = False
-    result = 1
-    stop_requested = False
-
-    def request_stop(_signum: int, _frame: Any) -> None:
-        nonlocal stop_requested
-        stop_requested = True
-
-    previous_sigterm = signal.signal(signal.SIGTERM, request_stop)
-    try:
-        if fd < 3 or not stat.S_ISSOCK(os.fstat(fd).st_mode):
-            raise PairingError("internal supervisor requires an inherited socket")
-        lease = socket.socket(fileno=fd)
-        lease.settimeout(2)
-        request = _receive_control(lease)
-        if set(request) != {"runtime", "instance", "command", "timeout"}:
-            raise PairingError("invalid internal supervisor request")
-        command = request["command"]
-        timeout = request["timeout"]
-        if (
-            not isinstance(command, list) or not command
-            or any(not isinstance(value, str) or "\x00" in value for value in command)
-            or isinstance(timeout, bool) or not isinstance(timeout, (int, float))
-            or not math.isfinite(timeout) or timeout <= 0
-            or not isinstance(request["runtime"], str)
-        ):
-            raise PairingError("invalid internal supervisor request")
-        runtime = _open_runtime(Path(request["runtime"]))
-        if request["instance"] != runtime.paths.instance_id:
-            raise PairingError("internal supervisor ownership mismatch")
-        if set(os.listdir(runtime.fd)) != {"owner.json", "helper.py"}:
-            raise PairingError("helper runtime is already in use")
-        owns_runtime = True
-        if stop_requested:
-            raise PairingError("helper supervisor interrupted")
-        # 호출자의 worktree를 cwd로 붙잡지 않고, 요청 FD는 자식에 넘기지 않는다.
-        os.fchdir(runtime.fd)
-        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        listener.bind(str(runtime.paths.control_path))
-        os.chmod(runtime.paths.control_path, 0o600)
-        owned_sockets["control.sock"] = _socket_identity(runtime, "control.sock")
-        listener.listen(4)
-        child = subprocess.Popen(
-            command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, close_fds=True,
-        )
-        deadline = time.monotonic() + timeout
-        while child.poll() is None and not stop_requested:
-            if not ready:
-                try:
-                    owned_sockets["app.sock"] = _socket_identity(runtime, "app.sock")
-                except FileNotFoundError:
-                    pass
-                else:
-                    if _socket_connects(runtime.paths.socket_path):
-                        _send_control(lease, {"state": "ready"})
-                        ready = True
-                if not ready and time.monotonic() >= deadline:
-                    raise PairingError("app-server did not become ready")
-            readable, _, _ = select.select(
-                [listener] + ([] if retained else [lease]), [], [], 0.05
-            )
-            if not retained and lease in readable:
-                message = _receive_control(lease)
-                if not ready or message != {"action": "retain"}:
-                    raise PairingError("invalid helper ownership handoff")
-                _send_control(lease, {"state": "retained"})
-                retained = True
-                lease.close()
-            if listener in readable:
-                connection, _ = listener.accept()
-                connection.settimeout(0.2)
-                try:
-                    message = _receive_control(connection)
-                    _verify_runtime(runtime)
-                    if message != {"action": "stop", "instance": runtime.paths.instance_id}:
-                        raise PairingError("invalid helper cleanup request")
-                except (OSError, ValueError, TypeError, PairingError):
-                    try:
-                        _send_control(connection, {"state": "refused"})
-                    except OSError:
-                        pass
-                    connection.close()
-                else:
-                    requester = connection
-                    result = 0
-                    break
-        if child.returncode is not None and ready:
-            result = 0
-    except (OSError, ValueError, TypeError, PairingError):
-        if lease is not None and not retained:
-            try:
-                _send_control(lease, {"state": "failed"})
-            except OSError:
-                pass
-    finally:
-        try:
-            if child is not None:
-                _stop_child(child)
-            if listener is not None:
-                listener.close()
-            if lease is not None:
-                lease.close()
-            removed = False
-            if runtime is not None:
-                # 준비 직후 종료된 자식이 남긴 socket도 타입을 확인한 뒤에만 회수한다.
-                if child is not None and "app.sock" not in owned_sockets:
-                    try:
-                        owned_sockets["app.sock"] = _socket_identity(runtime, "app.sock")
-                    except (OSError, PairingError):
-                        pass
-                if owns_runtime:
-                    removed = _remove_runtime(runtime, owned_sockets)
-                runtime.close()
-            if requester is not None:
-                try:
-                    _send_control(requester, {"state": "stopped", "removed": removed})
-                except OSError:
-                    pass
-                requester.close()
-        finally:
-            signal.signal(signal.SIGTERM, previous_sigterm)
-    return result
+    return result.returncode == 0
 
 
 def _socket_connects(socket_path: Path, timeout: float = 0.25) -> bool:
@@ -737,81 +332,48 @@ def _socket_connects(socket_path: Path, timeout: float = 0.25) -> bool:
         return False
 
 
-def start_helper_process(
-    command: list[str], paths: RuntimePaths, timeout: float
-) -> HelperServer:
-    runtime = _open_runtime(paths.root)
-    process: subprocess.Popen[bytes] | None = None
-    owns_runtime = False
-    lease: socket.socket | None = None
-    inherited: socket.socket | None = None
-    try:
-        if paths != runtime.paths:
-            raise PairingError("helper runtime does not match its ownership marker")
-        owns_runtime = True
-        lease, inherited = socket.socketpair()
-        lease.settimeout(timeout + 2)
-        # 완전한 유한 요청을 먼저 큐에 넣어 spawn 직후 호출자가 종료돼도
-        # supervisor가 runtime 소유권을 확인하고 자기 자식을 회수할 수 있게 한다.
-        _send_control(lease, {
-            "runtime": str(paths.root), "instance": paths.instance_id,
-            "command": command, "timeout": timeout,
-        })
-        process = subprocess.Popen(
-            [sys.executable, str(paths.root / "helper.py"), "--supervise-fd", str(inherited.fileno())],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            close_fds=True, pass_fds=(inherited.fileno(),), start_new_session=True,
-            cwd=paths.root,
+def ensure_helper_app_server(codex_binary: Path, paths: RuntimePaths, timeout: float) -> None:
+    if not shutil.which("tmux"):
+        raise PairingError("tmux is required to keep the helper-owned app-server alive")
+
+    if _tmux_has_session(paths.session_name):
+        raise PairingError(
+            "helper tmux session already exists; clean it up before retrying: "
+            f"tmux kill-session -t {paths.session_name}"
         )
-        inherited.close()
-        if _receive_control(lease) != {"state": "ready"}:
-            raise PairingError("helper app-server failed to start")
-        return HelperServer(process, lease, paths, timeout)
-    except (OSError, ValueError, TypeError, PairingError) as error:
-        if lease is not None:
-            lease.close()
-        if process is not None:
-            try:
-                process.wait(timeout=timeout + 3)
-                # 요청 해석 전 supervisor가 끝났다면 아직 비어 있는 자기 runtime만 회수한다.
-                # socket이나 추가 파일이 남은 경우 _remove_runtime이 보존한다.
-                if owns_runtime:
-                    _remove_runtime(runtime, {})
-            except subprocess.TimeoutExpired:
-                pass
-        elif owns_runtime:
-            _remove_runtime(runtime, {})
-        raise PairingError("helper app-server failed to start; no code was issued") from error
-    finally:
-        if inherited is not None:
-            inherited.close()
-        runtime.close()
 
+    if paths.socket_path.exists():
+        paths.socket_path.unlink()
 
-def ensure_helper_app_server(
-    codex_binary: Path, paths: RuntimePaths, timeout: float
-) -> HelperServer:
-    return start_helper_process(
-        [str(codex_binary), "app-server", "--listen", f"unix://{paths.socket_path}"],
-        paths, timeout,
+    listen_arg = f"unix://{paths.socket_path}"
+    command = " ".join(
+        [
+            shlex.quote(str(codex_binary)),
+            "app-server",
+            "--listen",
+            shlex.quote(listen_arg),
+            f"2>{shlex.quote(str(paths.log_path))}",
+        ]
     )
+    result = run_checked(
+        ["tmux", "new-session", "-d", "-s", paths.session_name, command],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        raise PairingError(redact_pairing_payload(result.stderr.strip() or "tmux failed"))
+
+    _wait_for_socket(paths.socket_path, timeout)
 
 
-def cleanup_command_for(paths: RuntimePaths) -> str:
-    fallback = (
-        "import os,sys; "
-        "sys.version_info >= (3,9) or sys.exit('Cleanup requires Python 3.9 or newer'); "
-        "os.execv(sys.executable, [sys.executable, *sys.argv[1:]])"
-    )
-    launcher = (
-        'preferred=$1; shift; '
-        'if [ -x "$preferred" ]; then exec "$preferred" "$@"; fi; '
-        f'exec python3 -c {shlex.quote(fallback)} "$@"'
-    )
-    return shlex.join([
-        "/bin/sh", "-c", launcher, "codex-pairing-cleanup",
-        sys.executable, str(paths.root / "helper.py"), "--cleanup", str(paths.root),
-    ])
+def _wait_for_socket(socket_path: Path, timeout: float) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if socket_path.exists() and _socket_connects(socket_path):
+            return
+        time.sleep(0.1)
+    raise PairingError(f"app-server socket did not become ready: {socket_path}")
 
 
 def _websocket_accept_value(key: str) -> str:
@@ -1133,22 +695,10 @@ def print_result(result: PairingResult, as_json: bool) -> None:
     print(f"Cleanup: {result.cleanup_command}")
 
 
-def _interrupt_issuance(_signum: int, _frame: Any) -> None:
-    raise PairingError("pairing-code issuance interrupted")
-
-
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
-    if args.supervise_fd is not None:
-        return _run_supervisor(args.supervise_fd)
     cleanup_command: str | None = None
-    server: HelperServer | None = None
-    previous_sigterm: Any = None
     try:
-        if args.cleanup is not None:
-            cleanup_runtime(args.cleanup, args.timeout)
-            print("Helper stopped and private runtime removed.")
-            return 0
         ensure_consent(args)
         ensure_live_platform_allowed(args.mock)
         if args.mock:
@@ -1158,34 +708,19 @@ def main(argv: list[str] | None = None) -> int:
         codex_binary = select_codex_binary()
         ensure_pairing_start_returns_manual_code(codex_binary, args.timeout)
         paths = make_private_runtime_paths()
-        cleanup_command = cleanup_command_for(paths)
-        server = ensure_helper_app_server(codex_binary, paths, args.timeout)
-        # 핸들을 얻은 뒤에는 SIGTERM도 finally의 명시적 회수를 거친다.
-        # 정상 출력·flush 완료 뒤의 호출자 종료는 retained 서버에 영향을 주지 않는다.
-        previous_sigterm = signal.signal(signal.SIGTERM, _interrupt_issuance)
+        cleanup_command = (
+            f"tmux kill-session -t {shlex.quote(paths.session_name)}; "
+            f"rm -rf {shlex.quote(str(paths.root))}"
+        )
+        ensure_helper_app_server(codex_binary, paths, args.timeout)
         result = issue_pairing_code(paths.socket_path, args.timeout, cleanup_command)
-        server.retain()
         print_result(result, args.json)
-        sys.stdout.flush()
-        server = None
         return 0
-    except (OSError, PairingError) as error:
+    except PairingError as error:
         print(f"error: {redact_pairing_payload(str(error))}", file=sys.stderr)
         if cleanup_command is not None:
             print(f"Cleanup: {cleanup_command}", file=sys.stderr)
         return 1
-    finally:
-        if previous_sigterm is not None:
-            signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        try:
-            if server is not None:
-                try:
-                    server.abort()
-                except PairingError as error:
-                    print(f"error: {error}", file=sys.stderr)
-        finally:
-            if previous_sigterm is not None:
-                signal.signal(signal.SIGTERM, previous_sigterm)
 
 
 if __name__ == "__main__":

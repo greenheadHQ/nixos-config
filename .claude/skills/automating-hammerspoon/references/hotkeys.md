@@ -69,7 +69,7 @@ grep -n "terminalOptKeys" modules/darwin/programs/hammerspoon/files/init.lua
 
 | 단축키   | 기능                                                                   |
 | -------- | ---------------------------------------------------------------------- |
-| `Ctrl+B` | 영어 전환 후 Ctrl+B 전달 (Claude Code 백그라운드 전환 등) |
+| `Ctrl+B` | 영어 전환 후 Ctrl+B 전달 (tmux prefix, Claude Code 백그라운드 전환 등) |
 
 > 참고: 자세한 트러블슈팅은 [`references/troubleshooting.md`의 "한글 입력소스에서 Ctrl/Opt 단축키가 동작하지 않음"](troubleshooting.md#한글-입력소스에서-ctrlopt-단축키가-동작하지-않음) 섹션을 참고하세요.
 

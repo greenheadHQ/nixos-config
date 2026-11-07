@@ -1,6 +1,6 @@
 # yazi TUI 파일 매니저
-# - Ghostty + SSH 경로에서 Kitty graphics 이미지 프리뷰 전제로 통합
-#   (추가 전제: Ghostty `shell-integration-features = ssh-env`, sshd `AcceptEnv`)
+# - Ghostty + tmux + SSH 경로에서 Kitty graphics 이미지 프리뷰 전제로 통합
+#   (추가 전제: tmux `allow-passthrough on`, Ghostty `shell-integration-features = ssh-env`, sshd `AcceptEnv`)
 # - `pkgs.yazi` 래퍼가 file/jq/poppler-utils/7zz/ffmpeg/fd/ripgrep/fzf/zoxide/imagemagick/chafa/resvg를 PATH에 자동 주입
 {
   inputs,
