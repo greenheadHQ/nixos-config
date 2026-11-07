@@ -148,6 +148,7 @@
     ankiHostCredentials = "/var/lib/anki-host-credentials"; # root 0700; 키 값은 store 밖에서 생성
     ankiHostRestorePointsRelPath = "backups/anki-host-restore-points";
     immichUploadCache = "/var/lib/docker-data/immich/upload-cache"; # immich 업로드 캐시
+    immichOriginalsMirrorStateRelPath = "immich-originals-mirror"; # /var/lib 아래 systemd StateDirectory
     # Launcher 전용 headless SSH dispatcher의 Home 상대 설치 경로.
     # Home Manager target과 launcher PATH가 이 값을 함께 사용해 배선 drift를 막는다.
     headlessSshDispatcherRelPath = ".local/share/nixos-config/headless-ssh";

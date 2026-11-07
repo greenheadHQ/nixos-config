@@ -540,6 +540,9 @@ run_test "worktree-path-guard allows sibling worktree file" test_worktree_path_g
 run_test "worktree-path-guard allows main repo plan path exception" test_worktree_path_guard_allows_main_repo_plan_path_exception
 run_test "worktree-path-guard empty and malformed input noop" test_worktree_path_guard_empty_and_malformed_input_noop
 run_test "immich originals mirror skips rsync on empty source" test_immich_originals_mirror_empty_source_skips_rsync
+run_test "immich originals mirror records only successful runs" test_immich_originals_mirror_records_only_successful_runs
+run_test "immich originals mirror failures preserve previous success" test_immich_originals_mirror_failures_preserve_previous_success
+run_test "immich originals mirror success record failure is atomic" test_immich_originals_mirror_success_record_failure_is_atomic
 run_test "immich originals mirror blocks rsync when target HDD unmounted" test_immich_originals_mirror_unmounted_target_blocks_rsync
 run_test "immich originals mirror runs rsync when target HDD mounted" test_immich_originals_mirror_mounted_target_runs_rsync
 run_test "immich originals mirror mount guard checks MOUNT_ROOT, not DEST_DIR" test_immich_originals_mirror_mount_guard_checks_mount_root_not_dest_dir
@@ -570,6 +573,7 @@ run_test "immich cleanup unexpected failure sends single error notification" tes
 # homeserver-smoke-test suite (tests/suites/homeserver-smoke-test.sh) — 종료 코드·알림 계약 (#1387)
 run_test "smoke test all pass exits zero without notification" test_smoke_test_all_pass_exits_zero_without_notification
 run_test "smoke test disabled backups are not checked" test_smoke_test_disabled_backups_are_not_checked
+run_test "smoke test checks mirror freshness independently" test_smoke_test_immich_mirror_freshness_is_independent_of_db_backup
 run_test "smoke test HTTP failure exits nonzero with single summary" test_smoke_test_http_failure_exits_nonzero_with_single_summary
 run_test "smoke test stale backup exits nonzero with single summary" test_smoke_test_stale_backup_exits_nonzero_with_single_summary
 run_test "smoke test systemd failures exit nonzero with single summary" test_smoke_test_systemd_failures_exit_nonzero_with_single_summary
