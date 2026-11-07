@@ -57,7 +57,7 @@ pkgs.testers.runNixOSTest {
         machine.succeed("rm /srv/copyparty-mount-source")
         machine.succeed("mkdir -p /srv/copyparty-mount-source/data")
         machine.succeed("touch /srv/copyparty-mount-source/data/fixture-data")
-        machine.succeed("systemctl reset-failed " + mount_unit + " copyparty-fixture.service")
+        machine.succeed("systemctl reset-failed " + mount_unit)
         machine.succeed("systemctl start copyparty-fixture.service")
         machine.wait_for_unit("copyparty-fixture.service")
         machine.succeed("mountpoint -q " + quoted_mount)
