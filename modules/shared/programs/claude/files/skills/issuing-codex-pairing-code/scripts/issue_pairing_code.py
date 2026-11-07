@@ -24,6 +24,7 @@ import select
 import secrets
 import shlex
 import shutil
+import signal
 import socket
 import stat
 import struct
@@ -344,8 +345,10 @@ def make_private_runtime_paths() -> RuntimePaths:
     try:
         base.mkdir(mode=0o700, parents=True, exist_ok=True)
         root = Path(tempfile.mkdtemp(prefix="codex-pairing-code-", dir=str(base.resolve())))
+        root_identity = _identity(root.lstat())
         root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        root_identity = _identity(os.fstat(root_fd))
+        if _identity(os.fstat(root_fd)) != root_identity:
+            raise OSError("private helper runtime changed during creation")
         instance_id = secrets.token_hex(16)
         # 원본 worktree가 나중에 정리되어도 같은 구현으로 명시적 정리가 가능하다.
         for name, content in (
@@ -367,12 +370,19 @@ def make_private_runtime_paths() -> RuntimePaths:
                         os.unlink(name, dir_fd=root_fd)
                 except OSError:
                     pass
-            try:
-                if root is not None and _identity(root.lstat()) == root_identity:
-                    root.rmdir()
-            except OSError:
-                pass
-        raise PairingError("private helper runtime could not be created") from None
+        removed = root is None
+        try:
+            if root is not None and _identity(root.lstat()) == root_identity:
+                root.rmdir()
+                removed = True
+        except FileNotFoundError:
+            removed = True
+        except OSError:
+            pass
+        message = "private helper runtime could not be created"
+        if not removed:
+            message += f"; inspect the preserved runtime manually: {root}"
+        raise PairingError(message) from None
     finally:
         if root_fd != -1:
             os.close(root_fd)
@@ -414,7 +424,10 @@ def _read_owner(fd: int) -> tuple[str, tuple[int, int]]:
             or info.st_size > CONTROL_LIMIT
         ):
             raise PairingError("invalid helper ownership marker")
-        value = json.load(marker)
+        try:
+            value = json.load(marker)
+        except (ValueError, UnicodeError, RecursionError) as error:
+            raise PairingError("invalid helper ownership marker") from error
     if (
         not isinstance(value, dict)
         or set(value) != {"kind", "instance"}
@@ -485,7 +498,7 @@ def _socket_identity(runtime: PrivateRuntime, name: str) -> tuple[int, int]:
 def _remove_runtime(
     runtime: PrivateRuntime, owned_sockets: dict[str, tuple[int, int]]
 ) -> bool:
-    """알려진 inode만 제거한다. 추가 파일·교체된 디렉터리는 보존한다."""
+    """검증 시점의 소유권·inode 일치를 요구하며 추가 파일·변경된 runtime은 보존한다."""
     try:
         _verify_runtime(runtime)
         for name, expected in owned_sockets.items():
@@ -512,7 +525,10 @@ def _remove_runtime(
 
 
 def _send_control(connection: socket.socket, message: dict[str, Any]) -> None:
-    connection.sendall(json.dumps(message, separators=(",", ":")).encode() + b"\n")
+    payload = json.dumps(message, separators=(",", ":")).encode()
+    if len(payload) > CONTROL_LIMIT:
+        raise PairingError("helper control message exceeds the size limit")
+    connection.sendall(payload + b"\n")
 
 
 def _receive_control(connection: socket.socket) -> dict[str, Any]:
@@ -531,7 +547,7 @@ def _receive_control(connection: socket.socket) -> dict[str, Any]:
             if chunk == b"\n":
                 try:
                     message = json.loads(data)
-                except (ValueError, UnicodeError) as error:
+                except (ValueError, UnicodeError, RecursionError) as error:
                     raise PairingError("invalid helper control response") from error
                 if not isinstance(message, dict):
                     raise PairingError("invalid helper control response")
@@ -588,6 +604,13 @@ def _run_supervisor(fd: int) -> int:
     ready = False
     owns_runtime = False
     result = 1
+    stop_requested = False
+
+    def request_stop(_signum: int, _frame: Any) -> None:
+        nonlocal stop_requested
+        stop_requested = True
+
+    previous_sigterm = signal.signal(signal.SIGTERM, request_stop)
     try:
         if fd < 3 or not stat.S_ISSOCK(os.fstat(fd).st_mode):
             raise PairingError("internal supervisor requires an inherited socket")
@@ -612,6 +635,8 @@ def _run_supervisor(fd: int) -> int:
         if set(os.listdir(runtime.fd)) != {"owner.json", "helper.py"}:
             raise PairingError("helper runtime is already in use")
         owns_runtime = True
+        if stop_requested:
+            raise PairingError("helper supervisor interrupted")
         # 호출자의 worktree를 cwd로 붙잡지 않고, 요청 FD는 자식에 넘기지 않는다.
         os.fchdir(runtime.fd)
         listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -624,7 +649,7 @@ def _run_supervisor(fd: int) -> int:
             stderr=subprocess.DEVNULL, close_fds=True,
         )
         deadline = time.monotonic() + timeout
-        while child.poll() is None:
+        while child.poll() is None and not stop_requested:
             if not ready:
                 try:
                     owned_sockets["app.sock"] = _socket_identity(runtime, "app.sock")
@@ -673,29 +698,32 @@ def _run_supervisor(fd: int) -> int:
             except OSError:
                 pass
     finally:
-        if child is not None:
-            _stop_child(child)
-        if listener is not None:
-            listener.close()
-        if lease is not None:
-            lease.close()
-        removed = False
-        if runtime is not None:
-            # 준비 직후 종료된 자식이 남긴 socket도 타입을 확인한 뒤에만 회수한다.
-            if child is not None and "app.sock" not in owned_sockets:
+        try:
+            if child is not None:
+                _stop_child(child)
+            if listener is not None:
+                listener.close()
+            if lease is not None:
+                lease.close()
+            removed = False
+            if runtime is not None:
+                # 준비 직후 종료된 자식이 남긴 socket도 타입을 확인한 뒤에만 회수한다.
+                if child is not None and "app.sock" not in owned_sockets:
+                    try:
+                        owned_sockets["app.sock"] = _socket_identity(runtime, "app.sock")
+                    except (OSError, PairingError):
+                        pass
+                if owns_runtime:
+                    removed = _remove_runtime(runtime, owned_sockets)
+                runtime.close()
+            if requester is not None:
                 try:
-                    owned_sockets["app.sock"] = _socket_identity(runtime, "app.sock")
-                except (OSError, PairingError):
+                    _send_control(requester, {"state": "stopped", "removed": removed})
+                except OSError:
                     pass
-            if owns_runtime:
-                removed = _remove_runtime(runtime, owned_sockets)
-            runtime.close()
-        if requester is not None:
-            try:
-                _send_control(requester, {"state": "stopped", "removed": removed})
-            except OSError:
-                pass
-            requester.close()
+                requester.close()
+        finally:
+            signal.signal(signal.SIGTERM, previous_sigterm)
     return result
 
 
@@ -715,11 +743,20 @@ def start_helper_process(
     runtime = _open_runtime(paths.root)
     process: subprocess.Popen[bytes] | None = None
     owns_runtime = False
-    lease, inherited = socket.socketpair()
+    lease: socket.socket | None = None
+    inherited: socket.socket | None = None
     try:
         if paths != runtime.paths:
             raise PairingError("helper runtime does not match its ownership marker")
         owns_runtime = True
+        lease, inherited = socket.socketpair()
+        lease.settimeout(timeout + 2)
+        # 완전한 유한 요청을 먼저 큐에 넣어 spawn 직후 호출자가 종료돼도
+        # supervisor가 runtime 소유권을 확인하고 자기 자식을 회수할 수 있게 한다.
+        _send_control(lease, {
+            "runtime": str(paths.root), "instance": paths.instance_id,
+            "command": command, "timeout": timeout,
+        })
         process = subprocess.Popen(
             [sys.executable, str(paths.root / "helper.py"), "--supervise-fd", str(inherited.fileno())],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -727,16 +764,12 @@ def start_helper_process(
             cwd=paths.root,
         )
         inherited.close()
-        lease.settimeout(timeout + 2)
-        _send_control(lease, {
-            "runtime": str(paths.root), "instance": paths.instance_id,
-            "command": command, "timeout": timeout,
-        })
         if _receive_control(lease) != {"state": "ready"}:
             raise PairingError("helper app-server failed to start")
         return HelperServer(process, lease, paths, timeout)
     except (OSError, ValueError, TypeError, PairingError) as error:
-        lease.close()
+        if lease is not None:
+            lease.close()
         if process is not None:
             try:
                 process.wait(timeout=timeout + 3)
@@ -750,7 +783,8 @@ def start_helper_process(
             _remove_runtime(runtime, {})
         raise PairingError("helper app-server failed to start; no code was issued") from error
     finally:
-        inherited.close()
+        if inherited is not None:
+            inherited.close()
         runtime.close()
 
 
@@ -764,7 +798,18 @@ def ensure_helper_app_server(
 
 
 def cleanup_command_for(paths: RuntimePaths) -> str:
+    fallback = (
+        "import os,sys; "
+        "sys.version_info >= (3,9) or sys.exit('Cleanup requires Python 3.9 or newer'); "
+        "os.execv(sys.executable, [sys.executable, *sys.argv[1:]])"
+    )
+    launcher = (
+        'preferred=$1; shift; '
+        'if [ -x "$preferred" ]; then exec "$preferred" "$@"; fi; '
+        f'exec python3 -c {shlex.quote(fallback)} "$@"'
+    )
     return shlex.join([
+        "/bin/sh", "-c", launcher, "codex-pairing-cleanup",
         sys.executable, str(paths.root / "helper.py"), "--cleanup", str(paths.root),
     ])
 
@@ -1088,12 +1133,17 @@ def print_result(result: PairingResult, as_json: bool) -> None:
     print(f"Cleanup: {result.cleanup_command}")
 
 
+def _interrupt_issuance(_signum: int, _frame: Any) -> None:
+    raise PairingError("pairing-code issuance interrupted")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     if args.supervise_fd is not None:
         return _run_supervisor(args.supervise_fd)
     cleanup_command: str | None = None
     server: HelperServer | None = None
+    previous_sigterm: Any = None
     try:
         if args.cleanup is not None:
             cleanup_runtime(args.cleanup, args.timeout)
@@ -1110,6 +1160,9 @@ def main(argv: list[str] | None = None) -> int:
         paths = make_private_runtime_paths()
         cleanup_command = cleanup_command_for(paths)
         server = ensure_helper_app_server(codex_binary, paths, args.timeout)
+        # 핸들을 얻은 뒤에는 SIGTERM도 finally의 명시적 회수를 거친다.
+        # 정상 출력·flush 완료 뒤의 호출자 종료는 retained 서버에 영향을 주지 않는다.
+        previous_sigterm = signal.signal(signal.SIGTERM, _interrupt_issuance)
         result = issue_pairing_code(paths.socket_path, args.timeout, cleanup_command)
         server.retain()
         print_result(result, args.json)
@@ -1122,11 +1175,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Cleanup: {cleanup_command}", file=sys.stderr)
         return 1
     finally:
-        if server is not None:
-            try:
-                server.abort()
-            except PairingError as error:
-                print(f"error: {error}", file=sys.stderr)
+        if previous_sigterm is not None:
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        try:
+            if server is not None:
+                try:
+                    server.abort()
+                except PairingError as error:
+                    print(f"error: {error}", file=sys.stderr)
+        finally:
+            if previous_sigterm is not None:
+                signal.signal(signal.SIGTERM, previous_sigterm)
 
 
 if __name__ == "__main__":

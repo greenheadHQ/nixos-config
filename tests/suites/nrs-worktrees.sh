@@ -54,9 +54,87 @@ test_nrs_external_worktree_inspect_and_restore_special_paths() {
   ln -s "$worktree_root/$suffix" "$home_dir/$relative"
   run_nrs_worktree_fixture needs-restore
   [[ -L "$home_dir/.claude/CLAUDE.md" && -L "$home_dir/$relative" ]] || fail 'restore inspection must never remove links'
+  [[ "$(readlink -n "$home_dir/.claude/CLAUDE.md"; printf '.')" == "$worktree_root/CLAUDE.md." ]] || fail 'inspection changed canary target'
+  [[ "$(readlink -n "$home_dir/$relative"; printf '.')" == "$worktree_root/$suffix." ]] || fail 'inspection changed special target'
   run_nrs_worktree_fixture restore
   [[ "$(readlink "$home_dir/.claude/CLAUDE.md")" == "$hmf/.claude/CLAUDE.md" ]] || fail 'expected canary restored'
   [[ "$(cat "$home_dir/$relative")" == special ]] || fail 'expected NUL-delimited mapping restored'
+  [[ "$(readlink -n "$home_dir/$relative"; printf '.')" == "$hmf/$relative." ]] || fail 'expected special path restored to HMF'
+  (cd "$worktree_root" || exit; run_nrs_worktree_fixture relink)
+  [[ "$(readlink -n "$home_dir/$relative"; printf '.')" == "$worktree_root/$suffix." ]] || fail 'expected special path relinked to worktree'
+}
+
+test_nrs_missing_parents_restore_without_inspection_writes() {
+  local sandbox home_dir repo_root hmf worktree_root
+  setup_nrs_worktree_fixture
+  mkdir -p "$hmf/.claude/nested/deeper"
+  ln -s "$repo_root/CLAUDE.md" "$hmf/.claude/nested/deeper/config"
+  rmdir "$home_dir/.claude"
+  run_nrs_worktree_fixture needs-restore
+  [[ ! -e "$home_dir/.claude" ]] || fail 'inspection created a missing parent'
+  run_nrs_worktree_fixture restore
+  [[ "$(readlink "$home_dir/.claude/CLAUDE.md")" == "$hmf/.claude/CLAUDE.md" ]] || fail 'missing canary parent was not restored'
+  [[ "$(readlink "$home_dir/.claude/nested/deeper/config")" == "$hmf/.claude/nested/deeper/config" ]] || fail 'missing nested parents were not restored'
+  [[ ! -e "$home_dir/.codex" ]] || fail 'restore created a directory absent from HMF mappings'
+}
+
+test_nrs_missing_parents_preserve_unsafe_ancestors() {
+  local sandbox home_dir repo_root hmf worktree_root kind rc target
+  for kind in regular symlink dangling; do
+    setup_nrs_worktree_fixture
+    mkdir -p "$hmf/.claude/nested"
+    ln -s "$repo_root/CLAUDE.md" "$hmf/.claude/nested/config"
+    rmdir "$home_dir/.claude"
+    target="$sandbox/user-directory"
+    case "$kind" in
+      regular) printf 'personal\n' > "$home_dir/.claude" ;;
+      symlink) mkdir "$target"; ln -s "$target" "$home_dir/.claude" ;;
+      dangling) ln -s "$target" "$home_dir/.claude" ;;
+    esac
+    rc=0
+    run_nrs_worktree_fixture needs-restore || rc=$?
+    [[ "$rc" == 1 ]] || fail "unsafe parent classified as restorable: $kind"
+    run_nrs_worktree_fixture restore
+    if [[ "$kind" == regular ]]; then
+      [[ "$(cat "$home_dir/.claude")" == personal ]] || fail 'regular parent overwritten'
+    else
+      [[ "$(readlink "$home_dir/.claude")" == "$target" ]] || fail 'symlink parent overwritten'
+      [[ ! -e "$target/nested" && ! -e "$target/CLAUDE.md" ]] || fail 'restore traversed a symlink parent'
+    fi
+  done
+}
+
+test_nrs_hmf_listing_failure_never_mutates_entries() {
+  local sandbox home_dir repo_root hmf worktree_root mode action rc expected target real_find output
+  real_find=$(command -v find)
+  for mode in empty partial; do
+    setup_nrs_worktree_fixture
+    mkdir "$sandbox/stub-bin"
+    cat > "$sandbox/stub-bin/find" <<'STUB'
+#!/usr/bin/env bash
+if [[ "$1" == "$NRS_FIXTURE_HMF" ]]; then
+  if [[ "$NRS_FIND_FAILURE" == partial ]]; then
+    printf '%s\0' "$NRS_FIXTURE_HMF/.claude/CLAUDE.md"
+  fi
+  exit 23
+fi
+exec "$NRS_REAL_FIND" "$@"
+STUB
+    chmod +x "$sandbox/stub-bin/find"
+    for action in needs-restore restore relink; do
+      target="$worktree_root/CLAUDE.md"
+      [[ "$action" != relink ]] || target="$hmf/.claude/CLAUDE.md"
+      ln -sfn "$target" "$home_dir/.claude/CLAUDE.md"
+      rc=0
+      output=$(cd "$worktree_root" || exit; PATH="$sandbox/stub-bin:$PATH" NRS_REAL_FIND="$real_find" \
+        NRS_FIND_FAILURE="$mode" run_nrs_worktree_fixture "$action" 2>&1) || rc=$?
+      expected=1
+      [[ "$action" != needs-restore ]] || expected=2
+      [[ "$rc" == "$expected" ]] || fail "$mode HMF enumeration failure: $action returned $rc, expected $expected"
+      assert_contains "$output" 'Could not enumerate home-manager-files mappings'
+      [[ "$(readlink -n "$home_dir/.claude/CLAUDE.md"; printf '.')" == "$target." ]] || fail "$action changed a link after $mode enumeration failure"
+    done
+  done
 }
 
 test_nrs_external_worktree_relink_rejects_other_repository() {

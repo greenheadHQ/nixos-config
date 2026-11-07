@@ -16,12 +16,20 @@ YELLOW='\033[0;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# 경로 끝의 개행을 보존한다. Git/readlink는 경로 뒤에 개행 한 개를 출력한다.
+# Git이 경로 뒤에 덧붙인 개행만 제거하여 경로 끝의 개행을 보존한다.
 _capture_path() {
     local captured
     captured=$("$@" && printf '\001') || return 1
     REPLY=${captured%$'\001'}
     REPLY=${REPLY%$'\n'}
+}
+
+# BSD readlink는 target 자체가 개행으로 끝나면 출력 개행을 더하지 않는다.
+# -n으로 출력 구분자를 없애고 sentinel만 제거해야 GNU/BSD 모두 경로를 보존한다.
+_capture_link_target() {
+    local captured
+    captured=$(readlink -n "$1" && printf '\001') || return 1
+    REPLY=${captured%$'\001'}
 }
 
 _safe_relative_path() {
@@ -88,22 +96,50 @@ _is_worktree_target() {
 }
 
 _home_parent_is_real() {
-    local parent="${1%/*}"
+    local parent="${1%/*}" allow_missing="${2:-false}"
     while [[ "$parent" != "$HOME" ]]; do
-        [[ "$parent" == "$HOME/"* && -d "$parent" && ! -L "$parent" ]] || return 1
+        [[ "$parent" == "$HOME/"* ]] || return 1
+        if [[ -e "$parent" || -L "$parent" ]]; then
+            [[ -d "$parent" && ! -L "$parent" ]] || return 1
+        else
+            [[ "$allow_missing" == true ]] || return 1
+        fi
         parent=${parent%/*}
     done
 }
 
+# 현재 HMF 매핑에 필요한 부모만 위에서부터 생성한다. mkdir -p로 기존
+# symlink를 따라가지 않으며, 각 생성 전후 실제 디렉터리 경계를 재확인한다.
+_create_home_parents() {
+    local home_path="$1" parent="${1%/*}" count=0
+    local missing=()
+    _home_parent_is_real "$home_path" true || return 1
+    while [[ "$parent" != "$HOME" && ! -e "$parent" && ! -L "$parent" ]]; do
+        missing[count]=$parent
+        ((++count))
+        parent=${parent%/*}
+    done
+    while [[ "$count" -gt 0 ]]; do
+        count=$((count - 1))
+        parent=${missing[count]}
+        _home_parent_is_real "$parent" || return 1
+        if ! mkdir "$parent"; then
+            [[ -d "$parent" && ! -L "$parent" ]] || return 1
+        fi
+        [[ -d "$parent" && ! -L "$parent" ]] || return 1
+    done
+    _home_parent_is_real "$home_path"
+}
+
 _can_replace_entry() {
-    local home_rel="$1" repo_rel="$2" hmf="$3" home_path="$HOME/$1" target
+    local home_rel="$1" repo_rel="$2" hmf="$3" home_path="$HOME/$1" allow_missing="${4:-false}" target
     _safe_relative_path "$home_rel" && _safe_relative_path "$repo_rel" || return 1
-    _home_parent_is_real "$home_path" || return 1
+    _home_parent_is_real "$home_path" "$allow_missing" || return 1
     if [[ ! -L "$home_path" ]]; then
         [[ ! -e "$home_path" ]] # 일반 파일/디렉터리/특수 파일은 보존한다.
         return
     fi
-    _capture_path readlink "$home_path" || return 1
+    _capture_link_target "$home_path" || return 1
     target=$REPLY
     [[ "$target" == "$hmf/$home_rel" || "$target" == "$MAIN_REPO/$repo_rel" ]] && return 0
     _is_worktree_target "$target" "$repo_rel" "$home_path"
@@ -151,7 +187,7 @@ _discover_oos_entries() {
         local max_hops=10  # nix store 체인은 2-3 hop; 10은 안전 마진
         while [[ $hop -lt $max_hops ]]; do
             local target
-            _capture_path readlink "$current" 2>/dev/null || break
+            _capture_link_target "$current" 2>/dev/null || break
             target=$REPLY
             # 중간 hop은 nix store 절대 심링크. 첫 $main_repo/* match를 OOS 매핑으로 사용.
             if [[ "$target" == "$main_repo"/* ]]; then
@@ -169,6 +205,27 @@ _discover_oos_entries() {
         fi
         printf '%s\0%s\0' "$home_rel" "$repo_rel"
     done
+}
+
+# process substitution으로 생산자 종료 상태를 잃지 않도록 전체 열거를 먼저
+# 확인한다. 실패한 부분 목록은 검사·복원·relink 어느 경로에서도 사용하지 않는다.
+_load_oos_entries() {
+    local hmf="$1" listing home_rel repo_rel
+    OOS_HOME_RELS=()
+    OOS_REPO_RELS=()
+    OOS_ENTRY_COUNT=0
+    listing=$(mktemp "${TMPDIR:-/tmp}/nrs-oos-entries.XXXXXX") || return 1
+    if ! _discover_oos_entries "$hmf" "$MAIN_REPO" > "$listing"; then
+        rm -f "$listing"
+        echo "Could not enumerate home-manager-files mappings; preserving existing entries" >&2
+        return 1
+    fi
+    while IFS= read -r -d '' home_rel && IFS= read -r -d '' repo_rel; do
+        OOS_HOME_RELS[OOS_ENTRY_COUNT]=$home_rel
+        OOS_REPO_RELS[OOS_ENTRY_COUNT]=$repo_rel
+        ((++OOS_ENTRY_COUNT))
+    done < "$listing"
+    rm -f "$listing"
 }
 
 #───────────────────────────────────────────────────────────────────────────────
@@ -248,8 +305,11 @@ cmd_relink() {
         exit 1
     }
 
-    local relinked=0 skipped=0
-    while IFS= read -r -d '' home_rel && IFS= read -r -d '' repo_rel; do
+    _load_oos_entries "$hmf" || return 1
+    local relinked=0 skipped=0 entry_index home_rel repo_rel
+    for ((entry_index=0; entry_index<OOS_ENTRY_COUNT; entry_index++)); do
+        home_rel=${OOS_HOME_RELS[entry_index]}
+        repo_rel=${OOS_REPO_RELS[entry_index]}
         [[ -z "$home_rel" ]] && continue
         local wt_target="$worktree/$repo_rel"
         if [[ -e "$wt_target" || -L "$wt_target" ]] && _can_replace_entry "$home_rel" "$repo_rel" "$hmf"; then
@@ -259,7 +319,7 @@ cmd_relink() {
             echo -e "${YELLOW}  skip: $home_rel (not in worktree)${NC}"
             ((++skipped))
         fi
-    done < <(_discover_oos_entries "$hmf" "$MAIN_REPO")
+    done
 
     echo -e "${GREEN}Relinked $relinked symlink(s) to worktree${NC}"
     if [[ $skipped -gt 0 ]]; then
@@ -284,16 +344,22 @@ cmd_restore() {
         WORKTREE_ROOTS=()
         echo "Could not verify registered worktrees; preserving unverified links" >&2
     fi
-    local restored=0 preserved=0
-    while IFS= read -r -d '' home_rel && IFS= read -r -d '' repo_rel; do
+    _load_oos_entries "$hmf" || return 1
+    local restored=0 preserved=0 entry_index home_rel repo_rel
+    for ((entry_index=0; entry_index<OOS_ENTRY_COUNT; entry_index++)); do
+        home_rel=${OOS_HOME_RELS[entry_index]}
+        repo_rel=${OOS_REPO_RELS[entry_index]}
         [[ -z "$home_rel" ]] && continue
-        if ! _can_replace_entry "$home_rel" "$repo_rel" "$hmf"; then
+        if ! _can_replace_entry "$home_rel" "$repo_rel" "$hmf" true; then
             ((++preserved))
             continue
         fi
+        _create_home_parents "$HOME/$home_rel" || return 1
+        # 부모 생성 사이에 나타난 사용자 entry도 덮어쓰지 않는다.
+        _can_replace_entry "$home_rel" "$repo_rel" "$hmf" || return 1
         ln -sfn "$hmf/$home_rel" "$HOME/$home_rel"
         ((++restored))
-    done < <(_discover_oos_entries "$hmf" "$MAIN_REPO")
+    done
 
     echo -e "${GREEN}Restored $restored symlink(s) to nix store chain${NC}"
     if [[ "$preserved" -gt 0 ]]; then
@@ -305,7 +371,7 @@ cmd_restore() {
 _warn_remaining_worktree_links() {
     local link target root wanted_root="${1:-}"
     while IFS= read -r -d '' link; do
-        _capture_path readlink "$link" 2>/dev/null || continue
+        _capture_link_target "$link" 2>/dev/null || continue
         target=$REPLY
         for root in ${WORKTREE_ROOTS[@]+"${WORKTREE_ROOTS[@]}"}; do
             [[ -z "$wanted_root" || "$root" == "$wanted_root" ]] || continue
@@ -319,15 +385,18 @@ _warn_remaining_worktree_links() {
 # rebuild 내부용 읽기 검사: 복원이 필요한 검증된 링크나 누락 entry를 찾는다.
 # rc 0 = 복원 필요, 1 = 필요 없음, 2 = 근거 조회 실패. 이 단계는 홈을 변경하지 않는다.
 cmd_needs_restore() {
-    local hmf home_rel repo_rel home_path target needed=false
+    local hmf home_rel repo_rel home_path target entry_index needed=false
     hmf=$(_discover_hmf) || return 2
+    _load_oos_entries "$hmf" || return 2
     if ! _load_worktrees; then
         WORKTREE_ROOTS=()
         echo "Could not verify registered worktrees; preserving unverified links" >&2
     fi
-    while IFS= read -r -d '' home_rel && IFS= read -r -d '' repo_rel; do
+    for ((entry_index=0; entry_index<OOS_ENTRY_COUNT; entry_index++)); do
+        home_rel=${OOS_HOME_RELS[entry_index]}
+        repo_rel=${OOS_REPO_RELS[entry_index]}
         home_path="$HOME/$home_rel"
-        if ! _can_replace_entry "$home_rel" "$repo_rel" "$hmf"; then
+        if ! _can_replace_entry "$home_rel" "$repo_rel" "$hmf" true; then
             if [[ -L "$home_path" ]]; then
                 printf 'Preserved unverified link: %q\n' "$home_path" >&2
             fi
@@ -335,11 +404,11 @@ cmd_needs_restore() {
         fi
         if [[ ! -L "$home_path" ]]; then
             needed=true
-        elif _capture_path readlink "$home_path"; then
+        elif _capture_link_target "$home_path"; then
             target=$REPLY
             [[ "$target" == "$hmf/$home_rel" ]] || needed=true
         fi
-    done < <(_discover_oos_entries "$hmf" "$MAIN_REPO")
+    done
     [[ "$needed" == false ]] || return 0
     _warn_remaining_worktree_links
     [[ "$WORKTREES_VERIFIED" == true ]] || return 2

@@ -68,6 +68,9 @@ run_test "nrs legacy unregistered worktree restores exact mapping" test_nrs_lega
 run_test "nrs worktree only entry is preserved with warning" test_nrs_worktree_only_entry_is_preserved_with_warning
 run_test "detect external worktree preserves trailing newline" test_detect_external_worktree_preserves_trailing_newline
 run_test "nrs external worktree inspect and restore special paths" test_nrs_external_worktree_inspect_and_restore_special_paths
+run_test "nrs missing parents restore without inspection writes" test_nrs_missing_parents_restore_without_inspection_writes
+run_test "nrs missing parents preserve unsafe ancestors" test_nrs_missing_parents_preserve_unsafe_ancestors
+run_test "nrs HMF listing failure never mutates entries" test_nrs_hmf_listing_failure_never_mutates_entries
 run_test "nrs external worktree relink rejects other repository" test_nrs_external_worktree_relink_rejects_other_repository
 run_test "nrs restore preserves user entries" test_nrs_restore_preserves_user_entries
 run_test "nrs deleted registered worktree restores dangling mapping" test_nrs_deleted_registered_worktree_restores_dangling_mapping

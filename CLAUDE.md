@@ -37,9 +37,9 @@ git worktree list --porcelain
 정리는 대상 밖에서 다음 조건을 **제거 직전 다시** 확인한 뒤 `git worktree remove "$target"`으로 한다.
 
 - Git 등록·실제 물리 경로·저장소 동일성·HEAD가 확인한 대상과 일치하고 잠겨 있지 않아야 한다.
-- dirty/untracked 파일과 진행 중인 Git 작업이 없어야 한다. 미보존 커밋은 남긴다. detached HEAD는 다른 보존 ref가 있는지 확인한다.
+- dirty/untracked 파일과 진행 중인 Git 작업이 없어야 한다. ignored 파일도 별도로 확인하고, 보존 필요 여부를 확인하지 못한 파일이 있으면 worktree를 남긴다. 미보존 커밋은 남긴다. detached HEAD는 다른 보존 ref가 있는지 확인한다.
 - squash merge는 upstream 부재만으로 판단하지 않는다. 머지된 PR의 head와 현재 HEAD가 같다는 근거를 확인하고, 조회 실패나 이후 커밋이 있으면 보존한다.
-- 대상과 하위 경로를 cwd로 사용하는 프로세스·활성 세션이 없어야 한다. 조회 실패도 보존 사유다. 기존 세션 종료·잠금 해제는 worktree 제거에 포함하지 않는다.
+- 대상과 하위 경로를 cwd로 사용하는 프로세스·활성 세션뿐 아니라, cwd 밖에서 대상 파일을 열어 둔 프로세스도 확인한다. 사용 중이거나 확인할 수 없으면 보존한다. 열린 파일 조회만으로 모든 편집기 버퍼의 보존을 보장한다고 판단하지 않는다. 기존 세션 종료·잠금 해제는 worktree 제거에 포함하지 않는다.
 - 홈 symlink가 대상을 참조하면 먼저 복원한다. `nrs-relink restore` 결과와 링크 상태를 확인하고, 일반 파일·무관한 정상 링크는 보존한다.
 
 Git이 제거를 거부하면 중단한다. `--force`, 디렉터리 강제 삭제, 자동 stash/reset/clean으로 우회하지 않는다. 등록이 끊긴 잔해, 잠금 해제, prune, 브랜치 삭제도 대상과 보존 근거를 별도로 확인한다. 작업 브랜치를 지우지 않아도 worktree는 제거할 수 있다.
@@ -68,6 +68,8 @@ Bash tool의 inline 스크립트는 zsh에서 실행된다. 아래 bash 전용 �
 - (BSD 우선 환경에서 GNU 문법이 필요한 경우) 테스트 fixture의 GNU 전용 옵션 `touch -d '40 days ago'`·`find -printf` — devShell 밖(direnv 비활성) 훅/CI 셸에서는 BSD 도구가 잡혀 실패하므로, `prePushRuntime` profile에서 `coreutils`/`findutils`를 명시 제공한다 (#1009; `scripts/ai/test-runtime-profile.sh` + `tomlkit-bootstrap.sh` fallback).
 - (문법은 같은데 의미가 다른 경우) `find -size`의 단위 suffix — `-size -50M`은 GNU에서 MB 올림 비교, BSD에서 바이트 정확 비교라 같은 명령이 호스트마다 다른 파일 집합을 낸다. 게다가 `-50M`과 `+50M`을 상보 쌍으로 쓰면 어느 쪽에도 안 잡히는 크기 구간이 생긴다 (GNU 1MiB 폭, BSD 한 점). 원격 실행처럼 상대 구현을 고를 수 없으면 `c`(바이트) suffix를 써서 두 구현의 경계를 일치시킨다.
 - (호출부가 구현을 고를 수 없는 경우) 상대 날짜 계산 — BSD `date -v-30d` vs GNU `date -d '30 days ago'`는 문법이 다르다. `/usr/bin/date` 존재로 구현을 추정하면 틀린다(macOS 시스템 date가 `/bin/date`에 있는 경우가 있다). 고정 초 기준이면 `date +%s`(BSD·GNU 공통)로 epoch만 얻어 셸 산술로 계산한다 (#1376).
+
+- 링크 대상의 말단 개행 — BSD `readlink`는 대상 자체가 개행으로 끝나면 출력 개행을 덧붙이지 않을 수 있어, 출력 끝의 개행 한 개를 항상 제거하면 경로가 잘린다. GNU/BSD 공통 `readlink -n`으로 출력 구분자를 없애고 sentinel만 제거하여 링크 대상 자체의 개행을 보존한다.
 
 같은 종류의 GNU/BSD 옵션 충돌이 새로 발견되면 같은 단락에 케이스를 추가한다.
 

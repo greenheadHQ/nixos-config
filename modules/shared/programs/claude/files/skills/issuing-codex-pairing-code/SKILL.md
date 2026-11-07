@@ -24,9 +24,9 @@ python3 scripts/issue_pairing_code.py --user-requested-code
    - If the helper reports that the local Codex app-server protocol does not expose `manualPairingCode`, state that no live code was issued because the helper failed before starting app-server. The pairing API is an experimental Codex surface (the helper checks `generate-ts --experimental` output and opts in via `capabilities.experimentalApi`), so this failure means the installed Codex build dropped or renamed the pairing API.
 5. 정리는 사용자가 요청할 때만 수행한다. helper가 출력한 정확한 `Cleanup` 명령을 사용한다. 이 명령은 해당 발급의 비공개 runtime만 지정한다.
    - 연결 후에도 helper가 만든 app-server가 원격 제어를 담당한다. 별도 supervisor가 호출자 종료 후에도 이를 유지하며, `Cleanup` 명령은 그 인스턴스의 원격 연결도 종료한다.
-   - 발급 완료 전 호출자가 끊기거나 시작·발급에 실패하면 supervisor가 직접 생성한 자식만 회수한다. 완료 인계 뒤에는 사용자의 명시적 정리 또는 app-server의 종료까지 유지한다.
+   - 발급 완료 전 호출자가 끊기거나 시작·발급에 실패하면 supervisor가 직접 생성한 자식만 회수한다. 출력 완료 전 호출자에게 SIGTERM이 전달되거나 supervisor가 SIGTERM을 받으면 같은 정리 경로를 따른다. 정상 출력·flush와 완료 인계 뒤에는 사용자의 명시적 정리 또는 app-server의 종료까지 유지한다.
    - 정리는 비공개 제어 소켓으로 supervisor에 요청한다. PID 파일·프로세스 이름 검색·기존 세션 탐색을 사용하지 않는다. runtime의 소유권·권한·표식이 바뀌면 정리를 거부하며, 추가 파일은 재귀 삭제하지 않고 남긴다.
-   - runtime에는 helper의 비공개 복사본도 둔다. 원본 worktree가 정리되어도 출력된 `Cleanup` 명령은 이 복사본을 사용한다. 응답 유실은 정리 완료 여부를 확인하지 못한 상태이며, 원래 runtime 외의 세션을 찾아 종료하지 않는다.
+   - runtime에는 helper의 비공개 복사본도 둔다. 출력된 `Cleanup` 명령은 원본 worktree가 정리되어도 이 복사본을 사용한다. 발급 당시 Python이 사라졌으면 현재 PATH의 `python3`로 실행하며 Python 3.9 이상이 필요하다. 응답 유실은 정리 완료 여부를 확인하지 못한 상태이며, 원래 runtime 외의 세션을 찾아 종료하지 않는다.
 
 ```bash
 # 실제 실행에는 helper가 출력한 Cleanup 명령을 그대로 사용한다.

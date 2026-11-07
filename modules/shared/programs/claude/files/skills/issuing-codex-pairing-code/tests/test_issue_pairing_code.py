@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import errno
 import importlib.util
 import io
 import json
 import os
 import shlex
+import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -229,7 +232,8 @@ class PairingCodeHelperTests(unittest.TestCase):
                 instance_id="0" * 32,
             )
             with mock.patch.object(issue_pairing_code, "start_helper_process") as start:
-                issue_pairing_code.ensure_helper_app_server(Path("/fixture/codex"), paths, 1)
+                server = issue_pairing_code.ensure_helper_app_server(Path("/fixture/codex"), paths, 1)
+                self.assertIs(server, start.return_value)
             command = start.call_args.args[0]
         self.assertEqual(command, ["/fixture/codex", "app-server", "--listen", f"unix://{paths.socket_path}"])
         self.assertNotIn("--analytics-default-enabled", command)
@@ -560,7 +564,7 @@ def _run_main_capture(argv: list[str]) -> tuple[int, str, str]:
 
 
 FAKE_APP_SERVER = r'''
-import signal, socket, sys, time
+import os, signal, socket, sys, time
 mode = sys.argv[2]
 if mode == "fail":
     raise SystemExit(23)
@@ -577,8 +581,55 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
             data = connection.recv(32)
             if data == b"exit":
                 break
+            if data == b"pid":
+                connection.sendall(str(os.getpid()).encode())
+                continue
             if data:
                 connection.sendall(b"fixture-ready")
+'''
+
+
+FAKE_ISSUER = r'''
+import importlib.util, json, os, sys, time
+from pathlib import Path
+from unittest import mock
+sys.dont_write_bytecode = True
+spec = importlib.util.spec_from_file_location("pairing_issuer_fixture", sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = m
+spec.loader.exec_module(m)
+base, mode = Path(sys.argv[2]), sys.argv[4]
+os.environ["CODEX_PAIRING_RUNTIME_DIR"] = str(base)
+original_make_paths = m.make_private_runtime_paths
+original_popen = m.subprocess.Popen
+def make_paths():
+    paths = original_make_paths()
+    (base / "runtime.json").write_text(json.dumps({"root": str(paths.root)}))
+    return paths
+def start(_binary, paths, _timeout):
+    return m.start_helper_process(
+        [sys.executable, "-c", sys.argv[3], str(paths.socket_path), "normal"], paths, 2)
+def spawn_then_exit(*args, **kwargs):
+    process = original_popen(*args, **kwargs)
+    (base / "supervisor.pid").write_text(str(process.pid))
+    os._exit(23)
+def before_output(_result, _as_json):
+    (base / "before-output").touch()
+    time.sleep(30)
+with mock.patch.object(m, "ensure_live_platform_allowed"), \
+     mock.patch.object(m, "select_codex_binary", return_value="synthetic-only"), \
+     mock.patch.object(m, "ensure_pairing_start_returns_manual_code"), \
+     mock.patch.object(m, "make_private_runtime_paths", side_effect=make_paths), \
+     mock.patch.object(m, "ensure_helper_app_server", side_effect=start), \
+     mock.patch.object(m, "issue_pairing_code", side_effect=lambda _socket, _timeout, cleanup:
+         m.PairingResult("SYNTHETIC", m.MOCK_EXPIRES_AT, cleanup)):
+    if mode == "exit-after-spawn":
+        with mock.patch.object(m.subprocess, "Popen", side_effect=spawn_then_exit):
+            raise SystemExit(m.main(["--user-requested-code", "--json", "--timeout", "2"]))
+    if mode == "before-output":
+        with mock.patch.object(m, "print_result", side_effect=before_output):
+            raise SystemExit(m.main(["--user-requested-code", "--json", "--timeout", "2"]))
+    raise SystemExit(m.main(["--user-requested-code", "--json", "--timeout", "2"]))
 '''
 
 
@@ -628,6 +679,42 @@ class HelperLifecycleTests(unittest.TestCase):
         while root.exists() and time.monotonic() < deadline:
             time.sleep(0.02)
         self.assertFalse(root.exists(), "owned runtime was not reclaimed")
+
+    def wait_child_gone(self, pid):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return
+            time.sleep(0.02)
+        self.fail("synthetic child did not exit")
+
+    @contextlib.contextmanager
+    def observe_child(self, paths):
+        # runtime이 잘못 삭제돼도 이미 연결된 같은 합성 자식에게 exit를 보낼 수 있다.
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as query:
+            query.settimeout(2)
+            query.connect(str(paths.socket_path))
+            query.sendall(b"pid")
+            pid = int(query.recv(32))
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as held:
+            held.settimeout(2)
+            held.connect(str(paths.socket_path))
+            try:
+                yield pid, held
+            finally:
+                try:
+                    held.sendall(b"exit")
+                except OSError:
+                    pass
+                self.wait_child_gone(pid)
+
+    def issuer_command(self, mode, python=None):
+        return [
+            str(python or sys.executable), "-c", FAKE_ISSUER,
+            str(SCRIPT), str(self.base), FAKE_APP_SERVER, mode,
+        ]
 
     def test_no_external_runtime_needed_and_explicit_cleanup(self):
         with mock.patch.dict(os.environ, {"PATH": ""}):
@@ -723,6 +810,79 @@ with mock.patch.object(m, "ensure_live_platform_allowed"), \
             if root is not None and root.exists():
                 issue_pairing_code.cleanup_runtime(root, 2)
 
+    def test_issuer_sigterm_before_output_reclaims_retained_server(self):
+        issuer = subprocess.Popen(
+            self.issuer_command("before-output"), text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        root = None
+        try:
+            deadline = time.monotonic() + 5
+            while not (self.base / "before-output").exists() and time.monotonic() < deadline:
+                self.assertIsNone(issuer.poll(), "synthetic issuer exited before output boundary")
+                time.sleep(0.02)
+            self.assertTrue((self.base / "before-output").exists())
+            root = Path(json.loads((self.base / "runtime.json").read_text())["root"])
+            runtime = issue_pairing_code._open_runtime(root)
+            try:
+                paths = runtime.paths
+            finally:
+                runtime.close()
+            with self.observe_child(paths) as (pid, held):
+                issuer.terminate()
+                stdout, stderr = issuer.communicate(timeout=6)
+                self.assertNotEqual(issuer.returncode, 0)
+                self.assertEqual(stdout, "")
+                self.assertIn("interrupted", stderr)
+                self.wait_removed(root)
+                self.assertEqual(held.recv(32), b"")
+                self.wait_child_gone(pid)
+        finally:
+            if issuer.poll() is None:
+                issuer.terminate()
+                issuer.wait(timeout=6)
+            if root is None and (self.base / "runtime.json").exists():
+                root = Path(json.loads((self.base / "runtime.json").read_text())["root"])
+            if root is not None and root.exists():
+                issue_pairing_code.cleanup_runtime(root, 2)
+
+    def test_cleanup_survives_issuing_virtualenv_removal(self):
+        venv = self.base / "temporary venv '$()"
+        subprocess.run(
+            [sys.executable, "-m", "venv", "--without-pip", str(venv)],
+            check=True, capture_output=True, timeout=20,
+        )
+        result = subprocess.run(
+            self.issuer_command("normal", venv / "bin/python"),
+            check=True, capture_output=True, text=True, timeout=8,
+        )
+        cleanup = json.loads(result.stdout)["cleanup"]
+        root = Path(json.loads((self.base / "runtime.json").read_text())["root"])
+        runtime = issue_pairing_code._open_runtime(root)
+        try:
+            paths = runtime.paths
+        finally:
+            runtime.close()
+        try:
+            with self.observe_child(paths) as (pid, held):
+                shutil.rmtree(venv)
+                fallback = self.base / "fallback"
+                fallback.mkdir()
+                (fallback / "python3").symlink_to(sys.executable)
+                environment = os.environ.copy()
+                environment["PATH"] = str(fallback)
+                stopped = subprocess.run(
+                    shlex.split(cleanup), env=environment,
+                    capture_output=True, text=True, timeout=8,
+                )
+                self.assertEqual(stopped.returncode, 0, stopped.stderr)
+                self.assertFalse(root.exists())
+                self.assertEqual(held.recv(32), b"")
+                self.wait_child_gone(pid)
+        finally:
+            if root.exists():
+                issue_pairing_code.cleanup_runtime(root, 2)
+
     def test_cleanup_copy_survives_original_source_removal(self):
         source = self.base / "source.py"
         source.write_bytes(SCRIPT.read_bytes())
@@ -780,6 +940,27 @@ m.start_helper_process(
             issuer.wait(timeout=3)
         self.wait_removed(root)
 
+    def test_issuer_exit_immediately_after_supervisor_spawn_reclaims_runtime(self):
+        result = subprocess.run(
+            self.issuer_command("exit-after-spawn"),
+            capture_output=True, text=True, timeout=5,
+        )
+        self.assertEqual(result.returncode, 23)
+        root = Path(json.loads((self.base / "runtime.json").read_text())["root"])
+        supervisor_pid = int((self.base / "supervisor.pid").read_text())
+        try:
+            self.wait_removed(root)
+        finally:
+            if (root / "control.sock").exists():
+                issue_pairing_code.cleanup_runtime(root, 2)
+            self.wait_child_gone(supervisor_pid)
+            if root.exists():
+                runtime = issue_pairing_code._open_runtime(root)
+                try:
+                    self.assertTrue(issue_pairing_code._remove_runtime(runtime, {}))
+                finally:
+                    runtime.close()
+
     def test_two_instances_and_unrelated_child_are_isolated(self):
         first, second = self.start(), self.start()
         with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]) as unrelated:
@@ -818,6 +999,74 @@ m.start_helper_process(
             with self.assertRaises(issue_pairing_code.PairingError):
                 self.runtime()
         self.assertEqual(list(self.base.iterdir()), [sentinel])
+
+    def test_runtime_directory_open_failure_reclaims_empty_root(self):
+        original_open = os.open
+
+        def fail_directory(path, flags, *args, **kwargs):
+            if flags & os.O_DIRECTORY:
+                raise OSError(errno.EMFILE, "synthetic directory open failure")
+            return original_open(path, flags, *args, **kwargs)
+
+        with mock.patch.object(issue_pairing_code.os, "open", side_effect=fail_directory):
+            with self.assertRaises(issue_pairing_code.PairingError):
+                self.runtime()
+        self.assertEqual(list(self.base.iterdir()), [])
+
+    def test_runtime_creation_failure_reports_preserved_root(self):
+        original_open = os.open
+        preserved = []
+
+        def add_file_then_fail(path, flags, *args, **kwargs):
+            if flags & os.O_DIRECTORY:
+                root = Path(path)
+                (root / "keep.txt").write_text("synthetic concurrent content")
+                preserved.append(root)
+                raise OSError(errno.EMFILE, "synthetic directory open failure")
+            return original_open(path, flags, *args, **kwargs)
+
+        with mock.patch.object(issue_pairing_code.os, "open", side_effect=add_file_then_fail):
+            with self.assertRaises(issue_pairing_code.PairingError) as caught:
+                self.runtime()
+        self.assertEqual((preserved[0] / "keep.txt").read_text(), "synthetic concurrent content")
+        self.assertIn(str(preserved[0]), str(caught.exception))
+
+    def test_socketpair_failure_reclaims_runtime_and_closes_directory(self):
+        paths = self.runtime()
+        opened = []
+        original_open = issue_pairing_code._open_runtime
+
+        def capture_runtime(root):
+            runtime = original_open(root)
+            opened.append(runtime)
+            return runtime
+
+        try:
+            with mock.patch.object(issue_pairing_code, "_open_runtime", side_effect=capture_runtime), \
+                 mock.patch.object(issue_pairing_code.socket, "socketpair", side_effect=OSError(errno.EMFILE, "synthetic socket exhaustion")), \
+                 mock.patch.object(issue_pairing_code.subprocess, "Popen") as spawn:
+                with self.assertRaises(issue_pairing_code.PairingError):
+                    issue_pairing_code.start_helper_process(["synthetic-only"], paths, 0.2)
+            spawn.assert_not_called()
+            self.assertFalse(paths.root.exists())
+            with self.assertRaises(OSError):
+                os.fstat(opened[0].fd)
+        finally:
+            for runtime in opened:
+                try:
+                    runtime.close()
+                except OSError:
+                    pass
+
+    def test_oversized_initial_request_fails_before_supervisor_spawn(self):
+        paths = self.runtime()
+        with mock.patch.object(issue_pairing_code.subprocess, "Popen") as spawn:
+            with self.assertRaises(issue_pairing_code.PairingError):
+                issue_pairing_code.start_helper_process(
+                    ["synthetic-only", "x" * issue_pairing_code.CONTROL_LIMIT], paths, 0.2
+                )
+        spawn.assert_not_called()
+        self.assertFalse(paths.root.exists())
 
     def test_cleanup_response_loss_does_not_claim_nothing_stopped(self):
         paths = self.runtime()
@@ -858,23 +1107,57 @@ m.start_helper_process(
 
     def test_cleanup_waits_for_child_ignoring_term(self):
         server = self.start(mode="ignore-term")
-        issue_pairing_code.cleanup_runtime(server.paths.root, 3)
-        server.process.wait(timeout=5)
-        self.assertFalse(server.paths.root.exists())
+        with self.observe_child(server.paths) as (pid, held):
+            issue_pairing_code.cleanup_runtime(server.paths.root, 3)
+            server.process.wait(timeout=5)
+            self.assertFalse(server.paths.root.exists())
+            self.assertEqual(held.recv(32), b"")
+            self.wait_child_gone(pid)
+
+    def test_supervisor_sigterm_reclaims_its_child_and_runtime(self):
+        server = self.start()
+        with self.observe_child(server.paths) as (pid, held):
+            server.process.send_signal(signal.SIGTERM)
+            server.process.wait(timeout=5)
+            self.assertFalse(server.paths.root.exists())
+            self.assertEqual(held.recv(32), b"")
+            self.wait_child_gone(pid)
 
     def test_invalid_or_idle_control_requests_do_not_block_cleanup(self):
         server = self.start()
-        for raw in (b"not-json\n", b'[]\n', b'{"action":"stop","instance":"wrong"}\n', b"x" * 4098):
+        for raw in (b"not-json\n", b'[]\n', b'{"action":"stop","instance":"wrong"}\n', b"x" * 4098, b"[" * 1100 + b"]" * 1100 + b"\n"):
             with self.subTest(raw_length=len(raw)):
                 with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
                     connection.settimeout(2)
                     connection.connect(str(server.paths.control_path))
                     connection.sendall(raw)
                     self.assertEqual(issue_pairing_code._receive_control(connection), {"state": "refused"})
+                self.ping(server.paths)
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as idle:
             idle.connect(str(server.paths.control_path))
             issue_pairing_code.cleanup_runtime(server.paths.root, 2)
         server.process.wait(timeout=5)
+
+    def test_deep_owner_json_is_refused_without_stopping_instance(self):
+        server = self.start()
+        marker = server.paths.root / "owner.json"
+        original = marker.read_text()
+        marker.write_text("[" * 1100 + "]" * 1100)
+        try:
+            with self.assertRaises(issue_pairing_code.PairingError):
+                issue_pairing_code.cleanup_runtime(server.paths.root, 1)
+            self.ping(server.paths)
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+                connection.settimeout(2)
+                connection.connect(str(server.paths.control_path))
+                issue_pairing_code._send_control(connection, {
+                    "action": "stop", "instance": server.paths.instance_id,
+                })
+                self.assertEqual(issue_pairing_code._receive_control(connection), {"state": "refused"})
+            self.ping(server.paths)
+        finally:
+            if marker.exists():
+                marker.write_text(original)
 
     def test_slow_control_request_has_total_deadline(self):
         server = self.start()
