@@ -186,6 +186,9 @@ let
   # ═══════════════════════════════════════════════════════════════
   caddyVhosts = nixosCfg.services.caddy.virtualHosts;
   vhostNames = builtins.attrNames caddyVhosts;
+  caddyEnv = nixosCfg.systemd.services.caddy-env;
+  caddyService = nixosCfg.systemd.services.caddy;
+  caddyTokenCiphertext = "${nixosCfg.age.secrets.cloudflare-dns-api-token.file}";
 
   # #1284: 기본값은 constants와 같아서 배선 결함을 드러내지 못한다.
   # 네 공개 포트를 한 번에 바꿔 proxy와 backend가 같은 옵션을 소비하는지 확인한다.
@@ -1452,6 +1455,25 @@ let
     {
       name = "Test 2e: uptime-kuma(host network)의 UPTIME_KUMA_HOST가 127.0.0.1이어야 함 (0.0.0.0이면 LAN 노출)";
       cond = uptimeKumaLocalhostOnly;
+    }
+    {
+      name = "Test CE1: Caddy 자격 생성 유닛은 비공개 umask와 동일 생성 본체·경로를 사용해야 함";
+      cond =
+        (caddyEnv.serviceConfig.UMask or "") == "0077"
+        && nixpkgsLib.hasInfix (builtins.readFile ../modules/nixos/programs/caddy-env/files/generate-env.sh) caddyEnv.serviceConfig.ExecStart.drvAttrs.text
+        && nixpkgsLib.hasInfix "CADDY_TOKEN_FILE=${nixpkgsLib.escapeShellArg nixosCfg.age.secrets.cloudflare-dns-api-token.path}" caddyEnv.serviceConfig.ExecStart.drvAttrs.text
+        && nixpkgsLib.hasInfix "CADDY_ENV_FILE=${nixpkgsLib.escapeShellArg caddyService.serviceConfig.EnvironmentFile}" caddyEnv.serviceConfig.ExecStart.drvAttrs.text;
+    }
+    {
+      name = "Test CE2: Caddy 생성·소비 유닛의 기존 암호문 트리거와 실행 순서를 보존해야 함";
+      cond =
+        caddyEnv.restartTriggers == [ caddyTokenCiphertext ]
+        && caddyService.restartTriggers == [ caddyTokenCiphertext ]
+        && caddyEnv.serviceConfig.Type == "oneshot"
+        && caddyEnv.serviceConfig.RemainAfterExit
+        && builtins.elem "caddy.service" caddyEnv.before
+        && builtins.elem "caddy-env.service" caddyService.after
+        && builtins.elem "caddy-env.service" caddyService.wants;
     }
     {
       name = "Test 3a: Caddy virtualHosts가 비어있지 않아야 함 (vacuous truth 방지)";

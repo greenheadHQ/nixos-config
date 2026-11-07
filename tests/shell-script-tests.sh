@@ -570,6 +570,11 @@ run_test "immich cleanup unexpected failure sends single error notification" tes
 # homeserver-smoke-test suite (tests/suites/homeserver-smoke-test.sh) — 종료 코드·알림 계약 (#1387)
 run_test "smoke test all pass exits zero without notification" test_smoke_test_all_pass_exits_zero_without_notification
 run_test "smoke test disabled backups are not checked" test_smoke_test_disabled_backups_are_not_checked
+run_test "Caddy 자격 파일 비공개 생성과 원자적 교체" test_caddy_credentials_private_atomic_creation_and_replacement
+run_test "Caddy 자격 파일 생성 실패 시 이전 파일 보존" test_caddy_credentials_failure_preserves_previous_file
+run_test "Caddy 자격 파일의 디렉터리 대상 거절" test_caddy_credentials_rejects_directory_destination
+run_test "Caddy 자격 파일 교체 시 symlink 대상 보존" test_caddy_credentials_replaces_symlink_without_touching_target
+run_test "Caddy 자격 파일 정리 실패 시 원래 종료 코드 보존" test_caddy_credentials_cleanup_failure_preserves_original_status
 run_test "smoke test HTTP failure exits nonzero with single summary" test_smoke_test_http_failure_exits_nonzero_with_single_summary
 run_test "smoke test stale backup exits nonzero with single summary" test_smoke_test_stale_backup_exits_nonzero_with_single_summary
 run_test "smoke test systemd failures exit nonzero with single summary" test_smoke_test_systemd_failures_exit_nonzero_with_single_summary
