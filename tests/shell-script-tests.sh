@@ -595,6 +595,7 @@ run_test "test runtime profile rejects invalid prepared runtime" test_runtime_pr
 run_test "test runtime profile concurrent run prepares once" test_runtime_profile_concurrent_run_prepares_once
 run_test "tomlkit bootstrap reuses validated snapshot source profile" test_tomlkit_bootstrap_uses_validated_snapshot_source_profile
 run_test "tomlkit bootstrap rejects mismatched snapshot source profile" test_tomlkit_bootstrap_rejects_mismatched_snapshot_source_profile
+run_test "tomlkit fallback preserves runtime and arguments" test_tomlkit_bootstrap_fallback_preserves_runtime_and_arguments
 run_test "Shottr defaults helper bounds and short-circuits TCC access" test_shottr_defaults_helper_behavior
 run_test "Shottr secret writer uses stdin without argv exposure" test_shottr_secret_writer_uses_stdin_without_argv
 run_test "Shottr license refresh helper scrubs child environment" test_shottr_license_refresh_helper_scrubs_child_environment
