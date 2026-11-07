@@ -749,7 +749,8 @@ pinning_extract_body_file_paths() {
   # 동적 단어·미완성 인용·개행 포함 경로는 반환하지 않는다. 줄 단위 경로를 받는
   # 호출부의 없는 파일 건너뜀/읽기 실패 거부 정책은 그대로 유지한다.
   # 닫힌 치환 본문은 직접 게시 명령만 별도로 검사한다. here-doc의 종료/작업 폴더/
-  # 함수·별칭·임의 wrapper는 해석하지 않으며 here-doc 내부 본문은 검사에서 제외한다.
+  # 함수·별칭·임의 wrapper는 해석하지 않는다. 치환 안의 here-doc은 그 스코프를 검사에서
+  # 제외하지만, 최상위 here-doc 본문은 명령과 구분하지 않고 그대로 읽는다(과다 검사 방향).
   printf '%s\n' "$cmd" | awk -v sq="'" -v dq='"' '
     function finish_word(end) {
       if (started) {
@@ -1095,7 +1096,10 @@ pinning_extract_body_file_paths() {
       # 예약어는 할당보다 앞에서만 인식되므로 할당 접두어보다 먼저 건너뛴다.
       while (i <= last && literal[i] && words[i] ~ /^(if|then|else|elif|do|while|until|!|[{]|time)$/) {
         i++
-        if (words[i - 1] == "time" && literal[i] && words[i] == "-p") i++
+        if (words[i - 1] == "time") {
+          if (literal[i] && words[i] == "-p") i++
+          if (literal[i] && words[i] == "--") i++
+        }
       }
       while (i <= last && assignment[i]) i++
       if (literal[i] && words[i] == "command") {

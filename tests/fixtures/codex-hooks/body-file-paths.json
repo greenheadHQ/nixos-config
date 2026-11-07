@@ -123,6 +123,8 @@
   {"command":"RESULT=$({ gh issue create --body-file body.md; })","paths":["body.md"]},
   {"command":"RESULT=$(time -p git commit --file body.md)","paths":["body.md"]},
   {"command":"RESULT=$(time gh issue create --body-file body.md)","paths":["body.md"]},
+  {"command":"RESULT=$(time -- gh issue create --body-file body.md)","paths":["body.md"]},
+  {"command":"RESULT=$(time -p -- gh issue create --body-file body.md)","paths":["body.md"]},
   {"command":"RESULT=$(if SYNTHETIC_VALUE=x gh issue create --body-file body.md; then :; fi)","paths":["body.md"]},
   {"command":"RESULT=$(if git commit -F msg.md -- --file ignored.md; then :; fi)","paths":["msg.md"]},
   {"command":"RESULT=$(if printf --body-file ignored.md; then :; fi)","paths":[]},
