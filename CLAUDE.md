@@ -22,14 +22,27 @@ Environment 섹션의 `Platform` 값으로 현재 환경을 판별한다.
 
 home-manager activation 충돌 정책: macOS에서 mkOutOfStoreSymlink target이 외부 프로세스의 atomic rename으로 일반 파일이 되면 `home-manager.backupCommand`가 자가 치유한다 (regular file은 unlink + 콘솔 한 줄 echo, directory는 timestamped backup). 사이드이펙트로, symlink가 깨진 시간 동안 사용자가 home 쪽에서 의도 변경한 내용도 silent 손실될 수 있다 (예: VSCode UI에서 keybinding 추가 후 settings.json이 깨진 상태에서 한 후속 변경). 정상 symlink 흐름에서는 source 직접 수정 = git 추적이 정상 동작한다. 본 정책은 사용자 명시 동의 범위 내. 정책 본체는 `modules/darwin/home.nix`.
 
-## Worktree (wt)
+## Git worktree
 
-`wt`로 git worktree를 생성/이동/정리한다 (`.claude/worktrees/<dir>`, 현재 HEAD 기준 분기). `wt`는 worktree 관리만 하고 창을 열거나 도구를 띄우지 않는다 — 생성/이동은 언제나 경로 한 줄을 stdout으로 내고, 실제 이동은 zsh 래퍼(또는 `cd "$(wt ...)"`)의 몫이다. 비대화형 셸(LLM Bash tool 등)에서는 자동으로 비대화형 모드가 된다 (fzf/번호 선택 비활성; `WT_NONINTERACTIVE=1`로 강제 가능). LLM 하네스가 대화형 셸 snapshot을 주입해 zsh 래퍼 함수가 비대화형 셸에 존재할 수 있으나, 래퍼는 비대화형(WT_NONINTERACTIVE 또는 stdin 비TTY)을 감지하면 `~/.local/bin/wt` 바이너리로 passthrough하므로 아래 규칙은 동일하게 성립한다. 비대화형 사용 규칙:
+일반 Git 명령으로 작업을 분리한다. 생성 전 기본 브랜치·현재 HEAD·dirty/untracked 상태와 `git worktree list --porcelain`의 등록 경로·브랜치·잠금을 확인한다. 기존 worktree·브랜치·trust·백업은 보존한다.
 
-- 생성: `wt <branch>`. 기존 worktree/브랜치와 충돌하면 비대화형은 **안전하게 실패**하므로 의도를 `--if-exists=reuse|recreate|fail`로 명시한다. 기존 worktree와 충돌할 때 `reuse`·`recreate`(대화형 선택 포함)는 그 worktree에 요청 브랜치가 실제로 checkout돼 있을 때만 진행하므로, 성공 출력 경로는 요청 브랜치의 worktree다 — 다른 브랜치(`feat/a`와 `feat_a`는 같은 경로로 매핑된다)·detached·조회 실패면 경로를 내지 않고 실패한다.
-- 이동: 비대화형은 cd 불가 — 경로를 stdout으로 출력하므로 `cd "$(wt cd <name>)"`로 쓴다. 인자 없는 `wt cd`는 실패하니 이름을 지정한다. 이름 매칭은 정확 일치가 우선이며(`wt ls`가 보여주는 상대 경로 이름 → 브랜치명 순), 정확 일치 없이 여러 worktree에 부분 일치하면 아무것도 고르지 않고 후보를 안내하며 실패한다. 손상(BROKEN) 항목에 매칭되면 경로를 출력하지 않고 복구 명령을 안내하며 실패하고, 대화형 선택 목록에서도 제외된다.
-- 목록: `wt ls --json` (name/branch/path/pr/dirty/unpushed/current/committedAt/age/locked/broken 구조화 출력, jq 파싱용). 목록은 디렉토리 스캔이 아니라 **git 등록(`git worktree list`) 기준**이라 depth 2 이상 경로(`.claude/worktrees/feat/x`)와 등록만 남고 디렉토리가 사라진 항목도 나오며, git이 모르는 잔재 디렉토리는 합집합으로 함께 나온다. `name`은 `.claude/worktrees` 기준 상대 경로다 — depth 2 이상 항목은 `feat/x`로 나오며, 그 값이 `wt cleanup`에 그대로 넘기는 이름이다. `broken: true`는 그 등록의 worktree를 읽을 수 없다는 뜻이다(디렉토리 소실·gitdir 무효) — branch는 등록에 기록된 값이고 committedAt/dirty/unpushed는 의미가 없다. `locked: true`는 `git worktree lock`된 항목으로, cleanup은 `--auto`·이름 지정·`--yes` 어느 경로에서도 이를 정리하지 않는다. `unpushed`는 "정리하면 잃을 커밋이 있는가"를 뜻한다 — squash merge로 원격 브랜치가 사라져 upstream이 없어도, PR이 MERGED이고 그 판정 근거인 OID가 현재 HEAD와 일치하는 동안에는 `false`다 (`modules/shared/scripts/lib/wt/git-state.sh`의 `_wt_has_unpushed_risk`). detached HEAD는 로컬 브랜치·태그·원격 추적 ref 중 하나가 그 커밋을 포함할 때만 `false`다 — 그 worktree 자신의 HEAD·reflog, 다른 worktree의 detached HEAD, stash는 보존으로 치지 않고, 조회에 실패하면 `true`다 (`_wt_detached_head_preserved`). `pr`은 조회 시점 스냅샷이라, 조회 뒤 새 커밋이 생기면 `pr: "MERGED"`와 `unpushed: true`가 함께 나올 수 있다 — 근거가 낡았다는 정상 신호이지 결함이 아니다.
-- 정리: `wt cleanup --auto` (MERGED 자동) 또는 `wt cleanup <name>...` (이름 지정 — `wt ls`가 보여주는 상대 경로 이름을 쓴다. 마지막 경로 요소만 준 이름이 여러 worktree에 맞으면 아무것도 지우지 않고 후보를 안내한다). `--yes`는 선정된 대상의 제거 전략을 강제로 바꾼다 — dirty/unpushed 확인을 우회하고, MERGED 무확인 삭제에 붙는 보호(비강제 제거·제거 직전 재확인·ref CAS)를 해제한다. 다만 `--auto`의 후보 선정(dirty·merge 후 추가 커밋은 스킵)과, 그 경로가 삭제 직전에 다시 보는 dirty·근거(조회 이후 HEAD 변경, 근거 기록 부재 포함)는 우회하지 않는다. **잠금(locked)도 우회하지 않는다** — `git worktree lock`된 worktree는 후보 수집 단계에서 빠지고 스킵 사유가 출력되며, 삭제 함수도 잠금(과 잠금 상태 확인 실패)을 이유로 거부한다. 해제는 잠근 주체가 `git worktree unlock`으로 한다. **쓰는 중인 worktree도 지우지 않는다** — 대상(하위 포함)을 cwd로 둔 다른 프로세스(유휴 셸 포함)가 있으면 제거·재생성을 멈추고 PID·명령을 보여 준다. 탐지에 실패해도 원인을 알리고 멈춘다. wt를 부른 셸·세션(조상)과 조상이 띄운 `caffeinate`는 판정에서 빠지지만, 같은 세션이 따로 띄운 백그라운드 셸은 잡힌다. 이 활성 가드는 `--yes`로 이름을 지정하거나 대화형으로 고른 정리와 재생성에서만 우회되고, `wt cleanup --auto --yes`는 그 worktree를 건너뛴다. 강제 제거가 git에 거부되면 디렉토리를 대신 지우지 않고 실패를 보고한다 — 그렇게 지우면 등록만 남은 유령 worktree가 된다. **정리 대상 worktree 밖(저장소 루트)에서 실행한다** — 자기 자신은 삭제 시 셸의 cwd가 사라지므로 항상 제외된다. `wt`는 제외 사실을 알리고, 그 worktree가 실제 정리 대상(PR MERGED)이거나 이름으로 직접 지정된 경우에는 저장소 루트 재실행 명령도 함께 안내한다.
+```bash
+# 원격 기본 브랜치와 작업 이름을 확인한 뒤 예시 값을 정한다.
+git worktree add -b feat/example ../nixos-config-example origin/main
+git worktree list --porcelain
+```
+
+자동화에서 경로 목록은 `git worktree list --porcelain -z`로 읽는다. 조회의 종료코드가 성공인지 먼저 확인하고 NUL 레코드를 파싱한다. 출력 일부나 조회 실패를 빈 목록으로 취급하지 않는다. 대상 경로는 변수에 담아 항상 인용한다.
+
+정리는 대상 밖에서 다음 조건을 **제거 직전 다시** 확인한 뒤 `git worktree remove "$target"`으로 한다.
+
+- Git 등록·실제 물리 경로·저장소 동일성·HEAD가 확인한 대상과 일치하고 잠겨 있지 않아야 한다.
+- dirty/untracked 파일과 진행 중인 Git 작업이 없어야 한다. ignored 파일도 별도로 확인하고, 보존 필요 여부를 확인하지 못한 파일이 있으면 worktree를 남긴다. 미보존 커밋은 남긴다. detached HEAD는 다른 보존 ref가 있는지 확인한다.
+- squash merge는 upstream 부재만으로 판단하지 않는다. 머지된 PR의 head와 현재 HEAD가 같다는 근거를 확인하고, 조회 실패나 이후 커밋이 있으면 보존한다.
+- 대상과 하위 경로를 cwd로 사용하는 프로세스·활성 세션뿐 아니라, cwd 밖에서 대상 파일을 열어 둔 프로세스도 확인한다. 사용 중이거나 확인할 수 없으면 보존한다. 열린 파일 조회만으로 모든 편집기 버퍼의 보존을 보장한다고 판단하지 않는다. 기존 세션 종료·잠금 해제는 worktree 제거에 포함하지 않는다.
+- 홈 symlink가 대상을 참조하면 먼저 복원한다. `nrs-relink restore` 결과와 링크 상태를 확인하고, 일반 파일·무관한 정상 링크는 보존한다.
+
+Git이 제거를 거부하면 중단한다. `--force`, 디렉터리 강제 삭제, 자동 stash/reset/clean으로 우회하지 않는다. 등록이 끊긴 잔해, 잠금 해제, prune, 브랜치 삭제도 대상과 보존 근거를 별도로 확인한다. 작업 브랜치를 지우지 않아도 worktree는 제거할 수 있다.
 
 **워크트리에서 git hook 파일을 직접 쓰지 않는다.** direnv/`nrs`가 그 워크트리의 `core.hooksPath`를 고정하기 전에는 `git rev-parse --git-path hooks`가 **메인 repo의 `.git/hooks`** 로 해석된다. 그 경로에 쓰면 메인 repo의 hook을 덮어써 이후 모든 커밋이 막힐 수 있다 (#1073에서 관측된 경로). hook 동작을 확인해야 하면 `tests/suites/lefthook.sh`의 격리 fixture(`create_install_lefthook_fixture`)를 쓴다. 이미 덮어썼다면 그 hook 파일을 지운 뒤 direnv를 다시 진입한다 — `lefthook.yml`이 정의하는 hook은 `lefthook install`이 다시 쓴다. 다만 `<hook>.old`가 이미 있으면 lefthook이 백업 rename에 실패해 install이 죽으므로, 그때는 `<hook>`과 `<hook>.old`를 함께 지운다.
 
@@ -55,6 +68,8 @@ Bash tool의 inline 스크립트는 zsh에서 실행된다. 아래 bash 전용 �
 - (BSD 우선 환경에서 GNU 문법이 필요한 경우) 테스트 fixture의 GNU 전용 옵션 `touch -d '40 days ago'`·`find -printf` — devShell 밖(direnv 비활성) 훅/CI 셸에서는 BSD 도구가 잡혀 실패하므로, `prePushRuntime` profile에서 `coreutils`/`findutils`를 명시 제공한다 (#1009; `scripts/ai/test-runtime-profile.sh` + `tomlkit-bootstrap.sh` fallback).
 - (문법은 같은데 의미가 다른 경우) `find -size`의 단위 suffix — `-size -50M`은 GNU에서 MB 올림 비교, BSD에서 바이트 정확 비교라 같은 명령이 호스트마다 다른 파일 집합을 낸다. 게다가 `-50M`과 `+50M`을 상보 쌍으로 쓰면 어느 쪽에도 안 잡히는 크기 구간이 생긴다 (GNU 1MiB 폭, BSD 한 점). 원격 실행처럼 상대 구현을 고를 수 없으면 `c`(바이트) suffix를 써서 두 구현의 경계를 일치시킨다.
 - (호출부가 구현을 고를 수 없는 경우) 상대 날짜 계산 — BSD `date -v-30d` vs GNU `date -d '30 days ago'`는 문법이 다르다. `/usr/bin/date` 존재로 구현을 추정하면 틀린다(macOS 시스템 date가 `/bin/date`에 있는 경우가 있다). 고정 초 기준이면 `date +%s`(BSD·GNU 공통)로 epoch만 얻어 셸 산술로 계산한다 (#1376).
+
+- 링크 대상의 말단 개행 — BSD `readlink`는 대상 자체가 개행으로 끝나면 출력 개행을 덧붙이지 않을 수 있어, 출력 끝의 개행 한 개를 항상 제거하면 경로가 잘린다. GNU/BSD 공통 `readlink -n`으로 출력 구분자를 없애고 sentinel만 제거하여 링크 대상 자체의 개행을 보존한다.
 
 같은 종류의 GNU/BSD 옵션 충돌이 새로 발견되면 같은 단락에 케이스를 추가한다.
 

@@ -14,7 +14,7 @@ These configurations include my usernames, paths, and encrypted secrets. If you'
 
 | Location | Contents |
 | --- | --- |
-| [modules/shared](./modules/shared/) | Shell, Git, Neovim, tmux, and other settings used across machines |
+| [modules/shared](./modules/shared/) | Shell, Git, Neovim, and other settings used across machines |
 | [modules/darwin](./modules/darwin/) | macOS preferences, desktop apps, and automation |
 | [modules/nixos](./modules/nixos/) | NixOS system settings and home server services |
 | [hosts](./hosts/) | Hardware and disk configuration |

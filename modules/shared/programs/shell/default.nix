@@ -10,8 +10,6 @@
 
 let
   sharedScriptsDir = ../../scripts;
-  pythonWithTomlkit =
-    (import ../../../../libraries/python-runtimes.nix { inherit pkgs; }).pythonWithTomlkit;
   # mise shims 경로 변수 선언 — envExtra/initContent 공통 SoT.
   # 경로는 constants.mise.shimsDirExpr 우선순위(MISE_DATA_DIR → XDG_DATA_HOME/mise → $HOME/.local/share/mise).
   miseShimsDecl = ''_mise_shims="${constants.mise.shimsDirExpr}"'';
@@ -31,26 +29,6 @@ in
   home.file.".local/bin/codex-review-status" = {
     source = "${sharedScriptsDir}/codex-review-status.py";
     executable = true;
-  };
-  home.file.".local/bin/.wt-real" = {
-    source = "${sharedScriptsDir}/wt.sh";
-    executable = true;
-  };
-  home.file.".local/bin/wt" =
-    let
-      wrapper = pkgs.writeShellScript "wt-wrapper" ''
-        export WT_PYTHON="${pythonWithTomlkit}/bin/python3"
-        export WT_LSOF="${pkgs.lsof}/bin/lsof"
-        exec "${config.home.homeDirectory}/.local/bin/.wt-real" "$@"
-      '';
-    in
-    {
-      source = wrapper;
-      executable = true;
-    };
-  home.file.".local/lib/wt" = {
-    source = "${sharedScriptsDir}/lib/wt";
-    recursive = true;
   };
   home.file.".local/lib/pushover.sh" = {
     source = "${sharedScriptsDir}/lib/pushover.sh";
@@ -218,11 +196,6 @@ in
           unset _mise_shims
         fi
 
-        # tmux 내부에서 clear 시 history buffer도 함께 삭제
-        if [ -n "$TMUX" ]; then
-          alias clear='clear && tmux clear-history'
-        fi
-
         # 동적 delta side-by-side 제어 (터미널 너비 기반)
         # 좁은 터미널(< 120컬럼)에서 side-by-side 자동 비활성화
         # precmd: 매 프롬프트 전 실행 → 터미널 리사이즈 즉시 반영
@@ -317,50 +290,6 @@ in
       '')
 
       #─────────────────────────────────────────────────────────────────────────
-      # wt 래퍼 함수 (cd 서브커맨드: caller 셸 cwd 변경 필요)
-      #─────────────────────────────────────────────────────────────────────────
-      ''
-        wt() {
-          # 비대화형/캡처 컨텍스트에서는 wrapper를 우회하고 바이너리에 위임한다.
-          # (1) Claude Code 같은 LLM 하네스는 대화형 셸의 snapshot을 비대화형 셸에
-          #     주입하므로 "비대화형엔 wrapper가 없다"는 가정이 성립하지 않는다.
-          # (2) wrapper의 cd 분기는 경로를 stdout에 내지 않아(직접 cd가 목적)
-          #     `cd "$(wt cd <name>)"` 계약이 조용히 깨진다 — zsh에서 `cd ""`는
-          #     no-op 성공이라 잘못된 디렉토리에서 후속 명령이 실행된다.
-          # (3) stdout 비TTY 검사: 대화형 셸이라도 $(...)/파이프로 stdout이 캡처되면
-          #     호출자가 출력을 원하는 것이므로 wrapper의 직접-cd UX 대신 바이너리의
-          #     경로 출력 계약을 따른다.
-          # 게이트 기준 = 바이너리의 _wt_interactive(WT_NONINTERACTIVE 또는 stdin
-          # 비TTY) + stdout 비TTY.
-          if [[ -n "''${WT_NONINTERACTIVE:-}" ]] || [[ ! -t 0 ]] || [[ ! -t 1 ]]; then
-            command wt "$@"
-            return $?
-          fi
-
-          if [[ "''${1:-}" == "cd" ]]; then
-            shift
-            local target
-            target=$(command wt cd "$@") || return $?
-            [[ -n "$target" ]] && cd "$target"
-          else
-            # stdout 캡처: create가 낸 경로로 이동한다 (경로 출력은 wt의 유일한 계약)
-            local output
-            output=$(command wt "$@")
-            local rc=$?
-            if [[ $rc -ne 0 ]]; then
-              [[ -n "$output" ]] && echo "$output"
-              return $rc
-            fi
-            if [[ -n "$output" && -d "$output" ]]; then
-              cd "$output"
-            elif [[ -n "$output" ]]; then
-              echo "$output"
-            fi
-          fi
-        }
-      ''
-
-      #─────────────────────────────────────────────────────────────────────────
       # 1Password op_get helper (PRD #780; 무인 SA 폴백은 #1041/#1094 인접 DX 개선)
       # op_get <name> <field> [<vault>] — vault 기본값은 constants.onePassword.vaults.automation
       # 해석 순서 (SA-first):
@@ -438,15 +367,13 @@ in
       #─────────────────────────────────────────────────────────────────────────
       ''
         # push: 텍스트를 Pushover로 iPhone에 전송 (Unix-like)
-        # 사용법: push <텍스트> | echo "text" | push | tmux buffer
+        # 사용법: push <텍스트> 또는 echo "text" | push
         push() {
           local text
           if [ $# -gt 0 ]; then
             text="$*"
           elif [ ! -t 0 ]; then
             text=$(cat)
-          elif [ -n "$TMUX" ]; then
-            text=$(tmux save-buffer - 2>/dev/null)
           fi
           [ -z "$text" ] && { echo "Usage: push <text> or pipe input"; return 1; }
 

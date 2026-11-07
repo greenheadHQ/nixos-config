@@ -26,8 +26,6 @@ cat file.txt | push
 hostname -I | awk '{print $1}' | push      # NixOS/Linux
 ipconfig getifaddr en0 | push              # macOS
 
-# tmux buffer에서 읽기 (인자 없이 실행)
-push
 ```
 
 ## 워크플로우
@@ -58,15 +56,7 @@ push "$(uname -sr)"
 # IP 주소 분기 예시는 위 "핵심 명령어" 섹션 참조
 ```
 
-### 3. tmux copy-mode와 연계
-
-```bash
-# 1. prefix + [ → Space로 선택 시작 → 이동 → Enter로 tmux buffer에 복사
-# 2. push (인자 없이 실행)
-push
-```
-
-### 4. AI 에이전트에서 텍스트 공유 요청 시
+### 3. AI 에이전트에서 텍스트 공유 요청 시
 
 사용자가 "이거 공유해줘", "Pushover로 보내줘" 등의 요청을 하면, canonical 호출 형태는 heredoc + stdin 경로다. `push`는 `.zshrc`의 셸 함수이므로 `zsh -ic`(interactive)로 호출해야 로드된다 (`zsh -c` non-interactive는 `.zshrc` 미로드로 `push not found`).
 
@@ -98,13 +88,12 @@ heredoc content는 stdin으로 전달되어 zsh 해석을 거치지 않는다. �
 | 네트워크 | 인터넷 연결 필요 |
 | Pushover credentials | `$HOME/.config/pushover/share` 필요 (agenix 관리). 부재 시 함수가 `Error: Pushover credentials not found`을 stderr로 출력하고 `return 1` (non-zero) |
 | zsh 함수 의존 | `push`는 `.zshrc`의 셸 함수. `zsh -c` (non-interactive) 호출은 `push not found`로 실패. canonical 호출은 `zsh -ic` |
-| tmux buffer 경로 | 무인자 `push`는 `TMUX` 환경변수가 설정된 tmux 세션 필요. AI 에이전트 exec 세션에서는 기본 부재 — 인자 또는 stdin 경로를 사용하라 |
 
 ## 구현 위치
 
 - 함수: `modules/shared/programs/shell/default.nix` 내 `push()` 함수
 - Credentials: `$HOME/.config/pushover/share` (agenix 관리)
-- 입력 우선순위: 인자 > 파이프(stdin) > tmux buffer
+- 입력 우선순위: 인자 > 파이프(stdin)
 
 ## 참조
 

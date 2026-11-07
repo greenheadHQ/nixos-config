@@ -13,15 +13,13 @@
 
 setup() {
   STATUSLINE="${BATS_TEST_DIRNAME}/../statusline.sh"
-  # tmux/stty 폴백 격리: bats 를 실제 tmux/TTY 환경에서 실행해도 비-SSH/기본폭
+  # stty 폴백 격리: bats를 실제 TTY 환경에서 실행해도 비-SSH/기본폭
   # 케이스가 parent session 상태에 오염되지 않도록 fake bin을 PATH 앞에 둔다.
   # SSH 케이스는 SSH_CONNECTION 을 직접 주입한다. stty fallback은 `</dev/tty`
   # 리다이렉션 때문에 no-tty 환경에서 fake가 실행되기 전 실패할 수 있으므로,
   # 여기서는 항상 실패시켜 static default 경로를 deterministic하게 검증한다.
   FAKE_BIN="$BATS_TEST_TMPDIR/fakebin"
   mkdir -p "$FAKE_BIN"
-  printf '#!/bin/sh\nexit 0\n' > "$FAKE_BIN/tmux"
-  chmod +x "$FAKE_BIN/tmux"
   printf '#!/bin/sh\nexit 1\n' > "$FAKE_BIN/stty"
   chmod +x "$FAKE_BIN/stty"
   # resets_at 을 실행 시점 기준 미래로 동적 생성. 절대값 timestamp 를 박으면 시간이

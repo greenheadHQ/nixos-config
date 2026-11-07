@@ -6,7 +6,7 @@
 
 ## 동작 요약
 
-- 입력 텍스트는 인자, stdin, tmux buffer 순서로 선택합니다.
+- 입력 텍스트는 인자, stdin 순서로 선택합니다.
 - credential 파일은 `$HOME/.config/pushover/share`를 사용합니다.
 - helper 파일 `$HOME/.local/lib/pushover.sh`가 읽기 가능해야 하며, 없으면 즉시 실패합니다.
 - helper를 `source`한 뒤 credential을 검증하고 `pushover_send "$cred" "📋 텍스트 공유 (${#text}자)" "$text" 0` 형태로 전송합니다.
@@ -14,7 +14,7 @@
 
 ## 입력 우선순위
 
-인자 > 파이프(stdin) > tmux buffer
+인자 > 파이프(stdin)
 
 ## Credentials
 

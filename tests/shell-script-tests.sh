@@ -37,9 +37,6 @@ run_test "1Password shortcuts wrapper classifies exit status" test_onepassword_s
 run_test "1Password shortcuts real external SIGKILL" test_onepassword_shortcuts_real_external_sigkill
 run_test "1Password shortcuts real timeout TERM" test_onepassword_shortcuts_real_timeout_term
 run_test "1Password shortcuts real timeout kill-after" test_onepassword_shortcuts_real_timeout_kill_after
-run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
-run_test "wt wrapper ignores runtime HOME for real script" test_wt_wrapper_ignores_runtime_home_for_real_script
-run_test "managed plugin skill helper rejects duplicate matches" test_managed_plugin_skill_link_requires_single_match
 run_test "rebuild-common exports public API" test_rebuild_common_exports_public_api
 run_test "result cleanup preserves path boundaries" test_cleanup_build_artifacts_preserves_path_boundaries
 run_test "result cleanup reports search failure" test_cleanup_build_artifacts_reports_search_failure
@@ -64,61 +61,24 @@ run_test "nrp rejects inert --force flag" test_nrp_rejects_force_flag
 run_test "detect_worktree switches to active worktree" test_detect_worktree_uses_current_worktree_path
 run_test "worktree relink skips non-TTY without opt-in" test_worktree_relink_skips_non_tty_without_opt_in
 run_test "worktree relink opt-in allows non-TTY" test_worktree_relink_opt_in_allows_non_tty
+run_test "darwin no-change external worktree requires HM evidence" test_darwin_no_changes_external_worktree_requires_hm_evidence
+run_test "nrs restore failure preserves unprocessed worktree links" test_nrs_restore_failure_preserves_unprocessed_worktree_links
 run_test "main relink restore ignores non-TTY guard" test_main_relink_restore_ignores_non_tty_guard
-run_test "wt cd returns target path by name" test_wt_cd_by_name_returns_target_path
-run_test "wt cd refuses broken worktree" test_wt_cd_refuses_broken_worktree
-run_test "wt cd prefers exact name and fails on ambiguity" test_wt_cd_prefers_exact_name_and_fails_on_ambiguity
-run_test "collect worktrees dedupes symlinked base unit" test_wt_collect_worktrees_dedupes_symlinked_base_unit
-run_test "pr cache key is collision free unit" test_wt_pr_cache_key_is_collision_free_unit
-run_test "wt ls lists deployed worktrees" test_wt_ls_from_deployed_layout_lists_worktrees
-run_test "wt ls lists registered missing and nested worktrees" test_wt_ls_lists_registered_missing_and_nested_worktrees
-run_test "wt ls lists nested unregistered worktree" test_wt_ls_lists_nested_unregistered_worktree
-run_test "wt ls marks locked worktree" test_wt_ls_marks_locked_worktree
-run_test "wt ls --json outputs parseable array" test_wt_ls_json_outputs_parseable_array
-run_test "wt ls --json empty list outputs empty array" test_wt_ls_json_empty_list_outputs_empty_array
-run_test "wt ls empty list prints notice" test_wt_ls_empty_list_prints_notice
-run_test "wt ls non-git directory fails with error" test_wt_ls_non_git_directory_fails_with_error
-run_test "wt create conflict requires if-exists when noninteractive" test_wt_create_conflict_noninteractive_requires_if_exists
-run_test "wt create if-exists=reuse returns path" test_wt_create_if_exists_reuse_returns_path
-run_test "wt cd requires name when noninteractive" test_wt_cd_noninteractive_requires_name
-run_test "wt cd prints path in tmux when noninteractive" test_wt_cd_noninteractive_in_tmux_prints_path
-run_test "wt create/reuse prints path in tmux when noninteractive" test_wt_create_reuse_noninteractive_in_tmux_prints_path
-run_test "wt retired presentation flags fail" test_wt_retired_presentation_flags_fail
+run_test "nrs legacy unregistered worktree restores exact mapping" test_nrs_legacy_unregistered_worktree_restores_exact_mapping
+run_test "nrs worktree only entry is preserved with warning" test_nrs_worktree_only_entry_is_preserved_with_warning
+run_test "detect external worktree preserves trailing newline" test_detect_external_worktree_preserves_trailing_newline
+run_test "nrs external worktree inspect and restore special paths" test_nrs_external_worktree_inspect_and_restore_special_paths
+run_test "nrs missing parents restore without inspection writes" test_nrs_missing_parents_restore_without_inspection_writes
+run_test "nrs missing parents preserve unsafe ancestors" test_nrs_missing_parents_preserve_unsafe_ancestors
+run_test "nrs HMF listing failure never mutates entries" test_nrs_hmf_listing_failure_never_mutates_entries
+run_test "nrs external worktree relink rejects other repository" test_nrs_external_worktree_relink_rejects_other_repository
+run_test "nrs restore preserves user entries" test_nrs_restore_preserves_user_entries
+run_test "nrs deleted registered worktree restores dangling mapping" test_nrs_deleted_registered_worktree_restores_dangling_mapping
+run_test "nrs replaced worktree and similar prefix are preserved" test_nrs_replaced_worktree_and_similar_prefix_are_preserved
+run_test "nrs partial git listing cannot mutate links" test_nrs_partial_git_listing_cannot_mutate_links
+run_test "nrs main restore runs once when canary missing" test_nrs_main_restore_runs_once_when_canary_missing
 run_test "shadow paths do not override managed helpers" test_shadow_paths_do_not_override_managed_helpers
-run_test "wt symlink alias does not load adjacent helpers" test_wt_symlink_alias_does_not_load_adjacent_helpers
 run_test "rebuild-common symlink alias does not load adjacent helpers" test_rebuild_common_symlink_alias_does_not_load_adjacent_helpers
-run_test "wt create does not call legacy sync" test_wt_create_does_not_call_legacy_sync
-run_test "wt create skips symlinked codex source" test_wt_create_skips_symlinked_codex_source
-run_test "wt create prunes retired project MCP block" test_wt_create_prunes_retired_project_mcp_block
-run_test "wt create removes unterminated copied Codex config" test_wt_create_removes_unterminated_copied_codex_config
-run_test "wt create removes directory copied Codex config" test_wt_create_removes_directory_copied_codex_config
-run_test "codex trust sanitizes unsafe copied Codex config" test_codex_trust_sanitizes_unsafe_copied_codex_config
-run_test "wt prepare rejects symlinked Claude dir" test_wt_prepare_rejects_symlinked_claude_dir
-run_test "wt prepare skips symlinked source settings" test_wt_prepare_skips_symlinked_source_settings
-run_test "wt create trusts Codex project config" test_wt_create_trusts_codex_project
-run_test "wt create skips unsafe Codex config path" test_wt_create_skips_unsafe_codex_config
-run_test "wt create supports valid Codex projects shapes" test_wt_create_supports_valid_projects_shapes
-run_test "wt create preserves unmergeable Codex config" test_wt_create_preserves_unmergeable_codex_config
-run_test "codex trust untrust removes only target project" test_codex_trust_untrust_project_removes_only_target
-run_test "codex trust GC dry-run leaves config unchanged" test_codex_trust_gc_dry_run_leaves_config_unchanged
-run_test "codex trust GC removes stale worktree projects only" test_codex_trust_gc_removes_stale_worktree_projects_only
-run_test "codex trust GC handles out-of-order projects tables" test_codex_trust_gc_handles_out_of_order_projects_tables
-run_test "codex trust GC delete failure leaves config unchanged" test_codex_trust_gc_delete_failure_leaves_config_unchanged
-run_test "wt cleanup untrusts Codex project" test_wt_cleanup_untrusts_codex_project
-run_test "wt create inherits Claude local plugin manifest" test_wt_create_inherits_claude_local_plugin_manifest
-run_test "wt create ignores branch-tracked plugin settings" test_wt_create_ignores_branch_tracked_plugin_settings
-run_test "wt plugin manifest ignores noncanonical adjacent lock directory" test_wt_plugin_manifest_ignores_noncanonical_adjacent_lock_directory
-run_test "wt plugin manifest skill projection skips OS errors" test_wt_plugin_manifest_skill_projection_skips_os_errors
-run_test "wt plugin manifest cleanup uses stable canonical target" test_wt_plugin_manifest_cleanup_uses_stable_canonical_target
-run_test "wt plugin manifest GC removes unmarked orphan worktree entries" test_wt_plugin_manifest_gc_removes_unmarked_orphan_worktree_entries
-run_test "wt plugin manifest GC skips targets outside worktree base" test_wt_plugin_manifest_gc_skips_targets_outside_worktree_base
-run_test "wt plugin manifest GC keeps entries when path check fails" test_wt_plugin_manifest_gc_keeps_entries_when_path_check_fails
-run_test "wt plugin manifest GC supports nested targets" test_wt_plugin_manifest_gc_supports_nested_targets
-run_test "wt plugin manifest GC backups never overwrite collisions" test_wt_plugin_manifest_gc_backups_never_overwrite_collisions
-run_test "wt plugin manifest GC keeps orphans when backup fails" test_wt_plugin_manifest_gc_keeps_orphans_when_backup_fails
-run_test "wt cleanup removes exact Claude local plugin manifest entries" test_wt_cleanup_removes_exact_claude_local_plugin_manifest_entries
-run_test "wt cleanup stops when plugin manifest cleanup fails" test_wt_cleanup_stops_when_plugin_manifest_cleanup_fails
-run_test "wt plugin manifest missing and invalid inputs are safe" test_wt_plugin_manifest_missing_and_invalid_are_safe
 run_test "codex activation .agents symlink guard static" test_codex_activation_agents_symlink_guard_static
 run_test "codex activation AGENTS keeps real entries" test_codex_activation_agents_keeps_real_entries
 run_test "codex activation AGENTS link contract" test_codex_activation_agents_link_contract
@@ -271,67 +231,7 @@ run_test "codex remote-control alert truncation keeps valid utf8" test_codex_rem
 else
   echo "N/A: codex remote-control fixtures require Linux/NixOS service scripts" >&2
 fi
-run_test "wt recreate guard uses physical paths" test_wt_recreate_guard_uses_physical_paths
-run_test "wt cleanup auto removes merged worktree" test_wt_cleanup_auto_removes_merged_worktree
-run_test "wt cleanup auto skips dirty merged worktree" test_wt_cleanup_auto_skips_dirty_merged_worktree
-run_test "wt cleanup auto skips unpushed merged worktree" test_wt_cleanup_auto_skips_unpushed_with_upstream
-run_test "wt cleanup auto skips merged branch reuse" test_wt_cleanup_auto_skips_merged_branch_reuse
-run_test "wt cleanup auto survives stale worktree" test_wt_cleanup_auto_survives_stale_worktree
-run_test "wt cleanup name-filter survives stale worktree" test_wt_cleanup_name_filter_survives_stale_worktree
-run_test "wt cleanup auto broken-only reports skip count" test_wt_cleanup_auto_broken_only_reports_skip_count
-run_test "wt cleanup reports missing worktree prune hint" test_wt_cleanup_reports_missing_worktree_prune_hint
-run_test "wt cleanup skips locked worktree" test_wt_cleanup_skips_locked_worktree
-run_test "wt cleanup name prefers exact relative name" test_wt_cleanup_name_prefers_exact_relative_name
-run_test "wt cleanup refuses ambiguous name" test_wt_cleanup_refuses_ambiguous_name
-run_test "wt cleanup keeps unpreserved detached commit" test_wt_cleanup_keeps_unpreserved_detached_commit
-run_test "wt cleanup detached preservation scope" test_wt_cleanup_detached_preservation_scope
-run_test "wt cleanup detached lookup errors fail closed" test_wt_cleanup_detached_lookup_errors_fail_closed
-run_test "wt recreate refuses unpreserved detached commit" test_wt_recreate_refuses_unpreserved_detached_commit
-run_test "wt existing worktree refuses mapped branch collision" test_wt_existing_worktree_refuses_mapped_branch_collision
-run_test "wt existing worktree refuses switched checkout" test_wt_existing_worktree_refuses_switched_checkout
-run_test "wt recreate keeps requested branch preserving detached commit" test_wt_recreate_keeps_requested_branch_preserving_detached_commit
-run_test "wt recreate keeps unpushed requested branch under other checkout" test_wt_recreate_keeps_unpushed_requested_branch_under_other_checkout
-run_test "wt recreate matching checkout still confirms loss" test_wt_recreate_matching_checkout_still_confirms_loss
-run_test "wt existing worktree lookup errors fail closed" test_wt_existing_worktree_lookup_errors_fail_closed
-run_test "wt existing worktree interactive choice checks checkout unit" test_wt_existing_worktree_interactive_choice_checks_checkout_unit
-run_test "wt create existing path contracts unchanged" test_wt_create_existing_path_contracts_unchanged
-run_test "wt cleanup branch unpushed verdict unchanged" test_wt_cleanup_branch_unpushed_verdict_unchanged
-run_test "wt recreate refuses locked worktree" test_wt_recreate_refuses_locked_worktree
-run_test "wt cleanup name-filter merged without upstream needs no confirm" test_wt_cleanup_name_filter_merged_without_upstream_needs_no_confirm
-run_test "wt cleanup name-filter confirmed dirty merged removes" test_wt_cleanup_name_filter_confirmed_dirty_merged_removes
-run_test "wt cleanup name-filter current worktree reports root command" test_wt_cleanup_name_filter_current_worktree_reports_root_command
-run_test "wt cleanup auto reports current merged exclusion" test_wt_cleanup_auto_reports_current_merged_exclusion
-run_test "wt head-unchanged guard unit" test_wt_head_unchanged_guard_unit
-run_test "wt pr-status returns verified oid unit" test_wt_pr_status_returns_verified_oid_unit
-run_test "wt guarded remove rechecks branch unit" test_wt_remove_worktree_guarded_rechecks_branch_unit
-run_test "wt guarded remove keeps reused branch unit" test_wt_remove_worktree_guarded_keeps_reused_branch_unit
-run_test "wt guarded remove clears branch config unit" test_wt_remove_worktree_guarded_clears_branch_config_unit
-run_test "wt forced remove refuses locked worktree unit" test_wt_remove_worktree_forced_refuses_locked_unit
-run_test "wt forced remove keeps path when remove fails unit" test_wt_remove_worktree_forced_keeps_path_when_remove_fails_unit
-run_test "wt remove refuses unknown lock state unit" test_wt_remove_worktree_refuses_unknown_lock_state_unit
-run_test "wt remove failure notes registration state unit" test_wt_remove_worktree_failure_notes_registration_state_unit
-run_test "wt remove preserves active process worktree unit" test_wt_remove_worktree_preserves_active_process_unit
-run_test "wt cwd holders process table unit" test_wt_cwd_holders_process_table_unit
-run_test "wt cwd holders fail closed unit" test_wt_cwd_holders_fails_closed_unit
-run_test "wt active process guard messages unit" test_wt_active_process_blocks_messages_unit
-run_test "wt cleanup preserves worktree held by process" test_wt_cleanup_preserves_worktree_held_by_process
-run_test "wt recreate preserves worktree held by process" test_wt_recreate_preserves_worktree_held_by_process
-run_test "wt cleanup active guard matches physical folder" test_wt_cleanup_active_guard_matches_physical_folder
-run_test "wt cleanup --yes bypasses active guard only when named" test_wt_cleanup_yes_bypasses_active_guard_only_when_named
-run_test "wt recreate --yes bypasses active guard" test_wt_recreate_yes_bypasses_active_guard
-run_test "wt remove active guard bypass scope unit" test_wt_remove_worktree_active_guard_bypass_scope_unit
-run_test "wt cleanup active guard hint names nested worktree" test_wt_cleanup_active_guard_hint_names_nested_worktree
-run_test "wt guarded remove failure hint names nested worktree unit" test_wt_remove_worktree_guarded_failure_hint_names_nested_worktree_unit
-run_test "wt lsof escape path unit" test_wt_lsof_escape_path_unit
-run_test "wt cwd holders fail closed on control char path unit" test_wt_cwd_holders_fails_closed_on_control_char_path_unit
-run_test "wt cleanup active guard matches escaped path" test_wt_cleanup_active_guard_matches_escaped_path
-run_test "wt cleanup confirmed dirty keeps active guard" test_wt_cleanup_confirmed_dirty_keeps_active_guard
-run_test "wt cwd holders ancestor caffeinate unit" test_wt_cwd_holders_ancestor_caffeinate_unit
-run_test "wt cleanup ancestor caffeinate does not block" test_wt_cleanup_ancestor_caffeinate_does_not_block
 run_test "missing managed helpers fail closed" test_missing_managed_helpers_fail_closed
-run_test "missing wt Python helpers fail state changes" test_missing_wt_python_helpers_fail_state_changes
-run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_python_helpers_fail_cleanup_state_changes
-run_test "codex trust write failure returns warning" test_codex_trust_write_failure_returns_warning
 run_test "fixture git setup ignores host global hooks" test_fixture_git_is_hermetic_against_global_hooks
 run_test "line-count assertion preserves exact line counts" test_assert_line_count_preserves_exact_line_counts
 run_test "line-count assertion accepts zero matches" test_assert_line_count_accepts_zero_matches
@@ -717,9 +617,9 @@ run_test "managing-secrets host add workflow checks recipients per target" test_
 run_test "managing-secrets group parser accepts inline key lists" test_managing_secrets_group_parser_accepts_inline_key_lists
 
 # ═══════════════════════════════════════════════════════════════════
-# neovim-clipboard suite (tests/suites/neovim-clipboard.sh) — tmux 밖 SSH의 OSC 52 복사 (#1453)
+# neovim-clipboard suite (tests/suites/neovim-clipboard.sh) — 직접 SSH의 OSC 52 복사 (#1453)
 # ═══════════════════════════════════════════════════════════════════
-run_test "neovim clipboard uses OSC 52 only for Linux SSH outside tmux" test_neovim_clipboard_osc52_only_for_linux_ssh_outside_tmux
+run_test "neovim clipboard uses OSC 52 only for direct Linux SSH" test_neovim_clipboard_osc52_only_for_linux_ssh
 run_test "neovim SSH clipboard paste returns last copy without query" test_neovim_ssh_clipboard_paste_returns_last_copy_without_query
 run_test "neovim SSH clipboard paste before copy uses register 0" test_neovim_ssh_clipboard_paste_before_copy_uses_register_zero
 
