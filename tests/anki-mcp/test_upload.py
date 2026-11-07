@@ -9,6 +9,7 @@ import base64
 import hashlib
 import json
 import struct
+import subprocess
 
 import httpx
 import pytest
@@ -100,6 +101,77 @@ def test_widget_html_embeds_inert_config_and_the_standard_protocol():
     # Several files per pick, one summary listing every upload, and a note for the user before picking.
     assert 'type="file" multiple' in html and "ankiUploads" in html
     assert "AI는 여기서 올린 사진을 볼 수 없습니다. 내용을 보여 주려면 채팅에 첨부해 주세요." in html
+
+
+def test_widget_reports_unknown_uploads_without_claiming_failure_or_repeating_summary():
+    html = widget_html("https://anki.example/upload", MEDIA_MAX)
+    # 실제 파일별 표시와 요약 함수를 합성 응답으로 실행한다. DOM·네트워크·미디어 쓰기는 없다.
+    script = html[html.index("  const sizeOf ="):html.index('  input.addEventListener("change"')]
+    harness = r"""
+const assert = require('node:assert/strict');
+const source = JSON.parse(process.argv[1]);
+const lines = [], contexts = [], messages = [], uploads = [];
+const outcomes = [
+  { state: 'applied', filename: 'fixture.png', width: 10, height: 20, format: 'png', bytes: 100, sync: 'pending' },
+  { state: 'not-applied' },
+  { state: 'unknown' },
+  Object.assign(new Error('응답을 받지 못했습니다. 저장됐을 수 있으니 최근 작업을 확인해 주세요.'), { unknown: true }),
+];
+const fit = async file => file;
+const ticket = async () => 'fixture-ticket';
+const upload = async file => {
+  uploads.push(file.name);
+  const result = outcomes.shift();
+  if (result instanceof Error) throw result;
+  return result;
+};
+const line = (text, cls) => lines.push({ text, cls });
+const tell = async (text, uploads) => contexts.push({ text, uploads });
+const request = async (method, params) => messages.push({ method, params });
+eval(source + `
+(async () => {
+  const results = [], perFile = [];
+  for (const name of ['stored.png', 'failed.png', 'unknown.png', 'lost.png']) {
+    const start = lines.length;
+    results.push(await send({ name, size: 100 }, ''));
+    perFile.push(lines.slice(start).at(-1));
+  }
+  assert.equal(perFile[0].cls, 'ok');
+  assert.match(perFile[0].text, /저장됨/);
+  assert.equal(perFile[1].cls, 'bad');
+  assert.match(perFile[1].text, /저장하지 못했습니다/);
+  assert.match(perFile[2].text, /저장됐는지 확인하지 못했습니다/);
+  for (const result of perFile.slice(2)) {
+    assert.match(result.text, /저장됐을 수 있으니 최근 작업을 확인/);
+    assert.doesNotMatch(result.text, /저장하지 못했습니다|저장됨/);
+  }
+  assert.deepEqual(results.map(unsure), [false, false, true, true]);
+  await summarize(results, true);
+  assert.equal(contexts.length, 1);
+  assert.equal(messages.length, 1);
+  assert.equal(contexts[0].uploads.length, 4);
+  assert.match(contexts[0].text, /unconfirmed unknown.png/);
+  assert.match(contexts[0].text, /unconfirmed lost.png/);
+  assert.match(contexts[0].text, /not stored failed.png/);
+  assert.match(contexts[0].text, /anki_recent_operations/);
+  assert.equal(messages[0].method, 'ui/message');
+  const summary = messages[0].params.content[0].text;
+  assert.match(summary, /이미지 1장/);
+  assert.match(summary, /저장하지 못한 파일 1장/);
+  assert.match(summary, /저장됐는지 확인하지 못한 파일 2장/);
+  contexts.length = messages.length = 0;
+  await summarize([results[2]], false);
+  assert.equal(contexts.length, 1);
+  assert.equal(messages.length, 0);
+  assert.match(contexts[0].text, /unconfirmed unknown.png/);
+  assert.match(contexts[0].text, /anki_recent_operations/);
+  assert.deepEqual(uploads, ['stored.png', 'failed.png', 'unknown.png', 'lost.png']);
+})().catch(error => { console.error(error); process.exitCode = 1; });
+`);
+"""
+    completed = subprocess.run(["node", "-e", harness, json.dumps(script)],
+                               capture_output=True, text=True, timeout=10)
+    assert completed.returncode == 0, completed.stderr
 
 
 # --- tickets -----------------------------------------------------------------------------------------------

@@ -173,7 +173,9 @@
       const value = await ticket();
       line(`${tag}올리는 중…`, "muted");
       const receipt = await upload(ready, value);
-      if (receipt.state !== "applied") {
+      if (receipt.state === "unknown") {
+        line(`${tag}저장됐는지 확인하지 못했습니다. 이미 저장됐을 수 있으니 최근 작업을 확인해 주세요.`, "muted");
+      } else if (receipt.state !== "applied") {
         line(`${tag}저장하지 못했습니다(${receipt.state}).`, "bad");
       } else {
         line(tag + (receipt.unchanged ? `이미 있는 같은 이미지입니다: ${receipt.filename} (${sizeOf(receipt)})`
