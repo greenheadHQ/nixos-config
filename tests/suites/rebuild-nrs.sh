@@ -223,6 +223,40 @@ test_cleanup_build_artifacts_preserves_path_boundaries() {
   [[ -z "$output" ]] || fail "expected empty cleanup to be a quiet no-op"
 }
 
+test_cleanup_build_artifacts_reports_search_failure() {
+  local sandbox output
+  sandbox=$(new_sandbox)
+  mkdir -p "$sandbox/repo" "$sandbox/tmp"
+  printf 'keep\n' > "$sandbox/target"
+  ln -s "$sandbox/target" "$sandbox/repo/result"
+  output=$(
+    exec 2>&1
+    source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/preview.sh"
+    log_info() { printf '%s\n' "$*"; }
+    log_warn() { printf 'WARNING: %s\n' "$*" >&2; }
+    find() { printf '%s\0' "$FLAKE_PATH/result"; return 7; }
+    TMPDIR="$sandbox/tmp" FLAKE_PATH="$sandbox/repo" cleanup_build_artifacts
+  )
+  assert_contains "$output" 'WARNING: Cannot enumerate build artifacts'
+  [[ -L "$sandbox/repo/result" ]] || fail "partial listing must not remove links"
+  assert_file_contains "$sandbox/target" 'keep'
+  [[ -z "$(find "$sandbox/tmp" -mindepth 1 -print -quit)" ]] || fail "cleanup listing leaked"
+
+  output=$(
+    exec 2>&1
+    source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/preview.sh"
+    log_info() { printf '%s\n' "$*"; }
+    log_warn() { printf 'WARNING: %s\n' "$*" >&2; }
+    find() { return 7; }
+    rm() { return 9; }
+    TMPDIR="$sandbox/tmp" FLAKE_PATH="$sandbox/repo" cleanup_build_artifacts
+    printf 'cleanup returned\n'
+  )
+  assert_contains "$output" 'WARNING: Cannot remove build artifact cleanup listing'
+  assert_contains "$output" 'WARNING: Cannot enumerate build artifacts'
+  assert_contains "$output" 'cleanup returned'
+}
+
 test_rebuild_common_exports_public_api() {
   local sandbox output
   sandbox=$(new_sandbox)
