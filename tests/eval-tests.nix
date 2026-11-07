@@ -1142,6 +1142,12 @@ let
   immichDbBackup = nixosCfg.systemd.services."immich-db-backup";
   immichOriginalsMirror = nixosCfg.systemd.services."immich-originals-mirror";
   karakeepBackup = nixosCfg.systemd.services."karakeep-backup";
+  copypartyService = nixosCfg.systemd.services.podman-copyparty;
+  copypartyConfigService = nixosCfg.systemd.services.copyparty-config;
+  copypartyDisabledCfg =
+    (nixosBase.extendModules {
+      modules = [ { homeserver.copyparty.enable = nixpkgsLib.mkForce false; } ];
+    }).config;
 
   # ── #1391: 브리지가 SIGTERM을 받으면 실행 중 요청을 최대
   # SHUTDOWN_DRAIN_TIMEOUT_SEC(소스 기본값)까지 drain한 뒤 스스로 종료한다.
@@ -2199,6 +2205,36 @@ let
     {
       name = "Test MG3b: karakeep-backup은 대상 HDD(mediaData) 마운트를 RequiresMountsFor로 요구해야 함";
       cond = builtins.elem constants.paths.mediaData (karakeepBackup.unitConfig.RequiresMountsFor or [ ]);
+    }
+    {
+      name = "Test MG3c: 활성 Copyparty는 쓰기 볼륨의 HDD(mediaData) 마운트를 요구해야 함";
+      cond =
+        nixosCfg.homeserver.copyparty.enable
+        && builtins.elem constants.paths.mediaData (copypartyService.unitConfig.RequiresMountsFor or [ ])
+        && builtins.elem "${constants.paths.mediaData}:/data" containers.copyparty.volumes;
+    }
+    {
+      name = "Test MG3d: Copyparty 비활성 구성에는 컨테이너·설정 생성 유닛이 없어야 함";
+      cond =
+        !(copypartyDisabledCfg.virtualisation.oci-containers.containers ? copyparty)
+        && !(copypartyDisabledCfg.systemd.services ? podman-copyparty)
+        && !(copypartyDisabledCfg.systemd.services ? copyparty-config);
+    }
+    {
+      name = "Test MG3e: Copyparty 인증 조건·설정 생성 순서·두 입력의 재시작 트리거를 유지해야 함";
+      cond =
+        copypartyService.unitConfig.ConditionPathExists == nixosCfg.age.secrets.copyparty-password.path
+        && builtins.elem "podman-copyparty.service" copypartyConfigService.wantedBy
+        && builtins.elem "podman-copyparty.service" copypartyConfigService.before
+        && builtins.elem (toString copypartyConfigService.serviceConfig.ExecStart) (
+          map toString copypartyService.restartTriggers
+        )
+        && builtins.elem "${nixosCfg.age.secrets.copyparty-password.file}" (
+          map toString copypartyService.restartTriggers
+        )
+        && builtins.elem "${nixosCfg.age.secrets.copyparty-password.file}" (
+          map toString copypartyConfigService.restartTriggers
+        );
     }
     {
       # 리뷰: MOUNT_ROOT가 실제 mediaData와 다른 값으로 새거나(오타 등) mediaData 자체가
