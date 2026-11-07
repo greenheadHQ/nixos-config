@@ -34,7 +34,6 @@ in
     ../shared/programs/mise # mise 전역 config 선언 관리
     ../shared/programs/shell # 공통 shell 설정
     ../shared/programs/shell/nixos.nix # Linux 전용 추가
-    ../shared/programs/tmux
     ../shared/programs/neovim
     ../shared/programs/cheat # 터미널 cheatsheet 즉시 조회
     ../shared/programs/yazi # TUI 파일 매니저

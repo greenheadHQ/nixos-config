@@ -78,7 +78,8 @@ worktree_symlink_guard() {
 
     # ── 역방향 검사: worktree-only entry 탐지 (정보성) ──────────────────
     # worktree에만 추가된 mkOutOfStoreSymlink entry를 감지하여 사용자에게 알린다.
-    # _remove_worktree_symlinks()가 pre-rebuild에서 자동 처리하므로 차단하지 않는다.
+    # 현재 HMF 매핑이 확인되는 링크만 자동 복원한다. 매핑이 없는 링크는 보존하므로
+    # main 복귀 시 Home Manager 충돌이 발생하면 링크와 해당 선언을 직접 확인한다.
     # merge_base..HEAD: worktree 브랜치에서 변경된 .nix 파일 (정방향의 merge_base..main과 반대)
     #
     # === Change Intent Record ===
@@ -142,7 +143,7 @@ worktree_symlink_guard() {
         if [[ $wt_only_count -gt 0 ]]; then
             log_info "  ℹ️  $wt_only_count worktree-only mkOutOfStoreSymlink entry(s) detected:"
             echo -n "$all_wt_only"
-            echo "  (These will be auto-handled by pre-rebuild symlink cleanup)"
+            echo "  (Only links verified against the current Home Manager mapping are auto-restored; inspect any activation conflict.)"
         fi
     fi
 

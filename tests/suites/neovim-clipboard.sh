@@ -103,7 +103,7 @@ EOF
 }
 
 # _nvim_clipboard_probe SANDBOX OS [VAR=VALUE...]
-# options.lua를 읽힌 nvim의 판정 결과를 key=value 줄로 SANDBOX/out에 쓴다. SSH·tmux 변수는
+# options.lua를 읽힌 nvim의 판정 결과를 key=value 줄로 SANDBOX/out에 쓴다. 외부 세션 변수는
 # 모두 지운 뒤 인자로 준 것만 넣는다. OS는 mac 또는 linux다.
 _nvim_clipboard_probe() {
   local sandbox="$1" os="$2"
@@ -117,14 +117,13 @@ _nvim_clipboard_probe() {
     fail "nvim probe failed ($os $*): $(cat "$sandbox/err")"
 }
 
-test_neovim_clipboard_osc52_only_for_linux_ssh_outside_tmux() {
+test_neovim_clipboard_osc52_only_for_linux_ssh() {
   _nvim_clipboard_require_nvim "neovim clipboard provider selection" || return 0
   local sandbox ssh_var
   sandbox="$(new_sandbox)"
   _nvim_clipboard_write_probe "$sandbox"
 
-  # tmux 밖 SSH(Linux): SSH_CONNECTION과 SSH_TTY 중 하나만 있어도 OSC 52 dict를 쓴다.
-  # 빈 $TMUX는 tmux 밖으로 본다(nvim 내장 판정 !empty($TMUX)와 같다).
+  # SSH(Linux): SSH_CONNECTION과 SSH_TTY 중 하나만 있어도 OSC 52 dict를 쓴다.
   for ssh_var in SSH_CONNECTION SSH_TTY; do
     _nvim_clipboard_probe "$sandbox" linux "$ssh_var=probe" TMUX=
     assert_file_contains "$sandbox/out" "clipboard=unnamedplus"
@@ -132,10 +131,9 @@ test_neovim_clipboard_osc52_only_for_linux_ssh_outside_tmux() {
     assert_file_contains "$sandbox/out" "provider=OSC 52 (copy only)"
   done
 
-  # tmux 안 SSH: nvim 내장 tmux provider가 고르도록 g:clipboard를 두지 않는다.
+  # 제거된 도구의 환경변수가 남아 있어도 직접 SSH 클립보드 경로를 유지한다.
   _nvim_clipboard_probe "$sandbox" linux SSH_CONNECTION=probe SSH_TTY=probe TMUX=/tmp/probe,1,0
-  [[ "$(cat "$sandbox/out")" == $'clipboard=unnamedplus\ng_clipboard=unset' ]] ||
-    fail "SSH inside tmux must keep the built-in provider selection: $(cat "$sandbox/out")"
+  assert_file_contains "$sandbox/out" "provider=OSC 52 (copy only)"
 
   # SSH가 아닌 Linux: 기존 자동 선택을 그대로 둔다. 빈 SSH 변수도 SSH가 아니다.
   _nvim_clipboard_probe "$sandbox" linux

@@ -1310,7 +1310,7 @@ EOF
 # darwin no-change gcroot guard fixture — caller의 local 변수(sandbox/home_dir/repo_root/
 # worktree_root/stub_dir/current_target/relink_log/lock_file)를 bash dynamic scoping으로 채운다.
 # main repo에서 no-change nrs를 돌리되, stale worktree 심링크 probe를 심어 guard가 없으면
-# maybe_relink_or_restore의 Phase 1(rm) + restore가 반드시 실행되는 상태를 만든다.
+# maybe_relink_or_restore의 검사 + restore 호출이 실행되는 상태를 만든다.
 setup_darwin_no_change_gcroot_fixture() {
   sandbox=$(new_sandbox)
   home_dir="$sandbox/home"
@@ -1331,7 +1331,7 @@ setup_darwin_no_change_gcroot_fixture() {
   mkdir -p "$stub_dir" "$current_target" "$home_dir/.claude"
   rm -f "$lock_file"
 
-  # stale worktree probe: main 경로 _remove_worktree_symlinks가 매칭하는 심링크
+  # stale worktree probe: main 경로의 복원 검사에 사용하는 심링크
   ln -sf "$worktree_root/CLAUDE.md" "$home_dir/.claude/CLAUDE.md"
 
   install_fake_sudo_stub "$stub_dir"
@@ -1407,7 +1407,8 @@ test_darwin_nrs_no_changes_restores_when_hm_gcroot_present() {
   assert_contains "$output" "No changes to apply"
   assert_contains "$output" "Restoring symlinks to nix store chain"
   assert_file_contains "$relink_log" "restore"
-  [[ ! -L "$home_dir/.claude/CLAUDE.md" ]] || fail "expected stale worktree symlink to be removed when HM gcroot is present"
+  assert_file_contains "$relink_log" "needs-restore"
+  # 이 gate fixture는 호출만 기록한다. 실제 복원은 external-worktree 회귀가 검증한다.
 }
 
 setup_nixos_no_change_gcroot_fixture() {
@@ -1558,8 +1559,8 @@ EOF
 #
 # 두 경로 모두 settings.json 하나만 대표 canary로 검사하면, settings.json이 일반
 # 파일로 배치되는 호스트(hostType "work")에서는 다른 관리 링크(CLAUDE.md)가
-# dangling이어도 감지하지 못한다. lib/rebuild/relink.sh의 재빌드 복구 경로가 이미
-# 쓰는 2-probe(settings.json, CLAUDE.md)를 두 경로에 맞춘다.
+# dangling이어도 감지하지 못한다. 두 빠른 자동 복구 경로는
+# settings.json과 CLAUDE.md를 같은 canary 목록으로 사용한다.
 #
 # bash 스크립트(nrs-relink.sh)와 Nix가 렌더링하는 zsh 인라인 문자열(default.nix)
 # 사이에는 probe 목록을 공유할 언어 경계가 없어 각자 복제한다 —
