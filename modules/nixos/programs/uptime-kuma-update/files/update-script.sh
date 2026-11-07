@@ -61,6 +61,10 @@ fi
 
 # ERR trap — 컨테이너 자동 복구 (모니터링 서비스라 복구 필수)
 cleanup() {
+  # 미리보기의 조회 실패는 원래 오류만 전달하고 서비스 복구·알림을 실행하지 않는다.
+  if $DRY_RUN; then
+    return 0
+  fi
   local recovery_msg=""
   if ! podman container inspect "$CONTAINER_NAME" --format '{{.State.Running}}' 2>/dev/null | grep -q true; then
     echo "Restarting container after failure..."
@@ -72,7 +76,7 @@ cleanup() {
   fi
   send_notification "$SERVICE_DISPLAY_NAME Update" "업데이트 실패: 스크립트 오류 발생.${recovery_msg}" 1
 }
-trap cleanup ERR
+service_install_error_trap cleanup
 
 # ─── 0. 현재 이미지 digest 저장 + 최신 버전 조회 ─────────────────
 echo "=== $SERVICE_DISPLAY_NAME Update ==="
@@ -140,7 +144,10 @@ if ! gzip -t "$BACKUP_FILE" 2>/dev/null; then
   echo "ERROR: Backup file is corrupted"
   send_notification "$SERVICE_DISPLAY_NAME Update" "업데이트 중단: 백업 파일 손상" 1
   echo "Restarting container..."
-  systemctl start "$SERVICE_UNIT"
+  # 이미 보고한 실패의 복구는 한 번만 시도하고 원래 백업 실패 코드를 유지한다.
+  if ! systemctl start "$SERVICE_UNIT"; then
+    echo "ERROR: container recovery failed after reported backup error" >&2
+  fi
   exit 1
 fi
 
@@ -149,7 +156,9 @@ if [ "$BACKUP_SIZE" -lt 1024 ]; then
   echo "ERROR: Backup file is too small (${BACKUP_SIZE} bytes)"
   send_notification "$SERVICE_DISPLAY_NAME Update" "업데이트 중단: 백업이 비어있음" 1
   echo "Restarting container..."
-  systemctl start "$SERVICE_UNIT"
+  if ! systemctl start "$SERVICE_UNIT"; then
+    echo "ERROR: container recovery failed after reported backup error" >&2
+  fi
   exit 1
 fi
 echo "Backup saved: $BACKUP_FILE ($(numfmt --to=iec "$BACKUP_SIZE"))"

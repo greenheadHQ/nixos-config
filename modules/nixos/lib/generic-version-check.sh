@@ -25,7 +25,7 @@ source "$SERVICE_LIB"
 source "$PUSHOVER_CRED_FILE"
 
 # 에러 발생 시 알림 전송
-trap 'send_notification "$SERVICE_DISPLAY_NAME Version Check" "오류 발생: 스크립트 실패" 0' ERR
+service_install_error_trap send_notification "$SERVICE_DISPLAY_NAME Version Check" "오류 발생: 스크립트 실패" 0
 
 LAST_NOTIFIED_FILE="$STATE_DIR/last-notified-version"
 
