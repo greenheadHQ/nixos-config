@@ -32,7 +32,9 @@ darwin-rebuild 시 setupLaunchAgents 멈춤
 
 Ghostty 새 인스턴스 문제
 - Ghostty 바이너리를 직접 실행하면 새 인스턴스로 열릴 수 있음 (Dock에 여러 아이콘)
-- 해결: 실행 중이면 `hs.application.get("Ghostty")` + `Cmd+N`, 미실행이면 `open -a Ghostty`
+- 해결: 실행 중이면 AppleScript의 `new window with configuration`에 초기 폴더를 전달하고, 미실행이면 `open -a Ghostty`를 사용한다.
+- Finder 단축키는 키 입력·클립보드·복원 타이머를 사용하지 않는다. AppleScript 지원 또는 macOS 자동화 권한이 없으면 알리고 중단하며, 전역 키 입력으로 재시도하지 않는다.
+- 실제 새 창 경로와 대표 클립보드 형식의 확인은 합성 테스트와 별도다. 권한 변경은 사용자가 해당 실행 주체와 대상을 확인한 뒤 승인한다.
 
 ## 빠른 참조
 
