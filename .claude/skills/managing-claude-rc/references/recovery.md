@@ -119,20 +119,28 @@ launchctl kickstart "gui/$(id -u)/org.nix-community.home.claude-rc-ensure"
 ```bash
 approval="$(
   set -euo pipefail
-  status="$HOME/.local/state/claude-rc/status.json"
-  CLAUDE_RC_DRIFT_POLICY=defer claude-rc-maint ensure >&2
-  jq -e '.action == "completed" and .exitCode == 0' "$status" >/dev/null
-  jq -c '[.instances[]
+  status_file="$HOME/.local/state/claude-rc/status.json"
+  CLAUDE_RC_DRIFT_POLICY=defer claude-rc-maint ensure >&2 || exit "$?"
+  jq -e '.action == "completed" and .exitCode == 0' "$status_file" >/dev/null || exit "$?"
+  restart_candidates="$(jq -c '[.instances[]
     | select(.action == "deferred-restart-confirmation")
     | {path, runningVersion, desiredVersion}]
-    | sort_by([.path, .runningVersion, .desiredVersion])' "$status"
+    | sort_by([.path, .runningVersion, .desiredVersion])' "$status_file")" || exit "$?"
+  if [ "$restart_candidates" = '[]' ]; then
+    printf '%s\n' '재시작 후보가 없습니다. 승인·재시작 단계로 진행하지 않습니다.' >&2
+    exit 2
+  fi
+  jq -r '.[] | [.path, .runningVersion, .desiredVersion] | @tsv' <<<"$restart_candidates" >&2 || exit "$?"
+  claude-rc ls >&2 || exit "$?"
+  printf '%s\n' "$restart_candidates"
 )"
-jq -e 'length > 0' <<<"$approval" >/dev/null
-jq -r '.[] | [.path, .runningVersion, .desiredVersion] | @tsv' <<<"$approval"
-claude-rc ls
 ```
 
-block 전체가 exit 0일 때만 출력된 후보를 승인 목록으로 쓴다. 후보 전체를 이름으로 포함해
+후보 표와 현재 목록은 stderr에 표시하고, 모든 명령이 성공한 뒤에만 `approval`에 JSON을 넣는다.
+블록 전체가 exit 0이고 `approval`이 비어 있지 않을 때만 출력된 후보를 승인 목록으로 쓴다.
+후보가 없으면 별도 안내와 exit 2로 끝나며 `approval`은 비어 있으므로 승인 단계로 진행하지 않는다.
+snapshot 생성·검증·추출이나 현재 목록 조회가 실패한 경우도 승인 값을 남기지 않는다.
+후보 전체를 이름으로 포함해
 action-time confirmation을 한 번 받고 처음의 exact JSON을 stable home symlink maint에 전달한다.
 `confirmed`는 lifecycle lock을 잡은 뒤 현재 `(path,runningVersion,desiredVersion)` 집합을 다시 계산해
 approval과 exact match하는 경우만 restart한다. 어느 명령이나 status 검증이 실패하거나 runtime

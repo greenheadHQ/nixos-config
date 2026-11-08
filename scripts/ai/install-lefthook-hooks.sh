@@ -62,8 +62,8 @@ GIT_HOOK_NAMES="applypatch-msg pre-applypatch post-applypatch pre-commit pre-mer
 # affect the outcome" 서술을 갖고, **그 문장에 exit status 예외절이 붙지 않을 것.** 예외절이 붙는
 # 대표가 `post-checkout`이다 — "cannot affect the outcome of git switch or git checkout, *other than
 # that the hook's exit status becomes the exit status of these two commands*". 그래서 제외한다
-# (실측: 깨진 post-checkout에서 `git worktree add`가 exit 127을 낸다 — `wt`가 반쯤 만들어진 워크트리를
-# 남기고 죽는다). 아래 목록은 이 기준을 문서 전문에 기계적으로 적용한 결과다.
+# (실측: 깨진 post-checkout에서 `git worktree add`가 exit 127을 낸다 — 이를 실패로 보고 멈춘 호출자는
+# 반쯤 만들어진 워크트리를 남긴다). 아래 목록은 이 기준을 문서 전문에 기계적으로 적용한 결과다.
 #
 # 문서에 exit status 서술이 아예 없으면 넣지 않는다 (fail-closed). `post-rewrite`와 `post-index-change`가
 # 그렇다 — 실측으로는 무시되지만 문서 근거가 없어 단정하지 않는다.

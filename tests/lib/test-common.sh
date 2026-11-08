@@ -113,17 +113,6 @@ register_replace_vars() {
   ln -sf "$generated_dir/$gen_name" "$home_dir/$deployed_path"
 }
 
-assert_wt_wrapper_nix() {
-  local nix_file="$1"
-  grep -Fq '  home.file.".local/bin/wt" =' "$nix_file" \
-    || fail "expected $nix_file to define home.file.\".local/bin/wt\""
-  grep -Fq '        export WT_PYTHON="${pythonWithTomlkit}/bin/python3"' "$nix_file" \
-    || fail "expected wt wrapper to export WT_PYTHON from pythonWithTomlkit"
-  grep -Fq '        export WT_LSOF="${pkgs.lsof}/bin/lsof"' "$nix_file" \
-    || fail "expected wt wrapper to export WT_LSOF from pkgs.lsof"
-  grep -Fq '        exec "${config.home.homeDirectory}/.local/bin/.wt-real" "$@"' "$nix_file" \
-    || fail "expected wt wrapper to exec .wt-real"
-}
 symlink_helper_dir() {
   local source_dir="$1"
   local target_dir="$2"
@@ -161,23 +150,6 @@ install_deployed_layout() {
   install_fixture_git_global_ignore "$home_dir"
 
   # shellcheck disable=SC2016  # Literal Nix source strings.
-  register_copy_exec "$shell_nix" ".local/bin/.wt-real" \
-    '${sharedScriptsDir}/wt.sh' "modules/shared/scripts/wt.sh"
-  assert_wt_wrapper_nix "$shell_nix"
-  cat > "$home_dir/.local/bin/wt" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-export WT_PYTHON="$(command -v python3)"
-export WT_LSOF="$(command -v lsof)"
-exec "$home_dir/.local/bin/.wt-real" "\$@"
-EOF
-  chmod +x "$home_dir/.local/bin/wt"
-
-  # shellcheck disable=SC2016  # Literal Nix source strings.
-  register_recursive "$shell_nix" ".local/lib/wt" \
-    '${sharedScriptsDir}/lib/wt' "modules/shared/scripts/lib/wt"
-
-  # shellcheck disable=SC2016  # Literal Nix source strings.
   register_replace_vars "$shell_nix" ".local/lib/rebuild-common.sh" \
     "$flake_path" "modules/shared/scripts/rebuild-common.sh" \
     '${sharedScriptsDir}/rebuild-common.sh' \
@@ -191,8 +163,8 @@ EOF
   register_copy_exec "$shell_nix" ".local/bin/codex-review-status" \
     '${sharedScriptsDir}/codex-review-status.py' "modules/shared/scripts/codex-review-status.py"
 
-  # cross-cutting: recursive 배포가 정확히 2개
-  assert_line_count "$shell_nix" '    recursive = true;' 2
+  # cross-cutting: 공용 rebuild helper의 recursive 배포만 유지
+  assert_line_count "$shell_nix" '    recursive = true;' 1
 }
 create_git_fixture_repo() {
   local repo_root="$1"

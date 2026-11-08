@@ -121,6 +121,8 @@ in
     systemd.services.podman-copyparty = {
       unitConfig = {
         ConditionPathExists = passwordPath;
+        # nofail HDD의 디렉터리만 남은 경우 루트 파일시스템에 업로드하지 않도록 한다.
+        RequiresMountsFor = [ mediaData ];
       };
       # config 내용은 컨테이너 유닛에 들어가지 않고 경로만 볼륨 인자로 들어간다.
       # conf의 두 입력(생성 스크립트 + 비밀번호 암호문)을 모두 트리거로 걸어야
