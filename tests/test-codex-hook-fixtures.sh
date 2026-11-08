@@ -1232,8 +1232,9 @@ test_pinning_body_file_static_paths() {
   for command_text in "${split_only_commands[@]}"; do
     printf '%s' "$command_text" | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
     for hook in "${hooks[@]}"; do
-      (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" "$hook" \
-        < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
+      # 호스트처럼 hook 입력을 pipe로 넘긴다. /dev/stdin 후보가 그 pipe를 FIFO 본문으로 오인하면 안 된다.
+      cat "$sandbox/body-path-input.json" | (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" "$hook" \
+        > "$stdout_log" 2> "$stderr_log")
       [ ! -s "$stderr_log" ] || fail "split candidate guard wrote stderr: $command_text"
       assert_eq "$(jq -r '.hookSpecificOutput.permissionDecision' "$stdout_log")" deny "split candidate must be inspected: $command_text"
       output=$(jq -r '.hookSpecificOutput.permissionDecisionReason' "$stdout_log")
@@ -1305,7 +1306,8 @@ test_pinning_body_file_static_paths() {
     mkfifo "$fifo"
     printf '%s' "$command_text" | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
     for hook in "${hooks[@]}"; do
-      (sleep 15; printf 'clean\n' > "$fifo") > /dev/null 2>&1 < /dev/null &
+      (trap 'kill "$sleeper" 2>/dev/null; exit 0' TERM; sleep 15 & sleeper=$!; wait "$sleeper"; printf 'clean\n' > "$fifo") \
+        > /dev/null 2>&1 < /dev/null &
       watchdog=$!
       (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" "$hook" \
         < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
@@ -1333,7 +1335,7 @@ test_pinning_body_file_static_paths() {
   done
   rm -f -- "$sandbox/inner.md" "$sandbox/static-called" "$wrapper_lib"
 
-  # 두 단계가 같은 경로를 내도 본문 파일은 한 번만 검사한다(FIFO 같은 본문을 두 번 열지 않는다).
+  # 두 단계가 같은 경로를 내도 본문 파일은 한 번만 검사한다.
   wrapper_lib="$sandbox/counting-pinning-patterns.sh"
   {
     printf '. %q\n' "$PINNING_LIB_REPO_FILE"

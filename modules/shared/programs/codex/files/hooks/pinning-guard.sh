@@ -105,7 +105,8 @@ case "$TOOL_NAME" in
         esac
         checked_body_files+="$body_file"$'\n'
         [ -e "$body_file" ] || continue
-        if [ -p "$body_file" ]; then
+        # 판정도 읽기와 같이 stdin을 /dev/null로 두어, /dev/stdin 같은 경로가 hook 입력 pipe를 가리키지 않게 한다.
+        if [ -p "$body_file" ] < /dev/null; then
           _deny_with_reason "[pinning-guard] $body_file referenced via --body-file is a FIFO; it cannot be inspected without consuming it, so denying. Use a regular file."
         fi
         if ! cat -- "$body_file" > "$SCAN_DIR/bash.txt" 2>/dev/null < /dev/null; then

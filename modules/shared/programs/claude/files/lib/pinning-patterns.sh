@@ -845,7 +845,7 @@ pinning_extract_body_file_paths() {
           continue
         }
         if (c == sq || c == dq) { q = c; continue }
-        if (c == "\\") { i++; delim = delim substr(command, i, 1); continue }
+        if (c == "\\") { i++; if (substr(command, i, 1) != "\n") delim = delim substr(command, i, 1); continue }
         if (index(" \t\r\n;|&()<>", c) > 0) break
         delim = delim c
       }

@@ -277,5 +277,7 @@
   {"command":"R=$(/opt/bin/xgh issue create --body-file 'body draft.md')","paths":[]},
   {"command":"R=$(cat <<\"E\\\"OF\"\nx\nE\"OF\ngh issue create --body-file 'body draft.md')","paths":["body draft.md"]},
   {"command":"cat <<\"E\\\"OF\" >/dev/null\nit's\nE\"OF\ngh pr create --body-file 'body draft.md' --title t","paths":["body draft.md"]},
-  {"command":"gh pr create --body-file body{α..γ}.md","locale":"C","paths":["body{α..γ}.md"]}
+  {"command":"gh pr create --body-file body{α..γ}.md","locale":"C","paths":["body{α..γ}.md"]},
+  {"command":"cat <<E\\\nOF >/dev/null\nit's\nEOF\ngh pr create --body-file 'body draft.md' --title t","paths":["body draft.md"]},
+  {"command":"R=$(cat <<\"E\\\nOF\"\nx\nEOF\ngh issue create --body-file 'body draft.md')","paths":["body draft.md"]}
 ]
