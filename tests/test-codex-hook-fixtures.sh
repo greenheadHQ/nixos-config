@@ -1158,6 +1158,7 @@ $stderr_head"
 
 test_pinning_body_file_static_paths() {
   local sandbox fixture command_text expected actual shell hook content body_file label output denied_content
+  local candidates split_candidates missing
   sandbox=$(new_hook_sandbox)
   local matrix="$FIXTURE_DIR/body-file-paths.json"
   local stdout_log="$sandbox/body-path-stdout.log" stderr_log="$sandbox/body-path-stderr.log"
@@ -1176,6 +1177,19 @@ test_pinning_body_file_static_paths() {
       actual=$(cd "$sandbox" && BODY_TEST_VALUE=body.md "$shell" -f -c \
         '. "$1"; pinning_extract_body_file_paths "$2"' _ "$PINNING_LIB_REPO_FILE" "$command_text")
       assert_eq "$actual" "$expected" "body path tokenization: $shell / $command_text"
+      # guard 후보는 정적 결과를 먼저 두고 이전 공백 분할 후보를 중복 없이 더한다.
+      candidates=$(cd "$sandbox" && BODY_TEST_VALUE=body.md "$shell" -f -c \
+        '. "$1"; pinning_body_file_scan_candidates "$2"' _ "$PINNING_LIB_REPO_FILE" "$command_text")
+      split_candidates=$(cd "$sandbox" && BODY_TEST_VALUE=body.md "$shell" -f -c \
+        '. "$1"; _pinning_split_body_file_candidates "$2"' _ "$PINNING_LIB_REPO_FILE" "$command_text")
+      if [ -n "$expected" ]; then
+        assert_eq "$(printf '%s\n' "$candidates" | head -n "$(printf '%s\n' "$expected" | awk 'END { print NR }')")" "$expected" \
+          "scan candidates must start with static paths: $shell / $command_text"
+      fi
+      missing=$(printf '%s\n%s\n' "$expected" "$split_candidates" \
+        | awk 'NR == FNR { have[$0] = 1; next } !($0 in have)' <(printf '%s\n' "$candidates") -)
+      [ -z "$missing" ] || fail "scan candidates dropped a static or split path: $shell / $command_text"
+      [ "$(printf '%s\n' "$candidates" | sort | uniq -d)" = "" ] || fail "scan candidates repeated a path: $shell / $command_text"
     done
     printf '%s' "$command_text" | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
     for content in '검증된 변경 내용입니다.' "$denied_content"; do
@@ -1197,7 +1211,37 @@ test_pinning_body_file_static_paths() {
       done
     done
     [ ! -e "$sandbox/tokenization-side-effect" ] || fail "body path parser executed command substitution"
+    # 다음 사례가 앞 사례의 본문 파일을 읽지 않도록 이번 사례의 파일을 지운다.
+    while IFS= read -r body_file; do
+      [ -n "$body_file" ] || continue
+      rm -f -- "$sandbox/$body_file"
+    done <<< "$expected"
   done < <(jq -c '.[]' "$matrix")
+
+  # 정적 토큰화가 해석하지 않는 문법(문자열 스크립트, bash 함수 치환, 치환 안 here-doc의
+  # bash 종료 처리, 인용 없는 here-doc 본문의 치환, ANSI-C 구분자, 치환 안 wrapper)도
+  # 이전 공백 분할 후보로 계속 검사한다.
+  local split_only_commands=(
+    "bash -c 'gh pr create --body-file inner.md --title t'"
+    'R=${ gh issue create --body-file inner.md --title t; }'
+    $'git commit -m "$(cat <<\'EOF\'\nmsg\nEOF)" && gh pr create --body-file inner.md --title t'
+    $'cat <<EOF > notes.txt\nHere\'s the PR: $(gh pr create --body-file inner.md --title t)\nEOF'
+    $'cat <<$\'EOF\' >/dev/null\nit\'s\nEOF\ngh pr create --body-file inner.md --title t'
+    'R=$(timeout 60 gh pr create --body-file inner.md --title t)'
+  )
+  printf '%s\n' "$denied_content" > "$sandbox/inner.md"
+  for command_text in "${split_only_commands[@]}"; do
+    printf '%s' "$command_text" | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
+    for hook in "${hooks[@]}"; do
+      (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" "$hook" \
+        < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
+      [ ! -s "$stderr_log" ] || fail "split candidate guard wrote stderr: $command_text"
+      assert_eq "$(jq -r '.hookSpecificOutput.permissionDecision' "$stdout_log")" deny "split candidate must be inspected: $command_text"
+      output=$(jq -r '.hookSpecificOutput.permissionDecisionReason' "$stdout_log")
+      [[ "$output" == *'inner.md (via --body-file)'* ]] || fail "guard denied something other than the split candidate: $command_text"
+    done
+  done
+  rm -f -- "$sandbox/inner.md"
 
   # 바깥 파일에서 먼저 거부되면 내부 파일 누락을 숨길 수 있으므로 각각 따로 검사한다.
   command_text='gh pr create --title "$(gh issue create --body-file inner.md)" --body-file outer.md'

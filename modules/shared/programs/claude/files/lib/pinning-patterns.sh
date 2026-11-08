@@ -750,8 +750,9 @@ pinning_extract_body_file_paths() {
   # 호출부의 없는 파일 건너뜀/읽기 실패 거부 정책은 그대로 유지한다.
   # 닫힌 치환 본문은 직접 게시 명령만 별도로 검사한다. here-doc은 종료 구분자를 읽어
   # 본문을 따로 떼어 낸다. 본문 속 인용·괄호는 바깥 명령과 치환 경계를 바꾸지 않으며,
-  # 본문이 실행될 수도 있으므로(bash <<EOF 등) 본문 안의 게시 명령은 별도 스코프로 검사한다.
-  # 작업 폴더·함수·별칭·임의 wrapper는 해석하지 않는다.
+  # 본문이 실행될 수도 있으므로(bash <<EOF 등) 본문은 바깥 스코프와 같은 기준의 별도
+  # 스코프로 검사한다. 작업 폴더·함수·별칭·임의 wrapper는 해석하지 않는다.
+  # guard는 이 결과 대신 기존 공백 분할 후보를 더한 pinning_body_file_scan_candidates를 쓴다.
   printf '%s\n' "$cmd" | awk -v sq="'" -v dq='"' '
     function finish_word(end) {
       if (started) {
@@ -803,7 +804,10 @@ pinning_extract_body_file_paths() {
         c = substr(command, i, 1)
         if (c == "\\") i++
         else if (c == "`") {
-          if (collect) scopes[++scope_count] = backtick_script(substr(command, start + 1, i - start - 1), outer_quote)
+          if (collect) {
+            scopes[++scope_count] = backtick_script(substr(command, start + 1, i - start - 1), outer_quote)
+            scope_restricted[scope_count] = 1
+          }
           return i
         }
       }
@@ -844,8 +848,10 @@ pinning_extract_body_file_paths() {
       return 1
     }
     # start는 here-doc 연산자가 있던 줄을 끝내는 개행 위치다. 대기 중인 본문을 순서대로
-    # 건너뛰고, collect면 각 본문을 별도 제한 스코프로 등록한다. 마지막으로 소비한 위치를
-    # 돌려준다. 종료 줄이 없으면 셸처럼 입력 끝까지를 본문으로 본다.
+    # 건너뛰고, collect면 각 본문을 별도 스코프로 등록한다. 본문은 bash <<EOF처럼 실행될 수
+    # 있으므로 바깥 스코프와 같은 기준으로 검사한다(최상위 본문은 최상위처럼, 치환 안의
+    # 본문은 게시 명령만). 마지막으로 소비한 위치를 돌려준다. 종료 줄이 없으면 셸처럼
+    # 입력 끝까지를 본문으로 본다.
     function consume_heredocs(start, collect, n, delims, strips,    k, pos, rest, line_end, line, body_start, found) {
       pos = start
       for (k = 1; k <= n; k++) {
@@ -857,7 +863,10 @@ pinning_extract_body_file_paths() {
           line = line_end ? substr(rest, 1, line_end - 1) : rest
           if (strips[k]) sub(/^\t+/, "", line)
           if (line == delims[k]) {
-            if (collect) scopes[++scope_count] = substr(command, body_start, pos + 1 - body_start)
+            if (collect) {
+              scopes[++scope_count] = substr(command, body_start, pos + 1 - body_start)
+              scope_restricted[scope_count] = restricted_scope
+            }
             pos = line_end ? pos + line_end : length(command)
             found = 1
             break
@@ -865,7 +874,10 @@ pinning_extract_body_file_paths() {
           pos = line_end ? pos + line_end : length(command)
         }
         if (!found) {
-          if (collect) scopes[++scope_count] = substr(command, body_start)
+          if (collect) {
+            scopes[++scope_count] = substr(command, body_start)
+            scope_restricted[scope_count] = restricted_scope
+          }
           return length(command) + 1
         }
       }
@@ -935,7 +947,10 @@ pinning_extract_body_file_paths() {
           depth++
           word_boundary = 1
         } else if (c == closing && --depth == 0) {
-          if (collect && command_scope) scopes[++scope_count] = substr(command, start + 1, i - start - 1)
+          if (collect && command_scope) {
+            scopes[++scope_count] = substr(command, start + 1, i - start - 1)
+            scope_restricted[scope_count] = 1
+          }
           return i
         } else word_boundary = index(" \t\r\n;|&()<>", c) > 0
       }
@@ -1023,8 +1038,8 @@ pinning_extract_body_file_paths() {
               i = hd_end
               continue
             }
-            # 구분자를 읽지 못한 내부 스코프는 실행 범위를 추측하지 않는다.
-            if (scope > 1) { unsupported_scope = 1; break }
+            # 구분자를 읽지 못한 치환 스코프는 실행 범위를 추측하지 않는다.
+            if (restricted_scope) { unsupported_scope = 1; break }
           }
           if ((c == "<" || c == ">") && following == "(") {
             started = dynamic = 1
@@ -1209,10 +1224,12 @@ pinning_extract_body_file_paths() {
     }
     { command = command (NR > 1 ? "\n" : "") $0 }
     END {
-      scopes[1] = command; scope_count = 1
+      scopes[1] = command; scope_restricted[1] = 0; scope_count = 1
       for (scope = 1; scope <= scope_count; scope++) {
         command = scopes[scope]
+        restricted_scope = scope_restricted[scope]
         delete scopes[scope]
+        delete scope_restricted[scope]
         for (key in words) delete words[key]
         for (key in literal) delete literal[key]
         for (key in unknown_shape) delete unknown_shape[key]
@@ -1222,8 +1239,66 @@ pinning_extract_body_file_paths() {
         before = scope_count
         tokenize()
         if (unsupported_scope) scope_count = before
-        else scan_scope(scope > 1)
+        else scan_scope(restricted_scope)
       }
     }
   '
+}
+
+# 이전 추출기의 공백 분할 후보. 셸 문법을 해석하지 않고 줄마다 공백으로 나눈 뒤 고정 옵션
+# 뒤의 단어를 낸다. 인용 경로는 잘리고 데이터 속 옵션 모양도 후보가 되지만(과포함),
+# 문자열 스크립트(bash -c)·함수 치환·wrapper·치환 안 here-doc의 셸별 종료 처리처럼
+# 정적 토큰화가 해석하지 않는 문법 안의 경로도 놓치지 않는다.
+_pinning_split_body_file_candidates() {
+  local cmd="${1:-}"
+  [ -n "$cmd" ] || return 0
+  printf '%s\n' "$cmd" | awk -v sq="'" -v dq='"' '
+    function strip_quotes(v,    n, first, last) {
+      n = length(v)
+      if (n < 2) return v
+      first = substr(v, 1, 1)
+      last = substr(v, n, 1)
+      if ((first == dq && last == dq) || (first == sq && last == sq)) {
+        return substr(v, 2, n - 2)
+      }
+      return v
+    }
+    function emit_field_or_path(v,    at) {
+      if (index(v, "=") == 0) {
+        print strip_quotes(v)
+        return
+      }
+      at = index(v, "=@")
+      if (at > 0) print substr(v, at + 2)
+    }
+    {
+      n = split($0, words, /[ \t]+/)
+      i = 1
+      while (i <= n) {
+        w = words[i]
+        if (w == "--body-file" || w == "--file") {
+          if (i + 1 <= n) { print strip_quotes(words[i + 1]); i++ }
+        } else if (w ~ /^--body-file=/) {
+          sub(/^--body-file=/, "", w); print strip_quotes(w)
+        } else if (w ~ /^--file=/) {
+          sub(/^--file=/, "", w); print strip_quotes(w)
+        } else if (w == "-F" || w == "--field") {
+          if (i + 1 <= n) { emit_field_or_path(strip_quotes(words[i + 1])); i++ }
+        }
+        i++
+      }
+    }
+  '
+}
+
+# guard가 내용을 검사할 본문 파일 후보. 정적 토큰화 결과에 이전 공백 분할 후보를 더해
+# 이전보다 적게 검사하지 않게 한다. 과포함은 허용한다 — 없는 경로는 호출부가 건너뛰고,
+# 있는 파일을 더 읽는 것은 거부 쪽으로만 작용한다. 정적 결과를 먼저, 중복 없이 낸다.
+pinning_body_file_scan_candidates() {
+  local cmd="${1:-}"
+  [ -n "$cmd" ] || return 0
+  {
+    pinning_extract_body_file_paths "$cmd"
+    _pinning_split_body_file_candidates "$cmd"
+  } | awk '!seen[$0]++'
 }

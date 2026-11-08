@@ -90,7 +90,7 @@ case "$TOOL_NAME" in
       findings="$(pinning_findings_text "$SCAN_DIR/bash.txt")"
       [ -n "$findings" ] || continue
       _deny "$TOOL_NAME" "$body_file (via --body-file)" "$findings"
-    done < <(pinning_extract_body_file_paths "$COMMAND_TEXT")
+    done < <(pinning_body_file_scan_candidates "$COMMAND_TEXT")
     ;;
   Edit | Write | NotebookEdit)
     FILE_PATH=$(printf '%s' "$INPUT" | jq -r '

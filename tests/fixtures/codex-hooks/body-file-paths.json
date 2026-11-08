@@ -265,5 +265,9 @@
   {"command":"printf '%s\\n' --body-file 'example draft.md'; gh issue create --body-file clean.md","paths":["clean.md"]},
   {"command":"command -p printf --body-file ignored.md; gh issue create --body-file body.md","paths":["body.md"]},
   {"command":"printf --body-file ignored.md \"$(gh issue create --body-file inner.md)\"","paths":["inner.md"]},
-  {"command":"printf '%s' \"${UNSET:-((}\"; gh issue create --body-file body.md","paths":["body.md"]}
+  {"command":"printf '%s' \"${UNSET:-((}\"; gh issue create --body-file body.md","paths":["body.md"]},
+  {"command":"bash <<'EOF'\ntimeout 60 gh pr create --body-file inner.md --title t\nEOF","paths":["inner.md"]},
+  {"command":"sh -s <<'EOF'\nenv gh issue comment 1 --body-file inner.md\nEOF","paths":["inner.md"]},
+  {"command":"bash <<'EOF'\n/opt/homebrew/bin/gh issue create --body-file inner.md\nEOF","paths":["inner.md"]},
+  {"command":"bash <<'OUTER'\ncat <<'' >/dev/null\nx\n\ngh pr create --body-file inner.md\nOUTER","paths":["inner.md"]}
 ]
