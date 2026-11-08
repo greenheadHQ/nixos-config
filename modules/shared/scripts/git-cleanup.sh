@@ -192,7 +192,8 @@ display_branches() {
     if [[ ${#protected_branches[@]} -gt 0 || -n "$current_branch" ]]; then
         echo ""
         echo "── 보호됨 ──"
-        for branch in "${protected_branches[@]}"; do
+        # env-bash 배포는 Bash 3.2도 지원한다. nounset에서 빈 배열은 확장하지 않는다.
+        for branch in "${protected_branches[@]+"${protected_branches[@]}"}"; do
             echo "  🔒 $branch"
         done
         if [[ -n "$current_branch" ]]; then
@@ -268,7 +269,7 @@ delete_interactive() {
     echo ""
 
     # gone 브랜치 순회
-    for entry in "${gone_branches[@]}"; do
+    for entry in "${gone_branches[@]+"${gone_branches[@]}"}"; do
         IFS='|' read -r branch remote <<< "$entry"
         echo -n "$branch [gone] 삭제? [Y/n/q]: "
         read -r response
@@ -281,7 +282,7 @@ delete_interactive() {
     done
 
     # stale 브랜치 순회
-    for entry in "${stale_branches[@]}"; do
+    for entry in "${stale_branches[@]+"${stale_branches[@]}"}"; do
         IFS='|' read -r branch days <<< "$entry"
         echo -n "$branch [stale: ${days}일] 삭제? [Y/n/q]: "
         read -r response

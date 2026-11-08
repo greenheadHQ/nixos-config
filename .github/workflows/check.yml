@@ -19,10 +19,19 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Install Nix (flakes enabled)
         uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
+      # 전체 이력은 객체 준비용이며 검사는 PR base..head의 commit diff에 한정한다.
+      # head에서 고정한 정책으로 중간 commit·merge·이름 변경까지 검사한다.
+      - name: gitleaks (PR commit 범위)
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: nix develop --command bash scripts/ai/run-gitleaks-ci.sh "$PR_BASE_SHA" "$PR_HEAD_SHA"
 
       # --inputs-from . 로 repo flake.lock에 핀된 nixpkgs의 nixfmt/shellcheck를 쓴다(devShell·로컬
       # lefthook 훅과 동일 store path). floating registry(nixpkgs# 단독)는 unstable 채널을 해석해
