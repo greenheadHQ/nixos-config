@@ -78,7 +78,8 @@ worktree_symlink_guard() {
 
     # ── 역방향 검사: worktree-only entry 탐지 (정보성) ──────────────────
     # worktree에만 추가된 mkOutOfStoreSymlink entry를 감지하여 사용자에게 알린다.
-    # _remove_worktree_symlinks()가 pre-rebuild에서 자동 처리하므로 차단하지 않는다.
+    # 현재 HMF 매핑이 확인되는 링크만 자동 복원한다. 매핑이 없는 링크는 보존하므로
+    # main 복귀 시 Home Manager 충돌이 발생하면 링크와 해당 선언을 직접 확인한다.
     # merge_base..HEAD: worktree 브랜치에서 변경된 .nix 파일 (정방향의 merge_base..main과 반대)
     #
     # === Change Intent Record ===
@@ -93,6 +94,10 @@ worktree_symlink_guard() {
     #      "No drift" 직후 역방향 발견의 인지 부조화
     #    trade-off: missing_count>0일 때도 역방향 git diff 추가 실행되나,
     #              로컬 git 명령 1회로 무시 가능한 비용
+    # v6 (#1591): v2의 worktree-only 자동 제거를 철회 — 선삭제 뒤 복원이 실패하면 링크가
+    #    유실되고, 외부 Git worktree는 경로 패턴만으로 소유를 판정할 수 없다. 현재 HMF
+    #    매핑과 Git 등록으로 검증된 링크만 restore가 교체하고 나머지는 보존·안내한다.
+    #    trade-off: 매핑에 없는 worktree 전용 링크는 main 복귀 시 사용자가 직접 정리한다.
     local wt_changed_nix_files
     wt_changed_nix_files=$(git -C "$FLAKE_PATH" diff --name-only "$merge_base" HEAD -- '*.nix' 2>/dev/null) || {
         log_warn "⚠️  symlink guard (reverse): git diff failed. Skipping."
@@ -142,7 +147,7 @@ worktree_symlink_guard() {
         if [[ $wt_only_count -gt 0 ]]; then
             log_info "  ℹ️  $wt_only_count worktree-only mkOutOfStoreSymlink entry(s) detected:"
             echo -n "$all_wt_only"
-            echo "  (These will be auto-handled by pre-rebuild symlink cleanup)"
+            echo "  (Only links verified against the current Home Manager mapping are auto-restored; inspect any activation conflict.)"
         fi
     fi
 
