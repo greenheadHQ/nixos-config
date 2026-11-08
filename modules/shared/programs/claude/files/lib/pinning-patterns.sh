@@ -726,7 +726,7 @@ pinning_guard_findings_text_for_path() {
 #
 # 고정된 파일 전달 옵션의 정적 단어만 추출한다. 작은/큰따옴표와 escape를 처리하고,
 # 확장이 필요한 단어는 건너뛴다. 중첩 치환은 경계만 찾으며 내용을 실행하지 않는다.
-# 전체 셸 문법이나 heredoc·실행 중 cwd 변경을 해석하지 않으므로, 없는 경로를 건너뛰는
+# 전체 셸 문법이나 실행 중 cwd 변경을 해석하지 않으므로, 없는 경로를 건너뛰는
 # 기존 호출부 계약을 유지한다. 공백·따옴표는 경로에 포함할 수 있지만 개행은 미지원이다.
 #
 # Runs entirely in awk (no shell array/glob surface) so this stays safely
@@ -1151,8 +1151,9 @@ pinning_extract_body_file_paths() {
         i++
       }
     }
-    # 내부 스코프에서는 실제 명령 위치만 본다. printf 등에 전달된 옵션 모양의
-    # 데이터는 게시 인자가 아니다. 함수·별칭·임의 wrapper와 작업 폴더는 해석하지 않는다.
+    # 제한 스코프(치환·백틱과 그 안의 here-doc 본문)에서는 실제 명령 위치만 본다. printf 등에
+    # 전달된 옵션 모양의 데이터는 게시 인자가 아니다. 함수·별칭·임의 wrapper와 작업 폴더는
+    # 해석하지 않는다.
     function git_commit_command(i, last,    option) {
       for (; i <= last; i++) {
         option = words[i]
@@ -1248,7 +1249,8 @@ pinning_extract_body_file_paths() {
 # 이전 추출기의 공백 분할 후보. 셸 문법을 해석하지 않고 줄마다 공백으로 나눈 뒤 고정 옵션
 # 뒤의 단어를 낸다. 인용 경로는 잘리고 데이터 속 옵션 모양도 후보가 되지만(과포함),
 # 문자열 스크립트(bash -c)·함수 치환·wrapper·치환 안 here-doc의 셸별 종료 처리처럼
-# 정적 토큰화가 해석하지 않는 문법 안의 경로도 놓치지 않는다.
+# 정적 토큰화가 해석하지 않는 문법 안의 경로도 공백으로 나뉜 단어이면 낸다. 경로에 공백이
+# 있거나 경로 뒤에 ) ' ; 등이 붙으면 이 후보도 놓친다(이 PR 이전과 같은 한계).
 _pinning_split_body_file_candidates() {
   local cmd="${1:-}"
   [ -n "$cmd" ] || return 0
@@ -1293,12 +1295,14 @@ _pinning_split_body_file_candidates() {
 
 # guard가 내용을 검사할 본문 파일 후보. 정적 토큰화 결과에 이전 공백 분할 후보를 더해
 # 이전보다 적게 검사하지 않게 한다. 과포함은 허용한다 — 없는 경로는 호출부가 건너뛰고,
-# 있는 파일을 더 읽는 것은 거부 쪽으로만 작용한다. 정적 결과를 먼저, 중복 없이 낸다.
+# 있는 파일을 더 읽는 것은 거부 쪽으로만 작용한다. 호출부는 후보를 모두 받은 뒤 읽어야
+# 한다. 정적 결과를 먼저, 중복 없이 낸다. 한쪽 추출이 실패해도(호출부의 errexit 포함)
+# 다른 쪽 후보는 계속 낸다.
 pinning_body_file_scan_candidates() {
   local cmd="${1:-}"
   [ -n "$cmd" ] || return 0
   {
-    pinning_extract_body_file_paths "$cmd"
-    _pinning_split_body_file_candidates "$cmd"
+    pinning_extract_body_file_paths "$cmd" || :
+    _pinning_split_body_file_candidates "$cmd" || :
   } | awk '!seen[$0]++'
 }

@@ -1158,7 +1158,7 @@ $stderr_head"
 
 test_pinning_body_file_static_paths() {
   local sandbox fixture command_text expected actual shell hook content body_file label output denied_content
-  local candidates split_candidates missing
+  local candidates split_candidates missing static_unique
   sandbox=$(new_hook_sandbox)
   local matrix="$FIXTURE_DIR/body-file-paths.json"
   local stdout_log="$sandbox/body-path-stdout.log" stderr_log="$sandbox/body-path-stderr.log"
@@ -1183,7 +1183,8 @@ test_pinning_body_file_static_paths() {
       split_candidates=$(cd "$sandbox" && BODY_TEST_VALUE=body.md "$shell" -f -c \
         '. "$1"; _pinning_split_body_file_candidates "$2"' _ "$PINNING_LIB_REPO_FILE" "$command_text")
       if [ -n "$expected" ]; then
-        assert_eq "$(printf '%s\n' "$candidates" | head -n "$(printf '%s\n' "$expected" | awk 'END { print NR }')")" "$expected" \
+        static_unique=$(printf '%s\n' "$expected" | awk '!seen[$0]++')
+        assert_eq "$(printf '%s\n' "$candidates" | head -n "$(printf '%s\n' "$static_unique" | awk 'END { print NR }')")" "$static_unique" \
           "scan candidates must start with static paths: $shell / $command_text"
       fi
       missing=$(printf '%s\n%s\n' "$expected" "$split_candidates" \
@@ -1228,6 +1229,16 @@ test_pinning_body_file_static_paths() {
     $'cat <<EOF > notes.txt\nHere\'s the PR: $(gh pr create --body-file inner.md --title t)\nEOF'
     $'cat <<$\'EOF\' >/dev/null\nit\'s\nEOF\ngh pr create --body-file inner.md --title t'
     'R=$(timeout 60 gh pr create --body-file inner.md --title t)'
+    # 이전 추출기의 옵션 형태별 분기(-F, --file, 등호형, key=@path, 따옴표 해제)를 고정한다.
+    "bash -c 'gh issue create -F inner.md --title t'"
+    "bash -c 'git commit --file inner.md -q'"
+    "bash -c 'gh pr create --body-file=inner.md --title t'"
+    "bash -c 'git commit --file=inner.md -q'"
+    'R=$(timeout 5 gh api repos/o/r/issues/1/comments -F body=@inner.md -f x=y)'
+    "bash -c \"gh pr create --body-file 'inner.md' --title t\""
+    # 표준 입력을 가리키는 후보를 읽어도 뒤 후보의 검사가 빠지지 않는다.
+    $'gh pr comment 1 --body-file /dev/stdin <<\'X\'\nok\nX\ngh pr create --body-file inner.md --title t'
+    $'gh pr comment 1 --body-file /dev/fd/0 <<\'X\'\nok\nX\ngh pr create --body-file inner.md --title t'
   )
   printf '%s\n' "$denied_content" > "$sandbox/inner.md"
   for command_text in "${split_only_commands[@]}"; do
@@ -1242,6 +1253,13 @@ test_pinning_body_file_static_paths() {
     done
   done
   rm -f -- "$sandbox/inner.md"
+
+  # 정적 추출이 실패해도(호출부 errexit 포함) 이전 공백 분할 후보는 계속 나온다.
+  for shell in bash zsh; do
+    candidates=$("$shell" -f -c 'set -eu; . "$1"; pinning_extract_body_file_paths() { return 139; }
+      pinning_body_file_scan_candidates "$2"' _ "$PINNING_LIB_REPO_FILE" 'gh pr create --body-file inner.md --title t')
+    assert_eq "$candidates" inner.md "split candidates must survive a static extraction failure: $shell"
+  done
 
   # 바깥 파일에서 먼저 거부되면 내부 파일 누락을 숨길 수 있으므로 각각 따로 검사한다.
   command_text='gh pr create --title "$(gh issue create --body-file inner.md)" --body-file outer.md'

@@ -128,16 +128,22 @@ case "$TOOL_NAME" in
 
     # --body-file / -F(--field) 로 넘겨진 파일 내용도 재스캔한다 (issue #684).
     # command 문자열 자체는 클린해도 파일 내용에 박제 패턴이 있는 케이스를 잡는다.
+    # 후보를 먼저 모두 읽는다. 후보 스트림을 stdin으로 둔 채 cat하면 표준 입력을 가리키는
+    # 후보(/dev/stdin 등)가 남은 후보를 삼켜 뒤 파일 검사가 빠진다. 본문 읽기의 stdin은 /dev/null로 둔다.
+    body_files=()
     while IFS= read -r body_file; do
       [ -n "$body_file" ] || continue
+      body_files+=("$body_file")
+    done < <(pinning_body_file_scan_candidates "$COMMAND_TEXT")
+    for body_file in ${body_files[@]+"${body_files[@]}"}; do
       [ -e "$body_file" ] || continue
-      if ! cat -- "$body_file" > "$SCAN_DIR/new.txt" 2>/dev/null; then
+      if ! cat -- "$body_file" > "$SCAN_DIR/new.txt" 2>/dev/null < /dev/null; then
         _deny_with_reason "[pinning-guard] failed to read $body_file referenced via --body-file; denying by fail-closed policy."
       fi
       findings="$(pinning_findings_text "$SCAN_DIR/new.txt")"
       [ -n "$findings" ] || continue
       _deny "$TOOL_NAME" "$body_file (via --body-file)" "$findings"
-    done < <(pinning_body_file_scan_candidates "$COMMAND_TEXT")
+    done
     ;;
 esac
 
