@@ -1295,27 +1295,28 @@ test_pinning_body_file_static_paths() {
   done
   rm -f -- "$wrapper_lib"
 
-  # 본문은 1 MiB까지만 읽는다. 한도와 같은 크기는 검사하고, 넘으면 전부 확인할 수 없으므로 거부한다.
-  head -c 1048576 /dev/zero | tr '\0' a > "$sandbox/limit.md"
-  head -c 1048577 /dev/zero | tr '\0' a > "$sandbox/over.md"
-  for label in limit over; do
-    printf 'gh pr create --title t --body-file %s.md' "$label" \
+  # 일반 파일은 크기와 관계없이 전부 읽는다. 1 MiB가 넘는 깨끗한 파일은 통과하고, 끝에 금지 내용이
+  # 있으면 그 내용으로 거부한다(분할 후보가 내는 비본문 --file·-F 파일을 크기로 막지 않는다).
+  head -c 2097152 /dev/zero | tr '\0' a > "$sandbox/large.md"
+  for label in clean denied; do
+    [ "$label" = clean ] || printf '\n%s\n' "$denied_content" >> "$sandbox/large.md"
+    printf 'gh pr create --title t --body-file large.md' \
       | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
     for hook in "${hooks[@]}"; do
       (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" "$hook" \
         < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
-      [ ! -s "$stderr_log" ] || fail "body size guard wrote stderr: $label"
-      if [ "$label" = limit ]; then
-        [ ! -s "$stdout_log" ] || fail "clean body at the size limit must pass"
+      [ ! -s "$stderr_log" ] || fail "large regular body guard wrote stderr: $label"
+      if [ "$label" = clean ]; then
+        [ ! -s "$stdout_log" ] || fail "large clean regular file must pass"
       else
         output=$(jq -r '.hookSpecificOutput.permissionDecisionReason' "$stdout_log")
-        [[ "$output" == *'is larger than 1048576 bytes'* ]] || fail "body over the size limit must be denied"
+        [[ "$output" == *'large.md (via --body-file)'* ]] || fail "large regular file must be read to the end"
       fi
     done
   done
-  rm -f -- "$sandbox/limit.md" "$sandbox/over.md"
+  rm -f -- "$sandbox/large.md"
 
-  # 끝나지 않는 장치 파일도 한도까지만 읽고 거부한다(분할 후보와 escape 표기의 정적 추출).
+  # 일반 파일이 아닌 끝나지 않는 장치 파일은 1 MiB까지만 읽고 거부한다(분할 후보와 escape 표기의 정적 추출).
   # 회귀로 끝까지 읽어도 디스크를 채우지 않도록 쓰기 크기를 제한한다.
   for command_text in 'gh pr create --title t --body-file /dev/zero' 'gh pr create --title t --body-file /dev/\zero'; do
     printf '%s' "$command_text" | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
@@ -1324,7 +1325,7 @@ test_pinning_body_file_static_paths() {
         < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
       [ ! -s "$stderr_log" ] || fail "endless device guard wrote stderr: $command_text"
       output=$(jq -r '.hookSpecificOutput.permissionDecisionReason' "$stdout_log")
-      [[ "$output" == *'is larger than 1048576 bytes'* ]] || fail "endless device body must be denied: $command_text"
+      [[ "$output" == *'is not a regular file and is larger than 1048576 bytes'* ]] || fail "endless device body must be denied: $command_text"
     done
   done
 
