@@ -9,6 +9,7 @@ import base64
 import hashlib
 import json
 import struct
+import subprocess
 
 import httpx
 import pytest
@@ -100,6 +101,100 @@ def test_widget_html_embeds_inert_config_and_the_standard_protocol():
     # Several files per pick, one summary listing every upload, and a note for the user before picking.
     assert 'type="file" multiple' in html and "ankiUploads" in html
     assert "AI는 여기서 올린 사진을 볼 수 없습니다. 내용을 보여 주려면 채팅에 첨부해 주세요." in html
+
+
+def test_widget_reports_unconfirmed_uploads_without_claiming_failure_or_repeating_summary():
+    html = widget_html("https://anki.example/upload", MEDIA_MAX)
+    # 실제 upload·파일별 표시·요약 함수를 실행한다. HTTP·이미지 변환·ticket은 대역이다.
+    script = (html[html.index("  class UploadError"):html.index("  const isGif =")]
+              + html[html.index("  const failure ="):html.index("  const tell =")]
+              + html[html.index("  const sizeOf ="):html.index('  input.addEventListener("change"')])
+    harness = r"""
+const assert = require('node:assert/strict');
+const source = JSON.parse(process.argv[1]);
+const CONFIG = { uploadUrl: 'https://anki.example/upload' }, MIB = 1;
+const lines = [], contexts = [], messages = [], uploads = [];
+const response = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
+const unreadable = status => ({ ok: status < 400, status, json: async () => { throw new Error('body lost'); } });
+const cases = [
+  ['stored.png', response({ state: 'applied', filename: 'fixture.png', width: 10, height: 20, format: 'png', bytes: 100, sync: 'pending' }), false],
+  ['failed.png', response({ state: 'not-applied' }), false],
+  ['unknown.png', response({ state: 'unknown' }), true],
+  ['lost.png', new Error('connection lost'), true],
+  ['lost-body.png', unreadable(200), true],
+  ['missing-state.png', response({}), true],
+  ['null-body.png', response(null), true],
+  ['invalid-state.png', response({ state: 'unexpected' }), true],
+  ['rejected.png', response({ error: 'fixture-rejected' }, 422), false],
+  ['too-large.png', unreadable(413), false],
+];
+const outcomes = cases.map(([, outcome]) => outcome);
+const fit = async file => file;
+const ticket = async () => 'fixture-ticket';
+class FormData {
+  append(key, file) { this.file = file; }
+}
+const fetch = async (url, options) => {
+  uploads.push(options.body.file.name);
+  const result = outcomes.shift();
+  if (result instanceof Error) throw result;
+  return result;
+};
+const line = (text, cls) => lines.push({ text, cls });
+const tell = async (text, uploads) => contexts.push({ text, uploads });
+const request = async (method, params) => messages.push({ method, params });
+eval(source + `
+(async () => {
+  const results = [], perFile = [];
+  for (const [name] of cases) {
+    const start = lines.length;
+    results.push(await send({ name, size: 100 }, ''));
+    perFile.push(lines.slice(start).at(-1));
+  }
+  assert.equal(perFile[0].cls, 'ok');
+  assert.match(perFile[0].text, /저장됨/);
+  assert.equal(perFile[1].cls, 'bad');
+  assert.match(perFile[1].text, /저장하지 못했습니다/);
+  assert.match(perFile[2].text, /저장됐는지 확인하지 못했습니다/);
+  for (const [i, [name, , unknown]] of cases.entries()) {
+    assert.equal(unsure(results[i]), unknown, name);
+    if (unknown) {
+      assert.equal(perFile[i].cls, 'muted', name);
+      assert.match(perFile[i].text, /저장됐을 수 있으니 최근 작업을 확인/, name);
+      assert.doesNotMatch(perFile[i].text, /저장하지 못했습니다|저장됨/, name);
+    }
+  }
+  assert.ok(perFile[8].text.includes('저장하지 못했습니다(fixture-rejected)'));
+  assert.match(perFile[9].text, /넘어 올릴 수 없습니다/);
+  await summarize(results, true);
+  assert.equal(contexts.length, 1);
+  assert.equal(messages.length, 1);
+  assert.equal(contexts[0].uploads.length, cases.length);
+  for (const [name, , unknown] of cases) {
+    if (unknown) assert.ok(contexts[0].text.includes('unconfirmed ' + name), name);
+  }
+  assert.match(contexts[0].text, /not stored failed.png/);
+  assert.match(contexts[0].text, /not stored rejected.png/);
+  assert.match(contexts[0].text, /not stored too-large.png/);
+  assert.match(contexts[0].text, /anki_recent_operations/);
+  assert.equal(messages[0].method, 'ui/message');
+  const summary = messages[0].params.content[0].text;
+  assert.match(summary, /이미지 1장/);
+  assert.match(summary, /저장하지 못한 파일 3장/);
+  assert.match(summary, /저장됐는지 확인하지 못한 파일 6장/);
+  contexts.length = messages.length = 0;
+  await summarize([results[4]], false);
+  assert.equal(contexts.length, 1);
+  assert.equal(messages.length, 0);
+  assert.match(contexts[0].text, /unconfirmed lost-body.png/);
+  assert.match(contexts[0].text, /anki_recent_operations/);
+  assert.deepEqual(uploads, cases.map(([name]) => name));
+})().catch(error => { console.error(error); process.exitCode = 1; });
+`);
+"""
+    completed = subprocess.run(["node", "-e", harness, json.dumps(script)],
+                               capture_output=True, text=True, timeout=10)
+    assert completed.returncode == 0, completed.stderr
 
 
 # --- tickets -----------------------------------------------------------------------------------------------

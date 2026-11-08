@@ -23,7 +23,7 @@ CORE = REPO / "modules/darwin/programs/ssh/files/headless-ssh-dispatcher.py"
 FAKE = REPO / "tests/fixtures/headless-ssh/fake-ssh.py"
 MANIFEST = REPO / "tests/fixtures/headless-ssh/compatible-manifest.json"
 PRODUCTION_MANIFEST = (
-    REPO / "modules/darwin/programs/ssh/files/darwin-openssh-10.3p1.json"
+    REPO / "modules/darwin/programs/ssh/files/darwin-openssh-10.5p1.json"
 )
 DISPATCHER_NIX = REPO / "modules/darwin/programs/ssh/headless-dispatcher.nix"
 SYSTEM_SSH = Path("/usr/bin/ssh")
@@ -318,6 +318,78 @@ class ScopeTests(DispatcherFixture):
                 self.clear_calls()
                 self.run_dispatch(*argv)
                 self.assertNotIn("auth", self.events())
+
+    def test_public_key_diagnostics_are_raw_exact_once(self) -> None:
+        # OpenSSH 10.5의 -Z는 공개키 진단 후 종료한다. 실제 키를 조회하지 않고
+        # 합성 SSH의 출력·종료 코드를 보존하며 추가 인증/설정/제어 호출이 없는지 본다.
+        case_index = 0
+        for option in ("-Z", "-vZ"):
+            for destination in ("minipc", "unmanaged.invalid"):
+                for exit_code in (0, 23):
+                    for argv in ((option, destination), (destination, option)):
+                        with self.subTest(argv=argv, exit_code=exit_code):
+                            case_index += 1
+                            self.runtime = self.root / f"r{case_index}"
+                            self.clear_calls()
+                            self.write_scenario(
+                                public_key_diagnostic_argv=list(argv),
+                                meta_stdout="synthetic diagnostic output\n",
+                                meta_stderr="synthetic diagnostic warning\n",
+                                meta_exit=exit_code,
+                            )
+                            result = self.run_dispatch(*argv)
+                            self.assertEqual(result.returncode, exit_code, result.stderr)
+                            self.assertEqual(result.stdout, "synthetic diagnostic output\n")
+                            self.assertEqual(result.stderr, "synthetic diagnostic warning\n")
+                            self.assertEqual(self.events(), ["meta"])
+                            self.assertEqual(self.calls()[0]["argv"], list(argv))
+                            self.assertFalse(self.runtime.exists())
+
+    def test_remote_command_and_option_values_are_not_public_key_diagnostics(self) -> None:
+        invocations = (
+            ("minipc", "echo", "-Z"),
+            ("minipc", "--", "-Z"),
+            ("--", "minipc", "-Z"),
+            ("minipc", "-i", "-Z"),
+            ("minipc", "-i-Z"),
+            ("minipc", "-", "-Z"),
+        )
+        for argv in invocations:
+            with self.subTest(argv=argv):
+                self.clear_calls()
+                self.write_scenario(stdout="synthetic remote output\n", remote_exit=17)
+                result = self.run_dispatch(*argv)
+                self.assertEqual(result.returncode, 17, result.stderr)
+                self.assertEqual(result.stdout, "synthetic remote output\n")
+                self.assertEqual(result.stderr, "")
+                self.assertEqual(
+                    self.events(), ["config", "auth", "control-check", "data", "control-exit"]
+                )
+                data = next(call for call in self.calls() if call["event"] == "data")
+                self.assertEqual(data["argv"][-len(argv) :], list(argv))
+
+    def test_post_destination_scan_preserves_existing_option_contract(self) -> None:
+        dispatcher = load_dispatcher_module()
+        manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        for suffix in (("-F", "fixture.conf"), ("-?",), ("-i",)):
+            with self.subTest(suffix=suffix):
+                argv = ["-v", "minipc", *suffix]
+                invocation = dispatcher.parse_invocation(argv, manifest)
+                self.assertFalse(invocation.meta)
+                self.assertEqual(invocation.options, (("v", None),))
+                self.assertEqual(invocation.argv, tuple(argv))
+                self.assertEqual(invocation.destination, "minipc")
+
+    def test_option_value_terminator_stops_post_destination_diagnostics(self) -> None:
+        dispatcher = load_dispatcher_module()
+        manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        for flag in ("i", "F"):
+            for prefix, expected_meta in (((f"-{flag}", "--"), False), ((f"-{flag}--",), True)):
+                with self.subTest(prefix=prefix):
+                    invocation = dispatcher.parse_invocation([*prefix, "minipc", "-Z"], manifest)
+                    self.assertEqual(invocation.meta, expected_meta)
+                    self.assertEqual(invocation.options, ((flag, "--"),))
+                    self.assertEqual(invocation.destination, "minipc")
 
     def test_user_target_custom_config_W_and_tty_are_preserved(self) -> None:
         custom = self.root / "custom.conf"
