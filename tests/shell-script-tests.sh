@@ -493,6 +493,7 @@ run_test "immich cleanup partial delete failure exits nonzero" test_immich_clean
 run_test "immich cleanup all delete failure exits nonzero" test_immich_cleanup_all_delete_failure_exits_nonzero
 run_test "immich cleanup notification failure keeps delete failure" test_immich_cleanup_notification_failure_keeps_delete_failure
 run_test "immich cleanup unexpected failure sends single error notification" test_immich_cleanup_unexpected_failure_sends_single_error_notification
+run_test "immich cleanup reported failure keeps one notification when send fails" test_immich_cleanup_reported_failure_keeps_single_notification_when_send_fails
 
 # homeserver-smoke-test suite (tests/suites/homeserver-smoke-test.sh) — 종료 코드·알림 계약 (#1387)
 run_test "smoke test all pass exits zero without notification" test_smoke_test_all_pass_exits_zero_without_notification
@@ -576,6 +577,14 @@ run_test "version-check release body line limit matches head boundary" test_vers
 run_test "version-check release body CRLF line split matches head" test_version_check_release_body_crlf_line_split_matches_head
 run_test "version-check release body unicode boundary not corrupted" test_version_check_release_body_unicode_boundary_not_corrupted
 run_test "version-check invalid GitHub JSON does not send false success notification" test_version_check_invalid_github_json_does_not_send_false_success_notification
+run_test "version-check function and substitution failures notify once" test_version_checks_function_and_substitution_failures_notify_once
+run_test "update function failures notify once without restart" test_update_function_failures_notify_once_without_restart
+run_test "update substitution failures keep status and recover once" test_update_substitution_failures_keep_status_and_recover_once
+run_test "update startup failure preserves recovery and single notification" test_update_startup_failure_preserves_recovery_and_single_notification
+run_test "update explicit failures do not send duplicate notifications" test_update_explicit_failures_do_not_send_duplicate_notifications
+run_test "reported backup failure does not retry failed recovery" test_uptime_reported_backup_failure_does_not_retry_failed_recovery
+run_test "update success preserves single notification" test_update_success_preserves_single_notification
+run_test "service error handler preserves nested status and callback failure" test_service_error_handler_preserves_nested_status_and_callback_failure
 
 # git-cleanup suite (tests/suites/git-cleanup.sh) — 날짜 계산 도구 선택 계약 (#1376)
 run_test "git-cleanup BSD-only date dry-run succeeds" test_git_cleanup_bsd_only_date_dry_run_succeeds
@@ -609,6 +618,7 @@ run_test "copyparty-update rejects unknown option with env wired" test_copyparty
 run_test "copyparty-update rejects excess argument with env wired" test_copyparty_update_rejects_excess_argument_with_env
 run_test "copyparty-update no-args preserves existing update flow" test_copyparty_update_no_args_preserves_existing_update_flow
 run_test "copyparty-update --dry-run skips mutating boundaries" test_copyparty_update_dry_run_skips_mutating_boundaries
+run_test "copyparty-update failed dry-run preserves stopped service" test_copyparty_update_dry_run_failure_preserves_stopped_service
 run_test "uptime-kuma-update --help exits 0 without side effects" test_uptime_kuma_update_help_flag_exits_zero_without_side_effects
 run_test "uptime-kuma-update rejects unknown option" test_uptime_kuma_update_rejects_unknown_option
 run_test "uptime-kuma-update rejects excess argument" test_uptime_kuma_update_rejects_excess_argument
@@ -618,6 +628,7 @@ run_test "uptime-kuma-update rejects unknown option with env wired" test_uptime_
 run_test "uptime-kuma-update rejects excess argument with env wired" test_uptime_kuma_update_rejects_excess_argument_with_env
 run_test "uptime-kuma-update no-args preserves existing update flow" test_uptime_kuma_update_no_args_preserves_existing_update_flow
 run_test "uptime-kuma-update --dry-run skips mutating boundaries" test_uptime_kuma_update_dry_run_skips_mutating_boundaries
+run_test "uptime-kuma-update failed dry-run preserves stopped service" test_uptime_kuma_update_dry_run_failure_preserves_stopped_service
 run_test "karakeep-update --help exits 0 without side effects" test_karakeep_update_help_flag_exits_zero_without_side_effects
 run_test "karakeep-update rejects unknown option" test_karakeep_update_rejects_unknown_option
 run_test "karakeep-update rejects excess argument" test_karakeep_update_rejects_excess_argument
@@ -628,6 +639,7 @@ run_test "karakeep-update rejects excess argument with env wired" test_karakeep_
 run_test "karakeep-update no-args still requires ack-bridge-risk" test_karakeep_update_no_args_still_requires_ack_bridge_risk
 run_test "karakeep-update ack-bridge-risk preserves existing update flow" test_karakeep_update_ack_bridge_risk_preserves_existing_update_flow
 run_test "karakeep-update --dry-run skips mutating boundaries" test_karakeep_update_dry_run_skips_mutating_boundaries
+run_test "karakeep-update failed dry-run preserves stopped service" test_karakeep_update_dry_run_failure_preserves_stopped_service
 
 # ═══════════════════════════════════════════════════════════════════
 # add-host.sh — NixOS 분기 default.nix 생성 (#1382)
