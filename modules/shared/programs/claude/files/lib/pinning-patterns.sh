@@ -753,7 +753,7 @@ pinning_extract_body_file_paths() {
   # 본문이 실행될 수도 있으므로(bash <<EOF 등) 본문은 바깥 스코프와 같은 기준의 별도
   # 스코프로 검사한다. 작업 폴더·함수·별칭·임의 wrapper는 해석하지 않는다.
   # guard는 이전 공백 분할 후보(pinning_split_body_file_candidates)를 먼저 검사한 뒤 이 결과를 검사한다.
-  # BSD awk에서는 명령 길이(줄 수·중첩 치환 깊이 포함)에 대해 시간이 이차로 늘어난다.
+  # 중첩 치환 깊이에 대해서는 BSD awk와 gawk 모두, 줄 수에 대해서는 BSD awk에서 시간이 이차로 늘어난다.
   printf '%s\n' "$cmd" | awk -v sq="'" -v dq='"' '
     function finish_word(end) {
       if (started) {

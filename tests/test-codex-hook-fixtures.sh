@@ -1310,6 +1310,22 @@ test_pinning_body_file_static_paths() {
   done
   rm -f -- "$sandbox/clean.md" "$sandbox/scan-count" "$wrapper_lib"
 
+  # 중복 판정은 경로를 패턴이 아닌 문자열로 비교한다. 앞서 본 경로와 glob으로만 일치하는
+  # 다른 본문 파일도 검사한다.
+  printf 'clean\n' > "$sandbox/clean.md"
+  printf '%s\n' "$denied_content" > "$sandbox/[c]lean.md"
+  printf '%s' "gh pr create --body-file clean.md --title t; gh pr edit 1 --body-file '[c]lean.md'" \
+    | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
+  for hook in "${hooks[@]}"; do
+    (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" "$hook" \
+      < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
+    [ ! -s "$stderr_log" ] || fail "glob-named body path guard wrote stderr"
+    assert_eq "$(jq -r '.hookSpecificOutput.permissionDecision' "$stdout_log")" deny "glob-named body path must be inspected"
+    output=$(jq -r '.hookSpecificOutput.permissionDecisionReason' "$stdout_log")
+    [[ "$output" == *'[c]lean.md (via --body-file)'* ]] || fail "guard denied something other than the glob-named body file"
+  done
+  rm -f -- "$sandbox/clean.md" "$sandbox/[c]lean.md"
+
   # 바깥 파일에서 먼저 거부되면 내부 파일 누락을 숨길 수 있으므로 각각 따로 검사한다.
   command_text='gh pr create --title "$(gh issue create --body-file inner.md)" --body-file outer.md'
   printf '%s' "$command_text" | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
