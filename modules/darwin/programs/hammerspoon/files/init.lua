@@ -115,16 +115,42 @@ end
 -- Finder → Ghostty 터미널 열기 (Ctrl + Option + Cmd + T)
 --------------------------------------------------------------------------------
 
--- 경로를 POSIX 셸(zsh)의 단일 인자로 안전하게 인용한다.
--- 작은따옴표로 감싸고 내부의 작은따옴표는 '\''로 치환한다 — $, ", ` 등의 확장·명령
--- 실행을 막으려면 작은따옴표여야 한다(큰따옴표는 이들을 막지 못한다).
--- 경로에 개행이 있으면 붙여넣을 명령이 여러 줄로 쪼개져 일부만 실행될 위험이 있으므로
--- 인용하지 않고 nil을 반환한다 — 호출부가 알림 후 붙여넣기를 중단해야 한다.
-local function shellQuotePath(path)
-    if path:find("[\r\n]") then
-        return nil
+-- Ghostty의 새 창 API에 초기 경로를 데이터로 전달한다. 각 요청이 반환받은 창만
+-- 활성화하므로 포커스·생성 시간·연속 호출과 무관하게 기존 창에 키를 보내지 않는다.
+-- 경로를 코드에 보간하거나 클립보드를 읽고 복원하지 않는다 (#1575, #1590).
+local ghosttyNewWindowScript = [[
+    on run argv
+        tell application id "com.mitchellh.ghostty"
+            set windowConfig to new surface configuration
+            if (count of argv) = 1 and (item 1 of argv) is not "" then
+                set initial working directory of windowConfig to item 1 of argv
+            end if
+            set createdWindow to new window with configuration windowConfig
+            activate window createdWindow
+            return id of createdWindow
+        end tell
+    end run
+]]
+
+-- 완료 전까지 task를 유지한다. 콜백에는 경로·원시 stderr를 알림으로 노출하지 않는다.
+local ghosttyLaunchTasks = {}
+local function startGhosttyTask(command, args, failureMessage)
+    local task
+    task = hs.task.new(command, function(exitCode)
+        ghosttyLaunchTasks[task] = nil
+        if exitCode ~= 0 then
+            hs.notify.new({title="Ghostty", informativeText=failureMessage}):send()
+        end
+    end, args)
+    if not task then
+        hs.notify.new({title="Ghostty", informativeText="❌ 새 창 요청을 만들지 못했습니다"}):send()
+        return
     end
-    return "'" .. path:gsub("'", "'\\''") .. "'"
+    ghosttyLaunchTasks[task] = true
+    if not task:start() then
+        ghosttyLaunchTasks[task] = nil
+        hs.notify.new({title="Ghostty", informativeText="❌ 새 창 요청을 시작하지 못했습니다"}):send()
+    end
 end
 
 local function openGhosttyFromFinder()
@@ -132,7 +158,7 @@ local function openGhosttyFromFinder()
     local path = nil
 
     -- Finder에서 실행 시: 현재 디렉토리 가져오기
-    if frontApp:bundleID() == "com.apple.finder" then
+    if frontApp and frontApp:bundleID() == "com.apple.finder" then
         local script = [[
             tell application "Finder"
                 try
@@ -147,44 +173,25 @@ local function openGhosttyFromFinder()
             end tell
         ]]
         local ok, result = hs.osascript.applescript(script)
-        if ok then
-            path = result
+        if not ok or type(result) ~= "string" or result == "" then
+            hs.notify.new({title="Ghostty", informativeText="❌ Finder 폴더 경로를 확인하지 못했습니다"}):send()
+            return
         end
+        path = result
+    end
+    -- 기존 개행 거부를 두 실행 경로에 공통 적용한다. NUL은 프로세스 인자로 전달할 수 없다.
+    if path and path:find("[%z\r\n]") then
+        hs.notify.new({title="Ghostty", informativeText="❌ 경로에 개행 또는 NUL이 있어 새 창 열기를 중단했습니다"}):send()
+        return
     end
 
     -- Ghostty 새 창 열기
-    local ghostty = hs.application.get("Ghostty")
+    local ghostty = hs.application.get("com.mitchellh.ghostty")
 
     if ghostty then
-        -- 이미 실행 중: 활성화 후 Cmd+N으로 새 창, 클립보드로 경로 전달
-        ghostty:activate()
-        -- 딜레이 1: Ghostty 활성화 완료 대기 (Cmd+N이 Ghostty에 전달되도록)
-        -- 경로가 열리지 않으면 이 값을 늘려보세요 (예: 0.3)
-        hs.timer.doAfter(0.2, function()
-            hs.eventtap.keyStroke({"cmd"}, "n")
-            if path then
-                -- 딜레이 2: 새 창이 완전히 열릴 때까지 대기 (cd가 새 창에 입력되도록)
-                -- 기존 창에 cd가 입력되면 이 값을 늘려보세요 (예: 0.8)
-                hs.timer.doAfter(0.6, function()
-                    local quotedPath = shellQuotePath(path)
-                    if not quotedPath then
-                        hs.notify.new({title="Ghostty", informativeText="❌ 경로에 개행이 있어 cd 붙여넣기를 중단했습니다"}):send()
-                        return
-                    end
-                    -- 클립보드를 활용하여 한글 경로 문제 방지
-                    local prevClipboard = hs.pasteboard.getContents()
-                    hs.pasteboard.setContents('cd -- ' .. quotedPath .. ' && clear')
-                    hs.eventtap.keyStroke({"cmd"}, "v")
-                    hs.eventtap.keyStroke({}, "return")
-                    -- 클립보드 복원
-                    hs.timer.doAfter(0.1, function()
-                        if prevClipboard then
-                            hs.pasteboard.setContents(prevClipboard)
-                        end
-                    end)
-                end)
-            end
-        end)
+        -- AppleScript 지원/자동화 권한이 없으면 알리고 끝낸다. 전역 입력 fallback은 없다.
+        startGhosttyTask("/usr/bin/osascript", {"-e", ghosttyNewWindowScript, "--", path or ""},
+            "❌ 새 창을 열지 못했습니다. Ghostty의 AppleScript 지원과 macOS 자동화 권한을 확인하세요")
     else
         -- 미실행: open 명령어로 시작
         local args = {"-a", "Ghostty"}
@@ -192,7 +199,7 @@ local function openGhosttyFromFinder()
             table.insert(args, "--args")
             table.insert(args, "--working-directory=" .. path)
         end
-        hs.task.new("/usr/bin/open", nil, args):start()
+        startGhosttyTask("/usr/bin/open", args, "❌ Ghostty를 시작하지 못했습니다")
     end
 end
 

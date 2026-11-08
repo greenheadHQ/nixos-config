@@ -43,6 +43,21 @@ run_test "managed plugin skill helper rejects duplicate matches" test_managed_pl
 run_test "rebuild-common exports public API" test_rebuild_common_exports_public_api
 run_test "result cleanup preserves path boundaries" test_cleanup_build_artifacts_preserves_path_boundaries
 run_test "result cleanup reports search failure" test_cleanup_build_artifacts_reports_search_failure
+run_test "gitleaks CI scans commits without changing checkout" test_gitleaks_ci_scans_commits_without_mutating_checkout
+run_test "gitleaks CI detects committed content with empty staging" test_gitleaks_ci_detects_committed_content_with_empty_staging
+run_test "gitleaks CI keeps deleted commit content in scope" test_gitleaks_ci_keeps_deleted_commit_content_in_scope
+run_test "gitleaks CI scans renamed paths and preserves allowlist" test_gitleaks_ci_scans_renamed_paths_and_preserves_allowlist
+run_test "gitleaks CI scans merge-only additions" test_gitleaks_ci_scans_merge_only_additions
+run_test "gitleaks CI preserves base exceptions after merge" test_gitleaks_ci_preserves_base_exceptions_after_merge
+run_test "gitleaks CI preserves conflict resolution fingerprints" test_gitleaks_ci_preserves_conflict_resolution_fingerprints
+run_test "gitleaks CI keeps deleted side commit content in scope" test_gitleaks_ci_keeps_deleted_side_commit_content_in_scope
+run_test "gitleaks CI rejects octopus merges" test_gitleaks_ci_rejects_octopus_merges
+run_test "gitleaks CI preserves commit fingerprint exceptions" test_gitleaks_ci_preserves_commit_fingerprint_exceptions
+run_test "gitleaks CI rejects invalid policy material" test_gitleaks_ci_rejects_invalid_policy_material
+run_test "gitleaks CI rejects scanner errors without raw output" test_gitleaks_ci_rejects_scanner_errors_without_raw_output
+run_test "gitleaks CI rejects internal git log failure" test_gitleaks_ci_rejects_git_log_failure_reported_as_success
+run_test "gitleaks CI preserves Git adapter exit and delegation" test_gitleaks_ci_preserves_git_adapter_exit_and_delegation
+run_test "gitleaks CI rejects bad refs and limits history" test_gitleaks_ci_rejects_bad_refs_and_limits_history
 run_test "nrs-lock status without lock" test_nrs_lock_status_without_lock
 run_test "nrs-lock retains stopped process before timeout" test_nrs_lock_status_retains_stopped_process_before_timeout
 run_test "nrs-lock stale after timeout with stopped process" test_nrs_lock_status_stale_after_timeout_with_stopped_process
@@ -119,6 +134,8 @@ run_test "wt plugin manifest GC keeps orphans when backup fails" test_wt_plugin_
 run_test "wt cleanup removes exact Claude local plugin manifest entries" test_wt_cleanup_removes_exact_claude_local_plugin_manifest_entries
 run_test "wt cleanup stops when plugin manifest cleanup fails" test_wt_cleanup_stops_when_plugin_manifest_cleanup_fails
 run_test "wt plugin manifest missing and invalid inputs are safe" test_wt_plugin_manifest_missing_and_invalid_are_safe
+run_test "Claude install activation respects dry-run" test_claude_install_activation_respects_dry_run
+run_test "Claude install activation propagates failures" test_claude_install_activation_propagates_failures
 run_test "codex activation .agents symlink guard static" test_codex_activation_agents_symlink_guard_static
 run_test "codex activation AGENTS keeps real entries" test_codex_activation_agents_keeps_real_entries
 run_test "codex activation AGENTS link contract" test_codex_activation_agents_link_contract
@@ -193,6 +210,7 @@ run_test "claude remote-control maint rejects mismatched started version" test_c
 run_test "claude remote-control maint restart records verified version" test_claude_remote_control_maint_restart_records_verified_version
 run_test "claude remote-control maint default policy preserves live drift" test_claude_remote_control_maint_default_policy_preserves_live_drift
 run_test "claude remote-control maint confirmed drift binds exact snapshot" test_claude_remote_control_maint_confirmed_drift_binds_exact_snapshot
+run_test "claude remote-control recovery doc propagates candidate failures" test_claude_remote_control_recovery_doc_propagates_candidate_failures
 run_test "claude remote-control maint reports lock setup failure" test_claude_remote_control_maint_reports_lock_setup_failure
 run_test "claude remote-control maint waits for parent lock release" test_claude_remote_control_maint_waits_for_parent_lock_release
 run_test "claude remote-control maint restart rejects mismatched version" test_claude_remote_control_maint_restart_rejects_mismatched_version
@@ -599,6 +617,7 @@ run_test "test runtime profile rejects invalid prepared runtime" test_runtime_pr
 run_test "test runtime profile concurrent run prepares once" test_runtime_profile_concurrent_run_prepares_once
 run_test "tomlkit bootstrap reuses validated snapshot source profile" test_tomlkit_bootstrap_uses_validated_snapshot_source_profile
 run_test "tomlkit bootstrap rejects mismatched snapshot source profile" test_tomlkit_bootstrap_rejects_mismatched_snapshot_source_profile
+run_test "tomlkit fallback preserves runtime and arguments" test_tomlkit_bootstrap_fallback_preserves_runtime_and_arguments
 run_test "Shottr defaults helper bounds and short-circuits TCC access" test_shottr_defaults_helper_behavior
 run_test "Shottr secret writer uses stdin without argv exposure" test_shottr_secret_writer_uses_stdin_without_argv
 run_test "Shottr license refresh helper scrubs child environment" test_shottr_license_refresh_helper_scrubs_child_environment
@@ -657,6 +676,8 @@ run_test "git-cleanup date non-numeric output stops before candidates" test_git_
 run_test "git-cleanup dry-run does not delete stale branch" test_git_cleanup_dry_run_does_not_delete_stale_branch
 run_test "git-cleanup stale boundary uses fixed seconds not calendar days across DST" test_git_cleanup_stale_boundary_uses_fixed_seconds_not_calendar_days_across_dst
 run_test "git-cleanup date command absent stops before candidates" test_git_cleanup_date_command_absent_stops_before_candidates
+run_test "git-cleanup runtime Bash preserves arrays and confirmation" test_git_cleanup_runtime_bash_preserves_array_and_confirmation_contracts
+run_test "git-cleanup system Bash 3.2 preserves arrays and confirmation" test_git_cleanup_system_bash32_preserves_array_and_confirmation_contracts
 
 # update-script-arg-parse suite (tests/suites/update-script-arg-parse.sh) — #1383
 run_test "immich-update --help exits 0 without side effects" test_immich_update_help_flag_exits_zero_without_side_effects

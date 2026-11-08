@@ -13,12 +13,9 @@
 #   2) current worktree profile이 있으면 그 PATH를 활성화한다. profile은 flake.lock + runtime
 #      정의 content stamp까지 일치해야 하며, staged snapshot은 네 runtime 입력이 source root와
 #      byte-identical할 때만 검증된 source profile을 재사용한다.
-#   3) profile이 없거나 stale이면 ambient `python3`/GNU 도구 유무와 **무관하게** repo-pinned `nix shell
-#      --inputs-from . .#pythonWithTomlkit nixpkgs#coreutils nixpkgs#findutils nixpkgs#stdenv.cc
-#      nixpkgs#lsof .#claudeRcFlock nixpkgs#lefthook --command bash "$0" ...`로 재실행한다. host 에 우연히 tomlkit 이 있거나
-#      GNU 도구가 없더라도 pre-push 와 동일한 store path 의 interpreter + GNU coreutils/findutils
-#      (karakeep/backup fixture 의 `touch -d`/`find -printf` 의존, #1009) + lsof(claude-rc #1052)
-#      + flock(Claude RC lifecycle lock) + lefthook(auto-sync end-to-end 테스트)을 쓴다.
+#   3) profile이 없거나 stale이면 ambient 도구 유무와 무관하게 선택한 flake의
+#      `nix shell .#prePushRuntime --command bash "$0" ...`로 재실행한다. 패키지 목록은
+#      flake의 정본만 사용하여 profile 경로와 fallback 경로의 도구 구성이 같게 한다.
 #   4) nix가 없으면 마지막 fallback으로 ambient python3 tomlkit import를 체크해 있으면 그대로
 #      진행(경고 출력), 없으면 hard fail. 개발자가 직접 nix shell을 띄운 상태라면 (1)으로 빠진다.
 #
@@ -55,7 +52,7 @@ tomlkit_bootstrap_require() {
   fi
 
   # flake root 결정: staged-snapshot 안에서 실행되면 repo_root/self_path 가 임시 snapshot
-  # 경로다. 그대로 `nix shell <snapshot>#pythonWithTomlkit` 하면 snapshot 트리 전체가 nix
+  # 경로다. 그대로 `nix shell <snapshot>#prePushRuntime` 하면 snapshot 트리 전체가 nix
   # store 로 복사·평가된다 (E2E 실측 ~42s). run-staged-snapshot.sh 가 STAGED_SNAPSHOT_SOURCE_ROOT
   # 로 실제 repo 경로를 넘기면 그 flake 를 쓴다.
   # source profile fast path는 snapshot의 runtime 입력 4개가 source와 같을 때만 안전하다.
@@ -68,7 +65,7 @@ tomlkit_bootstrap_require() {
   # (c) 가드가 pre-push/실제 repo/임의 경로에서 ambient STAGED_SNAPSHOT_* env 로 외부 flake 를 주입하는
   # spoof 를 막는다. cache 경로 구현 세부나 runner 의 tomlkit 전용 변수에 의존하지 않는 명시적 계약이다.
   # (d) source root 가 실제 git checkout 일 때만 override. 환경변수가 stale/malformed 면
-  #     `nix shell <bad>#pythonWithTomlkit` 으로 hard-fail 하는 대신 repo_root 로 안전 fallback.
+  #     `nix shell <bad>#prePushRuntime` 으로 hard-fail 하는 대신 repo_root 로 안전 fallback.
   local runtime_profile_module="$repo_root/scripts/ai/test-runtime-profile.sh"
   if [ -f "$runtime_profile_module" ]; then
     # shellcheck disable=SC1090  # repo 내부의 계산된 고정 경로
@@ -98,19 +95,9 @@ tomlkit_bootstrap_require() {
   # (3) nix 가용 → repo-pinned runtime으로 재실행 (hermetic 강제). 스크립트 자체는 self_path
   #     (snapshot 경로 가능)에서 계속 실행하고, flake root 만 실제 repo 로 고정한다.
   if command -v nix >/dev/null 2>&1; then
-    echo "  test runtime bootstrap: nix shell --inputs-from ${flake_root} ${flake_root}#pythonWithTomlkit nixpkgs#coreutils nixpkgs#findutils nixpkgs#stdenv.cc nixpkgs#lsof ${flake_root}#claudeRcFlock nixpkgs#lefthook --command bash $self_path" >&2
+    echo "  test runtime bootstrap: nix shell ${flake_root}#prePushRuntime --command bash $self_path" >&2
     export _TOMLKIT_BOOTSTRAP_READY=1
-    # pythonWithTomlkit(tomlkit) 외에 GNU coreutils/findutils, lsof, flock 을 함께 얹어 테스트 fixture 가
-    # GNU 전용 확장(`touch -d '40 days ago'`, `find -printf`)에 의존해도 devShell 밖(BSD 시스템
-    # 도구 우선) 셸에서 hermetic 하게 통과하도록 한다 (#1009). native fixture는 pinned stdenv.cc를
-    # 사용해 Xcode CLT/ambient compiler에 의존하지 않는다. claude-rc(#1052)도 require_cmd lsof 를
-    # 도입했고, lsof 는 NixOS 시스템 프로파일 PATH 에 항상 있지 않으므로 profile 미가용
-    # pre-commit/bootstrap과 수동 실행도 이 self-wrap으로 같은 도구 집합을 유지한다.
-    # lefthook auto-sync end-to-end 테스트는 stub 이 아닌 실제 lefthook 을 요구하는데, hook 이
-    # lefthook 을 nix store 절대경로로 호출하면 자식 PATH 에 lefthook 이 없다 — nixpkgs#lefthook 도 얹는다.
-    # `--inputs-from ${flake_root}` 로 nixpkgs# 를 repo flake.lock 의 nixpkgs 에 pin 하여 임시
-    # registry fetch 를 피한다. 이 경로는 profile 부재/stale 시의 호환 fallback이다.
-    exec nix shell --inputs-from "${flake_root}" "${flake_root}#pythonWithTomlkit" nixpkgs#coreutils nixpkgs#findutils nixpkgs#stdenv.cc nixpkgs#lsof "${flake_root}#claudeRcFlock" nixpkgs#lefthook --command bash "$self_path" "$@"
+    exec nix shell "${flake_root}#prePushRuntime" --command bash "$self_path" "$@"
   fi
 
   # (4) nix 부재 fallback — ambient python3에 tomlkit이 있으면 경고 후 진행
