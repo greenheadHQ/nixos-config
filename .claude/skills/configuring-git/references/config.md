@@ -127,5 +127,22 @@ lazygit 제한사항:
 
 주의사항:
 
-- squash/fixup은 아래쪽 커밋이 위쪽 커밋으로 합쳐집니다 (Fork GUI와 동일)
+- 화면 위쪽 최신 커밋에 지정한 squash/fixup은 화면 아래쪽의 이전 실행 커밋에 합쳐집니다.
 - `git rebase --edit-todo`에서도 역순 표시가 적용됩니다
+
+예를 들어 화면에 최신 변경을 다음처럼 표시하면:
+
+```text
+fixup NEWER 최신 변경
+pick  OLDER 오래된 변경
+```
+
+에디터 종료 후 실행 순서는 아래처럼 복원됩니다.
+
+```text
+pick  OLDER 오래된 변경
+fixup NEWER 최신 변경
+```
+
+따라서 NEWER의 변경이 OLDER에 합쳐집니다. squash도 결합 방향은 같으며 커밋 메시지를
+처리하는 방식만 다릅니다. NEWER와 OLDER는 설명용 표기입니다.
