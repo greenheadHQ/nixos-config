@@ -33,136 +33,46 @@ Finder → Ghostty 터미널 열기 단축키 구현 시 발생한 문제들입�
 hs.task.new("/Applications/Ghostty.app/Contents/MacOS/ghostty", nil, args):start()
 ```
 
-해결: `open` 명령어를 사용하거나, 실행 중인 앱에 키 입력 시뮬레이션 사용
-
-```lua
--- ✅ 기존 인스턴스 사용
-hs.task.new("/usr/bin/open", nil, {"-a", "Ghostty"}):start()
-
--- ✅ 또는 키 입력 시뮬레이션
-ghostty:activate()
-hs.eventtap.keyStroke({"cmd"}, "n")  -- 새 창
-```
+해결: 미실행이면 `/usr/bin/open -a Ghostty`를 사용하고, 실행 중이면 기존 앱의 AppleScript `new window`로 창을 만든다. 바이너리를 직접 실행하거나 `Cmd+N`을 전역으로 보내지 않는다.
 
 ---
 
 ### Ghostty +new-window가 macOS에서 동작하지 않음
 
-증상: `ghostty +new-window --working-directory=/path` 실행해도 아무 일도 일어나지 않음
+이 단축키는 `+new-window` CLI 경로를 사용하지 않는다. macOS에서는 Ghostty의 AppleScript 새 창 API로 초기 작업 폴더를 전달한다.
 
-원인: Ghostty의 `+new-window` 액션은 GTK (Linux) 전용이며 macOS에서는 지원되지 않음
+- 미실행: `open -a Ghostty --args --working-directory=<path>`를 인자 배열로 실행한다.
+- 실행 중: `new surface configuration`의 `initial working directory`를 설정하고 `new window with configuration`을 호출한다.
 
-```bash
-$ ghostty +new-window --help
-# ...
-# Only supported on GTK.
-```
-
-해결: macOS에서는 다른 방법 사용 필요:
-- Ghostty 미실행 시: `open -a Ghostty --args --working-directory=/path`
-- Ghostty 실행 중: `Cmd+N` 키 입력 + `cd` 명령어 타이핑
+API 정본은 설치된 앱의 `Ghostty.sdef`와 [공식 AppleScript 문서](https://ghostty.org/docs/features/applescript)다. 지원 API가 없는 버전에서는 생성 오류를 알리고 중단한다.
 
 ---
 
 ### open --args가 이미 실행 중인 앱에 인수 전달 안 됨
 
-증상: `open -a Ghostty --args --working-directory=/path` 실행해도 Ghostty가 해당 경로에서 열리지 않음
+`open --args`는 실행 중인 앱에 초기 실행 인수를 전달하는 경로로 사용할 수 없다. 그래서 `init.lua`는 앱 실행 여부에 따라 위 두 경로를 나눈다.
 
-원인: macOS의 `open` 명령어는 앱이 이미 실행 중이면 인수를 전달하지 않고 단순 활성화만 함
+실행 중 분기는 고정 AppleScript의 `on run argv`로 폴더 경로를 받는다. `hs.task`가 `/usr/bin/osascript`에 문자열 배열을 넘기므로 폴더 이름을 셸이나 스크립트 코드로 해석하지 않는다. 생성 요청이 반환한 창만 활성화하고, 기존 창에는 명령·Enter를 보내지 않는다.
 
-해결: Ghostty가 실행 중인지 확인하고 분기 처리
-
-```lua
-local ghostty = hs.application.get("Ghostty")
-
-if ghostty then
-  -- 실행 중: Cmd+N으로 새 창 + cd 명령어
-  ghostty:activate()
-  hs.timer.doAfter(0.2, function()
-    hs.eventtap.keyStroke({"cmd"}, "n")
-    hs.timer.doAfter(0.6, function()
-      -- shellQuotePath와 개행 경로(nil) 처리는 아래 특수문자 절 참고
-      local quoted = shellQuotePath(path)
-      if not quoted then return end
-      hs.eventtap.keyStrokes('cd -- ' .. quoted .. ' && clear')
-      hs.eventtap.keyStroke({}, "return")
-    end)
-  end)
-else
-  -- 미실행: open으로 시작
-  hs.task.new("/usr/bin/open", nil, {"-a", "Ghostty", "--args", "--working-directory=" .. path}):start()
-end
-```
+Ghostty가 AppleScript를 지원하지 않거나 `macos-applescript = false`이면 실패 알림을 확인한다. macOS 자동화 권한이 없으면 요청이 거절되거나 시스템 확인창이 나타날 수 있다. 권한 변경은 사용자가 실행 주체와 Ghostty 대상을 확인한 뒤 승인한다. 실패 시 키 입력 방식으로 자동 재시도하지 않는다.
 
 ---
 
 ### cd 명령어가 기존 창에 입력됨 (타이밍 문제)
 
-증상: 단축키 실행 시 새 창이 아닌 기존 창에 `cd` 명령어가 입력됨
+이전 구현은 활성화와 `Cmd+N` 뒤 고정 시간만 기다린 다음 `cd`를 붙여넣었다. 그 사이 포커스가 바뀌거나 창 생성이 늦으면 다른 창에 입력될 수 있었다.
 
-원인: `Cmd+N`으로 새 창이 열리기 전에 `cd` 명령어가 입력됨 (딜레이 부족)
-
-해결: 적절한 딜레이 추가
-
-```lua
--- ❌ 딜레이 부족
-hs.timer.doAfter(0.1, function()
-  hs.eventtap.keyStroke({"cmd"}, "n")
-  hs.timer.doAfter(0.2, function()  -- 너무 짧음
-    hs.eventtap.keyStrokes('cd ...')
-  end)
-end)
-
--- ✅ 충분한 딜레이
-hs.timer.doAfter(0.2, function()
-  hs.eventtap.keyStroke({"cmd"}, "n")
-  hs.timer.doAfter(0.6, function()  -- 새 창이 완전히 열릴 때까지 대기
-    hs.eventtap.keyStrokes('cd ...')
-  end)
-end)
-```
-
-> 참고: 딜레이는 시스템 성능에 따라 조정이 필요할 수 있음. 0.6초가 안정적.
+현재 구현은 새 창 생성 API에 초기 경로를 함께 전달한다. 대기 시간을 늘리거나 포커스를 추측하는 타이머가 없으며, 각 호출은 별도의 설정과 새 창을 사용한다. 요청이 실패하면 알림만 남기고 입력을 보내지 않는다.
 
 ---
 
 ### 경로에 특수문자가 있으면 zsh 에러 발생
 
-증상: `[FA]Get Compressed Video` 같은 폴더에서 실행 시 에러
+이전 `cd` 문자열 방식에서는 공백·따옴표·확장 문자가 셸 구문으로 해석될 수 있어 작은따옴표 인용을 사용했다 (#1405, #1475).
 
-```text
-zsh: no matches found: /Users/green/FolderActions/[FA]Get
-```
+현재 Finder 단축키는 셸 명령을 만들지 않는다. 한글·공백·따옴표·역슬래시 등은 초기 작업 폴더의 데이터로 전달한다. 기존 개행 거부 정책은 유지하며, 프로세스 인자로 전달할 수 없는 NUL도 거부한다. 문자를 지우거나 경로를 바꾸지 않고 새 창 요청 전에 중단한다.
 
-원인: `[`, `]` 등의 특수문자가 zsh glob 패턴으로 해석됨. 공백도 문제 발생.
-큰따옴표로만 감싸도 `$`·`` ` ``는 확장·명령 치환으로, `\`는 이스케이프로 해석되고
-`"`는 인용을 끝낸다. 대화형 셸에서는 `!`도 히스토리 확장된다 (#1405).
-
-해결: 작은따옴표로 감싸고 `cd --`로 옵션과 경로의 경계를 분명히 하기
-
-```lua
--- ❌ 특수문자/공백 문제
-hs.eventtap.keyStrokes('cd ' .. path .. ' && clear')
-
--- ❌ 큰따옴표는 $, `, \, ", ! 를 막지 못함
-hs.eventtap.keyStrokes('cd "' .. path .. '" && clear')
-
--- ✅ 작은따옴표 인용 (내부 작은따옴표는 '\''로 치환) + cd --
-local function shellQuotePath(path)
-    if path:find("[\r\n]") then
-        return nil  -- 개행이 있으면 여러 줄로 쪼개져 위험하므로 인용하지 않음
-    end
-    return "'" .. path:gsub("'", "'\\''") .. "'"
-end
-
-local quoted = shellQuotePath(path)
-if not quoted then
-    -- 경로를 바꾸거나 문자를 지우지 않고, 알린 뒤 cd 입력을 중단한다
-    hs.notify.new({title="Ghostty", informativeText="❌ 경로에 개행이 있어 cd 붙여넣기를 중단했습니다"}):send()
-    return
-end
-hs.eventtap.keyStrokes('cd -- ' .. quoted .. ' && clear')
-```
+합성 검증은 `nix develop --command bash tests/run-finder-ghostty-tests.sh`를 사용한다. 실제 macOS에서의 새 창 생성·경로 전달과 자동화 권한 확인은 별도이며, 합성 검사 성공만으로 실측 성공을 기록하지 않는다.
 
 ---
 
@@ -213,32 +123,9 @@ hsr  # alias 사용 (IPC가 작동할 때만)
 
 ### keyStrokes로 한글 경로 입력 시 깨짐
 
-증상: 경로에 한글이 포함되면 `cd` 명령어가 제대로 입력되지 않음
+Finder 단축키는 `keyStrokes`와 클립보드 붙여넣기를 모두 사용하지 않는다. 한글을 포함한 경로를 새 창의 초기 작업 폴더로 전달하므로 입력 소스나 붙여넣기 순서를 맞추지 않는다.
 
-원인: `hs.eventtap.keyStrokes`는 글자를 한 자씩 타이핑하므로, 입력 소스 상태에 영향받음
-
-해결: 클립보드를 활용한 방식으로 변경
-
-`shellQuotePath`는 위 [경로에 특수문자가 있으면 zsh 에러 발생](#경로에-특수문자가-있으면-zsh-에러-발생) 절 참고.
-
-```lua
--- ❌ keyStrokes 방식 (한글 경로 문제)
-hs.eventtap.keyStrokes('cd -- ' .. shellQuotePath(path) .. ' && clear')
-
--- ✅ 클립보드 방식 (한글 경로 안전)
-local quoted = shellQuotePath(path)
-if not quoted then return end  -- 개행 경로: 위 절처럼 알린 뒤 중단
-local prevClipboard = hs.pasteboard.getContents()
-hs.pasteboard.setContents('cd -- ' .. quoted .. ' && clear')
-hs.eventtap.keyStroke({"cmd"}, "v")
-hs.eventtap.keyStroke({}, "return")
--- 클립보드 복원
-hs.timer.doAfter(0.1, function()
-    if prevClipboard then
-        hs.pasteboard.setContents(prevClipboard)
-    end
-end)
-```
+클립보드는 읽거나 덮어쓰지 않는다. 따라서 텍스트뿐 아니라 이미지·파일 참조·복합 표현을 텍스트로 축소하지 않으며, 요청 도중 사용자가 새로 복사한 내용도 복원 타이머에 덮이지 않는다. 합성 검사에서는 클립보드 API 호출 자체를 거부한다. 적용 후 실제 macOS에서 정상 전달과 대표 비텍스트 형식 보존을 따로 확인한다.
 
 ---
 

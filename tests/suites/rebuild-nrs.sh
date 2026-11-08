@@ -180,6 +180,83 @@ EOF
   chmod +x "$stub_dir/sudo"
 }
 
+test_cleanup_build_artifacts_preserves_path_boundaries() {
+  local sandbox fixture_root target output name
+  sandbox=$(new_sandbox)
+  fixture_root="$sandbox/"$'repo space\'"\\\nline'
+  target="$sandbox/target"
+  mkdir -p "$fixture_root/nested" "$fixture_root/result-directory" "$target"
+  printf 'target content\n' > "$target/keep"
+  printf 'ordinary result\n' > "$fixture_root/result-file"
+  printf 'unrelated content\n' > "$fixture_root/spaced"
+  ln -s "$target" "$fixture_root/nested/result"
+  ln -s "$target" "$fixture_root/other-link"
+
+  local -a names=(result 'result spaced' "result'quote" 'result"quote' 'result\slash' $'result\nnewline')
+  for name in "${names[@]}"; do
+    ln -s "$target" "$fixture_root/$name"
+  done
+  output=$(
+    cd "$fixture_root"
+    # shellcheck source=/dev/null
+    source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/preview.sh"
+    log_info() { printf '%s\n' "$*"; }
+    FLAKE_PATH="$fixture_root" cleanup_build_artifacts
+  )
+  for name in "${names[@]}"; do
+    [[ ! -L "$fixture_root/$name" ]] || fail "expected result symlink to be removed"
+  done
+  assert_contains "$output" 'Removed 6 result symlink(s)'
+  assert_file_contains "$fixture_root/spaced" 'unrelated content'
+  assert_file_contains "$fixture_root/result-file" 'ordinary result'
+  assert_file_contains "$target/keep" 'target content'
+  [[ -d "$fixture_root/result-directory" ]] || fail "expected result directory to survive"
+  [[ -L "$fixture_root/nested/result" ]] || fail "expected nested result link to survive"
+  [[ -L "$fixture_root/other-link" ]] || fail "expected unrelated link to survive"
+
+  output=$(
+    # shellcheck source=/dev/null
+    source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/preview.sh"
+    log_info() { printf '%s\n' "$*"; }
+    FLAKE_PATH="$fixture_root" cleanup_build_artifacts
+  )
+  [[ -z "$output" ]] || fail "expected empty cleanup to be a quiet no-op"
+}
+
+test_cleanup_build_artifacts_reports_search_failure() {
+  local sandbox output
+  sandbox=$(new_sandbox)
+  mkdir -p "$sandbox/repo" "$sandbox/tmp"
+  printf 'keep\n' > "$sandbox/target"
+  ln -s "$sandbox/target" "$sandbox/repo/result"
+  output=$(
+    exec 2>&1
+    source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/preview.sh"
+    log_info() { printf '%s\n' "$*"; }
+    log_warn() { printf 'WARNING: %s\n' "$*" >&2; }
+    find() { printf '%s\0' "$FLAKE_PATH/result"; return 7; }
+    TMPDIR="$sandbox/tmp" FLAKE_PATH="$sandbox/repo" cleanup_build_artifacts
+  )
+  assert_contains "$output" 'WARNING: Cannot enumerate build artifacts'
+  [[ -L "$sandbox/repo/result" ]] || fail "partial listing must not remove links"
+  assert_file_contains "$sandbox/target" 'keep'
+  [[ -z "$(find "$sandbox/tmp" -mindepth 1 -print -quit)" ]] || fail "cleanup listing leaked"
+
+  output=$(
+    exec 2>&1
+    source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/preview.sh"
+    log_info() { printf '%s\n' "$*"; }
+    log_warn() { printf 'WARNING: %s\n' "$*" >&2; }
+    find() { return 7; }
+    rm() { return 9; }
+    TMPDIR="$sandbox/tmp" FLAKE_PATH="$sandbox/repo" cleanup_build_artifacts
+    printf 'cleanup returned\n'
+  )
+  assert_contains "$output" 'WARNING: Cannot remove build artifact cleanup listing'
+  assert_contains "$output" 'WARNING: Cannot enumerate build artifacts'
+  assert_contains "$output" 'cleanup returned'
+}
+
 test_rebuild_common_exports_public_api() {
   local sandbox output
   sandbox=$(new_sandbox)
@@ -1233,7 +1310,7 @@ EOF
 # darwin no-change gcroot guard fixture — caller의 local 변수(sandbox/home_dir/repo_root/
 # worktree_root/stub_dir/current_target/relink_log/lock_file)를 bash dynamic scoping으로 채운다.
 # main repo에서 no-change nrs를 돌리되, stale worktree 심링크 probe를 심어 guard가 없으면
-# maybe_relink_or_restore의 Phase 1(rm) + restore가 반드시 실행되는 상태를 만든다.
+# maybe_relink_or_restore의 검사 + restore 호출이 실행되는 상태를 만든다.
 setup_darwin_no_change_gcroot_fixture() {
   sandbox=$(new_sandbox)
   home_dir="$sandbox/home"
@@ -1254,7 +1331,7 @@ setup_darwin_no_change_gcroot_fixture() {
   mkdir -p "$stub_dir" "$current_target" "$home_dir/.claude"
   rm -f "$lock_file"
 
-  # stale worktree probe: main 경로 _remove_worktree_symlinks가 매칭하는 심링크
+  # stale worktree probe: main 경로의 복원 검사에 사용하는 심링크
   ln -sf "$worktree_root/CLAUDE.md" "$home_dir/.claude/CLAUDE.md"
 
   install_fake_sudo_stub "$stub_dir"
@@ -1330,7 +1407,56 @@ test_darwin_nrs_no_changes_restores_when_hm_gcroot_present() {
   assert_contains "$output" "No changes to apply"
   assert_contains "$output" "Restoring symlinks to nix store chain"
   assert_file_contains "$relink_log" "restore"
-  [[ ! -L "$home_dir/.claude/CLAUDE.md" ]] || fail "expected stale worktree symlink to be removed when HM gcroot is present"
+  assert_file_contains "$relink_log" "needs-restore"
+  # 이 gate fixture는 호출만 기록한다. 실제 복원은 external-worktree 회귀가 검증한다.
+}
+
+setup_nixos_no_change_gcroot_fixture() {
+  setup_darwin_no_change_gcroot_fixture
+  install_platform_nrs_entrypoint "$sandbox" nixos
+  cp "$stub_dir/darwin-rebuild" "$stub_dir/nixos-rebuild"
+  mkdir -p "$worktree_root"
+  printf 'preserved source\n' > "$worktree_root/CLAUDE.md"
+}
+
+run_nixos_no_change_gcroot_nrs() {
+  HOME="$home_dir" \
+  PATH="$stub_dir:$FIXTURE_DIR/bin:$PATH" \
+  DARWIN_CURRENT_SYSTEM="$current_target" \
+  NRS_RELINK_LOG="$relink_log" \
+  "$home_dir/.local/bin/nrs" --offline 2>&1
+}
+
+test_nixos_nrs_no_changes_preserves_links_without_hm_gcroot() {
+  local sandbox home_dir repo_root worktree_root stub_dir current_target relink_log lock_file output
+  setup_nixos_no_change_gcroot_fixture
+  # 복원 실패 대역을 두고, HMF 근거가 없으면 복원을 호출하지 않는지 검증한다.
+  printf '\nexit 1\n' >> "$home_dir/.local/bin/nrs-relink"
+  output=$(run_nixos_no_change_gcroot_nrs)
+
+  assert_contains "$output" 'Skipping symlink restore'
+  [[ ! -s "$relink_log" ]] || fail "expected no restore attempt without HM gcroot"
+  [[ -L "$home_dir/.claude/CLAUDE.md" ]] || fail "expected existing symlink to survive"
+  [[ "$(readlink "$home_dir/.claude/CLAUDE.md")" == "$worktree_root/CLAUDE.md" ]] || fail "expected unchanged link target"
+  assert_file_contains "$home_dir/.claude/CLAUDE.md" 'preserved source'
+  assert_file_contains "$worktree_root/CLAUDE.md" 'preserved source'
+}
+
+test_nixos_nrs_no_changes_restores_when_hm_gcroot_present() {
+  local sandbox home_dir repo_root worktree_root stub_dir current_target relink_log lock_file output
+  setup_nixos_no_change_gcroot_fixture
+  mkdir -p "$home_dir/.local/state/home-manager/gcroots/current-home"
+  output=$(run_nixos_no_change_gcroot_nrs)
+
+  assert_contains "$output" 'No changes to apply'
+  assert_file_contains "$relink_log" restore
+  assert_line_count "$relink_log" restore 1
+  assert_file_contains "$relink_log" needs-restore
+  # 호출만 기록하는 gate fixture다. 실제 복원은 external-worktree 회귀에서 검증한다.
+  # 복원기 호출 전 선삭제하지 않아 실패해도 기존 링크를 잃지 않아야 한다.
+  [[ "$(readlink "$home_dir/.claude/CLAUDE.md")" == "$worktree_root/CLAUDE.md" ]] || fail "expected existing link preserved until restore replaces it"
+  assert_file_contains "$home_dir/.claude/CLAUDE.md" 'preserved source'
+  assert_file_contains "$worktree_root/CLAUDE.md" 'preserved source'
 }
 
 test_darwin_nrs_no_changes_activates_when_codex_artifact_missing() {
@@ -1438,8 +1564,8 @@ EOF
 #
 # 두 경로 모두 settings.json 하나만 대표 canary로 검사하면, settings.json이 일반
 # 파일로 배치되는 호스트(hostType "work")에서는 다른 관리 링크(CLAUDE.md)가
-# dangling이어도 감지하지 못한다. lib/rebuild/relink.sh의 재빌드 복구 경로가 이미
-# 쓰는 2-probe(settings.json, CLAUDE.md)를 두 경로에 맞춘다.
+# dangling이어도 감지하지 못한다. 두 빠른 자동 복구 경로는
+# settings.json과 CLAUDE.md를 같은 canary 목록으로 사용한다.
 #
 # bash 스크립트(nrs-relink.sh)와 Nix가 렌더링하는 zsh 인라인 문자열(default.nix)
 # 사이에는 probe 목록을 공유할 언어 경계가 없어 각자 복제한다 —
