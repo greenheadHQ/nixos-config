@@ -107,7 +107,15 @@ main() {
         else
             echo ""
             log_info "✅ No changes to apply. Skipping rebuild."
-            maybe_relink_or_restore
+            # 이 경로에는 링크를 다시 생성할 HM activation이 없다. main 복원은
+            # Darwin처럼 gcroot가 있을 때만 시도하며, 대체 복원 경로는 추측하지 않는다.
+            # worktree의 비대화형 skip/명시적 opt-in 계약은 그대로 유지한다.
+            if ! rebuild_is_main_flake \
+               || [[ -e "$HOME/.local/state/home-manager/gcroots/current-home" ]]; then
+                maybe_relink_or_restore
+            else
+                log_warn "⚠️  Skipping symlink restore: Home Manager gcroot is unavailable; existing links are preserved."
+            fi
             repair_codex_config_drift_no_changes
             return 0
         fi
