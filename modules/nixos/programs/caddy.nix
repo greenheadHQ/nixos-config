@@ -36,13 +36,11 @@ let
   # 보안 헤더 (모든 virtualHost에 공통 적용)
   securityHeaders = import ../lib/caddy-security-headers.nix;
 
-  # agenix 시크릿에서 환경변수 파일 생성 (copyparty-config 패턴)
+  # 경로만 Nix에서 주입하고, 합성 fixture와 같은 생성 본체를 실행한다.
   envScript = pkgs.writeShellScript "caddy-env-gen" ''
-    mkdir -p /run/caddy
-    TOKEN=$(cat ${config.age.secrets.cloudflare-dns-api-token.path})
-    printf 'CLOUDFLARE_API_TOKEN=%s\n' "$TOKEN" > ${envFilePath}
-    chmod 0400 ${envFilePath}
-    chown caddy:caddy ${envFilePath}
+    CADDY_TOKEN_FILE=${lib.escapeShellArg config.age.secrets.cloudflare-dns-api-token.path}
+    CADDY_ENV_FILE=${lib.escapeShellArg envFilePath}
+    ${builtins.readFile ./caddy-env/files/generate-env.sh}
   '';
 in
 {
@@ -68,9 +66,11 @@ in
       # 이게 없으면 RemainAfterExit=true라 소비 서비스를 재시작해도 이 유닛은 재실행되지 않아
       # 구 토큰이 계속 유효하다.
       restartTriggers = [ tokenCiphertext ];
+      path = [ pkgs.coreutils ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
+        UMask = "0077";
         ExecStart = envScript;
       };
     };
