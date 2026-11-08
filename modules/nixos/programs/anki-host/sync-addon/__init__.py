@@ -151,7 +151,12 @@ def _mutating(name: str, fn: Callable[..., Any], *args: Any) -> Any:
     if not _lock.acquire(timeout=BUSY_WAIT_SECS):
         raise BusyError(_busy)
     _busy = name
-    fut = _submit(fn, *args)
+    try:
+        fut = _submit(fn, *args)
+    except BaseException:
+        # 제출 자체의 실패는 실행 중 타임아웃과 다르다. 완료 콜백이 없으므로 즉시 해제한다.
+        _release_mutation()
+        raise
     try:
         result = fut.result(timeout=MAIN_TIMEOUT_SECS)
     except FutureTimeoutError:
