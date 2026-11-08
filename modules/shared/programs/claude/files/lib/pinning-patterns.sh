@@ -836,6 +836,11 @@ pinning_extract_body_file_paths() {
         c = substr(command, i, 1)
         if (q != "") {
           if (c == q) q = ""
+          else if (q == dq && c == "\\" && index("$`" dq "\\\n", substr(command, i + 1, 1)) > 0) {
+            # 큰따옴표 안의 escape는 셸처럼 해제한다. 줄 연속은 구분자에서 사라진다.
+            i++
+            if (substr(command, i, 1) != "\n") delim = delim substr(command, i, 1)
+          }
           else delim = delim c
           continue
         }
@@ -1205,7 +1210,7 @@ pinning_extract_body_file_paths() {
       executable = words[i]
       if (substr(executable, 1, 1) == "/") sub(/^.*\//, "", executable)
       if (executable == "git") return git_commit_command(i + 1, last) ? "git" : ""
-      if (words[i] != "gh" || !literal[i + 1]) return ""
+      if (executable != "gh" || !literal[i + 1]) return ""
       section = words[i + 1]; action = words[i + 2]
       if (section == "pr") return literal[i + 2] && action ~ /^(create|edit|comment|review|merge)$/ ? section " " action : ""
       if (section == "issue") return literal[i + 2] && action ~ /^(create|edit|comment)$/ ? section " " action : ""

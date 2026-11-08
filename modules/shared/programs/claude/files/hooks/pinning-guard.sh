@@ -132,22 +132,29 @@ case "$TOOL_NAME" in
     # 검사한다. 정적 추출이 느리거나 실패해도 이전 검사 범위는 먼저 끝난다. 각 단계는 후보를
     # 모두 읽은 뒤 검사한다. 후보 스트림을 stdin으로 둔 채 cat하면 표준 입력을 가리키는
     # 후보(/dev/stdin 등)가 남은 후보를 삼켜 뒤 파일 검사가 빠지므로, 본문 읽기의 stdin은 /dev/null로 둔다.
-    # 같은 경로 문자열은 한 번만 읽는다(패턴이 아닌 문자열로 비교). 두 번 열면 FIFO 같은 본문에서
-    # 두 번째 열기가 멈춘다. 표기가 다른 같은 파일(./a와 a)은 따로 읽으며, 확인한 목록을 매번
-    # 훑으므로 후보 수에 대해 이차 시간이 든다.
+    # 추출이 실패하면 확인하지 못한 경로가 남을 수 있으므로 거부한다(fail-closed).
+    # FIFO는 읽으면 게시 명령이 받을 본문을 소비하거나 쓰는 쪽이 없어 멈추므로 읽지 않고 거부한다.
+    # 같은 경로 문자열은 한 번만 읽는다(패턴이 아닌 문자열로 비교). 표기가 다른 같은 파일
+    # (./a와 a)은 따로 읽으며, 확인한 목록을 매번 훑으므로 후보 수에 대해 이차 시간이 든다.
     checked_body_files=$'\n'
     for body_file_source in pinning_split_body_file_candidates pinning_extract_body_file_paths; do
+      if ! "$body_file_source" "$COMMAND_TEXT" > "$SCAN_DIR/body-candidates.txt" 2>/dev/null; then
+        _deny_with_reason "[pinning-guard] failed to extract --body-file paths; denying by fail-closed policy."
+      fi
       body_files=()
       while IFS= read -r body_file; do
         [ -n "$body_file" ] || continue
         body_files+=("$body_file")
-      done < <("$body_file_source" "$COMMAND_TEXT")
+      done < "$SCAN_DIR/body-candidates.txt"
       for body_file in ${body_files[@]+"${body_files[@]}"}; do
         case "$checked_body_files" in
           *$'\n'"$body_file"$'\n'*) continue ;;
         esac
         checked_body_files+="$body_file"$'\n'
         [ -e "$body_file" ] || continue
+        if [ -p "$body_file" ]; then
+          _deny_with_reason "[pinning-guard] $body_file referenced via --body-file is a FIFO; it cannot be inspected without consuming it, so denying. Use a regular file."
+        fi
         if ! cat -- "$body_file" > "$SCAN_DIR/new.txt" 2>/dev/null < /dev/null; then
           _deny_with_reason "[pinning-guard] failed to read $body_file referenced via --body-file; denying by fail-closed policy."
         fi

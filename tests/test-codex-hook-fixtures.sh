@@ -1158,7 +1158,7 @@ $stderr_head"
 
 test_pinning_body_file_static_paths() {
   local sandbox fixture command_text expected actual shell hook content body_file label output denied_content
-  local wrapper_lib
+  local wrapper_lib locale fifo watchdog
   sandbox=$(new_hook_sandbox)
   local matrix="$FIXTURE_DIR/body-file-paths.json"
   local stdout_log="$sandbox/body-path-stdout.log" stderr_log="$sandbox/body-path-stderr.log"
@@ -1173,8 +1173,10 @@ test_pinning_body_file_static_paths() {
   while IFS= read -r fixture; do
     command_text=$(printf '%s' "$fixture" | jq -r .command)
     expected=$(printf '%s' "$fixture" | jq -r '.paths[]')
+    # 다중 바이트 문자 판정은 셸처럼 로캘을 따르므로 사례마다 로캘을 고정한다(기본 C.UTF-8).
+    locale=$(printf '%s' "$fixture" | jq -r '.locale // "C.UTF-8"')
     for shell in bash zsh; do
-      actual=$(cd "$sandbox" && BODY_TEST_VALUE=body.md "$shell" -f -c \
+      actual=$(cd "$sandbox" && LC_ALL="$locale" BODY_TEST_VALUE=body.md "$shell" -f -c \
         '. "$1"; pinning_extract_body_file_paths "$2"' _ "$PINNING_LIB_REPO_FILE" "$command_text")
       assert_eq "$actual" "$expected" "body path tokenization: $shell / $command_text"
     done
@@ -1185,7 +1187,7 @@ test_pinning_body_file_static_paths() {
         printf '%s\n' "$content" > "$sandbox/$body_file"
       done <<< "$expected"
       for hook in "${hooks[@]}"; do
-        (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "BODY_TEST_VALUE=body.md" "$hook" \
+        (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "BODY_TEST_VALUE=body.md" env "LC_ALL=$locale" "$hook" \
           < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
         [ ! -s "$stderr_log" ] || fail "body path guard wrote stderr"
         if [ -n "$expected" ] && [ "$content" = "$denied_content" ]; then
@@ -1255,7 +1257,8 @@ test_pinning_body_file_static_paths() {
   done
   rm -f -- "$sandbox/split.md" "$sandbox/static file.md"
 
-  # 정적 추출이 출력 일부를 낸 뒤 실패해도 guard는 이전 공백 분할 후보로 검사하고 오류 없이 끝난다.
+  # 정적 추출이 출력 일부를 낸 뒤 실패하면, 분할 후보에서 찾은 금지 본문은 그 파일을 이유로 거부하고
+  # 그 밖에는 확인하지 못한 경로가 남을 수 있으므로 fail-closed로 거부한다. 오류 출력은 남기지 않는다.
   wrapper_lib="$sandbox/failing-static-pinning-patterns.sh"
   printf '. %q\npinning_extract_body_file_paths() { printf partial; return 139; }\n' "$PINNING_LIB_REPO_FILE" > "$wrapper_lib"
   printf '%s\n' "$denied_content" > "$sandbox/inner.md"
@@ -1264,17 +1267,57 @@ test_pinning_body_file_static_paths() {
     printf 'gh pr create --title t --body-file %s.md' "$label" \
       | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
     for hook in "${hooks[@]}"; do
-      (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "PINNING_PATTERNS_LIB=$wrapper_lib" "$hook" \
+      (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" env "PINNING_PATTERNS_LIB=$wrapper_lib" "$hook" \
         < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log") || fail "guard failed after a static extraction failure"
       [ ! -s "$stderr_log" ] || fail "guard wrote stderr after a static extraction failure"
+      assert_eq "$(jq -r '.hookSpecificOutput.permissionDecision' "$stdout_log")" deny "static extraction failure must not allow: $label"
+      output=$(jq -r '.hookSpecificOutput.permissionDecisionReason' "$stdout_log")
       if [ "$label" = inner ]; then
-        assert_eq "$(jq -r '.hookSpecificOutput.permissionDecision' "$stdout_log")" deny "split candidates must survive a static extraction failure"
+        [[ "$output" == *'inner.md (via --body-file)'* ]] || fail "split candidates must be inspected before a static extraction failure"
       else
-        [ ! -s "$stdout_log" ] || fail "clean command must pass after a static extraction failure"
+        [[ "$output" == *'failed to extract --body-file paths'* ]] || fail "static extraction failure must deny by fail-closed policy"
       fi
     done
   done
   rm -f -- "$sandbox/inner.md" "$sandbox/clean.md" "$wrapper_lib"
+
+  # 분할 후보 추출이 실패해도 fail-closed로 거부한다.
+  wrapper_lib="$sandbox/failing-split-pinning-patterns.sh"
+  printf '. %q\npinning_split_body_file_candidates() { return 1; }\n' "$PINNING_LIB_REPO_FILE" > "$wrapper_lib"
+  printf 'gh pr create --title t --body-file clean.md' | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
+  for hook in "${hooks[@]}"; do
+    (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" env "PINNING_PATTERNS_LIB=$wrapper_lib" "$hook" \
+      < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log") || fail "guard failed after a split extraction failure"
+    [ ! -s "$stderr_log" ] || fail "guard wrote stderr after a split extraction failure"
+    output=$(jq -r '.hookSpecificOutput.permissionDecisionReason' "$stdout_log")
+    [[ "$output" == *'failed to extract --body-file paths'* ]] || fail "split extraction failure must deny by fail-closed policy"
+  done
+  rm -f -- "$wrapper_lib"
+
+  # FIFO 본문은 읽지 않고 거부한다(정적 추출 경로와 분할 후보 경로). 회귀로 guard가 FIFO를 열어도
+  # 테스트가 멈추지 않도록, 일정 시간 뒤 한 번 쓰는 감시 프로세스를 두고 검사 뒤 끝낸다.
+  for label in static split; do
+    if [ "$label" = static ]; then
+      fifo="$sandbox/fifo body.md"; command_text="gh pr create --title t --body-file 'fifo body.md'"
+    else
+      fifo="$sandbox/body.fifo"; command_text="gh pr create --title t --body-file body.fifo"
+    fi
+    mkfifo "$fifo"
+    printf '%s' "$command_text" | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
+    for hook in "${hooks[@]}"; do
+      (sleep 15; printf 'clean\n' > "$fifo") > /dev/null 2>&1 < /dev/null &
+      watchdog=$!
+      (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" "$hook" \
+        < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
+      kill "$watchdog" 2>/dev/null || true
+      wait "$watchdog" 2>/dev/null || true
+      [ ! -s "$stderr_log" ] || fail "FIFO body guard wrote stderr: $label"
+      assert_eq "$(jq -r '.hookSpecificOutput.permissionDecision' "$stdout_log")" deny "FIFO body must be denied: $label"
+      output=$(jq -r '.hookSpecificOutput.permissionDecisionReason' "$stdout_log")
+      [[ "$output" == *'is a FIFO'* ]] || fail "guard must deny a FIFO body without reading it: $label"
+    done
+    rm -f -- "$fifo"
+  done
 
   # 분할 단계에서 거부되면 정적 추출을 부르지 않는다. 정적 추출이 느려도 이전 범위의 거부가 먼저 나온다.
   wrapper_lib="$sandbox/marking-static-pinning-patterns.sh"
@@ -1283,7 +1326,7 @@ test_pinning_body_file_static_paths() {
   printf 'gh pr create --title t --body-file inner.md' | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
   for hook in "${hooks[@]}"; do
     rm -f -- "$sandbox/static-called"
-    (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "PINNING_PATTERNS_LIB=$wrapper_lib" "$hook" \
+    (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" env "PINNING_PATTERNS_LIB=$wrapper_lib" "$hook" \
       < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
     assert_eq "$(jq -r '.hookSpecificOutput.permissionDecision' "$stdout_log")" deny "split candidate must deny before static extraction"
     [ ! -e "$sandbox/static-called" ] || fail "static extraction ran before the split candidate denial"
@@ -1302,7 +1345,7 @@ test_pinning_body_file_static_paths() {
     | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
   for hook in "${hooks[@]}"; do
     rm -f -- "$sandbox/scan-count"
-    (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "PINNING_PATTERNS_LIB=$wrapper_lib" "$hook" \
+    (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" env "PINNING_PATTERNS_LIB=$wrapper_lib" "$hook" \
       < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
     [ ! -s "$stdout_log" ] && [ ! -s "$stderr_log" ] || fail "clean repeated body path must pass"
     # 명령 문자열 검사 1회 + 본문 파일 검사 1회

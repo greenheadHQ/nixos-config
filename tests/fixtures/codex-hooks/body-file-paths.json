@@ -272,5 +272,10 @@
   {"command":"bash <<'OUTER'\ncat <<'' >/dev/null\nx\n\ngh pr create --body-file inner.md\nOUTER","paths":["inner.md"]},
   {"command":"git commit -m \"$(cat <<'EOF'\nsee --body-file decoy.md\nEOF\n)\"","paths":[]},
   {"command":"R=`echo --body-file decoy.md`; git commit -m x","paths":[]},
-  {"command":"R=`cat <<'' x\ngh issue create --body-file inner.md`","paths":[]}
+  {"command":"R=`cat <<'' x\ngh issue create --body-file inner.md`","paths":[]},
+  {"command":"R=$(/opt/homebrew/bin/gh issue create --body-file 'body draft.md')","paths":["body draft.md"]},
+  {"command":"R=$(/opt/bin/xgh issue create --body-file 'body draft.md')","paths":[]},
+  {"command":"R=$(cat <<\"E\\\"OF\"\nx\nE\"OF\ngh issue create --body-file 'body draft.md')","paths":["body draft.md"]},
+  {"command":"cat <<\"E\\\"OF\" >/dev/null\nit's\nE\"OF\ngh pr create --body-file 'body draft.md' --title t","paths":["body draft.md"]},
+  {"command":"gh pr create --body-file body{α..γ}.md","locale":"C","paths":["body{α..γ}.md"]}
 ]
