@@ -104,6 +104,9 @@ run_driver "anki-addons-tests" bash tests/run-anki-addons-tests.sh
 # checks its Nix wiring only; it must not build Anki or require a remote builder.
 run_driver "anki-runtime-tests" bash tests/run-anki-runtime-tests.sh
 
+# 실제 systemd 마운트 실패/성공은 합성 Linux VM에서 검사하며, Darwin에서는 N/A다.
+run_driver "copyparty-mount-tests" bash tests/run-copyparty-mount-tests.sh
+
 # 7d) guardrail-lint-fixtures — skill-neutral-lint 엔진의 fixture self-test(17개). hermetic 하고
 #     python3 만 요구하므로(codex/nix/jq 불필요) 통합 러너에 저비용으로 붙는다. 이 게이트가 지키는
 #     것은 lint 엔진의 fixture self-test 까지이고, verify-ai-compat.sh 본체(codex 설정·hook·

@@ -288,11 +288,20 @@
 
       # Anki is hosted on Linux only. Exposing the same small check used by
       # system.checks lets CI build it without rebuilding or overriding Anki.
-      checks.${systems.linux}.anki-host-runtime =
-        import ./modules/nixos/programs/anki-host/runtime-check.nix
-          {
-            pkgs = nixpkgs.legacyPackages.${systems.linux};
-          };
+      checks.${systems.linux} = {
+        anki-host-runtime = import ./modules/nixos/programs/anki-host/runtime-check.nix {
+          pkgs = nixpkgs.legacyPackages.${systems.linux};
+        };
+
+        # 실제 유닛의 마운트 의존성을 격리 VM에 전달한다. 컨테이너·자격 파일은 실행하지 않는다.
+        copyparty-mount = import ./tests/copyparty-mount-check.nix {
+          pkgs = nixpkgs.legacyPackages.${systems.linux};
+          mountPoint = constants.paths.mediaData;
+          requiresMountsFor =
+            inputs.self.nixosConfigurations.greenhead-minipc.config.systemd.services.podman-copyparty.unitConfig.RequiresMountsFor
+              or [ ];
+        };
+      };
 
       # test/verifier 래핑용 tomlkit 포함 python3.
       # prePushRuntime과 verify-ai-compat fallback이 이 output을 공유한다. devShell에도 포함되어
