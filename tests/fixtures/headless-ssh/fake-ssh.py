@@ -206,6 +206,12 @@ def main() -> int:
         return int(SCENARIO.get("meta_exit", 0))
     if "-G" in argv:
         return config()
+    # 실제 OpenSSH도 -G 설정 출력이 -Z 공개키 진단보다 먼저 종료한다.
+    if argv == SCENARIO.get("public_key_diagnostic_argv"):
+        append("meta")
+        print(SCENARIO.get("meta_stdout", ""), end="")
+        print(SCENARIO.get("meta_stderr", ""), end="", file=sys.stderr)
+        return int(SCENARIO.get("meta_exit", 0))
     if "-O" in argv or any(token.startswith("-O") for token in argv):
         return control(argv)
     if "-M" in argv and ("-N" in argv or any("N" in token[1:] for token in argv if token.startswith("-"))):
