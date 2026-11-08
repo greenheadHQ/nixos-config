@@ -1158,7 +1158,7 @@ $stderr_head"
 
 test_pinning_body_file_static_paths() {
   local sandbox fixture command_text expected actual shell hook content body_file label output denied_content
-  local candidates split_candidates missing static_unique
+  local wrapper_lib
   sandbox=$(new_hook_sandbox)
   local matrix="$FIXTURE_DIR/body-file-paths.json"
   local stdout_log="$sandbox/body-path-stdout.log" stderr_log="$sandbox/body-path-stderr.log"
@@ -1177,20 +1177,6 @@ test_pinning_body_file_static_paths() {
       actual=$(cd "$sandbox" && BODY_TEST_VALUE=body.md "$shell" -f -c \
         '. "$1"; pinning_extract_body_file_paths "$2"' _ "$PINNING_LIB_REPO_FILE" "$command_text")
       assert_eq "$actual" "$expected" "body path tokenization: $shell / $command_text"
-      # guard 후보는 정적 결과를 먼저 두고 이전 공백 분할 후보를 중복 없이 더한다.
-      candidates=$(cd "$sandbox" && BODY_TEST_VALUE=body.md "$shell" -f -c \
-        '. "$1"; pinning_body_file_scan_candidates "$2"' _ "$PINNING_LIB_REPO_FILE" "$command_text")
-      split_candidates=$(cd "$sandbox" && BODY_TEST_VALUE=body.md "$shell" -f -c \
-        '. "$1"; _pinning_split_body_file_candidates "$2"' _ "$PINNING_LIB_REPO_FILE" "$command_text")
-      if [ -n "$expected" ]; then
-        static_unique=$(printf '%s\n' "$expected" | awk '!seen[$0]++')
-        assert_eq "$(printf '%s\n' "$candidates" | head -n "$(printf '%s\n' "$static_unique" | awk 'END { print NR }')")" "$static_unique" \
-          "scan candidates must start with static paths: $shell / $command_text"
-      fi
-      missing=$(printf '%s\n%s\n' "$expected" "$split_candidates" \
-        | awk 'NR == FNR { have[$0] = 1; next } !($0 in have)' <(printf '%s\n' "$candidates") -)
-      [ -z "$missing" ] || fail "scan candidates dropped a static or split path: $shell / $command_text"
-      [ "$(printf '%s\n' "$candidates" | sort | uniq -d)" = "" ] || fail "scan candidates repeated a path: $shell / $command_text"
     done
     printf '%s' "$command_text" | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
     for content in '검증된 변경 내용입니다.' "$denied_content"; do
@@ -1254,12 +1240,40 @@ test_pinning_body_file_static_paths() {
   done
   rm -f -- "$sandbox/inner.md"
 
-  # 정적 추출이 실패해도(호출부 errexit 포함) 이전 공백 분할 후보는 계속 나온다.
-  for shell in bash zsh; do
-    candidates=$("$shell" -f -c 'set -eu; . "$1"; pinning_extract_body_file_paths() { return 139; }
-      pinning_body_file_scan_candidates "$2"' _ "$PINNING_LIB_REPO_FILE" 'gh pr create --body-file inner.md --title t')
-    assert_eq "$candidates" inner.md "split candidates must survive a static extraction failure: $shell"
+  # guard는 이전 공백 분할 후보를 정적 추출 결과보다 먼저 검사한다.
+  printf '%s\n' "$denied_content" > "$sandbox/split.md"
+  printf '%s\n' "$denied_content" > "$sandbox/static file.md"
+  command_text="bash -c 'gh pr create --body-file split.md --title t'; gh pr create --title t --body-file \"static file.md\""
+  printf '%s' "$command_text" | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
+  for hook in "${hooks[@]}"; do
+    (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" "$hook" \
+      < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
+    [ ! -s "$stderr_log" ] || fail "ordered body path guard wrote stderr"
+    output=$(jq -r '.hookSpecificOutput.permissionDecisionReason' "$stdout_log")
+    [[ "$output" == *'split.md (via --body-file)'* ]] || fail "split candidates must be inspected before static paths"
   done
+  rm -f -- "$sandbox/split.md" "$sandbox/static file.md"
+
+  # 정적 추출이 출력 일부를 낸 뒤 실패해도 guard는 이전 공백 분할 후보로 검사하고 오류 없이 끝난다.
+  wrapper_lib="$sandbox/failing-static-pinning-patterns.sh"
+  printf '. %q\npinning_extract_body_file_paths() { printf partial; return 139; }\n' "$PINNING_LIB_REPO_FILE" > "$wrapper_lib"
+  printf '%s\n' "$denied_content" > "$sandbox/inner.md"
+  printf 'clean\n' > "$sandbox/clean.md"
+  for label in inner clean; do
+    printf 'gh pr create --title t --body-file %s.md' "$label" \
+      | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
+    for hook in "${hooks[@]}"; do
+      (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "PINNING_PATTERNS_LIB=$wrapper_lib" "$hook" \
+        < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log") || fail "guard failed after a static extraction failure"
+      [ ! -s "$stderr_log" ] || fail "guard wrote stderr after a static extraction failure"
+      if [ "$label" = inner ]; then
+        assert_eq "$(jq -r '.hookSpecificOutput.permissionDecision' "$stdout_log")" deny "split candidates must survive a static extraction failure"
+      else
+        [ ! -s "$stdout_log" ] || fail "clean command must pass after a static extraction failure"
+      fi
+    done
+  done
+  rm -f -- "$sandbox/inner.md" "$sandbox/clean.md" "$wrapper_lib"
 
   # 바깥 파일에서 먼저 거부되면 내부 파일 누락을 숨길 수 있으므로 각각 따로 검사한다.
   command_text='gh pr create --title "$(gh issue create --body-file inner.md)" --body-file outer.md'

@@ -81,21 +81,25 @@ case "$TOOL_NAME" in
 
     # --body-file / -F(--field) 로 넘겨진 파일 내용도 재스캔한다 (issue #684).
     # command 문자열 자체는 클린해도 파일 내용에 박제 패턴이 있는 케이스를 잡는다.
-    # 후보를 먼저 모두 읽는다. 후보 스트림을 stdin으로 둔 채 cat하면 표준 입력을 가리키는
-    # 후보(/dev/stdin 등)가 남은 후보를 삼켜 뒤 파일 검사가 빠진다. 본문 읽기의 stdin은 /dev/null로 둔다.
-    body_files=()
-    while IFS= read -r body_file; do
-      [ -n "$body_file" ] || continue
-      body_files+=("$body_file")
-    done < <(pinning_body_file_scan_candidates "$COMMAND_TEXT")
-    for body_file in ${body_files[@]+"${body_files[@]}"}; do
-      [ -e "$body_file" ] || continue
-      if ! cat -- "$body_file" > "$SCAN_DIR/bash.txt" 2>/dev/null < /dev/null; then
-        _deny_with_reason "[pinning-guard] failed to read $body_file referenced via --body-file; denying by fail-closed policy."
-      fi
-      findings="$(pinning_findings_text "$SCAN_DIR/bash.txt")"
-      [ -n "$findings" ] || continue
-      _deny "$TOOL_NAME" "$body_file (via --body-file)" "$findings"
+    # 이전 공백 분할 후보를 먼저 검사하고, 인용·공백 경로까지 읽는 정적 추출 결과를 이어서
+    # 검사한다. 정적 추출이 느리거나 실패해도 이전 검사 범위는 먼저 끝난다. 각 단계는 후보를
+    # 모두 읽은 뒤 검사한다. 후보 스트림을 stdin으로 둔 채 cat하면 표준 입력을 가리키는
+    # 후보(/dev/stdin 등)가 남은 후보를 삼켜 뒤 파일 검사가 빠지므로, 본문 읽기의 stdin은 /dev/null로 둔다.
+    for body_file_source in pinning_split_body_file_candidates pinning_extract_body_file_paths; do
+      body_files=()
+      while IFS= read -r body_file; do
+        [ -n "$body_file" ] || continue
+        body_files+=("$body_file")
+      done < <("$body_file_source" "$COMMAND_TEXT")
+      for body_file in ${body_files[@]+"${body_files[@]}"}; do
+        [ -e "$body_file" ] || continue
+        if ! cat -- "$body_file" > "$SCAN_DIR/bash.txt" 2>/dev/null < /dev/null; then
+          _deny_with_reason "[pinning-guard] failed to read $body_file referenced via --body-file; denying by fail-closed policy."
+        fi
+        findings="$(pinning_findings_text "$SCAN_DIR/bash.txt")"
+        [ -n "$findings" ] || continue
+        _deny "$TOOL_NAME" "$body_file (via --body-file)" "$findings"
+      done
     done
     ;;
   Edit | Write | NotebookEdit)

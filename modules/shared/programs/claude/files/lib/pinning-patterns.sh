@@ -752,7 +752,7 @@ pinning_extract_body_file_paths() {
   # 본문을 따로 떼어 낸다. 본문 속 인용·괄호는 바깥 명령과 치환 경계를 바꾸지 않으며,
   # 본문이 실행될 수도 있으므로(bash <<EOF 등) 본문은 바깥 스코프와 같은 기준의 별도
   # 스코프로 검사한다. 작업 폴더·함수·별칭·임의 wrapper는 해석하지 않는다.
-  # guard는 이 결과 대신 기존 공백 분할 후보를 더한 pinning_body_file_scan_candidates를 쓴다.
+  # guard는 이전 공백 분할 후보(pinning_split_body_file_candidates)를 먼저 검사한 뒤 이 결과를 검사한다.
   printf '%s\n' "$cmd" | awk -v sq="'" -v dq='"' '
     function finish_word(end) {
       if (started) {
@@ -1250,8 +1250,10 @@ pinning_extract_body_file_paths() {
 # 뒤의 단어를 낸다. 인용 경로는 잘리고 데이터 속 옵션 모양도 후보가 되지만(과포함),
 # 문자열 스크립트(bash -c)·함수 치환·wrapper·치환 안 here-doc의 셸별 종료 처리처럼
 # 정적 토큰화가 해석하지 않는 문법 안의 경로도 공백으로 나뉜 단어이면 낸다. 경로에 공백이
-# 있거나 경로 뒤에 ) ' ; 등이 붙으면 이 후보도 놓친다(이 PR 이전과 같은 한계).
-_pinning_split_body_file_candidates() {
+# 있거나 경로 뒤에 ) ' ; 등이 붙으면 이 후보도 놓친다(이전 추출기와 같은 한계).
+# guard는 이 후보를 정적 추출 결과보다 먼저 검사한다. 정적 추출이 느리거나 실패해도
+# 이전 추출기의 검사 범위는 먼저 끝난다.
+pinning_split_body_file_candidates() {
   local cmd="${1:-}"
   [ -n "$cmd" ] || return 0
   printf '%s\n' "$cmd" | awk -v sq="'" -v dq='"' '
@@ -1291,18 +1293,4 @@ _pinning_split_body_file_candidates() {
       }
     }
   '
-}
-
-# guard가 내용을 검사할 본문 파일 후보. 정적 토큰화 결과에 이전 공백 분할 후보를 더해
-# 이전보다 적게 검사하지 않게 한다. 과포함은 허용한다 — 없는 경로는 호출부가 건너뛰고,
-# 있는 파일을 더 읽는 것은 거부 쪽으로만 작용한다. 호출부는 후보를 모두 받은 뒤 읽어야
-# 한다. 정적 결과를 먼저, 중복 없이 낸다. 한쪽 추출이 실패해도(호출부의 errexit 포함)
-# 다른 쪽 후보는 계속 낸다.
-pinning_body_file_scan_candidates() {
-  local cmd="${1:-}"
-  [ -n "$cmd" ] || return 0
-  {
-    pinning_extract_body_file_paths "$cmd" || :
-    _pinning_split_body_file_candidates "$cmd" || :
-  } | awk '!seen[$0]++'
 }
