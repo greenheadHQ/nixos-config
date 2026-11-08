@@ -106,6 +106,36 @@ if [ -n "$IMMICH_BACKUP_DIR" ]; then
   fi
 fi
 
+if [ -n "${IMMICH_ORIGINALS_LAST_SUCCESS_FILE:-}" ]; then
+  if [ ! -f "$IMMICH_ORIGINALS_LAST_SUCCESS_FILE" ]; then
+    check "Immich originals mirror success record exists" 1
+  else
+    MIRROR_RECORD_RC=0
+    # 파일 전체를 읽어 다중 행·NUL·비숫자·산술 overflow를 거부한다.
+    # date +%s가 쓰는 정수와 선택적 마지막 개행만 허용한다.
+    MIRROR_LAST_SUCCESS=$(jq -Rser '
+      if test("\\A(0|[1-9][0-9]{0,17})\\n?\\z") then rtrimstr("\n")
+      else error("invalid timestamp") end
+    ' "$IMMICH_ORIGINALS_LAST_SUCCESS_FILE" 2>/dev/null) || MIRROR_RECORD_RC=$?
+    if [ "$MIRROR_RECORD_RC" -eq 2 ]; then
+      check "Immich originals mirror success record readable" 1
+    elif [ "$MIRROR_RECORD_RC" -ne 0 ]; then
+      check "Immich originals mirror success record valid" 1
+    else
+      MIRROR_NOW=$(date +%s)
+      if [ "$MIRROR_LAST_SUCCESS" -gt "$MIRROR_NOW" ]; then
+        check "Immich originals mirror success record is not in the future" 1
+      else
+        MIRROR_AGE_SECONDS=$((MIRROR_NOW - MIRROR_LAST_SUCCESS))
+        MIRROR_MAX_AGE_SECONDS=$((BACKUP_MAX_AGE * 3600))
+        RESULT=0
+        [ "$MIRROR_AGE_SECONDS" -le "$MIRROR_MAX_AGE_SECONDS" ] || RESULT=1
+        check "Immich originals mirror freshness (${MIRROR_AGE_SECONDS}s <= ${MIRROR_MAX_AGE_SECONDS}s)" "$RESULT"
+      fi
+    fi
+  fi
+fi
+
 if [ -n "$KARAKEEP_BACKUP_DIR" ]; then
   # karakeep: 날짜별 디렉토리의 db.db.gz
   LATEST_KK_DIR=$(find "$KARAKEEP_BACKUP_DIR" -maxdepth 1 -type d -name "20*" \

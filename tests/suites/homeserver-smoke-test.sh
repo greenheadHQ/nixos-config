@@ -108,6 +108,7 @@ run_smoke_test_fixture() {
     APPROVAL_PORT="9443" \
     APPROVAL_TARGET="" \
     IMMICH_BACKUP_DIR="${SMOKE_IMMICH_BACKUP_DIR-$sandbox/backups/immich}" \
+    IMMICH_ORIGINALS_LAST_SUCCESS_FILE="${SMOKE_MIRROR_SUCCESS_FILE-}" \
     KARAKEEP_BACKUP_DIR="${SMOKE_KARAKEEP_BACKUP_DIR-$sandbox/backups/karakeep}" \
     ANKI_BACKUP_ROOT="$sandbox/backups/anki-host" \
     ANKI_BACKUP_INSTANCES="${SMOKE_ANKI_BACKUP_INSTANCES-main}" \
@@ -175,6 +176,60 @@ test_smoke_test_disabled_backups_are_not_checked() {
   assert_smoke_result "$sandbox" "disabled backups" "$rc" 0 0 0
   assert_not_contains "$output" "backup"
   assert_contains "$output" "=== Smoke test: 4/4 passed ==="
+}
+
+test_smoke_test_immich_mirror_freshness_is_independent_of_db_backup() {
+  local sandbox scenario now success_file output rc expected_rc real_date real_jq
+  real_date="$(command -v date)"
+  real_jq="$(command -v jq)"
+  for scenario in fresh boundary stale future missing unreadable invalid multiline nul overflow empty disabled; do
+    sandbox="$(new_sandbox)"
+    setup_smoke_test_fixture "$sandbox"
+    now="$(date +%s)"
+    success_file="$sandbox/mirror-last-success"
+    printf '%s\n' "$now" > "$success_file"
+    case "$scenario" in
+      boundary) printf '%s\n' "$((now - 26 * 3600))" > "$success_file" ;;
+      stale) printf '%s\n' "$((now - 26 * 3600 - 1))" > "$success_file" ;;
+      future) printf '%s\n' "$((now + 1))" > "$success_file" ;;
+      missing|disabled) rm "$success_file" ;;
+      invalid) printf 'not-a-timestamp\n' > "$success_file" ;;
+      multiline) printf '%s\n%s\n' "$now" "$now" > "$success_file" ;;
+      nul) printf '%s\0\n' "$now" > "$success_file" ;;
+      overflow) printf '999999999999999999999999999999999999\n' > "$success_file" ;;
+      empty) : > "$success_file" ;;
+    esac
+    # 경계 시각을 고정하고 다른 백업은 fixture가 만든 최신 파일로 유지한다.
+    cat > "$sandbox/bin/date" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == +%s ]]; then printf '%s\n' "$SMOKE_FIXED_NOW"; else exec "$SMOKE_REAL_DATE" "$@"; fi
+EOF
+    cat > "$sandbox/bin/jq" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$SMOKE_SCENARIO" == unreadable ]]; then exit 2; fi
+exec "$SMOKE_REAL_JQ" "$@"
+EOF
+    chmod +x "$sandbox/bin/date" "$sandbox/bin/jq"
+    [[ "$scenario" != disabled ]] || success_file=""
+    rc=0
+    output=$(SMOKE_MIRROR_SUCCESS_FILE="$success_file" SMOKE_FIXED_NOW="$now" \
+      SMOKE_REAL_DATE="$real_date" SMOKE_REAL_JQ="$real_jq" SMOKE_SCENARIO="$scenario" \
+      run_smoke_test_fixture "$sandbox" 2>&1) || rc=$?
+    expected_rc=1
+    case "$scenario" in fresh|boundary|disabled) expected_rc=0 ;; esac
+    assert_smoke_result "$sandbox" "미러 신선도 $scenario" "$rc" "$expected_rc" "$expected_rc" 0
+    assert_contains "$output" 'OK: Immich backup freshness'
+    if [[ "$scenario" == disabled ]]; then
+      assert_not_contains "$output" 'Immich originals mirror'
+      assert_contains "$output" '=== Smoke test: 7/7 passed ==='
+    elif [[ "$expected_rc" -eq 0 ]]; then
+      assert_contains "$output" 'OK: Immich originals mirror freshness'
+      assert_contains "$output" '=== Smoke test: 8/8 passed ==='
+    else
+      assert_contains "$output" 'FAIL: Immich originals mirror'
+      assert_file_contains "$sandbox/notifications.log" 'Smoke Test|0|7/8 passed'
+    fi
+  done
 }
 
 test_smoke_test_http_failure_exits_nonzero_with_single_summary() {

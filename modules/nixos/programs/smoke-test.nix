@@ -18,6 +18,10 @@ let
   inherit (constants.domain) base subdomains;
   inherit (constants.paths) mediaData ankiHostBackupsRelPath;
 
+  immichMirrorEnabled =
+    config.homeserver.immichOriginalsMirror.enable && config.homeserver.immich.enable;
+  # 기록 경로는 작성하는 유닛을 정본으로 삼고, 타이머의 수동 중단 여부와 무관하게 검사한다.
+  immichMirrorSuccessFile = lib.optionalString immichMirrorEnabled config.systemd.services.immich-originals-mirror.environment.LAST_SUCCESS_FILE;
   pushoverCredPath = config.age.secrets.pushover-system-monitor.path;
   serviceLib = import ../lib/service-lib.nix { inherit pkgs; };
   # headless Anki 백업 대상 인스턴스 — anki-host/backup.nix와 같은 필터(backup.enable). 활성일 때만 신선도 검사
@@ -93,7 +97,11 @@ in
         TimeoutSec = "120";
         ExecStart = "${smokeScript}/bin/homeserver-smoke-test";
         ProtectSystem = "strict";
-        ReadOnlyPaths = [ "${mediaData}/backups" ];
+        ReadOnlyPaths = [
+          "${mediaData}/backups"
+        ]
+        # 초기 실행 전 디렉터리가 없어도 스크립트가 기록 부재를 보고해야 한다.
+        ++ lib.optionals immichMirrorEnabled [ "-${builtins.dirOf immichMirrorSuccessFile}" ];
         ProtectHome = true;
         PrivateTmp = true;
         NoNewPrivileges = true;
@@ -113,6 +121,9 @@ in
         APPROVAL_TARGET = lib.optionalString config.homeserver.ankiMcp.enable "http://127.0.0.1:${toString config.homeserver.ankiMcp.approvalPort}";
         # 백업 신선도 검사 대상 — 빈 값이면 스크립트가 해당 검사를 건너뛴다
         IMMICH_BACKUP_DIR = lib.optionalString config.homeserver.immichBackup.enable "${mediaData}/backups/immich";
+        # 매일 04:30 미러와 06:00 점검에는 기존 26시간 한계를 사용한다.
+        # 개별 파일 복구 가능성이 아니라 마지막 미러 완료의 신선도를 뜻한다.
+        IMMICH_ORIGINALS_LAST_SUCCESS_FILE = immichMirrorSuccessFile;
         KARAKEEP_BACKUP_DIR = lib.optionalString config.homeserver.karakeepBackup.enable "${mediaData}/backups/karakeep";
         ANKI_BACKUP_ROOT = "${mediaData}/${ankiHostBackupsRelPath}";
         ANKI_BACKUP_INSTANCES = builtins.concatStringsSep " " ankiBackupInstances;
