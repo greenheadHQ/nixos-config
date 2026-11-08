@@ -7,7 +7,9 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
+import time
 import zipfile
 
 import pytest
@@ -122,6 +124,16 @@ curl() {
   esac
 }
 pushover_send() { printf '%s\n' "$*" >> "$FIXTURE_ALARMS"; }
+cp() {
+  local target="${!#}"
+  if [ "$FIXTURE_STOP_COPY" = 1 ] && [[ "$target" == "$BACKUP_DIR/fixture/"*.partial ]]; then
+    printf 'incomplete copy\n' > "$target"
+    printf 'ready\n' > "$FIXTURE_COPY_READY"
+    # 외부 복사 프로세스를 남기지 않고 메인 셸 builtin에서만 대기한다.
+    read -r _ < "$FIXTURE_COPY_RELEASE"
+  fi
+  command cp "$@"
+}
 chmod() { [ "$FIXTURE_FAILURE" != chmod ] || return 1; command chmod "$@"; }
 find() {
   [ "$FIXTURE_FAILURE" != prune ] || return 1
@@ -130,7 +142,14 @@ find() {
 }
 mv() { [ "$FIXTURE_FAILURE" != move ] || return 1; command mv "$@"; }
 stat() { [ "$FIXTURE_FAILURE" != stat ] || return 1; command stat "$@"; }
-date() { [ "$FIXTURE_FAILURE" != unexpected ] || return 1; command date "$@"; }
+date() {
+  [ "$FIXTURE_FAILURE" != unexpected ] || return 1
+  if [ "$1" = +%Y%m%dT%H%M%S ]; then printf '%s\n' "$FIXTURE_STAMP"; else command date "$@"; fi
+}
+python3() {
+  if [ "$FIXTURE_FAILURE" = partial-prune ] && [ "$1" = - ] && [[ "$2" == *'/hdd/fixture' ]]; then return 1; fi
+  command python3 "$@"
+}
 '''
     script = tmp_path / 'run.sh'
     script.write_text('set -euo pipefail\numask 077\n' + source + (HOST / 'anki-host-backup.sh').read_text())
@@ -141,15 +160,120 @@ date() { [ "$FIXTURE_FAILURE" != unexpected ] || return 1; command date "$@"; }
         'READY_PROBE_TIMEOUT': '1', 'BUSY_RETRIES': '1', 'BUSY_RETRY_SECS': '0',
         'FIXTURE_PACKAGE': str(package), 'FIXTURE_CALLS': str(calls), 'FIXTURE_ALARMS': str(alarms),
     }
-    def run(*, failure='', body=None, http='200', rc='0', instances='fixture:12345'):
+    copy_ready, copy_release = tmp_path / 'copy-ready', tmp_path / 'copy-release'
+    os.mkfifo(copy_release)
+    def run(*, failure='', body=None, http='200', rc='0', instances='fixture:12345',
+            stamp='20260102T030405', stop_copy=False):
         if failure == 'mkdir':
             (destination / 'fixture').write_text('Destination is a file, not a directory.')
-        return subprocess.run(['bash', str(script)], capture_output=True, text=True, env=env | {
+        run_env = env | {
             'FIXTURE_FAILURE': failure, 'INSTANCES': instances,
             'FIXTURE_MEDIA_BODY': body if body is not None else '{"ok":true,"result":{"media":{"active":false}}}',
             'FIXTURE_MEDIA_HTTP': http, 'FIXTURE_MEDIA_RC': rc,
-        })
+            'FIXTURE_STAMP': stamp, 'FIXTURE_STOP_COPY': '1' if stop_copy else '0',
+            'FIXTURE_COPY_READY': str(copy_ready), 'FIXTURE_COPY_RELEASE': str(copy_release),
+        }
+        if stop_copy:
+            return subprocess.Popen(['bash', str(script)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    text=True, env=run_env, start_new_session=True)
+        return subprocess.run(['bash', str(script)], capture_output=True, text=True, env=run_env)
     return run, calls, alarms, destination
+
+
+def test_previous_owned_partials_are_pruned_without_touching_other_files(backup_script):
+    run, _calls, _alarms, destination = backup_script
+    folder = destination / 'fixture'
+    folder.mkdir()
+    old = folder / 'anki-host-fixture-20260101T030405.colpkg.partial'
+    old.write_bytes(b'incomplete previous backup')
+    preserved = [
+        folder / 'anki-host-fixture-20260101T030405.colpkg',
+        folder / 'anki-host-healthy-20260101T030405.colpkg.partial',
+        folder / 'anki-host-fixture-old.colpkg.partial',
+        folder / 'anki-host-fixture-20261301T030405.colpkg.partial',
+        folder / 'anki-host-fixture-20260101T030405.colpkg.partial.extra',
+        folder / 'anki-host-fixture-20260103T030405.colpkg.partial',
+        folder / 'restore-points' / 'anki-host-fixture-20260101T030405.colpkg.partial',
+        folder / 'nested' / 'anki-host-fixture-20260101T030405.colpkg.partial',
+        destination / 'healthy' / 'anki-host-fixture-20260101T030405.colpkg.partial',
+    ]
+    for path in preserved:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b'preserve synthetic file')
+    directory = folder / 'anki-host-fixture-20260101T030406.colpkg.partial'
+    directory.mkdir()
+    target = destination.parent / 'symlink-target'
+    target.write_bytes(b'preserve symlink target')
+    link = folder / 'anki-host-fixture-20260101T030407.colpkg.partial'
+    link.symlink_to(target)
+
+    result = run()
+    assert result.returncode == 0, result.stderr
+    assert not old.exists()
+    assert all(path.read_bytes() == b'preserve synthetic file' for path in preserved)
+    assert directory.is_dir() and link.is_symlink()
+    assert target.read_bytes() == b'preserve symlink target'
+    complete = folder / 'anki-host-fixture-20260102T030405.colpkg'
+    assert zipfile.is_zipfile(complete)
+
+
+def test_partial_cleanup_does_not_remove_current_execution_path(backup_script):
+    run, calls, _alarms, destination = backup_script
+    folder = destination / 'fixture'
+    folder.mkdir()
+    current = folder / 'anki-host-fixture-20260102T030405.colpkg.partial'
+    current.write_bytes(b'current execution file')
+    # 현재 경로는 회수 대상이 아니다. 이후 export를 거절해 실제 복사와 정리를 구분한다.
+    result = run(body='{"ok":true,"result":{"media":{"active":true}}}')
+    assert result.returncode == 1
+    assert current.read_bytes() == b'current execution file'
+    assert not any(url.endswith('/export') for url in calls.read_text().splitlines())
+
+
+def test_killed_copy_is_reclaimed_by_the_next_backup(backup_script):
+    run, _calls, alarms, destination = backup_script
+    process = run(stamp='20260101T030405', stop_copy=True)
+    ready = destination.parent / 'copy-ready'
+    try:
+        deadline = time.monotonic() + 5
+        while not ready.exists():
+            assert process.poll() is None, '복사 대역이 준비되기 전에 종료됨'
+            assert time.monotonic() < deadline, '복사 대역 준비 시간 초과'
+            time.sleep(0.01)
+        process.kill()
+        process.communicate(timeout=5)
+        assert process.returncode == -signal.SIGKILL
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate(timeout=5)
+
+    old = destination / 'fixture' / 'anki-host-fixture-20260101T030405.colpkg.partial'
+    assert old.read_bytes() == b'incomplete copy\n'
+    assert not alarms.exists()
+    result = run()
+    assert result.returncode == 0, result.stderr
+    assert not old.exists()
+    complete = destination / 'fixture' / 'anki-host-fixture-20260102T030405.colpkg'
+    assert complete.read_bytes() == (destination.parent / 'fixture.colpkg').read_bytes()
+    assert not list(complete.parent.glob('*.partial'))
+    assert not alarms.exists()
+
+
+def test_partial_cleanup_failure_is_reported_and_other_instances_continue(backup_script):
+    run, calls, alarms, destination = backup_script
+    folder = destination / 'fixture'
+    folder.mkdir()
+    old = folder / 'anki-host-fixture-20260101T030405.colpkg.partial'
+    old.write_bytes(b'incomplete previous backup')
+    result = run(failure='partial-prune', instances='fixture:12345 healthy:12346')
+    assert result.returncode == 1, result.stderr
+    assert old.read_bytes() == b'incomplete previous backup'
+    assert not any('12345' in url for url in calls.read_text().splitlines())
+    assert len(list((destination / 'healthy').glob('*.colpkg'))) == 1
+    assert len(alarms.read_text().splitlines()) == 1
+    assert 'fixture(partial-prune)' in alarms.read_text()
+    assert 'healthy(' not in alarms.read_text()
 
 
 @pytest.mark.parametrize('failure', ['mkdir', 'chmod', 'prune', 'move', 'stat', 'retention', 'unexpected'])

@@ -9,6 +9,7 @@
 *.bak
 
 # Codex CLI
+# 퇴역한 커스텀 wt가 기존 checkout에 투영했을 수 있는 플러그인 스킬 — 잔재가 커밋되지 않도록 유지
 .agents/skills/wt-plugin--*
 .codex/
 

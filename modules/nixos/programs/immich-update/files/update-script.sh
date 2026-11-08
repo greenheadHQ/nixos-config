@@ -62,7 +62,7 @@ if $DRY_RUN; then
 fi
 
 # 에러 발생 시 알림 전송
-trap 'send_notification "Immich Update" "업데이트 실패: 스크립트 오류 발생" 1' ERR
+service_install_error_trap send_notification "Immich Update" "업데이트 실패: 스크립트 오류 발생" 1
 
 # ─── 0. 현재 버전 확인 + 최신 버전 조회 ────────────────────────────
 echo "=== Immich Update ==="

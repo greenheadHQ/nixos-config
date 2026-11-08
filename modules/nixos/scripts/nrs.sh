@@ -125,8 +125,9 @@ main() {
     # Pre-rebuild restore:
     # HM activation의 checkLinkTargets가 non-HMF 심링크(worktree 타깃)를
     # "would be clobbered"로 거부하므로, rebuild 전에 먼저 복원한다.
-    # Safety: HM gcroot가 유효할 때만 실행 — gcroot 파손 시 Phase 1(rm)만 되고
-    # Phase 2(restore) 실패하여 심링크 유실 방지
+    # 링크를 먼저 지우지 않고 검증된 링크만 교체한다. 소유 근거가 없는 링크는 보존한다.
+    # Safety: main 경로는 HM gcroot가 유효할 때만 실행 — HM 세대 근거 없이 복원 대상을
+    # 고르지 않는다
     if rebuild_is_main_flake \
        && [[ -e "$HOME/.local/state/home-manager/gcroots/current-home" ]]; then
         maybe_relink_or_restore

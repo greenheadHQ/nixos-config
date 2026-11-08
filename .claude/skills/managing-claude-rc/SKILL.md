@@ -39,7 +39,7 @@ Claude 모바일 앱/claude.ai에서 이 flake가 관리하는 머신의 Claude 
 | `claude-rc` / `claude-rc start` | 현재 git top-level 디렉토리 인스턴스 시작 및 `instances.json` 등록 |
 | `claude-rc stop [path]` | 현재 또는 지정 절대경로 인스턴스 서버 종료 및 등록 해제. worktree 세션 존재 시 `--force` 필요. `source=declared`는 다음 ensure까지만 임시 중지 |
 | `claude-rc ls` | 등록 인스턴스, 실행 여부, PID, 버전, spawn, source, 로그 경로 출력 |
-| `claude-rc cleanup` | git worktree 등록이 끊긴 `.claude/worktrees/*` 잔해만 삭제. 등록된 worktree는 죽은 세션의 것이라도 비대상 — `wt cleanup` 사용 (잠긴 worktree는 `git worktree unlock` 선행) |
+| `claude-rc cleanup` | git worktree 등록이 끊긴 `.claude/worktrees/*` 잔해만 삭제. 등록된 worktree는 죽은 세션의 것이라도 비대상 — `CLAUDE.md`의 "Git worktree" 보존 검사를 마친 뒤 일반 `git worktree remove` 사용. 잠금은 자동 해제하지 않음 |
 
 옵션:
 

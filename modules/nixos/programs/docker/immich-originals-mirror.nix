@@ -18,6 +18,8 @@ let
 
   srcDir = immichUploadCache;
   destDir = "${mediaData}/backups/immich-originals";
+  stateDirName = constants.paths.immichOriginalsMirrorStateRelPath;
+  stateDir = "/var/lib/${stateDirName}";
   pushoverCredPath = config.age.secrets.pushover-immich.path;
   serviceLib = import ../../lib/service-lib.nix { inherit pkgs; };
 
@@ -57,8 +59,14 @@ in
         Type = "oneshot";
         ExecStart = "${mirrorScript}/bin/immich-originals-mirror";
         TimeoutSec = "3h"; # 초회 105G 전체 복사 대비
+        # 성공 기록은 rsync --delete의 목적지 밖에 둔다.
+        StateDirectory = stateDirName;
+        StateDirectoryMode = "0700";
         ProtectSystem = "strict";
-        ReadWritePaths = [ destDir ];
+        ReadWritePaths = [
+          destDir
+          stateDir
+        ];
         ReadOnlyPaths = [ srcDir ];
         PrivateTmp = true;
         NoNewPrivileges = true;
@@ -69,6 +77,7 @@ in
         SERVICE_LIB = "${serviceLib}";
         SRC_DIR = srcDir;
         DEST_DIR = destDir;
+        LAST_SUCCESS_FILE = "${stateDir}/last-success";
         # 스크립트가 직접 실행돼도(수동 디버깅 등) 목적지 마운트를 검증하도록 마운트 루트를 넘긴다.
         MOUNT_ROOT = mediaData;
       };
