@@ -1243,7 +1243,8 @@ test_pinning_body_file_static_paths() {
   # guard는 이전 공백 분할 후보를 정적 추출 결과보다 먼저 검사한다.
   printf '%s\n' "$denied_content" > "$sandbox/split.md"
   printf '%s\n' "$denied_content" > "$sandbox/static file.md"
-  command_text="bash -c 'gh pr create --body-file split.md --title t'; gh pr create --title t --body-file \"static file.md\""
+  # 정적 전용 경로를 명령 앞쪽에 두어, 정적 추출이 문자열 스크립트를 읽게 되어도 순서 검사가 유지되게 한다.
+  command_text="gh pr create --title t --body-file \"static file.md\"; bash -c 'gh pr create --body-file split.md --title t'"
   printf '%s' "$command_text" | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
   for hook in "${hooks[@]}"; do
     (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" "$hook" \
@@ -1274,6 +1275,40 @@ test_pinning_body_file_static_paths() {
     done
   done
   rm -f -- "$sandbox/inner.md" "$sandbox/clean.md" "$wrapper_lib"
+
+  # 분할 단계에서 거부되면 정적 추출을 부르지 않는다. 정적 추출이 느려도 이전 범위의 거부가 먼저 나온다.
+  wrapper_lib="$sandbox/marking-static-pinning-patterns.sh"
+  printf '. %q\npinning_extract_body_file_paths() { : > %q; }\n' "$PINNING_LIB_REPO_FILE" "$sandbox/static-called" > "$wrapper_lib"
+  printf '%s\n' "$denied_content" > "$sandbox/inner.md"
+  printf 'gh pr create --title t --body-file inner.md' | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
+  for hook in "${hooks[@]}"; do
+    rm -f -- "$sandbox/static-called"
+    (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "PINNING_PATTERNS_LIB=$wrapper_lib" "$hook" \
+      < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
+    assert_eq "$(jq -r '.hookSpecificOutput.permissionDecision' "$stdout_log")" deny "split candidate must deny before static extraction"
+    [ ! -e "$sandbox/static-called" ] || fail "static extraction ran before the split candidate denial"
+  done
+  rm -f -- "$sandbox/inner.md" "$sandbox/static-called" "$wrapper_lib"
+
+  # 두 단계가 같은 경로를 내도 본문 파일은 한 번만 검사한다(FIFO 같은 본문을 두 번 열지 않는다).
+  wrapper_lib="$sandbox/counting-pinning-patterns.sh"
+  {
+    printf '. %q\n' "$PINNING_LIB_REPO_FILE"
+    printf 'eval "_counted_$(declare -f pinning_findings_text)"\n'
+    printf 'pinning_findings_text() { printf x >> %q; _counted_pinning_findings_text "$@"; }\n' "$sandbox/scan-count"
+  } > "$wrapper_lib"
+  printf 'clean\n' > "$sandbox/clean.md"
+  printf 'gh pr create --title t --body-file clean.md; gh pr edit 1 --body-file clean.md' \
+    | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
+  for hook in "${hooks[@]}"; do
+    rm -f -- "$sandbox/scan-count"
+    (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "PINNING_PATTERNS_LIB=$wrapper_lib" "$hook" \
+      < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
+    [ ! -s "$stdout_log" ] && [ ! -s "$stderr_log" ] || fail "clean repeated body path must pass"
+    # 명령 문자열 검사 1회 + 본문 파일 검사 1회
+    assert_eq "$(cat "$sandbox/scan-count" 2>/dev/null)" xx "repeated body path must be scanned once"
+  done
+  rm -f -- "$sandbox/clean.md" "$sandbox/scan-count" "$wrapper_lib"
 
   # 바깥 파일에서 먼저 거부되면 내부 파일 누락을 숨길 수 있으므로 각각 따로 검사한다.
   command_text='gh pr create --title "$(gh issue create --body-file inner.md)" --body-file outer.md'

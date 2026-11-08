@@ -85,6 +85,8 @@ case "$TOOL_NAME" in
     # 검사한다. 정적 추출이 느리거나 실패해도 이전 검사 범위는 먼저 끝난다. 각 단계는 후보를
     # 모두 읽은 뒤 검사한다. 후보 스트림을 stdin으로 둔 채 cat하면 표준 입력을 가리키는
     # 후보(/dev/stdin 등)가 남은 후보를 삼켜 뒤 파일 검사가 빠지므로, 본문 읽기의 stdin은 /dev/null로 둔다.
+    # 같은 경로는 한 번만 읽는다. 두 번 열면 FIFO 같은 본문에서 두 번째 열기가 멈춘다.
+    checked_body_files=$'\n'
     for body_file_source in pinning_split_body_file_candidates pinning_extract_body_file_paths; do
       body_files=()
       while IFS= read -r body_file; do
@@ -92,6 +94,10 @@ case "$TOOL_NAME" in
         body_files+=("$body_file")
       done < <("$body_file_source" "$COMMAND_TEXT")
       for body_file in ${body_files[@]+"${body_files[@]}"}; do
+        case "$checked_body_files" in
+          *$'\n'"$body_file"$'\n'*) continue ;;
+        esac
+        checked_body_files+="$body_file"$'\n'
         [ -e "$body_file" ] || continue
         if ! cat -- "$body_file" > "$SCAN_DIR/bash.txt" 2>/dev/null < /dev/null; then
           _deny_with_reason "[pinning-guard] failed to read $body_file referenced via --body-file; denying by fail-closed policy."
