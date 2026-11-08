@@ -26,6 +26,7 @@ list_skill_dirs() {
 
 list_projected_shared_skill_dirs() {
   local base="$1"
+  # wt-plugin--*: 퇴역한 커스텀 wt가 기존 checkout에 남겼을 수 있는 투영 잔재라 비교에서 제외한다.
   list_skill_dirs "$base" | grep -Ev '^wt-plugin--' || true
 }
 

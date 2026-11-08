@@ -20,6 +20,7 @@ _TEST_RUNTIME_PROFILE_REQUIRED_COMMANDS=(
   lsof
   flock
   lefthook
+  gitleaks
   bats
   pytest
   timeout

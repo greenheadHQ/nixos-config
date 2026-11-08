@@ -4,6 +4,117 @@
 # shellcheck source=../lib/claude-remote-control-fixtures.sh
 . "$SCRIPT_DIR/lib/claude-remote-control-fixtures.sh"
 
+test_claude_remote_control_recovery_doc_propagates_candidate_failures() {
+  local sandbox
+  sandbox="$(new_sandbox)"
+  # 문서의 실제 블록만 실행하며 RC 호출은 전부 합성 상태를 쓰는 대역으로 제한한다.
+  python3 - "$REPO_ROOT" "$sandbox" <<'PY'
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+
+repo, sandbox = map(Path, sys.argv[1:])
+document = (repo / ".claude/skills/managing-claude-rc/references/recovery.md").read_text()
+blocks = re.findall(r"```bash\n(.*?)\n```", document, re.S)
+candidates = [block for block in blocks if block.startswith('approval="$(')]
+assert len(candidates) == 1, "승인 후보 생성 블록은 하나여야 합니다"
+snippet = candidates[0] + '''
+fixture_rc=$?
+printf 'APPROVAL_JSON=%s\\n' "${approval-}"
+exit "$fixture_rc"
+'''
+pending = "deferred-restart-confirmation"
+instances = [
+    {"action": pending, "path": "/fixture/projects/b", "runningVersion": "old-b", "desiredVersion": "new"},
+    {"action": "healthy", "path": "/fixture/projects/healthy", "runningVersion": "new", "desiredVersion": "new"},
+    {"action": pending, "path": "/fixture/projects/a", "runningVersion": "old-a", "desiredVersion": "new"},
+]
+valid = {"action": "completed", "exitCode": 0, "instances": instances}
+expected = [{key: item[key] for key in ("path", "runningVersion", "desiredVersion")}
+            for item in reversed(instances) if item["action"] == pending]
+cases = [
+    ("success", valid, 0, 0, True),
+    ("empty", {**valid, "instances": []}, 0, 0, False),
+    ("snapshot-command-failed", valid, 42, 0, False),
+    ("invalid-json", "{invalid", 0, 0, False),
+    ("failed-snapshot", {**valid, "action": "failed"}, 0, 0, False),
+    ("nonzero-snapshot", {**valid, "exitCode": 1}, 0, 0, False),
+    ("candidate-extraction-failed", {**valid, "instances": 7}, 0, 0, False),
+    ("missing-snapshot", None, 0, 0, False),
+    ("list-command-failed", valid, 0, 43, False),
+]
+shells = [
+    ("zsh", ["-f", "-c"]),
+    ("zsh", ["-f", "-i", "-c"]),
+    ("bash", ["--noprofile", "--norc", "-c"]),
+]
+for shell_index, (shell, flags) in enumerate(shells):
+    executable = shutil.which(shell)
+    assert executable, f"필수 셸이 없습니다: {shell}"
+    for name, snapshot, maint_rc, list_rc, succeeds in cases:
+        root = sandbox / f"{shell_index}-{name}"
+        home = root / "home"
+        state = home / ".local/state/claude-rc"
+        bin_dir = root / "bin"
+        state.mkdir(parents=True)
+        bin_dir.mkdir()
+        source = root / "snapshot.json"
+        if snapshot is not None:
+            source.write_text(snapshot if isinstance(snapshot, str) else json.dumps(snapshot))
+        # 정상 snapshot이 있어도 이번 생성 명령이 실패하면 사용하지 않아야 한다.
+        (state / "status.json").write_text(json.dumps(valid))
+        (bin_dir / "claude-rc-maint").write_text('''#!/bin/sh
+[ "$CLAUDE_RC_DRIFT_POLICY" = defer ] && [ "$1" = ensure ] || exit 98
+printf 'defer ensure\\n' >> "$FIXTURE_CALLS"
+if [ -f "$FIXTURE_SNAPSHOT" ]; then
+  cp "$FIXTURE_SNAPSHOT" "$HOME/.local/state/claude-rc/status.json" || exit 97
+else
+  rm -f "$HOME/.local/state/claude-rc/status.json" || exit 97
+fi
+exit "$FIXTURE_MAINT_RC"
+''')
+        (bin_dir / "claude-rc").write_text('''#!/bin/sh
+[ "$1" = ls ] || exit 98
+printf 'ls\\n' >> "$FIXTURE_CALLS"
+exit "$FIXTURE_LIST_RC"
+''')
+        for stub in bin_dir.iterdir():
+            stub.chmod(0o700)
+        calls = root / "calls"
+        # 호출 셸의 초기화 파일·exported function이 대역 명령을 우회하지 않게 한다.
+        inherited = {key: value for key, value in os.environ.items()
+                     if key not in {"BASH_ENV", "ENV", "ZDOTDIR", "SHELLOPTS", "BASHOPTS"}
+                     and not key.startswith("BASH_FUNC_")}
+        environment = {**inherited, "HOME": str(home), "ZDOTDIR": str(home),
+                       "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                       "FIXTURE_SNAPSHOT": str(source), "FIXTURE_CALLS": str(calls),
+                       "FIXTURE_MAINT_RC": str(maint_rc), "FIXTURE_LIST_RC": str(list_rc)}
+        result = subprocess.run([executable, *flags, snippet], env=environment,
+                                capture_output=True, text=True, timeout=20)
+        label = f"{shell} {' '.join(flags)} / {name}"
+        approval_lines = [line.removeprefix("APPROVAL_JSON=") for line in result.stdout.splitlines()
+                          if line.startswith("APPROVAL_JSON=")]
+        assert len(approval_lines) == 1, f"{label}: 후보 결과를 확인할 수 없습니다"
+        if succeeds:
+            assert result.returncode == 0, f"{label}: 정상 후보 생성이 실패했습니다"
+            assert json.loads(approval_lines[0]) == expected, f"{label}: 승인 후보가 다릅니다"
+        else:
+            assert result.returncode != 0, f"{label}: 실패 또는 후보 없음이 성공으로 바뀌었습니다"
+            assert approval_lines == [""], f"{label}: 실패한 승인 후보가 남았습니다"
+        if name == "empty":
+            assert "재시작 후보가 없습니다" in result.stderr, f"{label}: 후보 없음 안내가 없습니다"
+        if maint_rc or list_rc:
+            assert result.returncode == (maint_rc or list_rc), f"{label}: 원래 종료 코드가 바뀌었습니다"
+        expected_calls = ["defer ensure", "ls"] if name in ("success", "list-command-failed") else ["defer ensure"]
+        assert calls.read_text().splitlines() == expected_calls, f"{label}: 실패 뒤 다음 단계가 실행됐습니다"
+print("복구 문서: 셸 3개 × 상태 9개 통과")
+PY
+}
+
 test_claude_remote_control_maint_rejects_joined_managed_argv_decoy() {
   local sandbox repo slug lock_path lock_pid status rc lock_remained_held
   sandbox="$(_claude_rc_new_sandbox)"

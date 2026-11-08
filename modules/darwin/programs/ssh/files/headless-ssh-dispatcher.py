@@ -114,6 +114,37 @@ def normalize_destination(value: str) -> str:
     return value.rsplit("@", 1)[-1]
 
 
+def parse_short_option(
+    argv: list[str], index: int, arity: dict[str, object]
+) -> tuple[list[tuple[str, str | None]], int]:
+    token = argv[index]
+    if token.startswith("--"):
+        raise ContractError("HEADLESS_SSH_OPTION_UNSUPPORTED", token)
+    options: list[tuple[str, str | None]] = []
+    cluster = token[1:]
+    cursor = 0
+    while cursor < len(cluster):
+        flag = cluster[cursor]
+        if flag not in arity:
+            raise ContractError("HEADLESS_SSH_OPTION_UNSUPPORTED", f"-{flag}")
+        takes_value = arity[flag] == 1
+        value: str | None = None
+        if takes_value:
+            if cursor + 1 < len(cluster):
+                value = cluster[cursor + 1 :]
+                cursor = len(cluster)
+            else:
+                index += 1
+                if index >= len(argv):
+                    raise ContractError("HEADLESS_SSH_OPTION_VALUE_MISSING", f"-{flag}")
+                value = argv[index]
+                cursor = len(cluster)
+        else:
+            cursor += 1
+        options.append((flag, value))
+    return options, index + 1
+
+
 def parse_invocation(argv: list[str], manifest: dict[str, object]) -> Invocation:
     arity = manifest["shortOptionArity"]
     assert isinstance(arity, dict)
@@ -121,6 +152,7 @@ def parse_invocation(argv: list[str], manifest: dict[str, object]) -> Invocation
     destination: str | None = None
     meta = False
     index = 0
+    trailing_index: int | None = None
     while index < len(argv):
         token = argv[index]
         if token == "--":
@@ -130,33 +162,31 @@ def parse_invocation(argv: list[str], manifest: dict[str, object]) -> Invocation
             break
         if token == "-" or not token.startswith("-"):
             destination = token
+            # OpenSSH는 옵션 값으로 소비된 --도 마지막 소비 인자이면 종료 표식으로 본다.
+            if index == 0 or argv[index - 1] != "--":
+                trailing_index = index + 1
             break
-        if token.startswith("--"):
-            raise ContractError("HEADLESS_SSH_OPTION_UNSUPPORTED", token)
-        cluster = token[1:]
-        cursor = 0
-        while cursor < len(cluster):
-            flag = cluster[cursor]
-            if flag not in arity:
-                raise ContractError("HEADLESS_SSH_OPTION_UNSUPPORTED", f"-{flag}")
-            takes_value = arity[flag] == 1
-            value: str | None = None
-            if takes_value:
-                if cursor + 1 < len(cluster):
-                    value = cluster[cursor + 1 :]
-                    cursor = len(cluster)
-                else:
-                    index += 1
-                    if index >= len(argv):
-                        raise ContractError("HEADLESS_SSH_OPTION_VALUE_MISSING", f"-{flag}")
-                    value = argv[index]
-                    cursor = len(cluster)
-            else:
-                cursor += 1
-            options.append((flag, value))
-            if flag in {"V", "G", "O", "Q"}:
+        parsed_options, index = parse_short_option(argv, index, arity)
+        options.extend(parsed_options)
+        # -Z는 OpenSSH 10.5의 공개키 진단이다. 인증 master를 만들지 않고
+        # 다른 진단 모드처럼 원래 인자를 시스템 SSH에 한 번 전달한다.
+        if any(flag in {"V", "G", "O", "Q", "Z"} for flag, _ in parsed_options):
+            meta = True
+    # OpenSSH는 목적지 뒤의 연속 옵션도 읽지만 앞에서 --를 만나면 재개하지 않는다.
+    # 여기서는 -Z만 판별하며 일반 후행 옵션에 대한 기존 정책 범위는 유지한다.
+    if not meta and trailing_index is not None:
+        while trailing_index < len(argv):
+            token = argv[trailing_index]
+            if token in {"-", "--"} or not token.startswith("-"):
+                break
+            try:
+                trailing_options, trailing_index = parse_short_option(argv, trailing_index, arity)
+            except ContractError:
+                # 기존에 해석하지 않던 후행 옵션 오류는 시스템 SSH가 계속 처리한다.
+                break
+            if any(flag == "Z" for flag, _ in trailing_options):
                 meta = True
-        index += 1
+                break
     return Invocation(
         argv=tuple(argv),
         destination=destination,

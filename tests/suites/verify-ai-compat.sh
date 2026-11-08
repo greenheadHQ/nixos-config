@@ -180,6 +180,95 @@ test_verify_ai_compat_host_state_positive_fixture() {
   assert_contains "$output" "USED-BY oracle 통과: demo-lib.sh"
 }
 
+# nrs-relink가 저장소 밖 등록 worktree로 옮긴 링크는 같은 저장소의 등록 목록으로만 인정한다.
+test_verify_ai_compat_resolved_target_accepts_registered_external_worktree() {
+  local sandbox repo_root external sibling suffix main_real external_real sibling_real stub_dir real_git mode
+  sandbox="$(new_sandbox)"
+  repo_root="$sandbox/repo"
+  external="$sandbox/repo-example"
+  sibling="$sandbox/repo-unregistered"
+  suffix="modules/shared/programs/claude/files/skills/demo"
+  create_git_fixture_repo "$repo_root"
+  add_fixture_worktree "$repo_root" "$external" external-example
+  mkdir -p "$external/$suffix" "$sibling/$suffix"
+  main_real="$(cd "$repo_root" && pwd -P)"
+  external_real="$(cd "$external" && pwd -P)"
+  sibling_real="$(cd "$sibling" && pwd -P)"
+
+  local MAIN_REPO_ROOT="$main_real" REPO_ROOT_REAL="$main_real" _HOST_STATE_WORKTREES_LOADED=0
+  local -a _HOST_STATE_WORKTREES=()
+  resolved_target_matches_repo_suffix "$external_real/$suffix" "$main_real/$suffix" "$suffix" \
+    || fail "registered external worktree target must be accepted"
+  if resolved_target_matches_repo_suffix "$sibling_real/$suffix" "$main_real/$suffix" "$suffix"; then
+    fail "unregistered sibling with the same suffix must be rejected"
+  fi
+
+  # 조회 실패와 잘린 출력은 등록 근거로 쓰지 않고, 그 사실을 경고한다.
+  real_git="$(command -v git)"
+  stub_dir="$sandbox/stub-bin"
+  mkdir -p "$stub_dir"
+  cat > "$stub_dir/git" <<'STUB'
+#!/usr/bin/env bash
+if [[ "$*" == *'worktree list'* ]]; then
+  printf 'worktree %s\0' "$HOST_STATE_STUB_ROOT"
+  if [[ "$HOST_STATE_STUB_MODE" == truncated ]]; then
+    printf 'worktree %s' "$HOST_STATE_STUB_ROOT"
+    exit 0
+  fi
+  exit 1
+fi
+exec "$HOST_STATE_REAL_GIT" "$@"
+STUB
+  chmod +x "$stub_dir/git"
+  for mode in failed truncated; do
+    if (
+      export PATH="$stub_dir:$PATH" HOST_STATE_REAL_GIT="$real_git" \
+        HOST_STATE_STUB_ROOT="$external_real" HOST_STATE_STUB_MODE="$mode"
+      warn() { printf 'WARN: %s\n' "$*" >> "$sandbox/warn-$HOST_STATE_STUB_MODE.log"; }
+      _HOST_STATE_WORKTREES_LOADED=0
+      resolved_target_matches_repo_suffix "$external_real/$suffix" "$main_real/$suffix" "$suffix"
+    ); then
+      fail "worktree listing ($mode) must not grant acceptance"
+    fi
+    assert_contains "$(cat "$sandbox/warn-$mode.log" 2>/dev/null)" "Git worktree 목록을 읽지 못해"
+  done
+
+  # 경로 끝 개행은 nrs-relink처럼 보존해 비교한다.
+  local external_nl external_nl_real nested nested_real
+  external_nl="$sandbox/repo-newline"$'\n'
+  add_fixture_worktree "$repo_root" "$external_nl" external-newline
+  mkdir -p "$external_nl/$suffix"
+  external_nl_real="$(cd "$external_nl" && pwd -P && printf .)"
+  external_nl_real="${external_nl_real%.}"
+  external_nl_real="${external_nl_real%$'\n'}"
+  [[ "$external_nl_real" == *$'\n' ]] || fail "fixture path must keep its trailing newline"
+  _HOST_STATE_WORKTREES_LOADED=0
+  resolved_target_matches_repo_suffix "$external_nl_real/$suffix" "$main_real/$suffix" "$suffix" \
+    || fail "registered worktree whose path ends with a newline must be accepted"
+
+  # 등록 경로가 같은 저장소의 다른 작업 트리 하위 디렉터리가 되면 top-level이 다르다.
+  nested="$repo_root/nested-worktree"
+  add_fixture_worktree "$repo_root" "$nested" nested-example
+  rm -f "$nested/.git"
+  mkdir -p "$nested/$suffix"
+  nested_real="$(cd "$nested" && pwd -P)"
+  _HOST_STATE_WORKTREES_LOADED=0
+  if resolved_target_matches_repo_suffix "$nested_real/$suffix" "$main_real/$suffix" "$suffix"; then
+    fail "registered path that is no longer a worktree top-level must be rejected"
+  fi
+
+  # 등록만 남고 그 자리에 다른 저장소가 생긴 경로는 같은 저장소의 worktree가 아니다.
+  rm -rf "$external"
+  mkdir -p "$external"
+  HOME="$sandbox/home" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+    git -C "$external" -c core.hooksPath=/dev/null -c init.templateDir= init --quiet
+  mkdir -p "$external/$suffix"
+  _HOST_STATE_WORKTREES_LOADED=0
+  if resolved_target_matches_repo_suffix "$external_real/$suffix" "$main_real/$suffix" "$suffix"; then
+    fail "registered path replaced by another repository must be rejected"
+  fi
+}
+
 _verify_ai_compat_non_executable_hook_check() {
   _check_hook_executable ".codex/hooks/pinning-guard.sh"
 }
