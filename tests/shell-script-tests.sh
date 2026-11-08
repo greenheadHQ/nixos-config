@@ -674,6 +674,8 @@ run_test "git-cleanup date non-numeric output stops before candidates" test_git_
 run_test "git-cleanup dry-run does not delete stale branch" test_git_cleanup_dry_run_does_not_delete_stale_branch
 run_test "git-cleanup stale boundary uses fixed seconds not calendar days across DST" test_git_cleanup_stale_boundary_uses_fixed_seconds_not_calendar_days_across_dst
 run_test "git-cleanup date command absent stops before candidates" test_git_cleanup_date_command_absent_stops_before_candidates
+run_test "git-cleanup runtime Bash preserves arrays and confirmation" test_git_cleanup_runtime_bash_preserves_array_and_confirmation_contracts
+run_test "git-cleanup system Bash 3.2 preserves arrays and confirmation" test_git_cleanup_system_bash32_preserves_array_and_confirmation_contracts
 
 # update-script-arg-parse suite (tests/suites/update-script-arg-parse.sh) — #1383
 run_test "immich-update --help exits 0 without side effects" test_immich_update_help_flag_exits_zero_without_side_effects
