@@ -87,9 +87,12 @@ case "$TOOL_NAME" in
     # 후보(/dev/stdin 등)가 남은 후보를 삼켜 뒤 파일 검사가 빠지므로, 본문 읽기의 stdin은 /dev/null로 둔다.
     # 추출이 실패하면 확인하지 못한 경로가 남을 수 있으므로 거부한다(fail-closed).
     # FIFO는 읽으면 게시 명령이 받을 본문을 소비하거나 쓰는 쪽이 없어 멈추므로 읽지 않고 거부한다.
+    # 본문은 최대 크기까지만 읽는다. 그보다 길면(끝나지 않는 장치 파일 포함) 전부 확인할 수
+    # 없으므로 거부한다. 한도는 GitHub 본문 한도(65,536자)보다 넉넉하다.
     # 같은 경로 문자열은 한 번만 읽는다(패턴이 아닌 문자열로 비교). 표기가 다른 같은 파일
     # (./a와 a)은 따로 읽으며, 확인한 목록을 매번 훑으므로 후보 수에 대해 이차 시간이 든다.
     checked_body_files=$'\n'
+    body_file_max_bytes=1048576
     for body_file_source in pinning_split_body_file_candidates pinning_extract_body_file_paths; do
       if ! "$body_file_source" "$COMMAND_TEXT" > "$SCAN_DIR/body-candidates.txt" 2>/dev/null; then
         _deny_with_reason "[pinning-guard] failed to extract --body-file paths; denying by fail-closed policy."
@@ -109,8 +112,12 @@ case "$TOOL_NAME" in
         if [ -p "$body_file" ] < /dev/null; then
           _deny_with_reason "[pinning-guard] $body_file referenced via --body-file is a FIFO; it cannot be inspected without consuming it, so denying. Use a regular file."
         fi
-        if ! cat -- "$body_file" > "$SCAN_DIR/bash.txt" 2>/dev/null < /dev/null; then
+        if ! head -c "$((body_file_max_bytes + 1))" -- "$body_file" > "$SCAN_DIR/bash.txt" 2>/dev/null < /dev/null; then
           _deny_with_reason "[pinning-guard] failed to read $body_file referenced via --body-file; denying by fail-closed policy."
+        fi
+        body_file_bytes=$(wc -c < "$SCAN_DIR/bash.txt")
+        if [ "$((body_file_bytes))" -gt "$body_file_max_bytes" ]; then
+          _deny_with_reason "[pinning-guard] $body_file referenced via --body-file is larger than $body_file_max_bytes bytes or does not end; it cannot be fully inspected, so denying."
         fi
         findings="$(pinning_findings_text "$SCAN_DIR/bash.txt")"
         [ -n "$findings" ] || continue

@@ -1295,6 +1295,39 @@ test_pinning_body_file_static_paths() {
   done
   rm -f -- "$wrapper_lib"
 
+  # 본문은 1 MiB까지만 읽는다. 한도와 같은 크기는 검사하고, 넘으면 전부 확인할 수 없으므로 거부한다.
+  head -c 1048576 /dev/zero | tr '\0' a > "$sandbox/limit.md"
+  head -c 1048577 /dev/zero | tr '\0' a > "$sandbox/over.md"
+  for label in limit over; do
+    printf 'gh pr create --title t --body-file %s.md' "$label" \
+      | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
+    for hook in "${hooks[@]}"; do
+      (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" "$hook" \
+        < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
+      [ ! -s "$stderr_log" ] || fail "body size guard wrote stderr: $label"
+      if [ "$label" = limit ]; then
+        [ ! -s "$stdout_log" ] || fail "clean body at the size limit must pass"
+      else
+        output=$(jq -r '.hookSpecificOutput.permissionDecisionReason' "$stdout_log")
+        [[ "$output" == *'is larger than 1048576 bytes'* ]] || fail "body over the size limit must be denied"
+      fi
+    done
+  done
+  rm -f -- "$sandbox/limit.md" "$sandbox/over.md"
+
+  # 끝나지 않는 장치 파일도 한도까지만 읽고 거부한다(분할 후보와 escape 표기의 정적 추출).
+  # 회귀로 끝까지 읽어도 디스크를 채우지 않도록 쓰기 크기를 제한한다.
+  for command_text in 'gh pr create --title t --body-file /dev/zero' 'gh pr create --title t --body-file /dev/\zero'; do
+    printf '%s' "$command_text" | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/body-path-input.json"
+    for hook in "${hooks[@]}"; do
+      (ulimit -f 16384; cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" "$hook" \
+        < "$sandbox/body-path-input.json" > "$stdout_log" 2> "$stderr_log")
+      [ ! -s "$stderr_log" ] || fail "endless device guard wrote stderr: $command_text"
+      output=$(jq -r '.hookSpecificOutput.permissionDecisionReason' "$stdout_log")
+      [[ "$output" == *'is larger than 1048576 bytes'* ]] || fail "endless device body must be denied: $command_text"
+    done
+  done
+
   # FIFO 본문은 읽지 않고 거부한다(정적 추출 경로와 분할 후보 경로). 회귀로 guard가 FIFO를 열어도
   # 테스트가 멈추지 않도록, 일정 시간 뒤 한 번 쓰는 감시 프로세스를 두고 검사 뒤 끝낸다.
   for label in static split; do
