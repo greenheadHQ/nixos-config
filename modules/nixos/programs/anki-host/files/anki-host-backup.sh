@@ -52,6 +52,36 @@ prune_local() {
     | sort -rn | awk -v keep="$LOCAL_KEEP" 'NR > keep {print $2}' | xargs -r rm -f
 }
 
+# backup.nix의 단일 oneshot이 인스턴스를 순차 처리하며 종료 시 자식 복사도 함께 정리한다.
+# 새 복사 전에 이전 회차의 소유 파일만 회수한다. 직접 동시 실행을 지원하는 락은 아니며,
+# 현재·미래 시각, 다른 인스턴스, symlink·하위 디렉터리는 회수 대상에 넣지 않는다.
+prune_previous_partials() {
+  python3 - "$1" "$2" "$stamp" <<'PY'
+import datetime
+import os
+import re
+import sys
+
+directory, instance, current_stamp = sys.argv[1:]
+pattern = re.compile(re.escape(f"anki-host-{instance}-") + r"([0-9]{8}T[0-9]{6})\.colpkg\.partial")
+try:
+    current = datetime.datetime.strptime(current_stamp, "%Y%m%dT%H%M%S")
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            match = pattern.fullmatch(entry.name)
+            if match is None or not entry.is_file(follow_symlinks=False):
+                continue
+            try:
+                previous = datetime.datetime.strptime(match[1], "%Y%m%dT%H%M%S")
+            except ValueError:
+                continue
+            if previous < current:
+                os.unlink(entry.path)
+except (OSError, ValueError):
+    sys.exit(1)
+PY
+}
+
 for entry in $INSTANCES; do
   name="${entry%%:*}"
   port="${entry##*:}"
@@ -62,6 +92,11 @@ for entry in $INSTANCES; do
   file="anki-host-${name}-${stamp}.colpkg"
   if ! mkdir -p "$dest_dir"; then
     failures="${failures} ${name}(destination)"
+    continue
+  fi
+  if ! prune_previous_partials "$dest_dir" "$name"; then
+    echo "anki-host-backup[${name}]: previous partial cleanup failed" >&2
+    failures="${failures} ${name}(partial-prune)"
     continue
   fi
   # 이전 회차가 복사·검사에 실패해 남긴 파일부터 정리한다 — 실패가 며칠 이어져도 SSD가 LOCAL_KEEP개 이상 쌓이지 않는다

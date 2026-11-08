@@ -405,8 +405,21 @@ def _is_table(value) -> bool:
         return False
 
 
+def _unwrap_toml(value):
+    # 배열 안의 Bool·날짜를 포함해 tomlkit 포장을 원시 값으로 벗긴다.
+    # 포장 클래스가 달라도 같은 TOML 타입이면 같은 값으로 비교한다.
+    return value.unwrap() if hasattr(value, "unwrap") else value
+
+
 def _values_equal(a, b) -> bool:
     try:
+        a, b = _unwrap_toml(a), _unwrap_toml(b)
+        if not _types_compatible(a, b):
+            return False
+        if isinstance(a, (list, tuple)):
+            return len(a) == len(b) and all(_values_equal(x, y) for x, y in zip(a, b))
+        if _is_table(a):
+            return a.keys() == b.keys() and all(_values_equal(a[key], b[key]) for key in a)
         return a == b
     except Exception:
         return False
@@ -740,7 +753,7 @@ def collect_drift(tmpl, target) -> list[dict]:
                 "actual": None,
             })
             continue
-        if type(tmpl_val) is not type(actual_val) and not _types_compatible(tmpl_val, actual_val):
+        if not _types_compatible(tmpl_val, actual_val):
             drift.append({
                 "path": rendered,
                 "reason": "type_mismatch",
@@ -759,25 +772,15 @@ def collect_drift(tmpl, target) -> list[dict]:
 
 
 def _types_compatible(a, b) -> bool:
-    # tomlkit wraps scalars; compare via Python primitive type classes.
-    def _pytype(v):
-        if isinstance(v, bool):
-            return bool
-        if isinstance(v, int):
-            return int
-        if isinstance(v, float):
-            return float
-        if isinstance(v, str):
-            return str
-        if isinstance(v, (list, tuple)):
-            return list
-        return type(v)
-
-    return _pytype(a) is _pytype(b)
+    a, b = _unwrap_toml(a), _unwrap_toml(b)
+    if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
+        return True
+    return type(a) is type(b)
 
 
 def _jsonify(value):
     # tomlkit 값을 json-직렬화 가능한 Python primitive로 변환.
+    value = _unwrap_toml(value)
     if isinstance(value, bool):
         return bool(value)
     if isinstance(value, int):

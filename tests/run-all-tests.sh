@@ -88,11 +88,15 @@ run_driver "karakeep-bridge-tests" bash tests/run-karakeep-bridge-tests.sh
 #     PR #929 도입 이후 어떤 러너·훅·CI 에도 연결되지 않아 실행 경로가 0이었다.
 run_driver "issuing-codex-pairing-code-tests" bash tests/run-issuing-codex-pairing-code-tests.sh
 
+# 공개 recipient 헤더 검사기의 합성 회귀만 실행한다. 실제 암호문 일치 검사는 별도 명령이다.
+run_driver "secret-recipient-tests" bash tests/run-secret-recipient-tests.sh
+
 # 7e) anki-mcp-tests — 원격 MCP 서버(anki_mcp)의 순수 함수·OAuth provider·승인 폼·sync 트리거 규칙을 hermetic
 #     pytest로 검증한다 (AnkiConnect·systemctl은 fake). 런타임은 flake 패키지 ankiMcpTestEnv(핀된 mcp SDK).
 run_driver "anki-mcp-tests" bash tests/run-anki-mcp-tests.sh
 
 run_driver "anki-card-links-tests" bash tests/run-anki-card-links-tests.sh
+run_driver "finder-ghostty-tests" bash tests/run-finder-ghostty-tests.sh
 
 run_driver "anki-code-highlight-tests" bash tests/run-anki-code-highlight-tests.sh
 
@@ -102,6 +106,9 @@ run_driver "anki-addons-tests" bash tests/run-anki-addons-tests.sh
 # The Linux deployment and CI share the same built-addon/backend check. Darwin
 # checks its Nix wiring only; it must not build Anki or require a remote builder.
 run_driver "anki-runtime-tests" bash tests/run-anki-runtime-tests.sh
+
+# 실제 systemd 마운트 실패/성공은 합성 Linux VM에서 검사하며, Darwin에서는 N/A다.
+run_driver "copyparty-mount-tests" bash tests/run-copyparty-mount-tests.sh
 
 # 7d) guardrail-lint-fixtures — skill-neutral-lint 엔진의 fixture self-test(17개). hermetic 하고
 #     python3 만 요구하므로(codex/nix/jq 불필요) 통합 러너에 저비용으로 붙는다. 이 게이트가 지키는

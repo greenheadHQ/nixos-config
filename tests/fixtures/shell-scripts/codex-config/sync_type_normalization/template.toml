@@ -1,0 +1,14 @@
+enabled = true
+disabled = false
+integer = 1
+fraction = 1.0
+flags = [true, false]
+nested = [[1, false], [2.0, true]]
+records = [{ enabled = true, count = 1 }]
+
+[features]
+fixture = true
+
+[[hooks.SessionStart]]
+marker = "managed"
+enabled = true

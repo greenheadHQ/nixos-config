@@ -2,7 +2,7 @@
 # modules/nixos/programs/docker/immich-originals-mirror/files/immich-originals-mirror.sh
 # Immich 원본 사진/영상을 SSD(upload-cache) → HDD로 일일 rsync 미러링.
 # 원본이 disko 포맷 대상 SSD에만 존재하는 "무백업 단독 존재"를 해소한다(백업 자세 시정).
-# oneshot systemd service가 SRC_DIR/DEST_DIR/PUSHOVER_CRED_FILE/SERVICE_LIB를 주입한다.
+# oneshot systemd service가 경로·LAST_SUCCESS_FILE·알림 라이브러리를 주입한다.
 #
 # 삭제 전파(--delete) 결정: 이 미러는 원본의 삭제를 그대로 따라간다(진짜 미러).
 # 실수 삭제 방어는 Immich 앱 휴지통(기본 30일)과 오프사이트 계층(별도 plan)의 몫이라는
@@ -16,8 +16,12 @@ source "$PUSHOVER_CRED_FILE"
 source "$SERVICE_LIB"
 
 # 에러 핸들러: 실패 시에만 Pushover 알림 (성공 시 무알림)
+SUCCESS_TMP=""
 cleanup_on_error() {
   local exit_code=$?
+  if [ -n "$SUCCESS_TMP" ]; then
+    rm -f -- "$SUCCESS_TMP" || true
+  fi
   if [ "$exit_code" -ne 0 ]; then
     send_notification "Immich Originals Mirror" \
       "원본 미러 실패 (exit $exit_code). journalctl -u immich-originals-mirror 확인 필요." 1
@@ -89,5 +93,12 @@ else
   echo "ERROR: rsync failed (exit $RSYNC_RC)" >&2
   exit "$RSYNC_RC"
 fi
+
+# 7. 허용된 rsync 결과의 완료 시각만 게시한다. 같은 디렉터리에서 완성한 뒤
+#    교체하므로 실패·중단은 기존 성공 기록을 바꾸지 않는다.
+SUCCESS_TMP=$(mktemp "${LAST_SUCCESS_FILE}.tmp.XXXXXX")
+date +%s > "$SUCCESS_TMP"
+mv -fT -- "$SUCCESS_TMP" "$LAST_SUCCESS_FILE"
+SUCCESS_TMP=""
 
 echo "=== Immich originals mirror completed: $(date -Iseconds) ==="

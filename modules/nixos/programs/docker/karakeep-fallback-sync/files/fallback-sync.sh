@@ -54,11 +54,12 @@ timestamp_to_epoch() {
 
 gc_unmatched_notified_state() {
   local now cutoff tmp hash ts file_path epoch
-  now=$(date +%s)
+  now=$(date +%s) || return 2
   cutoff=$((now - UNMATCHED_STATE_RETENTION_DAYS * 86400))
-  tmp=$(mktemp -p "$STATE_DIR")
+  tmp=$(mktemp -p "$STATE_DIR") || return 2
 
-  while IFS=$'\t' read -r hash ts file_path || [ -n "${hash:-}" ]; do
+  # read의 EOF와 오류를 혼동하지 않도록 cat의 읽기 결과도 pipefail로 확인한다.
+  if ! cat "$UNMATCHED_NOTIFIED_FILE" | while IFS=$'\t' read -r hash ts file_path || [ -n "${hash:-}" ]; do
     [ -n "${hash:-}" ] || continue
     [ -n "${file_path:-}" ] || continue
     [ -e "$file_path" ] || continue
@@ -68,19 +69,22 @@ gc_unmatched_notified_state() {
       continue
     fi
 
-    printf "%s\t%s\t%s\n" "$hash" "$ts" "$file_path" >> "$tmp"
-  done < "$UNMATCHED_NOTIFIED_FILE"
+    printf "%s\t%s\t%s\n" "$hash" "$ts" "$file_path" || exit 1
+  done > "$tmp"; then
+    rm -f "$tmp"
+    return 2
+  fi
 
-  mv "$tmp" "$UNMATCHED_NOTIFIED_FILE"
+  mv "$tmp" "$UNMATCHED_NOTIFIED_FILE" || { rm -f "$tmp"; return 2; }
 }
 
 gc_processed_state() {
   local now cutoff tmp hash failed_url file_path ts epoch
-  now=$(date +%s)
+  now=$(date +%s) || return 2
   cutoff=$((now - PROCESSED_STATE_RETENTION_DAYS * 86400))
-  tmp=$(mktemp -p "$STATE_DIR")
+  tmp=$(mktemp -p "$STATE_DIR") || return 2
 
-  while IFS=$'\t' read -r hash failed_url file_path ts || [ -n "${hash:-}" ]; do
+  if ! cat "$PROCESSED_FILE" | while IFS=$'\t' read -r hash failed_url file_path ts || [ -n "${hash:-}" ]; do
     [ -n "${hash:-}" ] || continue
     [ -n "${file_path:-}" ] || continue
     [ -e "$file_path" ] || continue
@@ -90,28 +94,34 @@ gc_processed_state() {
       continue
     fi
 
-    printf "%s\t%s\t%s\t%s\n" "$hash" "$failed_url" "$file_path" "$ts" >> "$tmp"
-  done < "$PROCESSED_FILE"
+    printf "%s\t%s\t%s\t%s\n" "$hash" "$failed_url" "$file_path" "$ts" || exit 1
+  done > "$tmp"; then
+    rm -f "$tmp"
+    return 2
+  fi
 
-  mv "$tmp" "$PROCESSED_FILE"
+  mv "$tmp" "$PROCESSED_FILE" || { rm -f "$tmp"; return 2; }
 }
 
 gc_notify_state() {
   local now cutoff tmp
-  now=$(date +%s)
+  now=$(date +%s) || return 2
   cutoff=$((now - NOTIFY_STATE_RETENTION_SEC))
-  tmp=$(mktemp -p "$STATE_DIR")
+  tmp=$(mktemp -p "$STATE_DIR") || return 2
 
-  awk -F '\t' -v cutoff="$cutoff" '
+  if ! awk -F '\t' -v cutoff="$cutoff" '
     NF >= 2 && $2 ~ /^[0-9]+$/ && $2 >= cutoff { print $1 "\t" $2 }
-  ' "$NOTIFY_STATE_FILE" > "$tmp"
+  ' "$NOTIFY_STATE_FILE" > "$tmp"; then
+    rm -f "$tmp"
+    return 2
+  fi
 
-  mv "$tmp" "$NOTIFY_STATE_FILE"
+  mv "$tmp" "$NOTIFY_STATE_FILE" || { rm -f "$tmp"; return 2; }
 }
 
 gc_state_files() {
-  gc_unmatched_notified_state
-  gc_processed_state
+  gc_unmatched_notified_state || return 2
+  gc_processed_state || return 2
   gc_notify_state
 }
 
@@ -152,29 +162,44 @@ shorten_url() {
 should_notify_key() {
   local key="$1"
   local now previous tmp
-  now=$(date +%s)
-  previous=$(awk -F '\t' -v key="$key" '$1 == key { print $2 }' "$NOTIFY_STATE_FILE" | tail -n 1)
+  now=$(date +%s) || return 2
+  if ! previous=$(awk -F '\t' -v key="$key" '$1 == key { previous = $2 } END { print previous }' "$NOTIFY_STATE_FILE"); then
+    echo "Fallback sync state error: 알림 억제 기록 조회 실패" >&2
+    return 2
+  fi
   previous="${previous:-0}"
+  # 선행 0의 8진수 해석과 큰 정수의 오버플로를 막고, 기록 없음의 0은 허용한다.
+  if ! [[ "$previous" =~ ^(0|[1-9][0-9]{0,17})$ ]]; then
+    echo "Fallback sync state error: 알림 억제 기록 시각 확인 불가" >&2
+    return 2
+  fi
 
   if (( now - previous < NOTIFY_DEDUP_WINDOW_SEC )); then
     return 1
   fi
 
-  tmp=$(mktemp -p "$STATE_DIR")
-  awk -F '\t' -v key="$key" '$1 != key { print }' "$NOTIFY_STATE_FILE" > "$tmp"
-  printf "%s\t%s\n" "$key" "$now" >> "$tmp"
-  mv "$tmp" "$NOTIFY_STATE_FILE"
+  tmp=$(mktemp -p "$STATE_DIR") || return 2
+  if ! awk -F '\t' -v key="$key" '$1 != key { print }' "$NOTIFY_STATE_FILE" > "$tmp" ||
+     ! printf "%s\t%s\n" "$key" "$now" >> "$tmp" ||
+     ! mv "$tmp" "$NOTIFY_STATE_FILE"; then
+    rm -f "$tmp"
+    echo "Fallback sync state error: 알림 억제 기록 교체 실패" >&2
+    return 2
+  fi
   return 0
 }
 
+# 조회 반환: 0 = 있음, 1 = 없음, 2 = 확인 불가. awk 실패를 기록 없음으로 바꾸지 않는다.
 is_processed() {
-  local file_hash="$1"
-  awk -F '\t' -v hash="$file_hash" '$1 == hash { found = 1 } END { exit(found ? 0 : 1) }' "$PROCESSED_FILE"
+  local file_hash="$1" found
+  found=$(awk -F '\t' -v hash="$file_hash" '$1 == hash { found = 1 } END { print found + 0 }' "$PROCESSED_FILE") || return 2
+  [ "$found" = 1 ]
 }
 
 is_unmatched_notified() {
-  local file_hash="$1"
-  awk -F '\t' -v hash="$file_hash" '$1 == hash { found = 1 } END { exit(found ? 0 : 1) }' "$UNMATCHED_NOTIFIED_FILE"
+  local file_hash="$1" found
+  found=$(awk -F '\t' -v hash="$file_hash" '$1 == hash { found = 1 } END { print found + 0 }' "$UNMATCHED_NOTIFIED_FILE") || return 2
+  [ "$found" = 1 ]
 }
 
 record_unmatched_notified() {
@@ -538,27 +563,35 @@ upload_singlefile_archive() {
 report_match_error() {
   local file="$1"
   local notify_key="$2"
-  local message
+  local message notify_status=0
   echo "Auto relink match error: $file"
-  if should_notify_key "$notify_key"; then
+  should_notify_key "$notify_key" || notify_status=$?
+  if [ "$notify_status" -eq 0 ]; then
     message=$(printf "자동 재연결 보류: %s\n원인: 판정 실패\njournalctl -u karakeep-fallback-sync 확인 필요" "$(basename "$file")")
     send_notification "Karakeep" "$message" 0
+  elif [ "$notify_status" -ne 1 ]; then
+    return 2
   fi
+  return 0
 }
 
 process_file() {
   local file="$1"
   local file_hash match_result match_status queue_line hold_reason failed_url match_sources
-  local short_url notify_key message path_hash
+  local short_url notify_key message path_hash state_status=0
   if ! file_hash=$(sha256sum "$file" | cut -d ' ' -f 1) || [ -z "$file_hash" ]; then
     # 해시가 없으면 처리·보류 기록과 대조할 수 없다. 알림 키는 파일 경로에서 만든다.
     path_hash=$(printf '%s' "$file" | sha256sum | cut -d ' ' -f 1)
-    report_match_error "$file" "match-error:path:${path_hash}"
+    report_match_error "$file" "match-error:path:${path_hash}" || return 2
     return 1
   fi
 
-  if is_processed "$file_hash"; then
+  is_processed "$file_hash" || state_status=$?
+  if [ "$state_status" -eq 0 ]; then
     return 0
+  elif [ "$state_status" -ne 1 ]; then
+    echo "Fallback sync state error: 처리 기록 조회 실패" >&2
+    return 2
   fi
 
   match_result=$(find_matching_failed_url "$file") || match_result=""
@@ -576,15 +609,20 @@ process_file() {
   esac
 
   if [ "$match_status" = "error" ]; then
-    report_match_error "$file" "match-error:${file_hash}"
+    report_match_error "$file" "match-error:${file_hash}" || return 2
     return 1
   fi
 
   if [ "$match_status" != "matched" ]; then
     # 보류: 업로드·큐 제거·processed 기록 없이 파일과 큐를 그대로 둔다.
-    if is_unmatched_notified "$file_hash"; then
+    state_status=0
+    is_unmatched_notified "$file_hash" || state_status=$?
+    if [ "$state_status" -eq 0 ]; then
       echo "Unmatched fallback already notified once (${match_status}): $file"
       return 0
+    elif [ "$state_status" -ne 1 ]; then
+      echo "Fallback sync state error: 보류 알림 기록 조회 실패" >&2
+      return 2
     fi
 
     case "$match_status" in
@@ -617,9 +655,13 @@ process_file() {
   fi
 
   notify_key="upload-failed:$(normalize_url "$failed_url")"
-  if should_notify_key "$notify_key"; then
+  state_status=0
+  should_notify_key "$notify_key" || state_status=$?
+  if [ "$state_status" -eq 0 ]; then
     message=$(printf "자동 재연결 실패: %s\n파일: %s\njournalctl -u karakeep-fallback-sync 확인 필요" "$(shorten_url "$failed_url")" "$(basename "$file")")
     send_notification "Karakeep" "$message" 0
+  elif [ "$state_status" -ne 1 ]; then
+    return 2
   fi
   echo "Auto relink failed: $failed_url <- $file"
   return 1
@@ -630,7 +672,10 @@ if [ ! -d "$FALLBACK_DIR" ]; then
   exit 0
 fi
 
-gc_state_files
+if ! gc_state_files; then
+  echo "Fallback sync state error: 시작 상태 정리 실패" >&2
+  exit 1
+fi
 
 if ! [ -s "$FAILED_URL_QUEUE_FILE" ]; then
   echo "No pending failed URLs in queue"
@@ -652,6 +697,14 @@ for file in "${fallback_files[@]}"; do
   if process_file "$file"; then
     consecutive_failures=0
     continue
+  else
+    process_status=$?
+  fi
+
+  # 상태 확인 불가는 일반 알림을 보내지 않고 서비스 실패로 보고한다.
+  # 억제 기록이 깨진 동안 알림을 우회하거나 다음 파일의 상태를 변경하지 않는다.
+  if [ "$process_status" -eq 2 ]; then
+    exit 1
   fi
 
   consecutive_failures=$((consecutive_failures + 1))

@@ -37,10 +37,24 @@ run_test "1Password shortcuts wrapper classifies exit status" test_onepassword_s
 run_test "1Password shortcuts real external SIGKILL" test_onepassword_shortcuts_real_external_sigkill
 run_test "1Password shortcuts real timeout TERM" test_onepassword_shortcuts_real_timeout_term
 run_test "1Password shortcuts real timeout kill-after" test_onepassword_shortcuts_real_timeout_kill_after
-run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
-run_test "wt wrapper ignores runtime HOME for real script" test_wt_wrapper_ignores_runtime_home_for_real_script
-run_test "managed plugin skill helper rejects duplicate matches" test_managed_plugin_skill_link_requires_single_match
 run_test "rebuild-common exports public API" test_rebuild_common_exports_public_api
+run_test "result cleanup preserves path boundaries" test_cleanup_build_artifacts_preserves_path_boundaries
+run_test "result cleanup reports search failure" test_cleanup_build_artifacts_reports_search_failure
+run_test "gitleaks CI scans commits without changing checkout" test_gitleaks_ci_scans_commits_without_mutating_checkout
+run_test "gitleaks CI detects committed content with empty staging" test_gitleaks_ci_detects_committed_content_with_empty_staging
+run_test "gitleaks CI keeps deleted commit content in scope" test_gitleaks_ci_keeps_deleted_commit_content_in_scope
+run_test "gitleaks CI scans renamed paths and preserves allowlist" test_gitleaks_ci_scans_renamed_paths_and_preserves_allowlist
+run_test "gitleaks CI scans merge-only additions" test_gitleaks_ci_scans_merge_only_additions
+run_test "gitleaks CI preserves base exceptions after merge" test_gitleaks_ci_preserves_base_exceptions_after_merge
+run_test "gitleaks CI preserves conflict resolution fingerprints" test_gitleaks_ci_preserves_conflict_resolution_fingerprints
+run_test "gitleaks CI keeps deleted side commit content in scope" test_gitleaks_ci_keeps_deleted_side_commit_content_in_scope
+run_test "gitleaks CI rejects octopus merges" test_gitleaks_ci_rejects_octopus_merges
+run_test "gitleaks CI preserves commit fingerprint exceptions" test_gitleaks_ci_preserves_commit_fingerprint_exceptions
+run_test "gitleaks CI rejects invalid policy material" test_gitleaks_ci_rejects_invalid_policy_material
+run_test "gitleaks CI rejects scanner errors without raw output" test_gitleaks_ci_rejects_scanner_errors_without_raw_output
+run_test "gitleaks CI rejects internal git log failure" test_gitleaks_ci_rejects_git_log_failure_reported_as_success
+run_test "gitleaks CI preserves Git adapter exit and delegation" test_gitleaks_ci_preserves_git_adapter_exit_and_delegation
+run_test "gitleaks CI rejects bad refs and limits history" test_gitleaks_ci_rejects_bad_refs_and_limits_history
 run_test "nrs-lock status without lock" test_nrs_lock_status_without_lock
 run_test "nrs-lock retains stopped process before timeout" test_nrs_lock_status_retains_stopped_process_before_timeout
 run_test "nrs-lock stale after timeout with stopped process" test_nrs_lock_status_stale_after_timeout_with_stopped_process
@@ -62,61 +76,27 @@ run_test "nrp rejects inert --force flag" test_nrp_rejects_force_flag
 run_test "detect_worktree switches to active worktree" test_detect_worktree_uses_current_worktree_path
 run_test "worktree relink skips non-TTY without opt-in" test_worktree_relink_skips_non_tty_without_opt_in
 run_test "worktree relink opt-in allows non-TTY" test_worktree_relink_opt_in_allows_non_tty
+run_test "darwin no-change external worktree requires HM evidence" test_darwin_no_changes_external_worktree_requires_hm_evidence
+run_test "nrs restore failure preserves unprocessed worktree links" test_nrs_restore_failure_preserves_unprocessed_worktree_links
 run_test "main relink restore ignores non-TTY guard" test_main_relink_restore_ignores_non_tty_guard
-run_test "wt cd returns target path by name" test_wt_cd_by_name_returns_target_path
-run_test "wt cd refuses broken worktree" test_wt_cd_refuses_broken_worktree
-run_test "wt cd prefers exact name and fails on ambiguity" test_wt_cd_prefers_exact_name_and_fails_on_ambiguity
-run_test "collect worktrees dedupes symlinked base unit" test_wt_collect_worktrees_dedupes_symlinked_base_unit
-run_test "pr cache key is collision free unit" test_wt_pr_cache_key_is_collision_free_unit
-run_test "wt ls lists deployed worktrees" test_wt_ls_from_deployed_layout_lists_worktrees
-run_test "wt ls lists registered missing and nested worktrees" test_wt_ls_lists_registered_missing_and_nested_worktrees
-run_test "wt ls lists nested unregistered worktree" test_wt_ls_lists_nested_unregistered_worktree
-run_test "wt ls marks locked worktree" test_wt_ls_marks_locked_worktree
-run_test "wt ls --json outputs parseable array" test_wt_ls_json_outputs_parseable_array
-run_test "wt ls --json empty list outputs empty array" test_wt_ls_json_empty_list_outputs_empty_array
-run_test "wt ls empty list prints notice" test_wt_ls_empty_list_prints_notice
-run_test "wt ls non-git directory fails with error" test_wt_ls_non_git_directory_fails_with_error
-run_test "wt create conflict requires if-exists when noninteractive" test_wt_create_conflict_noninteractive_requires_if_exists
-run_test "wt create if-exists=reuse returns path" test_wt_create_if_exists_reuse_returns_path
-run_test "wt cd requires name when noninteractive" test_wt_cd_noninteractive_requires_name
-run_test "wt cd prints path in tmux when noninteractive" test_wt_cd_noninteractive_in_tmux_prints_path
-run_test "wt create/reuse prints path in tmux when noninteractive" test_wt_create_reuse_noninteractive_in_tmux_prints_path
-run_test "wt retired presentation flags fail" test_wt_retired_presentation_flags_fail
+run_test "nrs legacy unregistered worktree restores exact mapping" test_nrs_legacy_unregistered_worktree_restores_exact_mapping
+run_test "nrs worktree only entry is preserved with warning" test_nrs_worktree_only_entry_is_preserved_with_warning
+run_test "detect external worktree preserves trailing newline" test_detect_external_worktree_preserves_trailing_newline
+run_test "nrs external worktree inspect and restore special paths" test_nrs_external_worktree_inspect_and_restore_special_paths
+run_test "nrs missing parents restore without inspection writes" test_nrs_missing_parents_restore_without_inspection_writes
+run_test "nrs missing parents preserve unsafe ancestors" test_nrs_missing_parents_preserve_unsafe_ancestors
+run_test "nrs HMF listing failure never mutates entries" test_nrs_hmf_listing_failure_never_mutates_entries
+run_test "nrs external worktree relink rejects other repository" test_nrs_external_worktree_relink_rejects_other_repository
+run_test "nrs restore preserves user entries" test_nrs_restore_preserves_user_entries
+run_test "nrs relink reports preserved entries separately" test_nrs_relink_reports_preserved_entries_separately
+run_test "nrs deleted registered worktree restores dangling mapping" test_nrs_deleted_registered_worktree_restores_dangling_mapping
+run_test "nrs replaced worktree and similar prefix are preserved" test_nrs_replaced_worktree_and_similar_prefix_are_preserved
+run_test "nrs partial git listing cannot mutate links" test_nrs_partial_git_listing_cannot_mutate_links
+run_test "nrs main restore runs once when canary missing" test_nrs_main_restore_runs_once_when_canary_missing
 run_test "shadow paths do not override managed helpers" test_shadow_paths_do_not_override_managed_helpers
-run_test "wt symlink alias does not load adjacent helpers" test_wt_symlink_alias_does_not_load_adjacent_helpers
 run_test "rebuild-common symlink alias does not load adjacent helpers" test_rebuild_common_symlink_alias_does_not_load_adjacent_helpers
-run_test "wt create does not call legacy sync" test_wt_create_does_not_call_legacy_sync
-run_test "wt create skips symlinked codex source" test_wt_create_skips_symlinked_codex_source
-run_test "wt create prunes retired project MCP block" test_wt_create_prunes_retired_project_mcp_block
-run_test "wt create removes unterminated copied Codex config" test_wt_create_removes_unterminated_copied_codex_config
-run_test "wt create removes directory copied Codex config" test_wt_create_removes_directory_copied_codex_config
-run_test "codex trust sanitizes unsafe copied Codex config" test_codex_trust_sanitizes_unsafe_copied_codex_config
-run_test "wt prepare rejects symlinked Claude dir" test_wt_prepare_rejects_symlinked_claude_dir
-run_test "wt prepare skips symlinked source settings" test_wt_prepare_skips_symlinked_source_settings
-run_test "wt create trusts Codex project config" test_wt_create_trusts_codex_project
-run_test "wt create skips unsafe Codex config path" test_wt_create_skips_unsafe_codex_config
-run_test "wt create supports valid Codex projects shapes" test_wt_create_supports_valid_projects_shapes
-run_test "wt create preserves unmergeable Codex config" test_wt_create_preserves_unmergeable_codex_config
-run_test "codex trust untrust removes only target project" test_codex_trust_untrust_project_removes_only_target
-run_test "codex trust GC dry-run leaves config unchanged" test_codex_trust_gc_dry_run_leaves_config_unchanged
-run_test "codex trust GC removes stale worktree projects only" test_codex_trust_gc_removes_stale_worktree_projects_only
-run_test "codex trust GC handles out-of-order projects tables" test_codex_trust_gc_handles_out_of_order_projects_tables
-run_test "codex trust GC delete failure leaves config unchanged" test_codex_trust_gc_delete_failure_leaves_config_unchanged
-run_test "wt cleanup untrusts Codex project" test_wt_cleanup_untrusts_codex_project
-run_test "wt create inherits Claude local plugin manifest" test_wt_create_inherits_claude_local_plugin_manifest
-run_test "wt create ignores branch-tracked plugin settings" test_wt_create_ignores_branch_tracked_plugin_settings
-run_test "wt plugin manifest ignores noncanonical adjacent lock directory" test_wt_plugin_manifest_ignores_noncanonical_adjacent_lock_directory
-run_test "wt plugin manifest skill projection skips OS errors" test_wt_plugin_manifest_skill_projection_skips_os_errors
-run_test "wt plugin manifest cleanup uses stable canonical target" test_wt_plugin_manifest_cleanup_uses_stable_canonical_target
-run_test "wt plugin manifest GC removes unmarked orphan worktree entries" test_wt_plugin_manifest_gc_removes_unmarked_orphan_worktree_entries
-run_test "wt plugin manifest GC skips targets outside worktree base" test_wt_plugin_manifest_gc_skips_targets_outside_worktree_base
-run_test "wt plugin manifest GC keeps entries when path check fails" test_wt_plugin_manifest_gc_keeps_entries_when_path_check_fails
-run_test "wt plugin manifest GC supports nested targets" test_wt_plugin_manifest_gc_supports_nested_targets
-run_test "wt plugin manifest GC backups never overwrite collisions" test_wt_plugin_manifest_gc_backups_never_overwrite_collisions
-run_test "wt plugin manifest GC keeps orphans when backup fails" test_wt_plugin_manifest_gc_keeps_orphans_when_backup_fails
-run_test "wt cleanup removes exact Claude local plugin manifest entries" test_wt_cleanup_removes_exact_claude_local_plugin_manifest_entries
-run_test "wt cleanup stops when plugin manifest cleanup fails" test_wt_cleanup_stops_when_plugin_manifest_cleanup_fails
-run_test "wt plugin manifest missing and invalid inputs are safe" test_wt_plugin_manifest_missing_and_invalid_are_safe
+run_test "Claude install activation respects dry-run" test_claude_install_activation_respects_dry_run
+run_test "Claude install activation propagates failures" test_claude_install_activation_propagates_failures
 run_test "codex activation .agents symlink guard static" test_codex_activation_agents_symlink_guard_static
 run_test "codex activation AGENTS keeps real entries" test_codex_activation_agents_keeps_real_entries
 run_test "codex activation AGENTS link contract" test_codex_activation_agents_link_contract
@@ -191,6 +171,7 @@ run_test "claude remote-control maint rejects mismatched started version" test_c
 run_test "claude remote-control maint restart records verified version" test_claude_remote_control_maint_restart_records_verified_version
 run_test "claude remote-control maint default policy preserves live drift" test_claude_remote_control_maint_default_policy_preserves_live_drift
 run_test "claude remote-control maint confirmed drift binds exact snapshot" test_claude_remote_control_maint_confirmed_drift_binds_exact_snapshot
+run_test "claude remote-control recovery doc propagates candidate failures" test_claude_remote_control_recovery_doc_propagates_candidate_failures
 run_test "claude remote-control maint reports lock setup failure" test_claude_remote_control_maint_reports_lock_setup_failure
 run_test "claude remote-control maint waits for parent lock release" test_claude_remote_control_maint_waits_for_parent_lock_release
 run_test "claude remote-control maint restart rejects mismatched version" test_claude_remote_control_maint_restart_rejects_mismatched_version
@@ -269,67 +250,7 @@ run_test "codex remote-control alert truncation keeps valid utf8" test_codex_rem
 else
   echo "N/A: codex remote-control fixtures require Linux/NixOS service scripts" >&2
 fi
-run_test "wt recreate guard uses physical paths" test_wt_recreate_guard_uses_physical_paths
-run_test "wt cleanup auto removes merged worktree" test_wt_cleanup_auto_removes_merged_worktree
-run_test "wt cleanup auto skips dirty merged worktree" test_wt_cleanup_auto_skips_dirty_merged_worktree
-run_test "wt cleanup auto skips unpushed merged worktree" test_wt_cleanup_auto_skips_unpushed_with_upstream
-run_test "wt cleanup auto skips merged branch reuse" test_wt_cleanup_auto_skips_merged_branch_reuse
-run_test "wt cleanup auto survives stale worktree" test_wt_cleanup_auto_survives_stale_worktree
-run_test "wt cleanup name-filter survives stale worktree" test_wt_cleanup_name_filter_survives_stale_worktree
-run_test "wt cleanup auto broken-only reports skip count" test_wt_cleanup_auto_broken_only_reports_skip_count
-run_test "wt cleanup reports missing worktree prune hint" test_wt_cleanup_reports_missing_worktree_prune_hint
-run_test "wt cleanup skips locked worktree" test_wt_cleanup_skips_locked_worktree
-run_test "wt cleanup name prefers exact relative name" test_wt_cleanup_name_prefers_exact_relative_name
-run_test "wt cleanup refuses ambiguous name" test_wt_cleanup_refuses_ambiguous_name
-run_test "wt cleanup keeps unpreserved detached commit" test_wt_cleanup_keeps_unpreserved_detached_commit
-run_test "wt cleanup detached preservation scope" test_wt_cleanup_detached_preservation_scope
-run_test "wt cleanup detached lookup errors fail closed" test_wt_cleanup_detached_lookup_errors_fail_closed
-run_test "wt recreate refuses unpreserved detached commit" test_wt_recreate_refuses_unpreserved_detached_commit
-run_test "wt existing worktree refuses mapped branch collision" test_wt_existing_worktree_refuses_mapped_branch_collision
-run_test "wt existing worktree refuses switched checkout" test_wt_existing_worktree_refuses_switched_checkout
-run_test "wt recreate keeps requested branch preserving detached commit" test_wt_recreate_keeps_requested_branch_preserving_detached_commit
-run_test "wt recreate keeps unpushed requested branch under other checkout" test_wt_recreate_keeps_unpushed_requested_branch_under_other_checkout
-run_test "wt recreate matching checkout still confirms loss" test_wt_recreate_matching_checkout_still_confirms_loss
-run_test "wt existing worktree lookup errors fail closed" test_wt_existing_worktree_lookup_errors_fail_closed
-run_test "wt existing worktree interactive choice checks checkout unit" test_wt_existing_worktree_interactive_choice_checks_checkout_unit
-run_test "wt create existing path contracts unchanged" test_wt_create_existing_path_contracts_unchanged
-run_test "wt cleanup branch unpushed verdict unchanged" test_wt_cleanup_branch_unpushed_verdict_unchanged
-run_test "wt recreate refuses locked worktree" test_wt_recreate_refuses_locked_worktree
-run_test "wt cleanup name-filter merged without upstream needs no confirm" test_wt_cleanup_name_filter_merged_without_upstream_needs_no_confirm
-run_test "wt cleanup name-filter confirmed dirty merged removes" test_wt_cleanup_name_filter_confirmed_dirty_merged_removes
-run_test "wt cleanup name-filter current worktree reports root command" test_wt_cleanup_name_filter_current_worktree_reports_root_command
-run_test "wt cleanup auto reports current merged exclusion" test_wt_cleanup_auto_reports_current_merged_exclusion
-run_test "wt head-unchanged guard unit" test_wt_head_unchanged_guard_unit
-run_test "wt pr-status returns verified oid unit" test_wt_pr_status_returns_verified_oid_unit
-run_test "wt guarded remove rechecks branch unit" test_wt_remove_worktree_guarded_rechecks_branch_unit
-run_test "wt guarded remove keeps reused branch unit" test_wt_remove_worktree_guarded_keeps_reused_branch_unit
-run_test "wt guarded remove clears branch config unit" test_wt_remove_worktree_guarded_clears_branch_config_unit
-run_test "wt forced remove refuses locked worktree unit" test_wt_remove_worktree_forced_refuses_locked_unit
-run_test "wt forced remove keeps path when remove fails unit" test_wt_remove_worktree_forced_keeps_path_when_remove_fails_unit
-run_test "wt remove refuses unknown lock state unit" test_wt_remove_worktree_refuses_unknown_lock_state_unit
-run_test "wt remove failure notes registration state unit" test_wt_remove_worktree_failure_notes_registration_state_unit
-run_test "wt remove preserves active process worktree unit" test_wt_remove_worktree_preserves_active_process_unit
-run_test "wt cwd holders process table unit" test_wt_cwd_holders_process_table_unit
-run_test "wt cwd holders fail closed unit" test_wt_cwd_holders_fails_closed_unit
-run_test "wt active process guard messages unit" test_wt_active_process_blocks_messages_unit
-run_test "wt cleanup preserves worktree held by process" test_wt_cleanup_preserves_worktree_held_by_process
-run_test "wt recreate preserves worktree held by process" test_wt_recreate_preserves_worktree_held_by_process
-run_test "wt cleanup active guard matches physical folder" test_wt_cleanup_active_guard_matches_physical_folder
-run_test "wt cleanup --yes bypasses active guard only when named" test_wt_cleanup_yes_bypasses_active_guard_only_when_named
-run_test "wt recreate --yes bypasses active guard" test_wt_recreate_yes_bypasses_active_guard
-run_test "wt remove active guard bypass scope unit" test_wt_remove_worktree_active_guard_bypass_scope_unit
-run_test "wt cleanup active guard hint names nested worktree" test_wt_cleanup_active_guard_hint_names_nested_worktree
-run_test "wt guarded remove failure hint names nested worktree unit" test_wt_remove_worktree_guarded_failure_hint_names_nested_worktree_unit
-run_test "wt lsof escape path unit" test_wt_lsof_escape_path_unit
-run_test "wt cwd holders fail closed on control char path unit" test_wt_cwd_holders_fails_closed_on_control_char_path_unit
-run_test "wt cleanup active guard matches escaped path" test_wt_cleanup_active_guard_matches_escaped_path
-run_test "wt cleanup confirmed dirty keeps active guard" test_wt_cleanup_confirmed_dirty_keeps_active_guard
-run_test "wt cwd holders ancestor caffeinate unit" test_wt_cwd_holders_ancestor_caffeinate_unit
-run_test "wt cleanup ancestor caffeinate does not block" test_wt_cleanup_ancestor_caffeinate_does_not_block
 run_test "missing managed helpers fail closed" test_missing_managed_helpers_fail_closed
-run_test "missing wt Python helpers fail state changes" test_missing_wt_python_helpers_fail_state_changes
-run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_python_helpers_fail_cleanup_state_changes
-run_test "codex trust write failure returns warning" test_codex_trust_write_failure_returns_warning
 run_test "fixture git setup ignores host global hooks" test_fixture_git_is_hermetic_against_global_hooks
 run_test "line-count assertion preserves exact line counts" test_assert_line_count_preserves_exact_line_counts
 run_test "line-count assertion accepts zero matches" test_assert_line_count_accepts_zero_matches
@@ -350,6 +271,7 @@ run_test "verify-ai-compat projection obstructions are actionable" test_verify_a
 run_test "verify-ai-compat host-state positive fixture" test_verify_ai_compat_host_state_positive_fixture
 run_test "verify-ai-compat host-state detects non-executable hook" test_verify_ai_compat_host_state_detects_non_executable_hook
 run_test "verify-ai-compat host-state detects bad symlink targets" test_verify_ai_compat_host_state_detects_bad_symlink_targets
+run_test "verify-ai-compat accepts registered external worktree targets" test_verify_ai_compat_resolved_target_accepts_registered_external_worktree
 run_test "verify-ai-compat host-state detects removed oracle reference" test_verify_ai_compat_host_state_detects_removed_oracle_reference
 run_test "verify-ai-compat oracle accepts large use-site" test_verify_ai_compat_oracle_accepts_large_use_site
 run_test "verify-ai-compat oracle detects removed assignment" test_verify_ai_compat_oracle_detects_removed_assignment
@@ -389,6 +311,8 @@ run_test "darwin nrs no-change releases worktree lock" test_darwin_nrs_no_change
 run_test "darwin nrs no-change activates when Codex artifact missing" test_darwin_nrs_no_changes_activates_when_codex_artifact_missing
 run_test "darwin nrs no-change skips relink without HM gcroot" test_darwin_nrs_no_changes_skips_relink_without_hm_gcroot
 run_test "darwin nrs no-change restores when HM gcroot present" test_darwin_nrs_no_changes_restores_when_hm_gcroot_present
+run_test "nixos nrs no-change preserves links without HM gcroot" test_nixos_nrs_no_changes_preserves_links_without_hm_gcroot
+run_test "nixos nrs no-change restores when HM gcroot present" test_nixos_nrs_no_changes_restores_when_hm_gcroot_present
 run_test "cmd_fix_dangling probe matrix calls restore only on dangling" test_cmd_fix_dangling_probe_matrix
 run_test "cmd_fix_dangling propagates restore failure" test_cmd_fix_dangling_propagates_restore_failure
 run_test "nrs-relink fix-dangling CLI no-ops when probes are healthy" test_nrs_relink_cli_fix_dangling_noop_when_probes_healthy
@@ -474,6 +398,10 @@ run_test "karakeep fallback-sync selects exact fragment among variants" test_kar
 run_test "karakeep fallback-sync fragment preserves path and query rules" test_karakeep_fallback_sync_fragment_preserves_path_and_query_rules
 run_test "karakeep fallback-sync upload failure preserves queue" test_karakeep_fallback_sync_upload_failure_preserves_queue_and_records_notify_state
 run_test "karakeep fallback-sync GC removes expired state" test_karakeep_fallback_sync_gc_removes_only_expired_state_entries
+run_test "karakeep fallback-sync state lookup errors stop and retry" test_karakeep_fallback_sync_state_lookup_errors_stop_and_retry
+run_test "karakeep fallback-sync notify errors preserve other keys" test_karakeep_fallback_sync_notify_state_errors_preserve_other_keys
+run_test "karakeep fallback-sync notify timestamp validation" test_karakeep_fallback_sync_notify_timestamp_validation
+run_test "karakeep fallback-sync GC errors preserve originals" test_karakeep_fallback_sync_gc_errors_preserve_original_and_remove_temps
 run_test "karakeep fallback-sync unmatched notification is deduplicated" test_karakeep_fallback_sync_unmatched_notification_is_deduplicated
 run_test "karakeep fallback-sync canonical beats body link in either queue order" test_karakeep_fallback_sync_canonical_beats_body_link_in_either_queue_order
 run_test "karakeep fallback-sync body link without identifier is held" test_karakeep_fallback_sync_body_link_without_identifier_is_held
@@ -540,6 +468,9 @@ run_test "worktree-path-guard allows sibling worktree file" test_worktree_path_g
 run_test "worktree-path-guard allows main repo plan path exception" test_worktree_path_guard_allows_main_repo_plan_path_exception
 run_test "worktree-path-guard empty and malformed input noop" test_worktree_path_guard_empty_and_malformed_input_noop
 run_test "immich originals mirror skips rsync on empty source" test_immich_originals_mirror_empty_source_skips_rsync
+run_test "immich originals mirror records only successful runs" test_immich_originals_mirror_records_only_successful_runs
+run_test "immich originals mirror failures preserve previous success" test_immich_originals_mirror_failures_preserve_previous_success
+run_test "immich originals mirror success record failure is atomic" test_immich_originals_mirror_success_record_failure_is_atomic
 run_test "immich originals mirror blocks rsync when target HDD unmounted" test_immich_originals_mirror_unmounted_target_blocks_rsync
 run_test "immich originals mirror runs rsync when target HDD mounted" test_immich_originals_mirror_mounted_target_runs_rsync
 run_test "immich originals mirror mount guard checks MOUNT_ROOT, not DEST_DIR" test_immich_originals_mirror_mount_guard_checks_mount_root_not_dest_dir
@@ -566,10 +497,17 @@ run_test "immich cleanup partial delete failure exits nonzero" test_immich_clean
 run_test "immich cleanup all delete failure exits nonzero" test_immich_cleanup_all_delete_failure_exits_nonzero
 run_test "immich cleanup notification failure keeps delete failure" test_immich_cleanup_notification_failure_keeps_delete_failure
 run_test "immich cleanup unexpected failure sends single error notification" test_immich_cleanup_unexpected_failure_sends_single_error_notification
+run_test "immich cleanup reported failure keeps one notification when send fails" test_immich_cleanup_reported_failure_keeps_single_notification_when_send_fails
 
 # homeserver-smoke-test suite (tests/suites/homeserver-smoke-test.sh) — 종료 코드·알림 계약 (#1387)
 run_test "smoke test all pass exits zero without notification" test_smoke_test_all_pass_exits_zero_without_notification
 run_test "smoke test disabled backups are not checked" test_smoke_test_disabled_backups_are_not_checked
+run_test "Caddy 자격 파일 비공개 생성과 원자적 교체" test_caddy_credentials_private_atomic_creation_and_replacement
+run_test "Caddy 자격 파일 생성 실패 시 이전 파일 보존" test_caddy_credentials_failure_preserves_previous_file
+run_test "Caddy 자격 파일의 디렉터리 대상 거절" test_caddy_credentials_rejects_directory_destination
+run_test "Caddy 자격 파일 교체 시 symlink 대상 보존" test_caddy_credentials_replaces_symlink_without_touching_target
+run_test "Caddy 자격 파일 정리 실패 시 원래 종료 코드 보존" test_caddy_credentials_cleanup_failure_preserves_original_status
+run_test "smoke test checks mirror freshness independently" test_smoke_test_immich_mirror_freshness_is_independent_of_db_backup
 run_test "smoke test HTTP failure exits nonzero with single summary" test_smoke_test_http_failure_exits_nonzero_with_single_summary
 run_test "smoke test stale backup exits nonzero with single summary" test_smoke_test_stale_backup_exits_nonzero_with_single_summary
 run_test "smoke test systemd failures exit nonzero with single summary" test_smoke_test_systemd_failures_exit_nonzero_with_single_summary
@@ -643,6 +581,14 @@ run_test "version-check release body line limit matches head boundary" test_vers
 run_test "version-check release body CRLF line split matches head" test_version_check_release_body_crlf_line_split_matches_head
 run_test "version-check release body unicode boundary not corrupted" test_version_check_release_body_unicode_boundary_not_corrupted
 run_test "version-check invalid GitHub JSON does not send false success notification" test_version_check_invalid_github_json_does_not_send_false_success_notification
+run_test "version-check function and substitution failures notify once" test_version_checks_function_and_substitution_failures_notify_once
+run_test "update function failures notify once without restart" test_update_function_failures_notify_once_without_restart
+run_test "update substitution failures keep status and recover once" test_update_substitution_failures_keep_status_and_recover_once
+run_test "update startup failure preserves recovery and single notification" test_update_startup_failure_preserves_recovery_and_single_notification
+run_test "update explicit failures do not send duplicate notifications" test_update_explicit_failures_do_not_send_duplicate_notifications
+run_test "reported backup failure does not retry failed recovery" test_uptime_reported_backup_failure_does_not_retry_failed_recovery
+run_test "update success preserves single notification" test_update_success_preserves_single_notification
+run_test "service error handler preserves nested status and callback failure" test_service_error_handler_preserves_nested_status_and_callback_failure
 
 # git-cleanup suite (tests/suites/git-cleanup.sh) — 날짜 계산 도구 선택 계약 (#1376)
 run_test "git-cleanup BSD-only date dry-run succeeds" test_git_cleanup_bsd_only_date_dry_run_succeeds
@@ -654,6 +600,8 @@ run_test "git-cleanup date non-numeric output stops before candidates" test_git_
 run_test "git-cleanup dry-run does not delete stale branch" test_git_cleanup_dry_run_does_not_delete_stale_branch
 run_test "git-cleanup stale boundary uses fixed seconds not calendar days across DST" test_git_cleanup_stale_boundary_uses_fixed_seconds_not_calendar_days_across_dst
 run_test "git-cleanup date command absent stops before candidates" test_git_cleanup_date_command_absent_stops_before_candidates
+run_test "git-cleanup runtime Bash preserves arrays and confirmation" test_git_cleanup_runtime_bash_preserves_array_and_confirmation_contracts
+run_test "git-cleanup system Bash 3.2 preserves arrays and confirmation" test_git_cleanup_system_bash32_preserves_array_and_confirmation_contracts
 
 # update-script-arg-parse suite (tests/suites/update-script-arg-parse.sh) — #1383
 run_test "immich-update --help exits 0 without side effects" test_immich_update_help_flag_exits_zero_without_side_effects
@@ -674,6 +622,7 @@ run_test "copyparty-update rejects unknown option with env wired" test_copyparty
 run_test "copyparty-update rejects excess argument with env wired" test_copyparty_update_rejects_excess_argument_with_env
 run_test "copyparty-update no-args preserves existing update flow" test_copyparty_update_no_args_preserves_existing_update_flow
 run_test "copyparty-update --dry-run skips mutating boundaries" test_copyparty_update_dry_run_skips_mutating_boundaries
+run_test "copyparty-update failed dry-run preserves stopped service" test_copyparty_update_dry_run_failure_preserves_stopped_service
 run_test "uptime-kuma-update --help exits 0 without side effects" test_uptime_kuma_update_help_flag_exits_zero_without_side_effects
 run_test "uptime-kuma-update rejects unknown option" test_uptime_kuma_update_rejects_unknown_option
 run_test "uptime-kuma-update rejects excess argument" test_uptime_kuma_update_rejects_excess_argument
@@ -683,6 +632,7 @@ run_test "uptime-kuma-update rejects unknown option with env wired" test_uptime_
 run_test "uptime-kuma-update rejects excess argument with env wired" test_uptime_kuma_update_rejects_excess_argument_with_env
 run_test "uptime-kuma-update no-args preserves existing update flow" test_uptime_kuma_update_no_args_preserves_existing_update_flow
 run_test "uptime-kuma-update --dry-run skips mutating boundaries" test_uptime_kuma_update_dry_run_skips_mutating_boundaries
+run_test "uptime-kuma-update failed dry-run preserves stopped service" test_uptime_kuma_update_dry_run_failure_preserves_stopped_service
 run_test "karakeep-update --help exits 0 without side effects" test_karakeep_update_help_flag_exits_zero_without_side_effects
 run_test "karakeep-update rejects unknown option" test_karakeep_update_rejects_unknown_option
 run_test "karakeep-update rejects excess argument" test_karakeep_update_rejects_excess_argument
@@ -693,6 +643,7 @@ run_test "karakeep-update rejects excess argument with env wired" test_karakeep_
 run_test "karakeep-update no-args still requires ack-bridge-risk" test_karakeep_update_no_args_still_requires_ack_bridge_risk
 run_test "karakeep-update ack-bridge-risk preserves existing update flow" test_karakeep_update_ack_bridge_risk_preserves_existing_update_flow
 run_test "karakeep-update --dry-run skips mutating boundaries" test_karakeep_update_dry_run_skips_mutating_boundaries
+run_test "karakeep-update failed dry-run preserves stopped service" test_karakeep_update_dry_run_failure_preserves_stopped_service
 
 # ═══════════════════════════════════════════════════════════════════
 # add-host.sh — NixOS 분기 default.nix 생성 (#1382)
@@ -733,6 +684,7 @@ run_test "codex-config retired keys loader" test_codex_config_retired_keys_loade
 # codex-config 섹션만 skip + profile runner 안내 (기본 shell suite 진입은 유지).
 if codex_config_tomlkit_available; then
   run_test "codex-config sync fixtures" test_codex_config_sync_fixtures
+  run_test "codex-config sync normalizes types without repeated writes" test_codex_config_sync_type_normalization
   run_test "codex-config sync no-op preserves bytes" test_codex_config_sync_noop_preserves_bytes
   run_test "codex-config sync rewrites on bad mode" test_codex_config_sync_rejects_bad_mode
   run_test "codex-config sync rewrites on symlink" test_codex_config_sync_rejects_symlink

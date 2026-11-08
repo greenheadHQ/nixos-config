@@ -4,7 +4,6 @@
 
 ## Refactor Scope
 
-- `wt.sh`: user-facing worktree CLI thin wrapper
 - `rebuild-common.sh`: `nrs`/`nrp`가 source하는 compatibility loader (`~/.local/lib/` 배포, 직접 실행 아님)
 - `nrs-relink.sh`: standalone relink CLI. 이번 helper 분해 범위 밖의 독립 스크립트다.
 
@@ -17,14 +16,6 @@
 
 ## Helper Boundaries
 
-- `lib/wt/ui.sh`: prompt, formatting, repo/path helpers
-- `lib/wt/process.sh`: worktree 제거·재생성 전 활성 작업 판정 (worktree를 cwd로 둔 프로세스 탐지; lsof는 wt 래퍼가 `WT_LSOF`로 주입)
-- `lib/wt/git-state.sh`: git/worktree state collection, PR status lookup
-- `lib/wt/bootstrap.sh`: worktree bootstrap, path emit, remove orchestration
-- `lib/wt/create.sh`: create/recreate flows and existing-branch handling
-- `lib/wt/navigate.sh`: `wt cd` / `wt ls`
-- `lib/wt/cleanup.sh`: `wt cleanup`
-- `lib/wt/codex-trust.py`: `~/.codex/config.toml` project trust 등록/해제 (`trust-project`/`untrust-project`)와 사라진 worktree 항목 일괄 정리 (`gc-worktree-projects`), 복사된 worktree config sanitize
 - `lib/rebuild/common.sh`: logging, worktree detection, argument parsing
 - `lib/rebuild/worktree.sh`: `mkOutOfStoreSymlink` drift guard
 - `lib/rebuild/locks.sh`: cooperative nrs/rebuild locking
@@ -34,11 +25,6 @@
 - `lib/rebuild/codex.sh`: NO_CHANGES 경로 `~/.codex/config.toml` drift 자동 복구 helper
 - `lib/rebuild/codex-legacy-hooks.sh`: legacy Codex hook 잔재 탐지·정리 (`lib/rebuild/common.sh`와 두 `nrs.sh`, `scripts/ai/verify-ai-compat.sh` 공용)
 - `lib/pushover.sh`: 플랫폼 공용 Pushover 전송 helper (`~/.local/lib/pushover.sh`로 배포)
-
-source 대상이 아닌 실행 helper (`WT_HELPERS`는 위 `lib/wt/*.sh` 7개만 source한다):
-
-- `lib/wt/codex-trust.py`: worktree 생성 시 Codex trust 등록 (`lib/wt/bootstrap.sh`가 실행)
-- `lib/wt/plugin-manifest.py`: worktree plugin manifest 관리와 경로가 사라진 worktree 등록 일괄 정리 (`lib/wt/bootstrap.sh`가 실행)
 
 ## Rebuild Contract
 
@@ -64,11 +50,26 @@ source 대상이 아닌 실행 helper (`WT_HELPERS`는 위 `lib/wt/*.sh` 7개만
   `CODEX_MISSING_MANAGED_ARTIFACTS`
 - Caller는 underscored helper와 internal rebuild state를 직접 참조하지 않는다.
 
-## wt Contract
+## Worktree 링크 보존
 
-- `WT_HELPERS`의 membership과 source order는 계속 계약이다.
-- `WT_LAST_FILE`의 읽기/쓰기는 `lib/wt/git-state.sh` helper를 통해서만 공유한다.
-- `WORKTREE_DIR`는 top-level constant contract로 유지한다. 이번 범위에서는 generic accessor layer로 승격하지 않는다.
+`nrs-relink`는 main checkout 내부와 외부의 Git 등록 worktree를 지원한다.
+현재 Home Manager의 home 경로와 repo 경로 매핑에 정확히 대응하는 링크만
+교체한다. 일반 파일·디렉터리·무관한 symlink·symlink인 부모 디렉터리는 보존한다.
+Git 조회 실패로 삭제 범위를 넓히지 않으며, 과거 내부 worktree의 dangling 링크도
+같은 정확한 매핑 검사를 거친다. 재빌드 전 검사는 링크를 먼저 삭제하지 않는다.
+
+현재 Home Manager 매핑에 없는 worktree 전용 entry는 보존한다. 등록 worktree를
+가리키는 링크 경고는 `~/.claude`·`~/.codex` 아래 깊이 3까지만 훑으므로, 그 밖의
+out-of-store 경로(예: macOS VSCode 설정)에 남은 링크는 경고 없이 보존될 수 있다.
+이후 activation이 충돌을 보고하면 해당 링크와 worktree 선언을 확인한 뒤 별도로
+옮겨 둔다. worktree 경로 전체를 근거로 한 자동 삭제는 하지 않는다.
+
+Git 등록까지 제거된 외부 worktree를 가리키는 링크도 소유 근거를 확인할 수 없어
+`restore`가 보존한다. 그래서 worktree를 지우기 전에 `nrs-relink restore`로 먼저
+되돌려야 한다. 이미 끊긴 링크가 남았다면 `nrs-relink status`의 `[DANGLING]` 항목을
+확인하고, 그 대상이 더는 필요 없을 때 해당 링크만 지운 뒤 `nrs-relink restore`를
+실행한다. 해결 전까지 셸 프롬프트의 자동 복구가 매번 restore를 다시 시도하므로
+프롬프트가 느려질 수 있다.
 
 ## Rules
 

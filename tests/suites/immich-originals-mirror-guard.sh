@@ -3,6 +3,153 @@
 # SC2154: 공통 변수(REPO_ROOT 등)는 aggregator/test-common이 정의. SC2164: set -euo pipefail 런타임 상속.
 # shellcheck disable=SC2154,SC2164
 
+setup_immich_mirror_success_fixture() {
+  local sandbox="$1"
+  mkdir -p "$sandbox/bin" "$sandbox/src" "$sandbox/mount/dest" "$sandbox/state"
+  printf '합성 원본\n' > "$sandbox/src/photo"
+  printf '1000000000\n' > "$sandbox/state/last-success"
+  printf 'PUSHOVER_TOKEN=fixture\nPUSHOVER_USER=fixture\n' > "$sandbox/cred"
+  cat > "$sandbox/service-lib" <<'EOF'
+send_notification() { printf 'notification\n' >> "$MIRROR_FIXTURE/notifications"; }
+EOF
+  cat > "$sandbox/bin/rsync" <<'EOF'
+#!/usr/bin/env bash
+printf 'rsync\n' >> "$MIRROR_FIXTURE/calls"
+exit "${MIRROR_RSYNC_RC:-0}"
+EOF
+  cat > "$sandbox/bin/mountpoint" <<'EOF'
+#!/usr/bin/env bash
+[[ ! -e "$MIRROR_FIXTURE/unmounted" ]]
+EOF
+  cat > "$sandbox/bin/df" <<'EOF'
+#!/usr/bin/env bash
+printf 'Avail\n'
+if [[ -e "$MIRROR_FIXTURE/full" ]]; then printf '0\n'; else printf '10485760\n'; fi
+EOF
+  cat > "$sandbox/bin/date" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == +%s ]]; then
+  if [[ -e "$MIRROR_FIXTURE/date-failure" ]]; then printf 'partial'; exit 33; fi
+  printf '1700000000\n'
+else
+  printf 'fixture-time\n'
+fi
+EOF
+  cat > "$sandbox/bin/mv" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ ! -e "$MIRROR_FIXTURE/move-failure" ]] || exit 34
+# 교체 직전까지 이전 기록이 유지되고 임시 파일이 완성되었는지 관측한다.
+if [[ -f "$LAST_SUCCESS_FILE" ]]; then
+  [[ "$(cat "$LAST_SUCCESS_FILE")" == 1000000000 ]] || exit 91
+fi
+[[ "$(cat "${@: -2:1}")" == 1700000000 ]] || exit 92
+printf 'atomic replacement\n' >> "$MIRROR_FIXTURE/calls"
+exec "$MIRROR_REAL_MV" "$@"
+EOF
+  chmod +x "$sandbox/bin/"*
+}
+
+run_immich_mirror_success_fixture() {
+  local sandbox="$1" real_mv
+  real_mv="$(command -v mv)"
+  PATH="$sandbox/bin:$PATH" MIRROR_FIXTURE="$sandbox" \
+    MIRROR_REAL_MV="$real_mv" \
+    SRC_DIR="$sandbox/src" DEST_DIR="${MIRROR_DEST_DIR:-$sandbox/mount/dest}" \
+    MOUNT_ROOT="$sandbox/mount" LAST_SUCCESS_FILE="$sandbox/state/last-success" \
+    PUSHOVER_CRED_FILE="$sandbox/cred" SERVICE_LIB="$sandbox/service-lib" \
+    bash "$REPO_ROOT/modules/nixos/programs/docker/immich-originals-mirror/files/immich-originals-mirror.sh"
+}
+
+test_immich_originals_mirror_records_only_successful_runs() {
+  local sandbox rsync_rc output rc
+  for rsync_rc in 0 24; do
+    sandbox="$(new_sandbox)"
+    setup_immich_mirror_success_fixture "$sandbox"
+    rc=0
+    output=$(MIRROR_RSYNC_RC="$rsync_rc" run_immich_mirror_success_fixture "$sandbox" 2>&1) || rc=$?
+    [[ "$rc" -eq 0 ]] || fail "정상 미러 결과($rsync_rc)가 실패했습니다: $output"
+    assert_file_contains "$sandbox/state/last-success" 1700000000
+    assert_file_contains "$sandbox/calls" 'atomic replacement'
+    [[ "$(stat -c %a "$sandbox/state/last-success")" == 600 ]] || fail "성공 기록은 소유자만 읽고 쓸 수 있어야 합니다"
+    [[ ! -s "$sandbox/notifications" ]] || fail "정상 미러는 알림을 보내면 안 됩니다"
+  done
+}
+
+test_immich_originals_mirror_failures_preserve_previous_success() {
+  local sandbox scenario rc
+  for scenario in rsync empty unmounted outside full; do
+    sandbox="$(new_sandbox)"
+    setup_immich_mirror_success_fixture "$sandbox"
+    case "$scenario" in
+      empty) rm "$sandbox/src/photo" ;;
+      unmounted|full) touch "$sandbox/$scenario" ;;
+    esac
+    rc=0
+    if [[ "$scenario" == outside ]]; then
+      MIRROR_DEST_DIR="$sandbox/outside" run_immich_mirror_success_fixture "$sandbox" >/dev/null 2>&1 || rc=$?
+    elif [[ "$scenario" == rsync ]]; then
+      MIRROR_RSYNC_RC=12 run_immich_mirror_success_fixture "$sandbox" >/dev/null 2>&1 || rc=$?
+    else
+      run_immich_mirror_success_fixture "$sandbox" >/dev/null 2>&1 || rc=$?
+    fi
+    [[ "$rc" -ne 0 ]] || fail "미러 실패($scenario)가 성공으로 처리됐습니다"
+    assert_file_contains "$sandbox/state/last-success" 1000000000
+    assert_line_count "$sandbox/notifications" notification 1
+    if [[ "$scenario" != rsync ]]; then
+      [[ ! -e "$sandbox/calls" ]] || fail "사전 가드 실패 뒤 rsync가 호출됐습니다"
+    else
+      [[ "$rc" -eq 12 ]] || fail "rsync의 원래 실패 코드가 바뀌었습니다"
+    fi
+  done
+}
+
+test_immich_originals_mirror_success_record_failure_is_atomic() {
+  local sandbox scenario previous rc
+  for scenario in date-failure move-failure temp-failure write-failure; do
+    for previous in present absent; do
+      sandbox="$(new_sandbox)"
+      setup_immich_mirror_success_fixture "$sandbox"
+      [[ "$previous" == present ]] || rm "$sandbox/state/last-success"
+      if [[ "$scenario" == temp-failure ]]; then
+        printf '#!/usr/bin/env bash\nexit 35\n' > "$sandbox/bin/mktemp"
+        chmod +x "$sandbox/bin/mktemp"
+      elif [[ "$scenario" == write-failure ]]; then
+        # root로 실행해도 결정적인 쓰기 실패: 임시 경로를 합성 디렉터리로 연결한다.
+        cat > "$sandbox/bin/mktemp" <<'EOF'
+#!/usr/bin/env bash
+ln -s "$MIRROR_FIXTURE/state" "$LAST_SUCCESS_FILE.tmp.fixture"
+printf '%s\n' "$LAST_SUCCESS_FILE.tmp.fixture"
+EOF
+        chmod +x "$sandbox/bin/mktemp"
+      else
+        touch "$sandbox/$scenario"
+      fi
+      rc=0
+      run_immich_mirror_success_fixture "$sandbox" >/dev/null 2>&1 || rc=$?
+      [[ "$rc" -ne 0 ]] || fail "성공시각 기록 실패($scenario)가 성공으로 처리됐습니다"
+      if [[ "$previous" == present ]]; then
+        assert_file_contains "$sandbox/state/last-success" 1000000000
+      else
+        [[ ! -e "$sandbox/state/last-success" ]] || fail "불완전한 성공 기록이 게시됐습니다"
+      fi
+      [[ -z "$(find "$sandbox/state" -name '*.tmp.*' -print)" ]] || fail "해당 실행의 임시 성공 기록이 남았습니다"
+      assert_line_count "$sandbox/notifications" notification 1
+    done
+  done
+
+  sandbox="$(new_sandbox)"
+  setup_immich_mirror_success_fixture "$sandbox"
+  rm "$sandbox/state/last-success"
+  mkdir "$sandbox/state/last-success"
+  rc=0
+  run_immich_mirror_success_fixture "$sandbox" >/dev/null 2>&1 || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "성공 기록 경로가 디렉터리인데 교체를 성공으로 처리했습니다"
+  [[ -d "$sandbox/state/last-success" ]] || fail "기존 디렉터리는 보존해야 합니다"
+  [[ -z "$(find "$sandbox/state" -name '*.tmp.*' -print)" ]] || fail "실패한 임시 기록이 남았습니다"
+  assert_line_count "$sandbox/notifications" notification 1
+}
+
 # backup-scripts.sh의 _backup_scripts_require_immich_disk_space와 같은 스킵 관례 — 스크립트
 # 전체 성공(rsync까지 실행)이 필요한 테스트에서, 호스트의 실제 여유 공간이 스크립트의 5GB
 # 하한(immich-originals-mirror.sh)에 못 미쳐 무관한 이유로 거짓 실패하는 것을 막는다.
@@ -127,6 +274,7 @@ EOF
   rc=0
   PATH="$bin:$PATH" \
     SRC_DIR="$src" DEST_DIR="$dest" MOUNT_ROOT="$root" \
+    LAST_SUCCESS_FILE="$sandbox/last-success" \
     PUSHOVER_CRED_FILE="$sandbox/cred" SERVICE_LIB="$sandbox/service-lib" \
     bash "$script" >/dev/null 2>&1 || rc=$?
 
