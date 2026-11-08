@@ -642,6 +642,45 @@ let
     }
   ];
 
+  # wt는 배포에서만 제거한다. 기존 worktree·trust·활성 세션은 자동 정리하지 않는다.
+  wtRetirementTests = label: guard: hm: [
+    {
+      name = "Test WT1 ${label}: 커스텀 wt 실행 파일과 helper가 배포되지 않아야 함";
+      cond =
+        guard
+        && !builtins.any
+          (
+            path:
+            builtins.any (prefix: path == prefix || nixpkgsLib.hasPrefix "${prefix}/" path) [
+              ".local/bin/wt"
+              ".local/bin/.wt-real"
+              ".local/lib/wt"
+            ]
+          )
+          (
+            # 키와 실제 배포 위치(target)를 모두 본다 — 다른 키로 같은 경로를 배포해도 잡는다.
+            builtins.attrNames hm.home.file ++ map (file: file.target) (builtins.attrValues hm.home.file)
+          );
+    }
+    {
+      name = "Test WT2 ${label}: Home Manager activation이 기존 worktree·trust·세션을 자동 정리하지 않아야 함";
+      cond =
+        guard
+        && !builtins.any (
+          entry:
+          builtins.any (needle: nixpkgsLib.hasInfix needle (entry.data or "")) [
+            "wt cleanup"
+            "git worktree remove"
+            "git worktree prune"
+            "gc-worktree-projects"
+            "untrust-project"
+            "kill-session"
+            "kill-server"
+          ]
+        ) (builtins.attrValues hm.home.activation);
+    }
+  ];
+
   darwinIntentTests = builtins.concatLists (
     map (
       hostName:
@@ -1087,6 +1126,7 @@ let
         }
       ]
       ++ tmuxVanillaTests hostName hasHost hm
+      ++ wtRetirementTests hostName hasHost hm
     ) expectedDarwinHosts
   );
 
@@ -2287,6 +2327,7 @@ let
     }
   ]
   ++ tmuxVanillaTests "greenhead-minipc" true nixosHm
+  ++ wtRetirementTests "greenhead-minipc" true nixosHm
   ++ darwinIntentTests
   ++ [
     {
