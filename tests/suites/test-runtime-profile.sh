@@ -62,6 +62,10 @@ case "$action" in
     ;;
   shell)
     printf 'shell\n' >> "$FAKE_NIX_LOG"
+    if [ -n "${FAKE_NIX_ARGS_LOG:-}" ]; then
+      printf '%s\0' "$@" > "$FAKE_NIX_ARGS_LOG"
+    fi
+    [ -z "${FAKE_NIX_FAIL:-}" ] || exit 92
     while [ "$#" -gt 0 ] && [ "$1" != "--command" ]; do shift; done
     [ "${1:-}" = "--command" ] || exit 93
     shift
@@ -362,9 +366,67 @@ test_tomlkit_bootstrap_rejects_mismatched_snapshot_source_profile() (
       bash -c 'set -euo pipefail; source "$1/scripts/ai/lib/tomlkit-bootstrap.sh"; tomlkit_bootstrap_require "$1" "$1/consumer.sh"' \
       _ "$snapshot" 2>&1)" || fail "mismatched staged input did not fall back to snapshot runtime: $changed_path"
     assert_contains "$output" "staged runtime inputs differ; using snapshot flake $snapshot"
-    assert_contains "$output" "nix shell --inputs-from $snapshot"
-    assert_contains "$output" "nixpkgs#stdenv.cc"
-    assert_contains "$output" "$snapshot#claudeRcFlock"
+    assert_contains "$output" "nix shell $snapshot#prePushRuntime"
     [ "$(cat "$log")" = "shell" ] || fail "mismatched staged input reused source profile: $changed_path"
+  done
+)
+
+test_tomlkit_bootstrap_fallback_preserves_runtime_and_arguments() (
+  local dir source fake_bin log args_log consumer mode output rc
+  dir="$(mktemp -d "${TMPDIR:-/tmp}/test-runtime-bootstrap.XXXXXX")"
+  trap 'rm -rf "$dir"' EXIT
+  source="$dir/source with space"
+  fake_bin="$dir/fake-bin"
+  log="$dir/nix.log"
+  args_log="$dir/args"
+  consumer="$dir/consumer with space.sh"
+  mkdir -p "$source/scripts/ai/lib"
+  _test_runtime_profile_make_repo "$source"
+  cp "$REPO_ROOT/scripts/ai/test-runtime-profile.sh" "$source/scripts/ai/test-runtime-profile.sh"
+  cp "$REPO_ROOT/scripts/ai/lib/tomlkit-bootstrap.sh" "$source/scripts/ai/lib/tomlkit-bootstrap.sh"
+  _test_runtime_profile_make_fake_nix "$fake_bin"
+  cat > "$consumer" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${_TOMLKIT_BOOTSTRAP_READY:-}" == 1 ]]
+[[ "$#" == 3 && "$1" == 'two words' && "$2" == 'quote"slash\' && -z "$3" ]]
+printf 'consumer complete\n'
+EOF
+  for mode in absent stale invalid-source real-checkout-spoof failure; do
+    local source_override="$dir/not-a-checkout" consumer_root="$source" fail_flag=""
+    if [[ "$mode" == stale ]]; then
+      mkdir -p "$source/.direnv"
+      printf 'stale\n' > "$source/.direnv/pre-push-runtime.stamp"
+    elif [[ "$mode" == invalid-source ]]; then
+      consumer_root="$dir/snapshot"
+      mkdir -p "$consumer_root"
+      cp -R "$source/scripts" "$source/libraries" "$source/flake.nix" "$source/flake.lock" "$consumer_root/"
+    elif [[ "$mode" == real-checkout-spoof ]]; then
+      source_override="$dir/other-checkout"
+      mkdir -p "$source_override"
+      _test_runtime_profile_make_repo "$source_override"
+    elif [[ "$mode" == failure ]]; then
+      fail_flag=1
+    fi
+    rc=0
+    output=$(env -u _TOMLKIT_BOOTSTRAP_READY \
+      PATH="$fake_bin:$PATH" FAKE_NIX_LOG="$log" FAKE_NIX_ARGS_LOG="$args_log" FAKE_NIX_FAIL="$fail_flag" \
+      STAGED_SNAPSHOT_ROOT="$consumer_root" STAGED_SNAPSHOT_SOURCE_ROOT="$source_override" \
+      bash -c 'set -euo pipefail; source "$1/scripts/ai/lib/tomlkit-bootstrap.sh"; tomlkit_bootstrap_require "$@"' \
+      _ "$consumer_root" "$consumer" 'two words' 'quote"slash\' '' 2>&1) || rc=$?
+    if [[ "$mode" == failure ]]; then
+      [[ "$rc" == 92 ]] || fail "expected runtime failure to propagate"
+      assert_not_contains "$output" 'consumer complete'
+    else
+      [[ "$rc" == 0 ]] || fail "expected runtime fallback to succeed: $mode"
+      assert_contains "$output" 'consumer complete'
+    fi
+    python3 - "$args_log" "$consumer_root" "$consumer" <<'PY'
+import sys
+from pathlib import Path
+actual = Path(sys.argv[1]).read_bytes().split(b"\0")[:-1]
+expected = [sys.argv[2] + "#prePushRuntime", "--command", "bash", sys.argv[3], "two words", 'quote"slash\\', ""]
+assert actual == [arg.encode() for arg in expected], "fallback changed runtime or consumer argument boundaries"
+PY
   done
 )

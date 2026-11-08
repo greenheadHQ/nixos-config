@@ -75,6 +75,7 @@ case "\$url" in
     printf '%s\n' "\$@" >> "$notify_log"
     cat >> "$notify_log"
     printf -- '---\n' >> "$notify_log"
+    exit "\${VERSION_CHECK_TEST_NOTIFY_EXIT:-0}"
     ;;
   *)
     echo "unexpected curl url: \$url" >&2
@@ -136,6 +137,7 @@ case "\$url" in
     printf '%s\n' "\$@" >> "$notify_log"
     cat >> "$notify_log"
     printf -- '---\n' >> "$notify_log"
+    exit "\${VERSION_CHECK_TEST_NOTIFY_EXIT:-0}"
     ;;
   *)
     echo "unexpected curl url: \$url" >&2
@@ -929,13 +931,10 @@ data.decode('utf-8')
 # 잘못된 JSON은 정상적인 빈 본문(.body 없음/null)과 구별되는 실패로 남아야 한다. GitHub 응답이
 # 깨졌을 때 태그(tag_name) 추출(fetch_github_release, service-lib.sh)부터 실패하므로, 이 시점
 # 이후의 상태(last-notified-version)는 바뀌지 않아야 하고, 정상적인 "업데이트 알림"(새 버전을
-# 찾았다는 성공 알림)이 나가서는 안 된다. notify_log가 통째로 비어 있어야 한다고까지는
-# 단정하지 않는다 — 이 실패는 함수(fetch_github_release) 안에서 일어나는데 스크립트가
-# set -o errtrace 를 켜지 않아 최상단 ERR trap이 지금은 여기서 실행되지 않기 때문이다
-# (별개의 기존 결함, 이 이슈 범위 밖). 그 결함을 나중에 고쳐 ERR trap의 일반 실패
-# 알림이 추가로 나가게 되어도 이 테스트가 깨지지 않도록, "거짓 성공 알림이 없다"만 본다.
+# 찾았다는 성공 알림)이 나가서는 안 된다. 함수 안 실패도 일반 오류 알림을 한 번
+# 요청하고, jq의 원래 실패 코드를 유지해야 한다.
 test_version_check_invalid_github_json_does_not_send_false_success_notification() {
-  local sandbox stub_dir state_dir clock_file github_status github_body notify_log cred
+  local sandbox stub_dir state_dir clock_file github_status github_body notify_log cred rc
   sandbox=$(new_sandbox)
   stub_dir="$sandbox/bin"
   state_dir="$sandbox/state"
@@ -960,11 +959,68 @@ test_version_check_invalid_github_json_does_not_send_false_success_notification(
 
   printf '%s\n' "$((1000000 + 3600))" > "$clock_file"
   printf 'this is not valid json{{{' > "$github_body"
-  if _run_generic_version_check "$stub_dir" "$(_version_check_service_lib_path)" "$cred" "$state_dir" \
-       "demo" "demo:1.2" "demo/demo" "Demo"; then
-    fail "invalid GitHub JSON must not be treated as a normal (empty-body) response"
-  fi
+  rc=0
+  _run_generic_version_check "$stub_dir" "$(_version_check_service_lib_path)" "$cred" "$state_dir" \
+    "demo" "demo:1.2" "demo/demo" "Demo" || rc=$?
+  [[ "$rc" == 5 ]] || fail "invalid GitHub JSON must keep jq exit 5 (got $rc)"
 
   assert_file_contains "$state_dir/last-notified-version" "1.0.0"
   assert_not_contains "$(cat "$notify_log" 2>/dev/null || true)" "title=Demo 업데이트 알림"
+  assert_line_count "$notify_log" 'https://api.pushover.net/1/messages.json' 1
+  assert_contains "$(cat "$notify_log")" "오류 발생: 스크립트 실패"
 }
+
+test_version_checks_function_and_substitution_failures_notify_once() (
+  local consumer failure notify_exit sandbox rc pattern
+  export VERSION_CHECK_TEST_REAL_JQ
+  VERSION_CHECK_TEST_REAL_JQ=$(command -v jq)
+  for consumer in generic immich; do
+    for failure in function substitution; do
+      for notify_exit in 0 7; do
+        sandbox=$(new_sandbox)
+        mkdir -p "$sandbox/state"
+        printf '1000000\n' > "$sandbox/clock"
+        printf '0\n' > "$sandbox/github-status"
+        printf '{"tag_name":"v2.0.0","body":"fixture release"}\n' > "$sandbox/github-body"
+        printf '1.0.0\n' > "$sandbox/state/last-notified-version"
+        _write_fake_clock_stub "$sandbox/bin" "$sandbox/clock"
+        _write_version_check_pushover_cred "$sandbox/pushover"
+        : > "$sandbox/notify.log"
+        if [[ "$consumer" == generic ]]; then
+          _write_version_check_curl_stub "$sandbox/bin" "$sandbox/github-status" "$sandbox/github-body" "$sandbox/notify.log"
+          pattern='.body'
+        else
+          printf '0\n' > "$sandbox/immich-status"
+          printf '{"major":1,"minor":0,"patch":0}\n' > "$sandbox/immich-body"
+          printf 'IMMICH_API_KEY=test-key\n' > "$sandbox/api-key"
+          _write_immich_version_check_curl_stub "$sandbox/bin" "http://immich.test" \
+            "$sandbox/immich-status" "$sandbox/immich-body" "$sandbox/github-status" \
+            "$sandbox/github-body" "$sandbox/notify.log"
+          pattern='.major'
+        fi
+        [[ "$failure" != function ]] || pattern='.tag_name'
+        export VERSION_CHECK_TEST_FAIL_PATTERN="$pattern" VERSION_CHECK_TEST_NOTIFY_EXIT="$notify_exit"
+        cat > "$sandbox/bin/jq" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$*" == *"$VERSION_CHECK_TEST_FAIL_PATTERN"* ]]; then exit 5; fi
+exec "$VERSION_CHECK_TEST_REAL_JQ" "$@"
+EOF
+        chmod +x "$sandbox/bin/jq"
+        rc=0
+        if [[ "$consumer" == generic ]]; then
+          _run_generic_version_check "$sandbox/bin" "$(_version_check_service_lib_path)" "$sandbox/pushover" \
+            "$sandbox/state" demo demo:1.0 demo/demo Demo > "$sandbox/stdout" 2> "$sandbox/stderr" || rc=$?
+        else
+          _run_immich_version_check "$sandbox/bin" "$(_version_check_service_lib_path)" "$sandbox/pushover" \
+            "$sandbox/state" "http://immich.test" "$sandbox/api-key" > "$sandbox/stdout" 2> "$sandbox/stderr" || rc=$?
+        fi
+        [[ "$rc" == 5 ]] || fail "$consumer/$failure/notify-$notify_exit must keep exit 5 (got $rc)"
+        assert_line_count "$sandbox/notify.log" 'https://api.pushover.net/1/messages.json' 1
+        assert_contains "$(cat "$sandbox/notify.log")" "오류 발생: 스크립트 실패"
+        assert_not_contains "$(cat "$sandbox/stdout")" "오류 발생: 스크립트 실패"
+        assert_file_contains "$sandbox/state/last-notified-version" "1.0.0"
+        [[ ! -e "$sandbox/state/last-success" ]] || fail "unexpected failure recorded success"
+      done
+    done
+  done
+)

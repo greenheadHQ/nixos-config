@@ -186,6 +186,9 @@ let
   # ═══════════════════════════════════════════════════════════════
   caddyVhosts = nixosCfg.services.caddy.virtualHosts;
   vhostNames = builtins.attrNames caddyVhosts;
+  caddyEnv = nixosCfg.systemd.services.caddy-env;
+  caddyService = nixosCfg.systemd.services.caddy;
+  caddyTokenCiphertext = "${nixosCfg.age.secrets.cloudflare-dns-api-token.file}";
 
   # #1284: 기본값은 constants와 같아서 배선 결함을 드러내지 못한다.
   # 네 공개 포트를 한 번에 바꿔 proxy와 backend가 같은 옵션을 소비하는지 확인한다.
@@ -642,6 +645,45 @@ let
     }
   ];
 
+  # wt는 배포에서만 제거한다. 기존 worktree·trust·활성 세션은 자동 정리하지 않는다.
+  wtRetirementTests = label: guard: hm: [
+    {
+      name = "Test WT1 ${label}: 커스텀 wt 실행 파일과 helper가 배포되지 않아야 함";
+      cond =
+        guard
+        && !builtins.any
+          (
+            path:
+            builtins.any (prefix: path == prefix || nixpkgsLib.hasPrefix "${prefix}/" path) [
+              ".local/bin/wt"
+              ".local/bin/.wt-real"
+              ".local/lib/wt"
+            ]
+          )
+          (
+            # 키와 실제 배포 위치(target)를 모두 본다 — 다른 키로 같은 경로를 배포해도 잡는다.
+            builtins.attrNames hm.home.file ++ map (file: file.target) (builtins.attrValues hm.home.file)
+          );
+    }
+    {
+      name = "Test WT2 ${label}: Home Manager activation이 기존 worktree·trust·세션을 자동 정리하지 않아야 함";
+      cond =
+        guard
+        && !builtins.any (
+          entry:
+          builtins.any (needle: nixpkgsLib.hasInfix needle (entry.data or "")) [
+            "wt cleanup"
+            "git worktree remove"
+            "git worktree prune"
+            "gc-worktree-projects"
+            "untrust-project"
+            "kill-session"
+            "kill-server"
+          ]
+        ) (builtins.attrValues hm.home.activation);
+    }
+  ];
+
   darwinIntentTests = builtins.concatLists (
     map (
       hostName:
@@ -1087,6 +1129,7 @@ let
         }
       ]
       ++ tmuxVanillaTests hostName hasHost hm
+      ++ wtRetirementTests hostName hasHost hm
     ) expectedDarwinHosts
   );
 
@@ -1094,6 +1137,18 @@ let
   # 같은 옵션(immichBackup·karakeepBackup·backup.enable 인스턴스)을 따르고, 백업 유닛이 있으면 그
   # 유닛이 실제로 쓰는 BACKUP_DIR·INSTANCES를 봐야 한다.
   smokeEnvOf = cfg: cfg.systemd.services.homeserver-smoke-test.environment;
+  smokeMirrorWiringOk =
+    cfg:
+    let
+      enabled = cfg.homeserver.immichOriginalsMirror.enable && cfg.homeserver.immich.enable;
+      smoke = cfg.systemd.services.homeserver-smoke-test;
+      successFile = smoke.environment.IMMICH_ORIGINALS_LAST_SUCCESS_FILE;
+    in
+    if enabled then
+      successFile == cfg.systemd.services.immich-originals-mirror.environment.LAST_SUCCESS_FILE
+      && builtins.elem "-${builtins.dirOf successFile}" smoke.serviceConfig.ReadOnlyPaths
+    else
+      successFile == "";
   smokeBackupWiringOk =
     cfg:
     let
@@ -1121,8 +1176,9 @@ let
   # 늘리므로 조합은 둘로 줄였다: 두 조합 모두 immich·karakeep 중 한쪽만 꺼야 한쪽 옵션을 다른 쪽
   # 변수에 잘못 건 배선이 드러나고, anki 비활성 두 경로(백업 인스턴스 0개·ankiHost 비활성)를 하나씩 얹는다.
   smokeBackupVariant = modules: (nixosBase.extendModules { inherit modules; }).config;
-  # A: immichBackup 끔 + anki 백업 인스턴스 0개(인스턴스는 두고 backup.enable만 끔)
+  # A: Immich·immichBackup 끔 + anki 백업 인스턴스 0개(인스턴스는 두고 backup.enable만 끔)
   smokeImmichAnkiOff = smokeBackupVariant [
+    { homeserver.immich.enable = nixpkgsLib.mkForce false; }
     { homeserver.immichBackup.enable = nixpkgsLib.mkForce false; }
     {
       homeserver.ankiHost.instances = nixpkgsLib.mapAttrs (_: _: {
@@ -1130,10 +1186,14 @@ let
       }) nixosCfg.homeserver.ankiHost.instances;
     }
   ];
-  # B: karakeepBackup 끔 + ankiHost 비활성
+  # B: 원본 미러·karakeepBackup 끔 + ankiHost 비활성
   smokeKarakeepAnkiOff = smokeBackupVariant [
+    { homeserver.immichOriginalsMirror.enable = nixpkgsLib.mkForce false; }
     { homeserver.karakeepBackup.enable = nixpkgsLib.mkForce false; }
     { homeserver.ankiHost.enable = nixpkgsLib.mkForce false; }
+  ];
+  smokeMirrorTimerOff = smokeBackupVariant [
+    { systemd.timers.immich-originals-mirror.enable = nixpkgsLib.mkForce false; }
   ];
 
   # ── #1369: 백업 대상 HDD(mediaData)가 nofail이라 미마운트여도 부팅은 계속되므로,
@@ -1142,6 +1202,12 @@ let
   immichDbBackup = nixosCfg.systemd.services."immich-db-backup";
   immichOriginalsMirror = nixosCfg.systemd.services."immich-originals-mirror";
   karakeepBackup = nixosCfg.systemd.services."karakeep-backup";
+  copypartyService = nixosCfg.systemd.services.podman-copyparty;
+  copypartyConfigService = nixosCfg.systemd.services.copyparty-config;
+  copypartyDisabledCfg =
+    (nixosBase.extendModules {
+      modules = [ { homeserver.copyparty.enable = nixpkgsLib.mkForce false; } ];
+    }).config;
 
   # ── #1391: 브리지가 SIGTERM을 받으면 실행 중 요청을 최대
   # SHUTDOWN_DRAIN_TIMEOUT_SEC(소스 기본값)까지 drain한 뒤 스스로 종료한다.
@@ -1452,6 +1518,25 @@ let
     {
       name = "Test 2e: uptime-kuma(host network)의 UPTIME_KUMA_HOST가 127.0.0.1이어야 함 (0.0.0.0이면 LAN 노출)";
       cond = uptimeKumaLocalhostOnly;
+    }
+    {
+      name = "Test CE1: Caddy 자격 생성 유닛은 비공개 umask와 동일 생성 본체·경로를 사용해야 함";
+      cond =
+        (caddyEnv.serviceConfig.UMask or "") == "0077"
+        && nixpkgsLib.hasInfix (builtins.readFile ../modules/nixos/programs/caddy-env/files/generate-env.sh) caddyEnv.serviceConfig.ExecStart.drvAttrs.text
+        && nixpkgsLib.hasInfix "CADDY_TOKEN_FILE=${nixpkgsLib.escapeShellArg nixosCfg.age.secrets.cloudflare-dns-api-token.path}" caddyEnv.serviceConfig.ExecStart.drvAttrs.text
+        && nixpkgsLib.hasInfix "CADDY_ENV_FILE=${nixpkgsLib.escapeShellArg caddyService.serviceConfig.EnvironmentFile}" caddyEnv.serviceConfig.ExecStart.drvAttrs.text;
+    }
+    {
+      name = "Test CE2: Caddy 생성·소비 유닛의 기존 암호문 트리거와 실행 순서를 보존해야 함";
+      cond =
+        caddyEnv.restartTriggers == [ caddyTokenCiphertext ]
+        && caddyService.restartTriggers == [ caddyTokenCiphertext ]
+        && caddyEnv.serviceConfig.Type == "oneshot"
+        && caddyEnv.serviceConfig.RemainAfterExit
+        && builtins.elem "caddy.service" caddyEnv.before
+        && builtins.elem "caddy-env.service" caddyService.after
+        && builtins.elem "caddy-env.service" caddyService.wants;
     }
     {
       name = "Test 3a: Caddy virtualHosts가 비어있지 않아야 함 (vacuous truth 방지)";
@@ -2201,6 +2286,36 @@ let
       cond = builtins.elem constants.paths.mediaData (karakeepBackup.unitConfig.RequiresMountsFor or [ ]);
     }
     {
+      name = "Test MG3c: 활성 Copyparty는 쓰기 볼륨의 HDD(mediaData) 마운트를 요구해야 함";
+      cond =
+        nixosCfg.homeserver.copyparty.enable
+        && builtins.elem constants.paths.mediaData (copypartyService.unitConfig.RequiresMountsFor or [ ])
+        && builtins.elem "${constants.paths.mediaData}:/data" containers.copyparty.volumes;
+    }
+    {
+      name = "Test MG3d: Copyparty 비활성 구성에는 컨테이너·설정 생성 유닛이 없어야 함";
+      cond =
+        !(copypartyDisabledCfg.virtualisation.oci-containers.containers ? copyparty)
+        && !(copypartyDisabledCfg.systemd.services ? podman-copyparty)
+        && !(copypartyDisabledCfg.systemd.services ? copyparty-config);
+    }
+    {
+      name = "Test MG3e: Copyparty 인증 조건·설정 생성 순서·두 입력의 재시작 트리거를 유지해야 함";
+      cond =
+        copypartyService.unitConfig.ConditionPathExists == nixosCfg.age.secrets.copyparty-password.path
+        && builtins.elem "podman-copyparty.service" copypartyConfigService.wantedBy
+        && builtins.elem "podman-copyparty.service" copypartyConfigService.before
+        && builtins.elem (toString copypartyConfigService.serviceConfig.ExecStart) (
+          map toString copypartyService.restartTriggers
+        )
+        && builtins.elem "${nixosCfg.age.secrets.copyparty-password.file}" (
+          map toString copypartyService.restartTriggers
+        )
+        && builtins.elem "${nixosCfg.age.secrets.copyparty-password.file}" (
+          map toString copypartyConfigService.restartTriggers
+        );
+    }
+    {
       # 리뷰: MOUNT_ROOT가 실제 mediaData와 다른 값으로 새거나(오타 등) mediaData 자체가
       # fileSystems에 등록되지 않은 상태로 갈라지지 않도록, 스크립트를 직접 실행하는 두 유닛의
       # MOUNT_ROOT가 fileSystems 키 집합에 실제로 있는지 확인한다.
@@ -2237,6 +2352,39 @@ let
         && (smokeEnvOf smokeKarakeepAnkiOff).ANKI_BACKUP_INSTANCES == "";
     }
     {
+      name = "Test SM4: 원본 미러의 성공 기록은 목적지 밖의 비공개 상태 디렉터리에 쓰고 스모크와 경로를 공유해야 함";
+      cond =
+        let
+          stateName = constants.paths.immichOriginalsMirrorStateRelPath;
+          stateDir = "/var/lib/${stateName}";
+          env = immichOriginalsMirror.environment;
+        in
+        smokeMirrorWiringOk nixosCfg
+        && immichOriginalsMirror.serviceConfig.StateDirectory == stateName
+        && immichOriginalsMirror.serviceConfig.StateDirectoryMode == "0700"
+        && builtins.elem stateDir immichOriginalsMirror.serviceConfig.ReadWritePaths
+        && env.LAST_SUCCESS_FILE == "${stateDir}/last-success"
+        && !(nixpkgsLib.hasPrefix "${env.DEST_DIR}/" env.LAST_SUCCESS_FILE)
+        && !(nixpkgsLib.hasPrefix "${env.SRC_DIR}/" env.LAST_SUCCESS_FILE);
+    }
+    {
+      name = "Test SM5: Immich 또는 원본 미러를 끄면 성공 기록 검사를 제외해야 함";
+      cond =
+        smokeMirrorWiringOk smokeImmichAnkiOff
+        && smokeMirrorWiringOk smokeKarakeepAnkiOff
+        && !(smokeImmichAnkiOff.systemd.services ? immich-originals-mirror)
+        && !(smokeKarakeepAnkiOff.systemd.services ? immich-originals-mirror);
+    }
+    {
+      name = "Test SM6: 원본 미러 타이머만 꺼도 실행 누락을 탐지할 성공 기록 검사를 유지해야 함";
+      cond =
+        smokeMirrorWiringOk smokeMirrorTimerOff
+        && !smokeMirrorTimerOff.systemd.timers.immich-originals-mirror.enable
+        &&
+          (smokeEnvOf smokeMirrorTimerOff).IMMICH_ORIGINALS_LAST_SUCCESS_FILE == (smokeEnvOf nixosCfg)
+          .IMMICH_ORIGINALS_LAST_SUCCESS_FILE;
+    }
+    {
       name = "Test KB1: karakeep-singlefile-bridge의 TimeoutStopSec(${toString karakeepSinglefileBridgeSvc.serviceConfig.TimeoutStopSec}s)이 브리지 소스의 drain 상한 기본값(${toString karakeepSinglefileBridgeDrainDefaultSec}s)보다 커야 함 — 짧으면 systemd가 정상 drain을 못 기다리고 SIGKILL로 끊는다";
       cond =
         karakeepSinglefileBridgeDrainDefaultSec != null
@@ -2251,6 +2399,7 @@ let
     }
   ]
   ++ tmuxVanillaTests "greenhead-minipc" true nixosHm
+  ++ wtRetirementTests "greenhead-minipc" true nixosHm
   ++ darwinIntentTests
   ++ [
     {

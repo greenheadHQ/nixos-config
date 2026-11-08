@@ -87,16 +87,21 @@ grep -n "terminalOptKeys" modules/darwin/programs/hammerspoon/files/init.lua
 | Finder 바탕화면에서 실행 | Desktop 경로로 Ghostty 새 창 열기   |
 | 다른 앱에서 실행         | Ghostty 새 창 열기 (기본 경로)      |
 | Ghostty 미실행 시        | `open -a Ghostty`로 시작            |
-| Ghostty 실행 중          | `Cmd+N`으로 새 창 + `cd` 명령어     |
+| Ghostty 실행 중          | AppleScript 새 창의 초기 작업 폴더로 경로 전달 |
 
 구현 특징:
 
 - AppleScript로 Finder 현재 경로 가져오기
-- 경로에 특수문자(`[`, `]`, `$`, `'` 등)나 공백이 있어도 정상 동작 (작은따옴표 인용 + `cd --`)
-- 경로에 개행이 있으면 새 창은 열되 cd 입력은 하지 않고 알림을 띄움
-- Ghostty 실행 중일 때는 클립보드를 활용한 경로 전달 (한글 경로 문제 방지)
+- 한글·공백·특수문자 경로를 `hs.task`의 인자 배열로 전달하며, 셸 명령이나 AppleScript 코드에 보간하지 않음
+- 개행·NUL 경로와 Finder 경로 조회 실패는 새 창 요청 전에 알리고 중단
+- 키 입력·클립보드 읽기/쓰기·복원 타이머를 사용하지 않으므로 이미지·파일 참조·복합 표현과 사용자의 새 복사를 덮어쓰지 않음
+- 각 AppleScript 요청이 만든 창만 활성화하며, 포커스 이동이나 연속 호출의 완료 순서가 다른 창의 입력에 영향을 주지 않음
+- Ghostty의 AppleScript 지원과 macOS 자동화 권한이 필요할 수 있음. 생성 실패 시 알림만 남기며 전역 입력 fallback은 없음
 - IPC 모듈 로드로 CLI에서 `hs` 명령 사용 가능
 - 설정 리로드 완료 시 macOS 알림 표시
+
+`nix develop --command bash tests/run-finder-ghostty-tests.sh`는 실제 `init.lua`를 대역 API로 검증한다.
+이 검사는 실제 앱·클립보드·권한을 조작하지 않는다. 적용 후 새 창의 한글·특수문자 경로와 대표 비텍스트 클립보드는 macOS에서 별도로 확인한다.
 
 > 참고: 구현 과정에서 발생한 문제와 해결 방법은 [`references/troubleshooting.md`의 "Hammerspoon 관련"](troubleshooting.md#hammerspoon-관련) 섹션을 참고하세요.
 

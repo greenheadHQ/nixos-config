@@ -24,7 +24,7 @@ set -euo pipefail
 printf 'podman %s\n' "$*" >> "$UPDATE_TEST_CALL_LOG"
 case "${1:-}" in
   container)
-    echo "true"
+    echo "${UPDATE_TEST_PODMAN_RUNNING:-true}"
     ;;
   inspect)
     echo "${UPDATE_TEST_PODMAN_CURRENT_DIGEST:-digest-old}"
@@ -82,7 +82,11 @@ case "$last" in
     echo '{"major":1,"minor":2,"patch":3}'
     ;;
   https://api.github.com/repos/*/releases/latest)
-    echo '{"tag_name":"v9.9.9"}'
+    if [[ "${UPDATE_TEST_GITHUB_INVALID_RELEASE:-false}" == true ]]; then
+      echo '[]'
+    else
+      echo '{"tag_name":"v9.9.9"}'
+    fi
     ;;
   https://api.pushover.net/*)
     cat >> "$UPDATE_TEST_CALL_LOG"
@@ -895,4 +899,37 @@ test_karakeep_update_dry_run_skips_mutating_boundaries() {
   ! grep -Fq "podman pull" "$sandbox/calls.log" || fail "expected dry-run not to pull images"
   ! grep -Fq "systemctl stop" "$sandbox/calls.log" || fail "expected dry-run not to stop containers"
   ! grep -Fq "systemctl start" "$sandbox/calls.log" || fail "expected dry-run not to start containers"
+}
+
+# 조회 단계의 실제 jq 실패도 dry-run의 외부 변경 금지를 깨면 안 된다.
+# 컨테이너를 처음부터 정지 상태로 두어 불필요한 복구 시작을 관측한다.
+_update_dry_run_fetch_failure_preserves_stopped_service() {
+  local consumer="$1" sandbox rc
+  sandbox=$(new_sandbox)
+  "_${consumer}_update_prepare_sandbox" "$sandbox"
+  rc=0
+  UPDATE_TEST_PODMAN_RUNNING=false UPDATE_TEST_GITHUB_INVALID_RELEASE=true \
+    "_${consumer}_update_run" "$sandbox" "$sandbox/stdout" "$sandbox/stderr" --dry-run || rc=$?
+
+  [[ "$rc" == 5 ]] || fail "$consumer dry-run must preserve jq failure exit 5 (got $rc)"
+  assert_contains "$(cat "$sandbox/calls.log")" "https://api.github.com/repos/"
+  assert_contains "$(cat "$sandbox/stderr")" "Cannot index array with string"
+  ! grep -Fq "podman pull" "$sandbox/calls.log" || fail "$consumer failed dry-run pulled an image"
+  ! grep -Fq "systemctl " "$sandbox/calls.log" || fail "$consumer failed dry-run changed service state"
+  ! grep -Fq "https://api.pushover.net/" "$sandbox/calls.log" || fail "$consumer failed dry-run sent a notification"
+  if [[ "$consumer" == uptime_kuma ]]; then
+    [[ -z "$(find "$sandbox/backups" -type f -print -quit)" ]] || fail "failed dry-run created a backup"
+  fi
+}
+
+test_copyparty_update_dry_run_failure_preserves_stopped_service() {
+  _update_dry_run_fetch_failure_preserves_stopped_service copyparty
+}
+
+test_uptime_kuma_update_dry_run_failure_preserves_stopped_service() {
+  _update_dry_run_fetch_failure_preserves_stopped_service uptime_kuma
+}
+
+test_karakeep_update_dry_run_failure_preserves_stopped_service() {
+  _update_dry_run_fetch_failure_preserves_stopped_service karakeep
 }

@@ -85,10 +85,70 @@ assert dest["keep"] == "user", "template-undeclared key preserved"
 assert dest["nested"]["x"] == 9, "template overrides nested leaf"
 assert dest["nested"]["useronly"] == 2, "nested undeclared key preserved"
 assert m.merge_template_into(tomlkit.parse('a = 2\n'), tomlkit.parse('a = 2\n')) == 0, "equal value is no-op"
+
+# Python의 값 동등성으로 같아 보여도 TOML 타입은 첫 merge에서 바로잡아야 한다.
+for expected, existing in (("true", "1"), ("false", "0"), ("1", "1.0"),
+                           ("1.0", "1"), ("[true, false]", "[1, 0]"),
+                           ("[[1, false]]", "[[1.0, 0]]"),
+                           ("[{flag = true}]", "[{flag = 1}]")):
+    tmpl = tomlkit.parse(f"value = {expected}\n")
+    dest = tomlkit.parse(f"value = {existing}\nkeep = 'user'\n")
+    assert m.merge_template_into(dest, tmpl) == 1, (expected, existing)
+    assert m.collect_drift(tmpl, dest) == [], (expected, existing)
+    assert m.merge_template_into(dest, tmpl) == 0, (expected, existing)
+    assert dest["keep"] == "user"
+
+# 포장 객체와 원시 값은 같은 TOML 값이며 정상 배열도 재작성하면 안 된다.
+for source in ("true", "false", "1", "1.0", "'text'", "[true, false]",
+               "[[1, false]]", "[{flag = true}]", "1979-05-27",
+               "07:32:00", "1979-05-27T07:32:00Z"):
+    tmpl = tomlkit.parse(f"value = {source}\n")
+    dest = tomlkit.parse(f"value = {source}\n")
+    assert m.merge_template_into(dest, tmpl) == 0, source
+    assert m.collect_drift(tmpl, dest) == [], source
+    assert m.collect_drift(tmpl, tmpl.unwrap()) == [], source
 print("MERGE_OK")
 PY
   )
   assert_contains "$output" "MERGE_OK"
+}
+
+test_codex_config_sync_type_normalization() {
+  local sandbox output
+  sandbox=$(new_sandbox)
+  output=$(
+    python3 - "$CODEX_CONFIG_SCRIPT" "$CODEX_CONFIG_FIXTURE_DIR/sync_type_normalization" "$sandbox" <<'PY' 2>&1
+import json, os, pathlib, subprocess, sys, tomllib
+
+script, fixture, sandbox = sys.argv[1], pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3])
+template, target = fixture / "template.toml", sandbox / "target.toml"
+target.write_bytes((fixture / "existing.toml").read_bytes())
+target.chmod(0o600)
+
+def run(command):
+    return subprocess.run([sys.executable, script, command, str(template), str(target)],
+                          capture_output=True, text=True, check=True)
+
+run("sync")
+assert json.loads(run("check").stdout)["drift"] == []
+actual = tomllib.loads(target.read_text())
+expected = tomllib.loads((fixture / "expected.toml").read_text())
+# JSON 표현으로 bool/int/float 차이까지 비교하며 사용자 키·trust·hook도 함께 확인한다.
+assert json.dumps(actual, sort_keys=True) == json.dumps(expected, sort_keys=True)
+
+# 정적 과거 mtime을 써서 빠른 재실행에서도 파일 교체·수정을 놓치지 않는다.
+os.utime(target, ns=(1_000_000_000, 1_000_000_000))
+before, content = target.stat(), target.read_bytes()
+second = run("sync")
+after = target.stat()
+assert second.stderr == "", second.stderr
+assert target.read_bytes() == content
+assert (after.st_ino, after.st_mtime_ns, after.st_mode) == (before.st_ino, before.st_mtime_ns, before.st_mode)
+assert json.loads(run("check").stdout)["drift"] == []
+print("TYPE_NORMALIZATION_OK")
+PY
+  )
+  assert_contains "$output" "TYPE_NORMALIZATION_OK"
 }
 
 test_codex_config_collect_drift_unit() {

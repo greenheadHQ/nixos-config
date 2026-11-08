@@ -424,3 +424,139 @@ test_git_cleanup_date_command_absent_stops_before_candidates() {
   assert_not_contains "$GIT_CLEANUP_LAST_STDOUT" "some-branch"
   assert_contains "$GIT_CLEANUP_LAST_STDERR" "'date +%s' 실행 실패"
 }
+
+# Bash 3.2의 nounset은 빈 배열의 직접 확장을 거부한다. 실제 스크립트를 명시한
+# 셸로 실행하며, 보호 목록과 gone/stale 목록의 빈 조합을 각각 통과시킨다.
+# 원격은 fixture의 로컬 bare 저장소뿐이며 삭제되는 브랜치도 전부 합성 데이터다.
+_git_cleanup_check_shell_array_cases() {
+  local shell="$1"
+  local population action sandbox repo_root before after input branch expected
+  while read -r population action; do
+    sandbox=$(new_sandbox)
+    repo_root="$sandbox/repo"
+    create_git_cleanup_fixture_repo "$repo_root"
+    add_local_only_branch_at_epoch "$repo_root" active-fixture 1700000000
+    install_git_cleanup_date_stub "$sandbox/bin" bsd
+
+    # dry-run은 보호 배열을 비워 두어 목록 출력 자체를 검증한다. 대화형 검사는
+    # 보호 브랜치를 두어 목록 출력 결함과 개별 선택의 빈 배열 결함을 구별한다.
+    if [[ "$action" != dry-run ]]; then
+      _git_cleanup_fixture_git "$repo_root" branch develop
+    fi
+    if [[ "$population" == gone || "$population" == both ]]; then
+      _git_cleanup_fixture_git "$repo_root" branch gone-fixture
+      _git_cleanup_fixture_git "$repo_root" config branch.gone-fixture.remote origin
+      _git_cleanup_fixture_git "$repo_root" config branch.gone-fixture.merge refs/heads/removed-fixture
+    fi
+    if [[ "$population" == stale || "$population" == both ]]; then
+      add_local_only_branch_at_epoch "$repo_root" stale-fixture 1600000000
+    fi
+
+    case "$action" in
+      dry-run) input='' ;;
+      reject) input=$'s\nn\nn\n' ;;
+      accept) input=$'s\ny\ny\n' ;;
+      quit-menu) input=$'q\n' ;;
+      quit-selection) input=$'s\nq\n' ;;
+      reject-gone) input=$'a\nn\n' ;;
+      reject-stale) input=$'b\nn\n' ;;
+      accept-gone) input=$'a\ny\n' ;;
+      accept-stale) input=$'b\ny\n' ;;
+      *) fail "unknown git-cleanup fixture action: $action" ;;
+    esac
+    before=$(_git_cleanup_fixture_git "$repo_root" for-each-ref --format='%(refname) %(objectname)' refs/heads)
+    printf '%s' "$input" > "$sandbox/input"
+    if ! (
+      cd "$repo_root"
+      export HOME="$sandbox/home" XDG_CONFIG_HOME="$sandbox/home/.config"
+      export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+      if [[ "$action" == dry-run ]]; then
+        PATH="$sandbox/bin:$PATH" GIT_CLEANUP_TEST_FIXED_NOW=1700000000 \
+          "$shell" "$GIT_CLEANUP_SCRIPT" --dry-run
+      else
+        PATH="$sandbox/bin:$PATH" GIT_CLEANUP_TEST_FIXED_NOW=1700000000 \
+          "$shell" "$GIT_CLEANUP_SCRIPT"
+      fi
+    ) < "$sandbox/input" > "$sandbox/stdout" 2> "$sandbox/stderr"; then
+      fail "git-cleanup $population/$action failed: $(cat "$sandbox/stderr")"
+    fi
+    assert_not_contains "$(cat "$sandbox/stderr")" "unbound variable"
+    assert_contains "$(cat "$sandbox/stdout")" "main (현재)"
+
+    after=$(_git_cleanup_fixture_git "$repo_root" for-each-ref --format='%(refname) %(objectname)' refs/heads)
+    case "$action" in
+      accept|accept-gone|accept-stale) ;;
+      *) [[ "$before" == "$after" ]] || fail "$population/$action changed local branches" ;;
+    esac
+    for branch in main active-fixture; do
+      _git_cleanup_fixture_git "$repo_root" show-ref --verify --quiet "refs/heads/$branch" ||
+        fail "$population/$action removed protected or active branch"
+    done
+    if [[ "$action" != dry-run ]]; then
+      _git_cleanup_fixture_git "$repo_root" show-ref --verify --quiet refs/heads/develop ||
+        fail "$population/$action removed protected branch"
+    fi
+    for branch in gone stale; do
+      [[ "$population" == "$branch" || "$population" == both ]] || continue
+      expected=present
+      if [[ "$action" == accept || "$action" == "accept-$branch" ]]; then
+        expected=deleted
+      fi
+      if _git_cleanup_fixture_git "$repo_root" show-ref --verify --quiet "refs/heads/$branch-fixture"; then
+        [[ "$expected" == present ]] || fail "$population/$action did not delete confirmed $branch branch"
+      else
+        [[ "$expected" == deleted ]] || fail "$population/$action deleted unconfirmed $branch branch"
+      fi
+    done
+    if [[ "$population" == none ]]; then
+      assert_contains "$(cat "$sandbox/stdout")" "정리할 브랜치가 없습니다"
+      assert_not_contains "$(cat "$sandbox/stdout")" "선택:"
+    elif [[ "$action" == dry-run ]]; then
+      assert_contains "$(cat "$sandbox/stdout")" "--dry-run 모드"
+    fi
+  done <<'CASES'
+none dry-run
+gone dry-run
+stale dry-run
+both dry-run
+none reject
+gone reject
+stale reject
+both reject
+none accept
+gone accept
+stale accept
+both accept
+both quit-menu
+both quit-selection
+both reject-gone
+both reject-stale
+both accept-gone
+both accept-stale
+CASES
+
+  # 배포처럼 git-cleanup 이름으로 PATH에 두어 `git cleanup`의 명령 탐색과 인자
+  # 전달도 확인한다. env-bash shebang은 fixture가 지정한 셸만 선택하도록 한다.
+  ln -s "$shell" "$sandbox/bin/bash"
+  ln -s "$GIT_CLEANUP_SCRIPT" "$sandbox/bin/git-cleanup"
+  before=$(_git_cleanup_fixture_git "$repo_root" for-each-ref --format='%(refname) %(objectname)' refs/heads)
+  if ! PATH="$sandbox/bin:$PATH" GIT_CLEANUP_TEST_FIXED_NOW=1700000000 \
+    _git_cleanup_fixture_git "$repo_root" cleanup --dry-run > "$sandbox/discovery-output" 2>&1; then
+    fail "git cleanup command discovery failed: $(cat "$sandbox/discovery-output")"
+  fi
+  assert_contains "$(cat "$sandbox/discovery-output")" "--dry-run 모드"
+  after=$(_git_cleanup_fixture_git "$repo_root" for-each-ref --format='%(refname) %(objectname)' refs/heads)
+  [[ "$before" == "$after" ]] || fail "git cleanup --dry-run changed local branches"
+}
+
+test_git_cleanup_runtime_bash_preserves_array_and_confirmation_contracts() {
+  _git_cleanup_check_shell_array_cases "$(command -v bash)"
+}
+
+test_git_cleanup_system_bash32_preserves_array_and_confirmation_contracts() {
+  if [[ ! -x /bin/bash ]] || ! /bin/bash -c '[[ ${BASH_VERSINFO[0]} == 3 && ${BASH_VERSINFO[1]} == 2 ]]'; then
+    echo "N/A: git-cleanup system Bash 3.2 fixture requires /bin/bash 3.2" >&2
+    return 0
+  fi
+  _git_cleanup_check_shell_array_cases /bin/bash
+}
