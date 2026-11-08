@@ -724,12 +724,10 @@ pinning_guard_findings_text_for_path() {
 # unscanned. This extracts the referenced file path(s) from the command text so
 # callers can rescan the file contents too.
 #
-# Not a full shell parser — a conservative (over-matching allowed) scan of a
-# fixed flag inventory. Quoted values (single/double) have the quotes
-# stripped; a quoted value containing whitespace is not supported (the
-# command is naively split on whitespace first). Callers must treat a
-# nonexistent "path" as a parse false-positive, not a scan target (the
-# underlying shell command would fail on it anyway).
+# 고정된 파일 전달 옵션의 정적 단어만 추출한다. 작은/큰따옴표와 escape를 처리하고,
+# 확장이 필요한 단어는 건너뛴다. 중첩 치환은 경계만 찾으며 내용을 실행하지 않는다.
+# 전체 셸 문법이나 실행 중 cwd 변경을 해석하지 않으므로, 없는 경로를 건너뛰는
+# 기존 호출부 계약을 유지한다. 공백·따옴표는 경로에 포함할 수 있지만 개행은 미지원이다.
 #
 # Runs entirely in awk (no shell array/glob surface) so this stays safely
 # sourceable from both bash (production hooks) and zsh (drift-check tooling).
@@ -745,6 +743,524 @@ pinning_guard_findings_text_for_path() {
 #     after '@'. A `key=value` value with no '@' is not a file reference and
 #     is skipped.
 pinning_extract_body_file_paths() {
+  local cmd="${1:-}"
+  [ -n "$cmd" ] || return 0
+  # 정적 셸 단어만 읽는다. 인용/escape는 해제하되 확장은 실행하지 않는다.
+  # 동적 단어·미완성 인용·개행 포함 경로는 반환하지 않는다. 줄 단위 경로를 받는
+  # 호출부의 없는 파일 건너뜀/읽기 실패 거부 정책은 그대로 유지한다.
+  # 닫힌 치환 본문은 직접 게시 명령만 별도로 검사한다. here-doc은 종료 구분자를 읽어
+  # 본문을 따로 떼어 낸다. 본문 속 인용·괄호는 바깥 명령과 치환 경계를 바꾸지 않으며,
+  # 본문이 실행될 수도 있으므로(bash <<EOF 등) 본문은 바깥 스코프와 같은 기준의 별도
+  # 스코프로 검사한다. 작업 폴더·함수·별칭·임의 wrapper는 해석하지 않는다.
+  # guard는 이전 공백 분할 후보(pinning_split_body_file_candidates)를 먼저 검사한 뒤 이 결과를 검사한다.
+  # 중첩 치환 깊이에 대해서는 BSD awk와 gawk 모두, 명령 길이(줄 수 포함)에 대해서는 BSD awk에서
+  # 시간이 이차로 늘어난다.
+  printf '%s\n' "$cmd" | awk -v sq="'" -v dq='"' '
+    function finish_word(end) {
+      if (started) {
+        if (!redirect_target) {
+          words[++count] = word
+          literal[count] = !dynamic
+          unknown_shape[count] = shape_unknown
+          assignment[count] = substr(command, word_start, end - word_start) ~ /^[A-Za-z_][A-Za-z0-9_]*=/
+        }
+        redirect_target = 0
+      }
+      word = ""; started = dynamic = brace_depth = shape_unknown = 0
+    }
+    function separator(c, at) {
+      finish_word(at)
+      words[++count] = c
+      literal[count] = 0
+      boundary[count] = index(";|&()\n", c) > 0
+      if (boundary[count]) redirect_target = 0
+    }
+    # 일반 리디렉션의 대상은 argv가 아니다. 붙어 있는 인용 없는 IO 번호만 함께 뺀다.
+    # 대상 안의 명령 치환 스코프는 토큰화 중 이미 수집하므로 그대로 남는다.
+    function start_redirection(at, allow_fd) {
+      if (allow_fd && started && substr(command, word_start, at - word_start) ~ /^[0-9]+$/) {
+        word = ""; started = dynamic = brace_depth = shape_unknown = 0
+      } else finish_word(at)
+      redirect_target = 1
+    }
+    # 확장 시작 기호와 다음 문자 사이에서 실제로 제거되는 줄연속만 잇는다.
+    function join_continuations_after(position) {
+      while (substr(command, position + 1, 2) == "\\\n") {
+        command = substr(command, 1, position) substr(command, position + 3)
+      }
+    }
+    function backtick_script(raw, outer_quote,    i, c, following, result) {
+      for (i = 1; i <= length(raw); i++) {
+        c = substr(raw, i, 1)
+        following = substr(raw, i + 1, 1)
+        if (c == "\\" && (following == "\\" || following == "$" || following == "`" ||
+            following == "\n" || (outer_quote == dq && following == dq))) {
+          if (following != "\n") result = result following
+          i++
+        } else result = result c
+      }
+      return result
+    }
+    function skip_backticks(start, collect, outer_quote,    i, c) {
+      for (i = start + 1; i <= length(command); i++) {
+        c = substr(command, i, 1)
+        if (c == "\\") i++
+        else if (c == "`") {
+          if (collect) {
+            scopes[++scope_count] = backtick_script(substr(command, start + 1, i - start - 1), outer_quote)
+            scope_restricted[scope_count] = 1
+          }
+          return i
+        }
+      }
+      return i
+    }
+    # ANSI-C 인용은 escape를 포함한 끝 경계만 찾는다. 값은 해독하지 않고 동적으로 둔다.
+    function skip_ansi_quote(start,    i, c) {
+      for (i = start + 1; i <= length(command); i++) {
+        c = substr(command, i, 1)
+        if (c == "\\") i++
+        else if (c == sq) return i
+      }
+      return i
+    }
+    # here-doc 연산자(<< 또는 <<-) 뒤의 종료 구분자를 읽는다. 인용과 escape는 제거한다.
+    # 성공하면 hd_delim, hd_strip, hd_end(구분자의 마지막 문자 위치)를 채운다.
+    function parse_heredoc(at,    i, c, q, delim) {
+      i = at + 2
+      hd_strip = substr(command, i, 1) == "-"
+      if (hd_strip) i++
+      while (substr(command, i, 1) == " " || substr(command, i, 1) == "\t") i++
+      delim = ""; q = ""
+      for (; i <= length(command); i++) {
+        c = substr(command, i, 1)
+        if (q != "") {
+          if (c == q) q = ""
+          else if (q == dq && c == "\\" && index("$`" dq "\\\n", substr(command, i + 1, 1)) > 0) {
+            # 큰따옴표 안의 escape는 셸처럼 해제한다. 줄 연속은 구분자에서 사라진다.
+            i++
+            if (substr(command, i, 1) != "\n") delim = delim substr(command, i, 1)
+          }
+          else delim = delim c
+          continue
+        }
+        if (c == sq || c == dq) { q = c; continue }
+        if (c == "\\") { i++; if (substr(command, i, 1) != "\n") delim = delim substr(command, i, 1); continue }
+        if (index(" \t\r\n;|&()<>", c) > 0) break
+        delim = delim c
+      }
+      if (q != "" || delim == "" || index(delim, "\n") > 0) return 0
+      hd_delim = delim
+      hd_end = i - 1
+      return 1
+    }
+    # start는 here-doc 연산자가 있던 줄을 끝내는 개행 위치다. 대기 중인 본문을 순서대로
+    # 건너뛰고, collect면 각 본문을 별도 스코프로 등록한다. 본문은 bash <<EOF처럼 실행될 수
+    # 있으므로 바깥 스코프와 같은 기준으로 검사한다(최상위 본문은 최상위처럼, 치환 안의
+    # 본문은 게시 명령만). 마지막으로 소비한 위치를 돌려준다. 종료 줄이 없으면 셸처럼
+    # 입력 끝까지를 본문으로 본다.
+    function consume_heredocs(start, collect, n, delims, strips,    k, pos, rest, line_end, line, body_start, found) {
+      pos = start
+      for (k = 1; k <= n; k++) {
+        body_start = pos + 1
+        found = 0
+        while (pos < length(command)) {
+          rest = substr(command, pos + 1)
+          line_end = index(rest, "\n")
+          line = line_end ? substr(rest, 1, line_end - 1) : rest
+          if (strips[k]) sub(/^\t+/, "", line)
+          if (line == delims[k]) {
+            if (collect) {
+              scopes[++scope_count] = substr(command, body_start, pos + 1 - body_start)
+              scope_restricted[scope_count] = restricted_scope
+            }
+            pos = line_end ? pos + line_end : length(command)
+            found = 1
+            break
+          }
+          pos = line_end ? pos + line_end : length(command)
+        }
+        if (!found) {
+          if (collect) {
+            scopes[++scope_count] = substr(command, body_start)
+            scope_restricted[scope_count] = restricted_scope
+          }
+          return length(command) + 1
+        }
+      }
+      return pos
+    }
+    # 치환값은 만들지 않는다. 완전히 닫힌 실행 본문만 별도 스코프로 검사한다.
+    # 그 본문 안의 자식은 다음 토큰화에서 찾으므로 중복 등록하지 않는다.
+    function skip_expansion(start, collect, arithmetic,    opening, closing, depth, quote, i, c, following, command_scope, before, word_boundary, pend_n, pend_delim, pend_strip) {
+      opening = substr(command, start, 1)
+      closing = opening == "(" ? ")" : "}"
+      command_scope = opening == "(" && !arithmetic && !(substr(command, start - 1, 1) == "$" && substr(command, start + 1, 1) == "(")
+      before = scope_count
+      depth = word_boundary = 1
+      for (i = start + 1; i <= length(command); i++) {
+        c = substr(command, i, 1)
+        if (quote != sq && index("$<>", c) > 0) join_continuations_after(i)
+        following = substr(command, i + 1, 1)
+        if (quote == sq) {
+          if (c == sq) quote = ""
+          word_boundary = 0
+        } else if (c == "\\") {
+          if (following == "\n") {
+            command = substr(command, 1, i - 1) substr(command, i + 2)
+            i--
+            continue
+          }
+          i++
+          word_boundary = 0
+        } else if (quote == "" && c == "$" && following == sq) {
+          i = skip_ansi_quote(i + 1)
+          word_boundary = 0
+        } else if (opening == "(" && quote == "" && c == "(" && following == "(") {
+          # 산술식의 <<는 heredoc이 아니다. 평가 없이 괄호 경계만 소비한다.
+          i = skip_expansion(i, collect && !command_scope, 1)
+          word_boundary = 0
+        } else if (command_scope && quote == "" && c == "#" && word_boundary) {
+          # 개행은 남겨 두어 대기 중인 here-doc 본문을 다음 반복에서 처리한다.
+          while (i < length(command) && substr(command, i + 1, 1) != "\n") i++
+        } else if (command_scope && quote == "" && c == "<" && following == "<") {
+          if (substr(command, i, 3) == "<<<") { i += 2; word_boundary = 1; continue }
+          # 종료 구분자를 읽어 다음 줄부터의 본문을 건너뛴다. 본문 속 닫는 괄호나 인용이
+          # 치환 경계를 바꾸지 않는다. 구분자를 읽지 못하면 남은 입력을 불투명하게 둔다.
+          if (!parse_heredoc(i)) { scope_count = before; return length(command) + 1 }
+          pend_delim[++pend_n] = hd_delim
+          pend_strip[pend_n] = hd_strip
+          i = hd_end
+          word_boundary = 0
+        } else if (command_scope && quote == "" && c == "\n" && pend_n > 0) {
+          i = consume_heredocs(i, 0, pend_n, pend_delim, pend_strip)
+          pend_n = 0
+          if (i > length(command)) { scope_count = before; return i }
+          word_boundary = 1
+        } else if (c == "`") {
+          i = skip_backticks(i, collect && !command_scope, quote)
+          word_boundary = 0
+        } else if ((c == "$" && (following == "(" || following == "{")) ||
+            (quote == "" && (c == "<" || c == ">") && following == "(")) {
+          i = skip_expansion(i + 1, collect && !command_scope)
+          word_boundary = 0
+        } else if (quote == dq) {
+          if (c == dq) quote = ""
+          word_boundary = 0
+        } else if (c == sq || c == dq) {
+          quote = c
+          word_boundary = 0
+        } else if (opening == "(" && c == opening) {
+          depth++
+          word_boundary = 1
+        } else if (c == closing && --depth == 0) {
+          if (collect && command_scope) {
+            scopes[++scope_count] = substr(command, start + 1, i - start - 1)
+            scope_restricted[scope_count] = 1
+          }
+          return i
+        } else word_boundary = index(" \t\r\n;|&()<>", c) > 0
+      }
+      # 열린 부모가 닫히지 않았으면 그 안에서 찾은 자식도 실행 본문이 아니다.
+      scope_count = before
+      return i
+    }
+    function brace_range(raw, value) {
+      # Bash 범위는 원문, zsh 범위는 인용/escape 해제 후 값으로 판별한다.
+      # zsh는 끝점/간격이 빈 숫자 범위에서도 중괄호를 제거한다.
+      return raw ~ /^[+-]?[0-9]+\.\.[+-]?[0-9]+(\.\.[+-]?[0-9]+)?$/ ||
+        raw ~ /^[a-zA-Z]\.\.[a-zA-Z]\.\.[+-]?[0-9]+$/ ||
+        value ~ /^.\.\..$/ ||
+        (value != ".." && value ~ /^-?[0-9]*\.\.-?[0-9]*(\.\.-?[0-9]*)?$/)
+    }
+    function tokenize(    i, c, following, quote, range, hd_n, hd_delims, hd_strips) {
+      for (i = 1; i <= length(command); i++) {
+        c = substr(command, i, 1)
+        if (!started) { word_start = i; word_scopes_before = scope_count }
+        # 확장 시작 기호의 다음 문자를 판별하기 전에 줄연속을 잇는다.
+        # 이미 escape된 기호는 앞선 반복에서 소비됐고 작은따옴표는 보존한다.
+        if (quote != sq && index("$<>", c) > 0) join_continuations_after(i)
+        following = substr(command, i + 1, 1)
+        if (quote == sq) {
+          if (c == sq) quote = ""
+          else word = word c
+          if (c == "\n") dynamic = 1
+          continue
+        }
+        if (c == "\\") {
+          if (following == "") { dynamic = 1; scope_count = word_scopes_before; break }
+          # 줄 연속은 제거될 뿐 새 단어를 시작하지 않는다. 범위 판정에 쓰는
+          # 원문에서도 같은 구간을 제거한다. 작은따옴표 내부는 위에서 보존된다.
+          if (following == "\n") {
+            command = substr(command, 1, i - 1) substr(command, i + 2)
+            i--
+            continue
+          }
+          started = 1
+          if (quote == dq && following != "$" && following != "`" && following != dq && following != "\\" && following != "\n") {
+            word = word c
+          } else {
+            if (following != "\n") word = word following
+            i++
+          }
+          continue
+        }
+        if (quote == dq && c == dq) { quote = ""; continue }
+        if (quote == "" && (c == sq || c == dq)) { quote = c; started = 1; continue }
+        if (c == "`" || (c == "$" && (following ~ /[[:alnum:]_@*#?$!{(^=~+-]/ ||
+            (quote == "" && (following == sq || following == dq))))) {
+          started = dynamic = 1
+          # 확장 구간은 내부 표식으로만 남긴다. 변수 이름을 정적 endpoint
+          # 조각으로 오인하거나, 동적 옵션 이름을 정적 이름으로 잇지 않는다.
+          word = word "\001"
+          if (c == "`") i = skip_backticks(i, 1, quote)
+          else if (following == "(" || following == "{") i = skip_expansion(i + 1, 1)
+          else if (following == sq) { shape_unknown = 1; i = skip_ansi_quote(i + 1) }
+          else if (following == dq) shape_unknown = 1
+          else {
+            if (following ~ /^[@*#?$!0-9-]$/) { i++; continue }
+            while (substr(command, i + 1, 1) ~ /^[\^=~+]$/) i++
+            if (substr(command, i + 1, 1) ~ /^[A-Za-z_]$/) {
+              do { i++ } while (substr(command, i + 1, 1) ~ /^[A-Za-z0-9_]$/)
+            }
+          }
+          if (i > length(command)) scope_count = word_scopes_before
+          continue
+        }
+        if (quote == "") {
+          if (c == "(" && following == "(") {
+            separator(c, i)
+            i = skip_expansion(i, 1, 1)
+            separator(")", i + 1)
+            continue
+          }
+          if (c == "<" && following == "<") {
+            if (substr(command, i, 3) == "<<<") { start_redirection(i, 1); i += 2; continue }
+            if (parse_heredoc(i)) {
+              # 구분자는 argv가 아니다. 본문은 이 줄이 끝나는 개행에서 따로 떼어 낸다.
+              start_redirection(i, 1)
+              redirect_target = 0
+              hd_delims[++hd_n] = hd_delim
+              hd_strips[hd_n] = hd_strip
+              i = hd_end
+              continue
+            }
+            # 구분자를 읽지 못한 치환 스코프는 실행 범위를 추측하지 않는다.
+            if (restricted_scope) { unsupported_scope = 1; break }
+          }
+          if ((c == "<" || c == ">") && following == "(") {
+            started = dynamic = 1
+            word = word "\001"
+            i = skip_expansion(i + 1, 1)
+            if (i > length(command)) scope_count = word_scopes_before
+            continue
+          }
+          if (c == "&" && following == ">") {
+            start_redirection(i, 0)
+            i++
+            if (substr(command, i + 1, 1) == ">") i++
+            continue
+          }
+          if ((c == "<" || c == ">") && !(c == "<" && following == "<")) {
+            start_redirection(i, 1)
+            if (following == c || following == "&" || (c == ">" && following == "|") ||
+                (c == "<" && following == ">")) i++
+            continue
+          }
+          if (index(" \t\r\n", c) > 0) {
+            if (c == "\n") {
+              separator(c, i)
+              if (hd_n > 0) { i = consume_heredocs(i, 1, hd_n, hd_delims, hd_strips); hd_n = 0 }
+            } else finish_word(i)
+            continue
+          }
+          if (index(";|&()<>", c) > 0) {
+            separator(c, i)
+            continue
+          }
+          if (c == "#" && !started) {
+            while (i <= length(command) && substr(command, i, 1) != "\n") i++
+            separator("\n", i)
+            if (hd_n > 0 && i <= length(command)) { i = consume_heredocs(i, 1, hd_n, hd_delims, hd_strips); hd_n = 0 }
+            continue
+          }
+          # 리터럴 중괄호/닫는 대괄호는 파일명의 일부다. 인용되지 않은 쉼표
+          # 목록 또는 범위가 있는 중괄호만 확장으로 본다.
+          if (c == "{") {
+            brace_start[++brace_depth] = length(word) + 2
+            brace_raw_start[brace_depth] = i + 1
+            brace_comma[brace_depth] = 0
+          } else if (c == "," && brace_depth > 0) {
+            brace_comma[brace_depth] = 1
+          } else if (c == "}" && brace_depth > 0) {
+            range = substr(word, brace_start[brace_depth])
+            if (brace_comma[brace_depth] ||
+                brace_range(substr(command, brace_raw_start[brace_depth], i - brace_raw_start[brace_depth]), range)) dynamic = 1
+            brace_depth--
+          }
+          if (index("*?[", c) > 0 || (c == "~" && !started)) dynamic = 1
+        }
+        started = 1
+        if (c == "\n") dynamic = 1
+        word = word c
+      }
+      if (quote != "") { dynamic = 1; scope_count = word_scopes_before }
+      finish_word(length(command) + 1)
+    }
+    function emit_field_or_path(v,    at) {
+      if (index(v, "=") == 0) {
+        print v
+        return
+      }
+      at = index(v, "=@")
+      if (at > 0) print substr(v, at + 2)
+    }
+    function api_value_option(option) {
+      return option ~ /^(-[XFHqptf]|--(method|hostname|header|field|raw-field|input|jq|template|cache|preview))$/
+    }
+    # 옵션 모양의 제목·메시지 등은 데이터다. 실제 명령/동작에 맞는 값만
+    # 소비하며, merge -m 및 review -a/-r 같은 불리언은 다음 단어를 삼키지 않는다.
+    function nonbody_value_option(kind, option) {
+      if (kind == "api") return api_value_option(option)
+      if (kind == "git") return option ~ /^(-[mctCU]|--(message|template|reuse-message|reedit-message|author|date|cleanup|fixup|squash|trailer|unified|inter-hunk-context|pathspec-from-file|git-dir|work-tree|namespace|config-env))$/
+      if (kind == "") return 0
+      if (option ~ /^(-[bR]|--(body|repo))$/) return 1
+      if (kind ~ / comment$/) return option == "--attach"
+      if (kind == "pr review") return 0
+      if (kind == "pr merge") return option ~ /^(-[At]|--(author-email|match-head-commit|subject))$/
+      if (kind ~ / create$/ && option ~ /^(-[almpTt]|--(assignee|attach|label|milestone|project|recover|template|title))$/) return 1
+      if (kind ~ / edit$/ && option ~ /^(-[mt]|--(add-assignee|add-label|add-project|attach|milestone|remove-assignee|remove-label|remove-project|title))$/) return 1
+      if (kind == "pr create") return option ~ /^(-[BHr]|--(base|head|reviewer))$/
+      if (kind == "pr edit") return option ~ /^(-B|--(base|add-reviewer|remove-reviewer))$/
+      if (kind == "issue create") return option ~ /^--(blocked-by|blocking|parent|type)$/
+      if (kind == "issue edit") return option ~ /^--(add-blocked-by|add-blocking|add-sub-issue|parent|remove-blocked-by|remove-blocking|remove-sub-issue|type)$/
+      return 0
+    }
+    function scan_options(first, last, kind,    i, w) {
+      i = first
+      while (i <= last) {
+        w = words[i]
+        if (!literal[i]) { i++; continue }
+        if (kind == "git" && w == "--") break
+        if (w == "--body-file" || w == "--file" || w == "-F" || w == "--field") {
+          if (i + 1 <= last) {
+            i++
+            if (literal[i] && words[i] != "") {
+              if (w == "-F" || w == "--field") emit_field_or_path(words[i])
+              else print words[i]
+            }
+          }
+        } else if (w ~ /^--body-file=/) {
+          sub(/^--body-file=/, "", w); if (w != "") print w
+        } else if (w ~ /^--file=/) {
+          sub(/^--file=/, "", w); if (w != "") print w
+        } else if (nonbody_value_option(kind, w)) i++
+        i++
+      }
+    }
+    # 제한 스코프(치환·백틱과 그 안의 here-doc 본문)에서는 실제 명령 위치만 본다. printf 등에
+    # 전달된 옵션 모양의 데이터는 게시 인자가 아니다. 함수·별칭·임의 wrapper와 작업 폴더는
+    # 해석하지 않는다.
+    function git_commit_command(i, last,    option) {
+      for (; i <= last; i++) {
+        option = words[i]
+        # 값의 확장은 명령 식별을 막지 않는다. 옵션 이름은 표식 앞에서
+        # 정적으로 확인하고, 본문 경로의 literal 조건은 별도로 유지한다.
+        if (option ~ /^(-[Cc].+|--(git-dir|work-tree|namespace|config-env|exec-path)=)/) continue
+        if (!literal[i]) return 0
+        if (option == "commit") { git_options_start = i + 1; return 1 }
+        if (option ~ /^(-C|-c|--git-dir|--work-tree|--namespace|--config-env)$/) { i++; continue }
+        if (option ~ /^(-p|-P|--paginate|--no-pager|--no-replace-objects|--no-lazy-fetch|--no-optional-locks|--no-advice|--bare|--literal-pathspecs|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs)$/) continue
+        return 0
+      }
+      return 0
+    }
+    function api_endpoint(i, last,    option) {
+      for (; i <= last; i++) {
+        option = words[i]
+        if (option ~ /^(-[XFHqptf].+|--(method|hostname|header|field|raw-field|input|jq|template|cache|preview)=)/) continue
+        if (literal[i] && option == "--") return i < last && !unknown_shape[i + 1] ? words[i + 1] : ""
+        if (literal[i] && api_value_option(option)) { i++; continue }
+        if (literal[i] && option ~ /^(-i|--include|--paginate|--slurp|--silent|--verbose|--allow-escape-sequences)$/) continue
+        if (unknown_shape[i]) return ""
+        return substr(option, 1, 1) == "-" ? "" : option
+      }
+      return ""
+    }
+    function publishing_command(first, last,    i, section, action, endpoint, executable) {
+      i = first
+      git_options_start = data_only_command = 0
+      # 명령 위치의 셸 예약어(제어문 시작·부정·중괄호 그룹·time)는 명령 이름이 아니다.
+      # 예약어는 할당보다 앞에서만 인식되므로 할당 접두어보다 먼저 건너뛴다.
+      while (i <= last && literal[i] && words[i] ~ /^(if|then|else|elif|do|while|until|!|[{]|time)$/) {
+        i++
+        if (words[i - 1] == "time") {
+          if (literal[i] && words[i] == "-p") i++
+          if (literal[i] && words[i] == "--") i++
+        }
+      }
+      while (i <= last && assignment[i]) i++
+      if (literal[i] && words[i] == "command") {
+        i++
+        if (literal[i] && words[i] == "-p") i++
+        if (literal[i] && words[i] == "--") i++
+      }
+      if (i > last || !literal[i]) return ""
+      data_only_command = words[i] == "printf"
+      executable = words[i]
+      if (substr(executable, 1, 1) == "/") sub(/^.*\//, "", executable)
+      if (executable == "git") return git_commit_command(i + 1, last) ? "git" : ""
+      if (executable != "gh" || !literal[i + 1]) return ""
+      section = words[i + 1]; action = words[i + 2]
+      if (section == "pr") return literal[i + 2] && action ~ /^(create|edit|comment|review|merge)$/ ? section " " action : ""
+      if (section == "issue") return literal[i + 2] && action ~ /^(create|edit|comment)$/ ? section " " action : ""
+      if (section != "api") return ""
+      endpoint = api_endpoint(i + 2, last)
+      return endpoint ~ /issues\/.*comments/ || endpoint ~ /pulls\/.*(comments|reviews)/ ? "api" : ""
+    }
+    function scan_scope(restricted,    first, last, kind) {
+      first = 1
+      for (last = 1; last <= count + 1; last++) {
+        if (last > count || boundary[last]) {
+          kind = publishing_command(first, last - 1)
+          # printf 데이터는 제외하되, 인자 안에서 수집한 실행 스코프는 별도로 검사한다.
+          if (!data_only_command && (!restricted || kind != ""))
+            scan_options(kind == "git" ? git_options_start : first, last - 1, kind)
+          first = last + 1
+        }
+      }
+    }
+    { command = command (NR > 1 ? "\n" : "") $0 }
+    END {
+      scopes[1] = command; scope_restricted[1] = 0; scope_count = 1
+      for (scope = 1; scope <= scope_count; scope++) {
+        command = scopes[scope]
+        restricted_scope = scope_restricted[scope]
+        delete scopes[scope]
+        delete scope_restricted[scope]
+        for (key in words) delete words[key]
+        for (key in literal) delete literal[key]
+        for (key in unknown_shape) delete unknown_shape[key]
+        for (key in assignment) delete assignment[key]
+        for (key in boundary) delete boundary[key]
+        word = ""; count = started = dynamic = brace_depth = shape_unknown = unsupported_scope = redirect_target = 0
+        before = scope_count
+        tokenize()
+        if (unsupported_scope) scope_count = before
+        else scan_scope(restricted_scope)
+      }
+    }
+  '
+}
+
+# 이전 추출기의 공백 분할 후보. 셸 문법을 해석하지 않고 줄마다 공백으로 나눈 뒤 고정 옵션
+# 뒤의 단어를 낸다. 인용 경로는 잘리고 데이터 속 옵션 모양도 후보가 되지만(과포함),
+# 문자열 스크립트(bash -c)·함수 치환·wrapper·치환 안 here-doc의 셸별 종료 처리처럼
+# 정적 토큰화가 해석하지 않는 문법 안의 경로도 공백으로 나뉜 단어이면 낸다. 경로에 공백이
+# 있거나 경로 뒤에 ) ' ; 등이 붙으면 이 후보도 놓친다(이전 추출기와 같은 한계).
+# guard는 이 후보를 정적 추출 결과보다 먼저 검사한다. 정적 추출이 느리거나 실패해도
+# 이전 추출기의 검사 범위는 먼저 끝난다.
+pinning_split_body_file_candidates() {
   local cmd="${1:-}"
   [ -n "$cmd" ] || return 0
   printf '%s\n' "$cmd" | awk -v sq="'" -v dq='"' '

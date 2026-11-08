@@ -81,16 +81,59 @@ case "$TOOL_NAME" in
 
     # --body-file / -F(--field) 로 넘겨진 파일 내용도 재스캔한다 (issue #684).
     # command 문자열 자체는 클린해도 파일 내용에 박제 패턴이 있는 케이스를 잡는다.
-    while IFS= read -r body_file; do
-      [ -n "$body_file" ] || continue
-      [ -e "$body_file" ] || continue
-      if ! cat "$body_file" > "$SCAN_DIR/bash.txt" 2>/dev/null; then
-        _deny_with_reason "[pinning-guard] failed to read $body_file referenced via --body-file; denying by fail-closed policy."
+    # 이전 공백 분할 후보를 먼저 검사하고, 인용·공백 경로까지 읽는 정적 추출 결과를 이어서
+    # 검사한다. 정적 추출이 느리거나 실패해도 이전 검사 범위는 먼저 끝난다. 각 단계는 후보를
+    # 모두 읽은 뒤 검사한다. 후보 스트림을 stdin으로 둔 채 cat하면 표준 입력을 가리키는
+    # 후보(/dev/stdin 등)가 남은 후보를 삼켜 뒤 파일 검사가 빠지므로, 본문 읽기의 stdin은 /dev/null로 둔다.
+    # 추출이 실패하면 확인하지 못한 경로가 남을 수 있으므로 거부한다(fail-closed).
+    # FIFO는 읽으면 게시 명령이 받을 본문을 소비하거나 쓰는 쪽이 없어 멈추므로 읽지 않고 거부한다.
+    # 일반 파일은 전부 읽는다(분할 후보는 게시 명령이 아닌 --file·-F 파일도 내므로 크기로 막지 않는다).
+    # 그 밖의 파일(끝나지 않는 장치 파일 등)은 최대 크기까지만 읽고, 넘으면 전부 확인할 수 없으므로
+    # 거부한다. 한도는 GitHub 본문 한도(65,536자)보다 넉넉하다.
+    # 같은 경로 문자열은 한 번만 읽는다(패턴이 아닌 문자열로 비교). 표기가 다른 같은 파일
+    # (./a와 a)은 따로 읽으며, 확인한 목록을 매번 훑으므로 후보 수에 대해 이차 시간이 든다.
+    checked_body_files=$'\n'
+    body_file_max_bytes=1048576
+    for body_file_source in pinning_split_body_file_candidates pinning_extract_body_file_paths; do
+      if ! "$body_file_source" "$COMMAND_TEXT" > "$SCAN_DIR/body-candidates.txt" 2>/dev/null; then
+        _deny_with_reason "[pinning-guard] failed to extract --body-file paths; denying by fail-closed policy."
       fi
-      findings="$(pinning_findings_text "$SCAN_DIR/bash.txt")"
-      [ -n "$findings" ] || continue
-      _deny "$TOOL_NAME" "$body_file (via --body-file)" "$findings"
-    done < <(pinning_extract_body_file_paths "$COMMAND_TEXT")
+      body_files=()
+      while IFS= read -r body_file; do
+        [ -n "$body_file" ] || continue
+        body_files+=("$body_file")
+      done < "$SCAN_DIR/body-candidates.txt"
+      for body_file in ${body_files[@]+"${body_files[@]}"}; do
+        case "$checked_body_files" in
+          *$'\n'"$body_file"$'\n'*) continue ;;
+        esac
+        checked_body_files+="$body_file"$'\n'
+        [ -e "$body_file" ] || continue
+        # 판정도 읽기와 같이 stdin을 /dev/null로 두어, /dev/stdin 같은 경로가 hook 입력 pipe를 가리키지 않게 한다.
+        if [ -p "$body_file" ] < /dev/null; then
+          _deny_with_reason "[pinning-guard] $body_file referenced via --body-file is a FIFO; it cannot be inspected without consuming it, so denying. Use a regular file."
+        fi
+        if [ -f "$body_file" ] < /dev/null; then
+          body_file_regular=1
+          body_file_reader=(cat --)
+        else
+          body_file_regular=0
+          body_file_reader=(head -c "$((body_file_max_bytes + 1))" --)
+        fi
+        if ! "${body_file_reader[@]}" "$body_file" > "$SCAN_DIR/bash.txt" 2>/dev/null < /dev/null; then
+          _deny_with_reason "[pinning-guard] failed to read $body_file referenced via --body-file; denying by fail-closed policy."
+        fi
+        if [ "$body_file_regular" = 0 ]; then
+          body_file_bytes=$(wc -c < "$SCAN_DIR/bash.txt")
+          if [ "$((body_file_bytes))" -gt "$body_file_max_bytes" ]; then
+            _deny_with_reason "[pinning-guard] $body_file referenced via --body-file is not a regular file and is larger than $body_file_max_bytes bytes or does not end; it cannot be fully inspected, so denying."
+          fi
+        fi
+        findings="$(pinning_findings_text "$SCAN_DIR/bash.txt")"
+        [ -n "$findings" ] || continue
+        _deny "$TOOL_NAME" "$body_file (via --body-file)" "$findings"
+      done
+    done
     ;;
   Edit | Write | NotebookEdit)
     FILE_PATH=$(printf '%s' "$INPUT" | jq -r '
