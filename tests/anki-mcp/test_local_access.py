@@ -241,6 +241,62 @@ def test_operation_status_distinguishes_unready_missing_and_existing(runtime, mo
         thread.join(timeout=2)
 
 
+@pytest.mark.parametrize("failure_type", [RuntimeError, TimeoutError])
+def test_submit_failure_releases_mutation_and_allows_next_request(runtime, monkeypatch, failure_type):
+    failure = failure_type("fixture-submit-failed")
+    schedule = runtime.aqt.mw.taskman.run_on_main
+    released, called = [], []
+    release_mutation = runtime._release_mutation
+
+    def record_release():
+        released.append(runtime._busy)
+        release_mutation()
+
+    def reject(_fn):
+        raise failure
+
+    monkeypatch.setattr(runtime, "_release_mutation", record_release)
+    monkeypatch.setattr(runtime.aqt.mw.taskman, "run_on_main", reject)
+    with pytest.raises(failure_type) as error:
+        runtime._mutating("fixture", lambda: called.append("not submitted"))
+    assert error.value is failure
+    assert called == []
+    assert runtime._busy is None and not runtime._lock.locked()
+    assert released == ["fixture"]
+
+    monkeypatch.setattr(runtime.aqt.mw.taskman, "run_on_main", schedule)
+    assert runtime._mutating("next", lambda: "done") == "done"
+    assert released == ["fixture", "next"]
+    assert runtime._busy is None and not runtime._lock.locked()
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_completed_mutation_releases_once(runtime, monkeypatch, fails):
+    released = []
+    release_mutation = runtime._release_mutation
+    failure = RuntimeError("fixture-operation-failed")
+
+    def record_release():
+        released.append(runtime._busy)
+        release_mutation()
+
+    def operation():
+        assert runtime._lock.locked() and runtime._busy == "fixture"
+        if fails:
+            raise failure
+        return "done"
+
+    monkeypatch.setattr(runtime, "_release_mutation", record_release)
+    if fails:
+        with pytest.raises(RuntimeError) as error:
+            runtime._mutating("fixture", operation)
+        assert error.value is failure
+    else:
+        assert runtime._mutating("fixture", operation) == "done"
+    assert released == ["fixture"]
+    assert runtime._busy is None and not runtime._lock.locked()
+
+
 def test_timeout_keeps_mutation_lock_until_late_callback_finishes(runtime, monkeypatch):
     started, release, finished = threading.Event(), threading.Event(), threading.Event()
     workers = []
@@ -251,7 +307,12 @@ def test_timeout_keeps_mutation_lock_until_late_callback_finishes(runtime, monke
     runtime.aqt.mw.taskman.run_on_main = schedule
     monkeypatch.setattr(runtime, "MAIN_TIMEOUT_SECS", 0.03)
     monkeypatch.setattr(runtime, "BUSY_WAIT_SECS", 0.01)
-    calls = []
+    calls, released = [], []
+    release_mutation = runtime._release_mutation
+    def record_release():
+        released.append(runtime._busy)
+        release_mutation()
+    monkeypatch.setattr(runtime, "_release_mutation", record_release)
     def slow():
         started.set()
         release.wait(2)
@@ -264,14 +325,16 @@ def test_timeout_keeps_mutation_lock_until_late_callback_finishes(runtime, monke
         for name in ("sync", "export", "apply"):
             with pytest.raises(runtime.BusyError):
                 runtime._mutating(name, lambda: calls.append("overlap"))
-        assert calls == []
+        assert calls == [] and released == []
     finally:
         release.set()
         assert finished.wait(2)
         for worker in workers:
             worker.join(timeout=2)
     assert calls == ["write"] and runtime._busy is None
+    assert not runtime._lock.locked() and released == ["apply:timed-out"]
     assert runtime._mutating("sync", lambda: "next") == "next"
+    assert released == ["apply:timed-out", "sync"]
 
 
 @pytest.mark.parametrize("failure", ["missing", "version", "method", None])
