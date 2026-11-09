@@ -1156,6 +1156,59 @@ $stderr_head"
   done
 }
 
+test_pinning_gate_command_variants() {
+  local sandbox hook command_text output denied_content first_line
+  sandbox=$(new_hook_sandbox)
+  local stdout_log="$sandbox/gate-stdout.log" stderr_log="$sandbox/gate-stderr.log"
+  local hooks=(
+    "$REPO_ROOT/modules/shared/programs/claude/files/hooks/pinning-guard.sh"
+    "$REPO_ROOT/modules/shared/programs/codex/files/hooks/pinning-guard.sh"
+  )
+  denied_content=$(jq -r '._fixture_existing_content' "$FIXTURE_DIR/stdin/pretooluse-pinning-guard-codex-bash-bodyfile-deny.json")
+  first_line=$(printf '%s\n' "$denied_content" | head -n 1)
+  printf '%s\n' "$denied_content" > "$sandbox/body.md"
+  printf '%s\n' '정상 본문입니다.' > "$sandbox/clean.md"
+  # 명령 이름 사이의 공백 변형과 gh가 하위 명령 앞에서 받는 저장소 옵션도 같은 게시 명령으로 판별한다.
+  local denied_commands=(
+    'gh -R o/r pr create --title t --body-file body.md'
+    'gh -Ro/r pr create --title t --body-file body.md'
+    'gh --repo o/r issue comment 1 --body-file body.md'
+    'gh --repo=o/r pr edit 1 --body-file body.md'
+    'gh  pr create --title t --body-file body.md'
+    $'gh\tpr create --title t --body-file body.md'
+    $'gh pr \\\ncreate --title t --body-file body.md'
+    'git  commit -F body.md'
+  )
+  for command_text in "${denied_commands[@]}"; do
+    printf '%s' "$command_text" | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/gate-input.json"
+    for hook in "${hooks[@]}"; do
+      (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" "$hook" \
+        < "$sandbox/gate-input.json" > "$stdout_log" 2> "$stderr_log")
+      [ ! -s "$stderr_log" ] || fail "gate variant guard wrote stderr: $command_text"
+      output=$(jq -r '.hookSpecificOutput.permissionDecisionReason' "$stdout_log")
+      [[ "$output" == *'body.md (via --body-file)'* ]] || fail "gate variant must inspect the body file: $command_text"
+    done
+  done
+  # 판별을 통과하면 인자로 직접 넘긴 본문도 명령 문자열 검사에 걸린다. 정상 본문과 게시 명령이 아닌
+  # 명령은 통과한다.
+  for command_text in "gh -R o/r pr create --title t --body \"$first_line\"" \
+    "gh -R o/r issue list --search \"$first_line\"" 'gh -R o/r pr create --title t --body-file clean.md'; do
+    printf '%s' "$command_text" | jq -Rs '{tool_name:"Bash", tool_input:{command:.}}' > "$sandbox/gate-input.json"
+    for hook in "${hooks[@]}"; do
+      (cd "$sandbox" && _exec_with_sandbox_env "$sandbox" "" "$hook" \
+        < "$sandbox/gate-input.json" > "$stdout_log" 2> "$stderr_log")
+      [ ! -s "$stderr_log" ] || fail "gate inline guard wrote stderr"
+      case "$command_text" in
+        *clean.md) [ ! -s "$stdout_log" ] || fail "clean body after gh -R must pass" ;;
+        *" pr create "*)
+          output=$(jq -r '.hookSpecificOutput.permissionDecisionReason' "$stdout_log")
+          [[ "$output" == *'durable shell command'* ]] || fail "inline body after gh -R must be scanned" ;;
+        *) [ ! -s "$stdout_log" ] || fail "non-publishing gh command must pass the gate" ;;
+      esac
+    done
+  done
+}
+
 test_pinning_body_file_static_paths() {
   local sandbox fixture command_text expected actual shell hook content body_file label output denied_content
   local wrapper_lib locale fifo watchdog
@@ -2408,6 +2461,8 @@ run_test "pretooluse pinning-guard behavioral (#587)" \
   test_pretooluse_pinning_guard_behavioral
 run_test "pinning body file static paths (#1586)" \
   test_pinning_body_file_static_paths
+run_test "pinning gate command variants (#1612)" \
+  test_pinning_gate_command_variants
 run_test "pretooluse pinning-guard meta behavioral (#587)" \
   test_pretooluse_pinning_guard_meta_behavioral
 run_test "commit-msg pinning behavioral" \
