@@ -3,6 +3,10 @@
 # 패턴 SSOT: modules/shared/programs/claude/files/lib/pinning-patterns.sh.
 # 공통 helper SSOT: modules/shared/programs/claude/files/lib/hook-runtime.sh.
 # 정책: PreToolUse fail-closed — lib 누락 시 deny JSON 반환 (보안 경계 유지).
+# 범위: 에이전트가 실수로 남긴 박제 메타데이터를 게시 전에 거르는 위생 검사다. 우회하려는 입력이나
+# 드문 셸 문법(특이한 here-doc 구분자, 로캘에 따른 중괄호 범위, 대화형 장치 등)까지 더 해석하는 것은
+# 목표가 아니다. 그런 형태는 알려진 한계로 기록하고 처리 범위를 넓히지 않는다. 판별을 넓힐 때는
+# 실제로 쓰이는 게시 명령 형태를 우선한다.
 set -euo pipefail
 
 command -v jq >/dev/null 2>&1 || exit 0

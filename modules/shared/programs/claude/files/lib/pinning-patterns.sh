@@ -752,6 +752,7 @@ pinning_extract_body_file_paths() {
   # 본문을 따로 떼어 낸다. 본문 속 인용·괄호는 바깥 명령과 치환 경계를 바꾸지 않으며,
   # 본문이 실행될 수도 있으므로(bash <<EOF 등) 본문은 바깥 스코프와 같은 기준의 별도
   # 스코프로 검사한다. 작업 폴더·함수·별칭·임의 wrapper는 해석하지 않는다.
+  # 드문 셸 문법을 더 지원하는 것은 목표가 아니다(pinning-guard.sh 머리말의 범위 참조).
   # guard는 이전 공백 분할 후보(pinning_split_body_file_candidates)를 먼저 검사한 뒤 이 결과를 검사한다.
   # 중첩 치환 깊이에 대해서는 BSD awk와 gawk 모두, 명령 길이(줄 수 포함)에 대해서는 BSD awk에서
   # 시간이 이차로 늘어난다.
