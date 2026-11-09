@@ -58,6 +58,16 @@ _deny() {
 _targeted_bash_command() {
   local cmd="$1"
   case "$cmd" in
+    *gh* | *git*) ;;
+    *) return 1 ;;
+  esac
+  # 판별에만 쓰는 정규화다(검사 대상인 명령 원문은 그대로 둔다). 명령 이름 사이의 줄 연속은
+  # 지우고 탭·연속 공백은 한 칸으로 줄이며, gh가 하위 명령 앞에서 받는 저장소 옵션
+  # (-R, --repo)은 뗀다. 정규화가 실패하면 게시 명령으로 보고 검사한다(fail-closed).
+  # 줄 연속도 sed에서 지운다. bash 3.2의 패턴 치환은 줄 연속이 많은 긴 명령에서 크게 느려진다.
+  cmd=$(printf '%s\n' "$cmd" | sed -E -e :a -e '/\\$/{$!N;s/\\\n//;ta' -e '}' \
+    -e 's/[[:blank:]]+/ /g; s/gh (-R ?|--repo[= ])[^ ]+ /gh /g') || return 0
+  case "$cmd" in
     *"git commit"* | *"git -"*" commit"* | \
     *"gh pr create"* | *"gh pr edit"* | *"gh pr comment"* | *"gh pr review"* | *"gh pr merge"* | \
     *"gh issue create"* | *"gh issue edit"* | *"gh issue comment"* | \
