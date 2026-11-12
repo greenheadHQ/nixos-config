@@ -596,14 +596,27 @@ find_candidates() {
            -o -iname "*.mkv" -o -iname "*.wmv" \)
 }
 
+cleanup_video_output() {
+    # 이 변환이 만든 파일만 지운다. 다른 항목이 생긴 디렉터리는 남긴다.
+    /bin/rm -f "$1" 2>/dev/null || log_warn "임시 결과 파일을 정리하지 못함"
+    /bin/rmdir "$2" 2>/dev/null || log_warn "임시 결과 디렉터리를 비우지 못함"
+}
+
 process_one() {
     local f="$1"
-    local filename timestamp output_filename output_path
+    local filename timestamp output_filename output_path temp_dir temp_path
 
     filename=$(basename "$f")
     timestamp=$(/bin/date +"%Y%m%dT%H%M%S")
     output_filename="${timestamp}_${CURRENT_PID}_$RANDOM.mp4"
     output_path="${DEST_DIR}/${output_filename}"
+
+    # 같은 파일시스템에서 완성된 파일만 게시한다. 신호 처리에서는 활성 출력을 건드리지 않는다.
+    if ! temp_dir=$(/usr/bin/mktemp -d "${DEST_DIR}/.video-output.XXXXXX" 2>/dev/null); then
+        log_error "환경 오류: 임시 결과 디렉터리를 만들 수 없음; 입력 파일을 보존하고 run 중단"
+        exit 1
+    fi
+    temp_path="${temp_dir}/output.mp4"
 
     log_info "압축 시작: $filename"
 
@@ -611,11 +624,19 @@ process_one() {
     if ffmpeg -nostdin -hide_banner -loglevel error -i "$f" \
         -c:v hevc_videotoolbox -q:v "$VT_QUALITY" -tag:v hvc1 \
         -c:a eac3 -b:a 224k \
-        -y "$output_path"; then
+        -y "$temp_path"; then
+        # link는 기존 파일·디렉터리·symlink를 덮어쓰거나 그 안으로 이동하지 않는다.
+        if ! /bin/link "$temp_path" "$output_path" 2>/dev/null; then
+            log_error "환경 오류: 결과 파일을 게시할 수 없음; 입력 파일을 보존하고 run 중단"
+            cleanup_video_output "$temp_path" "$temp_dir"
+            exit 1
+        fi
+        cleanup_video_output "$temp_path" "$temp_dir"
         /bin/rm -f "$f"
         log_info "압축 완료: $filename -> ${output_filename}"
     else
         log_error "압축 실패: $filename"
+        cleanup_video_output "$temp_path" "$temp_dir"
         quarantine_or_abort "$f"
     fi
 }

@@ -383,6 +383,11 @@ run_test "folder-actions compress-rar keeps input when rar fails" test_folder_ac
 run_test "folder-actions compress-rar keeps reserved dir with other entries after rar failure" test_folder_actions_compress_rar_keeps_reserved_dir_with_other_entries_after_rar_failure
 run_test "folder-actions compress-rar signal removes only empty reserved dir" test_folder_actions_compress_rar_signal_removes_only_empty_reserved_dir
 run_test "folder-actions video jobs run with launchd minimal PATH" test_folder_actions_video_jobs_run_with_launchd_minimal_path
+run_test "folder-actions video jobs clean failed output and continue" test_folder_actions_video_jobs_clean_failed_output_and_continue
+run_test "folder-actions video jobs keep input when staging fails" test_folder_actions_video_jobs_keep_input_when_staging_fails
+run_test "folder-actions video jobs keep input when publish fails" test_folder_actions_video_jobs_keep_input_when_publish_fails
+run_test "folder-actions video jobs limit cleanup to owned output" test_folder_actions_video_jobs_limit_cleanup_to_owned_output
+run_test "folder-actions video jobs preserve signal contract" test_folder_actions_video_jobs_preserve_signal_contract
 run_test "upload-immich preserves inputs when runtime is missing" test_upload_immich_preserves_inputs_when_runtime_is_missing
 run_test "upload-immich runs CLI through mise without auto install" test_upload_immich_runs_cli_through_mise_without_auto_install
 run_test "upload-immich real mise preserves uninstalled Node without installing" test_upload_immich_real_mise_preserves_uninstalled_node_without_installing
