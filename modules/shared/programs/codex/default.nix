@@ -247,25 +247,32 @@ in
 
   # 최초 설치만 수행한다. 반복 activation은 설치된 release를 바꾸지 않는다.
   # installer가 shell 시작 파일을 편집하지 않도록 설치 경로를 PATH에 먼저 노출한다.
-  home.activation.installCodexCli = lib.hm.dag.entryAfter [ "cleanupManualNodeCodex" ] ''
-    if [ ! -x "$HOME/.local/bin/codex" ]; then
-      if [ -n "''${DRY_RUN_CMD:-}" ]; then
-        echo "Would install Codex CLI (dry-run)."
-      else
-        echo "Installing Codex CLI..."
-        if ! (
-          set -o pipefail
-          ${pkgs.curl}/bin/curl -fsSL https://chatgpt.com/codex/install.sh \
-            | PATH="$HOME/.local/bin:${nativeRuntimePath}" CODEX_HOME="$HOME/.codex" \
-              CODEX_INSTALL_DIR="$HOME/.local/bin" CODEX_NON_INTERACTIVE=1 ${pkgs.bash}/bin/sh
-        ) >/dev/null 2>&1; then
-          echo "Codex CLI installation failed." >&2
-          exit 1
+  # Retired managed links must be removed before checking for an existing CLI.
+  home.activation.installCodexCli =
+    lib.hm.dag.entryAfter
+      [
+        "cleanupManualNodeCodex"
+        "linkGeneration"
+      ]
+      ''
+        if [ ! -x "$HOME/.local/bin/codex" ]; then
+          if [ -n "''${DRY_RUN_CMD:-}" ]; then
+            echo "Would install Codex CLI (dry-run)."
+          else
+            echo "Installing Codex CLI..."
+            if ! (
+              set -o pipefail
+              ${pkgs.curl}/bin/curl -fsSL https://chatgpt.com/codex/install.sh \
+                | PATH="$HOME/.local/bin:${nativeRuntimePath}" CODEX_HOME="$HOME/.codex" \
+                  CODEX_INSTALL_DIR="$HOME/.local/bin" CODEX_NON_INTERACTIVE=1 ${pkgs.bash}/bin/sh
+            ) >/dev/null 2>&1; then
+              echo "Codex CLI installation failed." >&2
+              exit 1
+            fi
+            [ -x "$HOME/.local/bin/codex" ] || { echo "Codex CLI was not installed." >&2; exit 1; }
+          fi
         fi
-        [ -x "$HOME/.local/bin/codex" ] || { echo "Codex CLI was not installed." >&2; exit 1; }
-      fi
-    fi
-  '';
+      '';
 
   # ─── 프로젝트 심볼릭 링크 (activation script) ───
   # nrs 실행 시 자동으로 .agents/skills/ 동기화. 본체는 동작 fixture로 검증할 수 있도록

@@ -12,14 +12,38 @@ _prepare_codex_native_fixture() {
 
   # 실제 선언을 추출하되 설치 명령과 홈 디렉터리는 fixture 경계로 옮긴다.
   python3 - "$REPO_ROOT/modules/shared/programs/codex/default.nix" "$sandbox" <<'PY'
+import graphlib
 import pathlib
+import re
 import sys
 
 source = pathlib.Path(sys.argv[1]).read_text()
 sandbox = pathlib.Path(sys.argv[2])
-marker = '  home.activation.installCodexCli = lib.hm.dag.entryAfter [ "cleanupManualNodeCodex" ] \'\'\n'
-assert source.count(marker) == 1, "native CLI declaration boundary changed"
-body = source.split(marker, 1)[1].split("\n  '';", 1)[0]
+declaration = re.search(
+    r'  home\.activation\.installCodexCli =\s*lib\.hm\.dag\.entryAfter\s*\[([^]]*)\]\s*\'\'\n',
+    source,
+)
+assert declaration is not None, "native CLI declaration boundary changed"
+after = re.findall(r'"([^"\n]+)"', declaration.group(1))
+body = re.split(r"\n[ \t]*'';", source[declaration.end():], maxsplit=1)[0]
+# Exercise a permitted order that runs installation as early as its declared
+# dependencies allow. An absent linkGeneration edge must expose the old failure.
+dag = graphlib.TopologicalSorter({
+    "installCodexCli": after,
+    "cleanupManualNodeCodex": ["writeBoundary"],
+    "linkGeneration": ["writeBoundary"],
+    "writeBoundary": [],
+})
+dag.prepare()
+ready = set(dag.get_ready())
+order = []
+while ready:
+    node = min(ready)
+    ready.remove(node)
+    order.append(node)
+    dag.done(node)
+    ready.update(dag.get_ready())
+(sandbox / "activation-order").write_text("\n".join(order) + "\n")
 replacements = {
     "${pkgs.curl}/bin/curl": '"$CODEX_NATIVE_FIXTURE_DOWNLOAD"',
     "${pkgs.bash}/bin/sh": '"$CODEX_NATIVE_FIXTURE_INSTALLER"',
@@ -154,4 +178,35 @@ test_codex_native_install_replaces_dangling_link() {
   _run_codex_native_fixture "$sandbox" >/dev/null
   [[ -x "$sandbox/user-root/.local/bin/codex" && ! -L "$sandbox/user-root/.local/bin/codex" ]] || fail 'dangling native link was not reinstalled'
   assert_line_count "$sandbox/calls" 'install environment validated' 1
+}
+
+test_codex_native_install_survives_managed_link_retirement() {
+  local sandbox old_wrapper step pass
+  sandbox=$(new_sandbox)
+  _prepare_codex_native_fixture "$sandbox"
+  old_wrapper="$sandbox/old-generation/home-manager-files/.local/bin/codex"
+  mkdir -p "$(dirname "$old_wrapper")"
+  printf '#!/bin/sh\nexec /nonexistent/old-cli\n' > "$old_wrapper"
+  chmod +x "$old_wrapper"
+  ln -s "$old_wrapper" "$sandbox/user-root/.local/bin/codex"
+  [[ -x "$sandbox/user-root/.local/bin/codex" ]] || fail 'retired wrapper must initially be executable'
+
+  for pass in first repeated; do
+    while IFS= read -r step; do
+      case "$step" in
+        linkGeneration)
+          # Model only retirement of the old managed link. A native result must
+          # survive subsequent activation, just as an unmanaged file does.
+          if [[ -L "$sandbox/user-root/.local/bin/codex" ]] && \
+            [[ "$(readlink "$sandbox/user-root/.local/bin/codex")" == "$old_wrapper" ]]; then
+            rm "$sandbox/user-root/.local/bin/codex"
+          fi
+          ;;
+        installCodexCli) _run_codex_native_fixture "$sandbox" >/dev/null ;;
+      esac
+    done < "$sandbox/activation-order"
+    [[ -x "$sandbox/user-root/.local/bin/codex" && ! -L "$sandbox/user-root/.local/bin/codex" ]] || \
+      fail "native CLI missing after $pass managed-link retirement"
+    assert_line_count "$sandbox/calls" 'install environment validated' 1
+  done
 }

@@ -63,6 +63,7 @@ run_test "native CLI installs officially once" test_codex_native_install_uses_of
 run_test "native CLI checks executable completion" test_codex_native_install_checks_executable_completion
 run_test "native CLI installation propagates failures" test_codex_native_install_propagates_failures
 run_test "native CLI replaces dangling link" test_codex_native_install_replaces_dangling_link
+run_test "native CLI survives managed link retirement" test_codex_native_install_survives_managed_link_retirement
 run_test "native CLI path accepts official installation" test_codex_native_path_accepts_native_installation
 run_test "native CLI path reports shadowing without execution" test_codex_native_path_reports_shadowing_without_execution
 run_test "native CLI path rejects invalid installation" test_codex_native_path_rejects_invalid_installations
