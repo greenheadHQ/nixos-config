@@ -22,7 +22,7 @@
 - Project projection은 `.agents/skills/<name>` directory symlink 단위다. repo-local target은
   `../../.claude/skills/<name>`이어야 하고 투영된 `SKILL.md`에 접근 가능해야 한다. 레거시 실디렉토리,
   누락·대상 불일치·고아 entry는 실패하며, 접근 가능한 `SKILL.md`를 가진 절대 target plugin symlink는 허용한다.
-- 실측 codex 런타임과 `codex-pin.json`의 버전 일치 확인 — 불일치가 문자열로 드러나게 비교한다: `[ "$(jq -r .version modules/shared/programs/codex/codex-pin.json)" = "$(command codex --version | awk '{print $2}')" ] && echo "version match" || echo "version MISMATCH"` (`command codex`는 zsh wrapper 함수 우회. 확인 버전 스탬프는 `SKILL.md` "작성 기준"에만 기재한다 — 여기 박으면 bump 때 stale해진다. 버전 값 자체의 SoT는 `codex-pin.json`).
+- 설치 버전과 실제 실행 경로는 `command codex --version` 및 `type -a codex`로 확인한다. 공식 native 설치본을 사용하며 문서의 확인 버전은 검증 시점 기록이다. 버전 스탬프는 `SKILL.md`의 "작성 기준"에만 두고, CLI 업데이트 후 해당 재검증 명령을 실행한다.
 
 ## 증상
 
@@ -108,15 +108,10 @@ for d in .agents/skills/*; do
   fi
 done
 
-# 4) pin/runtime 버전 일치 검증
-runtime_version="$(codex --version | awk 'NF { print $NF; exit }')"
-pin_version="$(jq -r .version modules/shared/programs/codex/codex-pin.json)"
-if [ -z "$runtime_version" ] || [ -z "$pin_version" ] || [ "$pin_version" = null ] ||
-   [ "$runtime_version" != "$pin_version" ]; then
-  echo "FAIL: runtime=$runtime_version pin=$pin_version" >&2
-  exit 1
-fi
-echo "OK: runtime=$runtime_version pin=$pin_version"
+# 4) 공식 CLI의 설치 버전과 업데이트 인터페이스 확인
+command codex --version
+command codex --help
+command codex update --help
 
 # 5) 런타임 인식 검증
 codex -a never exec "Answer YES or NO only: Is a skill named 'configuring-codex' available in this workspace?"
@@ -149,9 +144,9 @@ codex -a never exec "Answer YES or NO only: Is a skill named 'configuring-codex'
 4. 실제 스킬 선택/로드 문제가 남으면 해당 project-scope 스킬 1개로 런타임 확인 (호출 전 실행 계약 적용)
 5. `configuring-codex` 스킬 문서와 실제 구현(`default.nix`, verify script) 간 불일치 여부 점검
 6. pre-commit `ai-skills-consistency` 훅 확인 (관련 staged 변경 시 fail, 긴급 우회: `SKIP_AI_SKILL_CHECK=1`)
-7. `command -v codex`가 nix profile/store 경로로 resolve되는지 확인 — mise shims 경로면 잔존 shim이 codex(nix profile)를 shadow하는 회귀(#890)이며, `verify-ai-compat.sh`의 codex PATH resolve 가드가 자동 검사한다
-8. `cleanupManualNodeCodex`가 수동 `npm install -g @openai/codex` 잔재를 제거하는지 확인 — node가 mise에 남으므로 수동 글로벌이 PATH상 codex(nix profile)를 가리는 회귀의 근원
-9. NixOS MiniPC remote-control standalone은 `~/.codex/packages/standalone/current/` 아래 app-server payload로만 허용한다. `~/.local/bin/codex`가 이 standalone을 가리키면 일반 Codex CLI를 shadow하는 회귀다.
+7. 첫 PATH 매치가 공식 native CLI인지 확인한다. mise shim·npm 글로벌·오래된 Nix 설치본이 앞서지 않아야 하며, `verify-ai-compat.sh`의 PATH 검사를 함께 확인한다.
+8. `cleanupManualNodeCodex`가 수동 npm 글로벌 잔재를 정리하고 native CLI를 가리지 않는지 확인한다. Node의 mise 관리는 유지한다.
+9. 공식 CLI의 `packages/standalone`과 원격 데몬의 `packages/app-server-daemon`을 구분한다. 일반 CLI 링크는 전자가 정상이며 후자를 가리키면 충돌이다.
 
 ## 2026-05-02 업데이트: SKILL.md 도구-중립성 lint
 
@@ -202,96 +197,65 @@ Codex CLI가 디렉토리 심링크는 공식 지원함을 확인했다.
 - `.agents/skills/<name>` → `../../.claude/skills/<name>` 디렉토리 심링크
 - `verify-ai-compat.sh`, `warn-skill-consistency.sh`에서 디렉토리 심링크 기준 검증
 
-## 2026-06-06 업데이트: codex 바이너리 nix overlay 이관 (#890)
+## 2026-11-12: 공식 native CLI와 원격 데몬 분리
 
-> 2026-06-05의 "mise npm backend 운영" 절을 대체한다. mise shim 활성화가 비대화형 PATH에서
-> fragile해 PATH 회귀(#815/#821/#823/#845/#858)와 fork 폭주(os error 35)가 반복되어, codex를
-> mise에서 떼고 declarative nix overlay로 이관했다. node per-project 전환은 mise에 유지(부분 폐기).
+과거 mise npm backend와 Nix overlay 설치를 공식 native 설치로 대체한다. 비대화형 PATH에서
+mise shim이나 수동 npm 글로벌이 앞서는 문제를 막는 기존 잔재 정리는 유지한다.
 
-### 설치 + 정리 activation
+### 설치와 설정의 소유 범위
 
-- 설치: nix overlay(`modules/shared/programs/codex/package.nix`, `libraries/packages.nix`의 `shared`
-  경유) — macOS+NixOS 공통 nix profile/store. OpenAI 공식 GitHub 릴리스의 codex-package 통합
-  tarball을 직접 핀한다(`codex-pin.json`, #1219 — codex + codex-code-mode-host 사이드카 + 번들
-  rg/zsh를 upstream이 조립·발행). nixpkgs lag·제3자 flake 없이 최신 추적이 목적이며, tarball
-  전체를 `$out/libexec/codex/`에 풀고 `$out/bin/codex` symlink만 노출한다(컴파일·patchelf 없음;
-  codex가 canonical 실행 경로 기준 package layout을 인식). 최신화는 `update-codex` 한 줄.
-- 정리 activation 3종(`default.nix`) — codex를 설치하지 않고, 과거 설치 방식 잔재가 PATH에서
-  codex(nix profile)를 shadow하지 못하게 정리만 한다:
-  1. `cleanupLegacyCodexCli` — 과거 GitHub ELF(NixOS)/brew cask(macOS) 잔재 정리
-  2. `cleanupMiseCodexShim` — mise npm backend 잔재(`shims/codex`·`installs/npm-openai-codex/`) 멱등 제거.
-     mise 명령을 호출하지 않고 순수 rm (dangling shim의 mise resolve가 fork 폭주원). config.toml의 codex
-     entry는 mise 전역 config가 nix 선언(`modules/shared/programs/mise/config.toml`)으로 이관되며 선언에서
-     제외되는 방식으로 소멸한다.
-  3. `cleanupManualNodeCodex` — 수동 `npm install -g @openai/codex` 잔재 제거 (node가 mise에 남아 유효)
-
-### SoT와 업데이트
-
-- 버전 SoT: `modules/shared/programs/codex/codex-pin.json` (version/tag + flake systems 2개
-  (aarch64-darwin·x86_64-linux)의 codex-package asset/hash 각 1쌍; NixOS remote-control
-  standalone payload도 같은 asset 공유). 업데이트는 `update-codex`(최신 stable 조회 →
-  해시 prefetch → 핀 갱신 → nrs; `--pre`로 alpha 포함). platforms/asset 키는 정적 설정이라 손으로 관리.
-- overlay는 OpenAI 릴리스를 직핀하므로 lag이 사실상 없다(직핀 최신). config 템플릿 feature floor
-  (현재 0.124+)는 항상 충족. 갱신 후 `codex-pin.json` 변경을 커밋한다.
-- `~/.config/mise/config.toml`은 nix 선언 read-only symlink다 (SoT:
-  `modules/shared/programs/mise/config.toml`; 직접 편집·`mise use -g` 불가). codex entry는
-  선언에 없으므로 배포 시 자동 소멸하고, `node`/`gitleaks`는 선언에 포함되어 보존된다.
-
-### 운영 주의 (nix overlay)
-
-- fetch 실패가 nrs를 막는다: codex는 `home.packages` 빌드 입력이라, fresh 빌드(post-GC 또는 핀 bump)에서
-  GitHub 릴리스 fetch가 실패하면 `nrs`가 실패한다(과거 mise activation은 non-fatal이었음). `fetchurl`은
-  hash로 캐시되므로 정상 시 재fetch는 없다.
-- update-codex는 항상 메인 repo 대상: `@flakePath@`가 메인 체크아웃으로 고정되어, worktree에서
-  `update-codex`를 실행해도 메인 repo의 `codex-pin.json`을 갱신·빌드한다(`nfu`와 동일 패턴).
-
-### `npm install -g @openai/codex` 금지
-
-node가 mise에 남으므로 수동 글로벌이 `~/.local/share/mise/installs/node/<ver>/bin`에 깔리면
-PATH상 nix profile보다 앞서 codex를 가린다. `cleanupManualNodeCodex`가 각 node 버전
-prefix의 npm으로 `env PATH="$node_prefix/bin:${pkgs.mise}/bin:$PATH" "$npm_bin" uninstall -g @openai/codex`를
-반복 호출해 제거하므로, codex가 사라지거나 꼬인 것처럼 보인다.
-`lts`/`24`/`latest` 같은 symlink 별칭 디렉토리는 `[ ! -L ]` 가드로 제외해 중복 uninstall을 막는다.
+- CLI 설치는 [OpenAI 공식 installer](https://chatgpt.com/codex/install.sh)가 소유한다.
+  `default.nix`의 `installCodexCli`는 실행 가능한 CLI가 없을 때만 최초 설치하며, 반복 activation은
+  설치 버전을 바꾸지 않는다. dry-run에는 다운로드·설치가 없고 설치 실패는 실패로 드러난다.
+- CLI의 업데이트 안내에서 사용자가 적용 여부를 선택한다. 직접 업데이트를 원할 때
+  `command codex update`를 사용한다. 지원 옵션은 `command codex update --help`, 현재 버전은
+  `command codex --version`으로 확인한다. CLI 예약 업데이트는 구성하지 않는다.
+- Nix는 설정 병합·훅·스킬·PATH·최초 설치 배선과 이전 설치 방식의 잔재 정리를 계속 관리한다.
+  바이너리 전환 과정에서 설정·인증·대화 데이터를 지우지 않는다.
+- Node와 패키지 매니저는 mise에 유지한다. Codex의 mise npm backend는 복원하지 않는다.
+  `cleanupMiseCodexShim`과 `cleanupManualNodeCodex`는 native CLI를 가리는 이전 설치본을 정리한다.
+  수동 `npm install -g @openai/codex`는 다시 같은 충돌을 만들므로 사용하지 않는다.
 
 ### 진단
 
+일반 CLI 진입점 `~/.local/bin/codex`는 공식 native 설치본인
+`~/.codex/packages/standalone/releases/<release>/bin/codex`를 가리키는 링크가 정상이다.
+원격 데몬 전용 실행본은 `~/.codex/packages/app-server-daemon/current/bin/codex`다.
+첫 PATH 매치와 링크 대상을 함께 확인하여 mise shim·npm 글로벌·오래된 Nix 설치본이나
+데몬 전용 실행본이 일반 CLI를 대신하지 않게 한다. `standalone`이라는 이름 자체는 충돌 증거가 아니다.
+
 ```bash
-whence -p codex   # PATH 첫 매치 (nix profile/store여야 정상; mise shims면 잔존 shim 회귀, node/<ver>/bin이면 수동 글로벌 잔재)
-type -a codex     # 모든 후보
-readlink -f ~/.codex/packages/standalone/current/bin/codex  # Codex App remote-control standalone payload
+type -a codex
+command codex --version
+command codex --help
+command codex update --help
 ```
 
-`codex`는 셸 alias로 래핑되어 있다 — Linux는 안내 `echo`를 `>&2`로 먼저 출력한 뒤
-`command codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen`를 실행하고, macOS는 선행 echo 없이
-같은 `command codex …`를 실행한다. 따라서 바이너리 자체 경로는 `whence -p codex`로 확인한다.
+셸 wrapper를 우회해 버전·도움말을 읽을 때는 `command codex`를 쓴다.
+설정·스킬 변경 뒤에는 `nrs`와 `./scripts/ai/verify-ai-compat.sh`로 적용 상태를 확인한다.
+업데이트 성공과 설정 적용 성공은 따로 확인한다.
 
-### 2026-06-29 업데이트: remote-control standalone 예외
+### 원격 데몬
 
-ChatGPT mobile Codex sync를 위한 app-server는 일반 CLI와 별도의 standalone package layout을 사용한다.
-이 payload는 `modules/shared/programs/codex/codex-pin.json`의 pinned platform asset/hash(CLI
-패키징과 같은 codex-package tarball, #1219)에서 동기화하며, systemd `codex-remote-control-ensure.service`가
-`~/.codex/packages/standalone/releases/<version>-x86_64-unknown-linux-musl/`와 `current` symlink를 관리한다.
+원격 app-server는 `app-server-daemon` 아래의 전용 실행본을 사용한다. 설치된 native CLI에서
+`from-cli` 방식으로 준비하며 `autoUpdateEnabled=false`를 유지한다. 관리 timer는 CLI 업데이트를
+실행하지 않는다. 사용자가 CLI를 갱신한 뒤 설치된 버전을 기준으로 데몬 실행본과 상태를 확인한다.
 
-경계:
-- 일반 `command -v codex`는 계속 Nix-managed profile/store 경로여야 한다.
-- `~/.local/bin/codex`가 standalone을 가리키는 symlink이면 PATH shadow 회귀이므로 제거 대상이다.
-- `update-codex`가 갱신하는 platform asset hash 하나가 CLI 설치와 standalone payload 양쪽을 커버한다.
-- timer는 `codex doctor`를 실행하지 않는다. 대신 `ensure-running`이 pinned standalone 동기화,
-  ChatGPT auth 확인, daemon/start 상태 확인, 버전 drift 재시작, 그리고 같은 사용자 +
-  legacy app-server per-process 증거가 있는 경우에만 stale PID repair를 수행한다.
-- Desktop SSH는 `CODEX_SSH_SKIP_APP_SERVER_BOOT=true`인 login shell에서 기존 관리형 서버의
-  proxy로만 연결한다. 앱이 독립 `nohup ... app-server --listen unix://`를 띄우면 mobile
-  remote-control의 관리 계약과 충돌한다. 앱 업데이트 후에는 SSH 재연결 전후 서버 PID와
-  `/proc/<pid>/exe`가 유지되는지 확인한다. 이 환경변수가 적용된 호스트에서 관리형 서버가
-  내려가 있으면 SSH 연결은 자동으로 별도 서버를 만들지 않으므로 ensure를 먼저 복구한다.
-- SSH proxy가 연결된 동안 버전 교체는 exit 62 / `version-update-deferred-ssh-connected`로
+- 일반 CLI의 `standalone`과 데몬 전용 `app-server-daemon`은 경로와 실행 수명을 분리한다.
+  일반 CLI가 데몬 전용 경로를 가리키는 경우만 이 둘 사이의 PATH 충돌로 처리한다.
+- timer는 `codex doctor`를 실행하지 않는다. 설치된 CLI와 데몬 실행본의 일치, 인증 상태,
+  daemon/start 상태를 확인한다. 소유권 판정과 정지·교체는 공식 lifecycle에 맡긴다.
+  원시 PID에 대한 주기적 종료·복구는 하지 않으며, 소유권이 불명확한 프로세스는 보고만 한다.
+- Desktop SSH는 `CODEX_SSH_SKIP_APP_SERVER_BOOT=true`인 login shell에서 관리형 서버의
+  proxy로만 연결한다. 별도 app-server 자동 기동은 관리 계약과 충돌한다. 연결 전후에 같은
+  관리형 프로세스를 사용하는지 확인하며, 서버가 내려가 있으면 ensure를 먼저 복구한다.
+- SSH proxy가 연결되어 있으면 버전 교체는 exit 62 / `version-update-deferred-ssh-connected`로
   보류한다. 이때 `remoteControlEnabled: null`은 미확인이지 disabled 판정이 아니다.
-  `remote-control start`도 상태에 따라 서버를 재시작하므로 보류 경로에서는 호출하지 않는다.
-  작업 완료 후 SSH 연결을 해제하면 다음 점검에서 교체한다. proxy 유무 확인 뒤 새 연결이
-  들어오는 경합까지 원자적으로 막지는 않으므로 계획된 교체는 연결을 해제한 상태에서 한다.
-- proxy는 소켓 소유 서버가 아니지만 `pid-update-loop`는 기존 stale proof 보호 대상이다.
-  socket/daemon/PID lock 파일은 직접 삭제하지 않는다. Codex가 startup lock 아래에서 stale
-  socket을 정리한다. 외부에서 lock을 unlink하면 살아 있는 flock inode를 우회할 수 있다.
+  `remote-control start`도 상태에 따라 재시작할 수 있어 보류 경로에서 호출하지 않는다.
+- 연결 검사 후 새 proxy가 붙는 경합은 원자적으로 차단하지 못한다. 계획된 교체에서는 연결을
+  해제한 상태를 유지한다. 연결 종료 후 다음 점검에서 교체한다.
+- socket/daemon/PID lock 파일을 직접 삭제하지 않는다. 정지·교체와 필요한 소켓 정리는
+  공식 lifecycle이 처리한다. 외부에서 lock을 unlink하면 살아 있는 flock inode를 우회할 수 있다.
 - 같은 원인 코드의 지속 장애는 최초 통지 후 6시간마다 재알림한다. 원인이 바뀌면 기존
   30분 쿨다운을 적용하고, 복구와 복구 후 재발은 바로 알린다.
 
@@ -300,7 +264,7 @@ ChatGPT mobile Codex sync를 위한 app-server는 일반 CLI와 별도의 standa
 ```bash
 systemctl status codex-remote-control-ensure.service codex-remote-control-ensure.timer
 journalctl -u codex-remote-control-ensure.service -n 80 --no-pager
-jq '{exitCode,lastAction,lastRepairReason,authMode,normalCodexResolved,managedCodexVersion,appServerVersion,remoteControlEnabled}' /var/lib/codex-remote-control/status.json
+jq '{exitCode,lastAction,lastRepairReason,authMode,operatorCli,managedCodexVersion,appServerVersion,remoteControlEnabled}' /var/lib/codex-remote-control/status.json
 ```
 
 제어 소켓 위치 (0.156.1 기준, 재확인: `readlink ~/.codex/app-server-control/app-server-control.sock`):
@@ -308,27 +272,19 @@ jq '{exitCode,lastAction,lastRepairReason,authMode,normalCodexResolved,managedCo
 `/tmp/codex-daemon-<uid>/<sha256>`이다. 그래서 ensure 서비스는 `PrivateTmp`를 쓰지 않는다 — 켜면 unit 종료 시
 private /tmp와 함께 데몬 소켓이 지워진다 (eval Test CRC1이 고정).
 
-증상 `remote-control-start-failed` + stderr `app server did not become ready on …sock`이 반복되고,
-`pgrep -a -u "$(id -u)" -f 'codex app-server'`에 데몬이 살아 있는데 symlink 대상이 없으면(`ls -L`가 실패)
-소켓을 잃은 데몬이다. `ensure-running`은 이 상태를 stale로 판정하지 않는다. 실행 중 작업이
-없음을 확인하고 해당 PID의 출처를 다시 확인한 뒤 `kill -TERM`하고 ensure로 재기동한다.
+관리 상태 조회가 실패하거나 실행 중 서버의 소유권이 확인되지 않으면 진단 결과만 보고한다.
+프로세스 이름이나 실행 경로·버전 차이만으로 종료 대상을 결정하지 않는다. 원시 PID에 TERM을
+보내거나 소켓·lock 파일을 지워 복구하는 절차는 사용하지 않는다.
 
-`unmanaged-error-without-stale-pid-proof` / exit 61은 수동 실행의 증거가 아니다. Desktop SSH가
-자동으로 만든 서버도 해당한다. 기존 서버를 관리형으로 입양하는 기능은 없으므로 1회 전환한다:
+원격 연결 복구 순서:
 
-1. 수정본을 `nrs`로 적용하고 새 SSH login shell에서
-   `printenv CODEX_SSH_SKIP_APP_SERVER_BOOT`가 `true`인지 확인한다.
-2. timer를 잠시 멈추고 실행 중 대화가 없는지 확인한다. 필요하면 Desktop SSH 연결도 해제한다.
-   읽기 전용 `thread/loaded/list` + `thread/read`의 `thread.status`를 사용한다.
-3. `ss -xlpn`, `/proc/<pid>/exe`, `/proc/<pid>/cmdline`로 socket 소유 프로세스를 다시 특정하고
-   그 PID에만 TERM을 보낸다. 출처가 불명확하거나 작업 중이면 중단한다. `pkill codex` 금지.
-4. `sudo systemctl start codex-remote-control-ensure.service` 후 `status.json`의 exit 0,
-   `remoteControlEnabled: true`와 실제 `remoteControl/status/read`의 `connected`를 확인한다.
-5. SSH 재연결 뒤에도 같은 관리형 PID가 사용되고 2회차 ensure도 성공하면 timer를 재개한다.
-
-Codex의 자체 socket cleanup 근거:
-[`unix_socket.rs` (0.158.0)](https://github.com/openai/codex/blob/rust-v0.158.0/codex-rs/app-server-transport/src/transport/unix_socket.rs).
-`daemon version`의 `running` 및 버전 일치만으로 관리형 서버라고 판정하지 않는다.
+1. 설정을 적용한 뒤 새 SSH login shell에 `CODEX_SSH_SKIP_APP_SERVER_BOOT=true`가 전달되는지 확인한다.
+2. 실행 중 작업과 SSH 연결 상태를 확인한다. 연결된 proxy가 있으면 교체를 보류한다.
+3. 현재 CLI 도움말과 공식 lifecycle의 상태·소유권 판정에 따라 복구한다. 소유권을 확인하지 못하면
+   중단하고 보고하며, 사용자 요청 없이 기존 프로세스를 종료하지 않는다.
+4. 관리 상태와 실제 `remoteControl/status/read`의 `connected`를 확인한다.
+5. SSH 재연결 뒤에도 관리형 서버가 유지되는지 확인한다. 조회 성공이나 버전 일치만으로
+   lifecycle 소유권이 증명되었다고 보지 않는다.
 
 ## 참고 문서
 

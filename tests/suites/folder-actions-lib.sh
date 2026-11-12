@@ -291,7 +291,8 @@ _folder_actions_tool_scripts_runnable() {
 
   for path in /usr/bin/env /usr/bin/id /usr/bin/stat /usr/bin/sed /usr/bin/grep /usr/bin/tr \
     /usr/bin/hexdump /usr/bin/dirname /usr/bin/shasum /usr/bin/awk /usr/bin/wc \
-    /bin/date /bin/ps /bin/kill /bin/ls /bin/mkdir /bin/rmdir /bin/chmod /bin/mv /bin/rm /bin/cat; do
+    /usr/bin/mktemp /usr/bin/mkfifo \
+    /bin/date /bin/ps /bin/kill /bin/ls /bin/mkdir /bin/rmdir /bin/chmod /bin/mv /bin/rm /bin/cat /bin/link; do
     if [ ! -x "$path" ]; then
       echo "SKIP: folder-actions rar/ffmpeg fixture requires $path" >&2
       return 1
@@ -459,12 +460,12 @@ test_folder_actions_compress_rar_runs_with_launchd_minimal_path() (
 )
 
 test_folder_actions_video_jobs_run_with_launchd_minimal_path() (
-  local name sandbox input output outputs expected actual
+  local name sandbox input output outputs staged expected actual link_line remove_line
   _folder_actions_tool_scripts_runnable || return 0
 
   for name in compress-video convert-video-to-gif; do
     sandbox=$(new_sandbox)
-    _folder_actions_install_tool_script "$sandbox" "$name"
+    _folder_actions_install_video_script "$sandbox" "$name"
     _folder_actions_install_tool_double "$sandbox" ffmpeg
     input="$sandbox/home/FolderActions/$name/sample.mov"
     printf '%s\n' "synthetic video input" > "$input"
@@ -476,15 +477,19 @@ test_folder_actions_video_jobs_run_with_launchd_minimal_path() (
     [[ "${#outputs[@]}" -eq 1 && -f "${outputs[0]}" ]] \
       || fail "$name must create exactly one output: ${outputs[*]}"
     output="${outputs[0]}"
+    staged=$(sed -n 's/^ARG=//p' "$sandbox/ffmpeg.log" | tail -n 1)
+    [[ "$staged" == "$sandbox/home/Downloads/".video-output.*/output.* ]] \
+      || fail "$name must encode inside its own staging directory"
+    [[ ! -e "$(dirname "$staged")" ]] || fail "$name must remove its empty staging directory"
     assert_file_contains "$sandbox/ffmpeg.log" "PATH=$sandbox/tools:/usr/bin:/bin"
     if [ "$name" = compress-video ]; then
       [[ "$output" == *.mp4 ]] || fail "compress-video output must be mp4: $output"
       expected=$(printf 'ARG=%s\n' -nostdin -hide_banner -loglevel error -i "$input" \
-        -c:v hevc_videotoolbox -q:v 1 -tag:v hvc1 -c:a eac3 -b:a 224k -y "$output")
+        -c:v hevc_videotoolbox -q:v 1 -tag:v hvc1 -c:a eac3 -b:a 224k -y "$staged")
     else
       [[ "$output" == *.gif ]] || fail "convert-video-to-gif output must be gif: $output"
       expected=$(printf 'ARG=%s\n' -nostdin -hide_banner -loglevel error -y -i "$input" \
-        -vf "fps=15,scale=480:-1:flags=lanczos" -c:v gif -f gif "$output")
+        -vf "fps=15,scale=480:-1:flags=lanczos" -c:v gif -f gif "$staged")
     fi
     actual=$(grep '^ARG=' "$sandbox/ffmpeg.log")
     [[ "$actual" == "$expected" ]] || fail "$name ffmpeg arguments changed: $actual"
@@ -494,6 +499,243 @@ test_folder_actions_video_jobs_run_with_launchd_minimal_path() (
       || fail "$name must delete the original exactly once: $(cat "$sandbox/calls.log")"
     [[ "$(_folder_actions_count_calls_on "$sandbox" mv "$input")" == 0 ]] \
       || fail "$name must not quarantine a successful input"
+    link_line=$(awk -F '\t' '$1 == "link" { print NR; exit }' "$sandbox/calls.log")
+    remove_line=$(awk -F '\t' -v input="$input" '$1 == "rm" && $3 == input { print NR; exit }' "$sandbox/calls.log")
+    [[ -n "$link_line" && -n "$remove_line" && "$link_line" -lt "$remove_line" ]] \
+      || fail "$name must publish before deleting its input"
+  done
+)
+
+# Synthetic inputs are already stable; only the video output lifecycle is under test.
+_folder_actions_install_video_script() {
+  local sandbox="$1" name="$2" cmd
+  _folder_actions_install_tool_script "$sandbox" "$name"
+  for cmd in link rmdir; do
+    cat > "$sandbox/stubs/$cmd" <<EOF_STUB
+#!/bin/sh
+{ printf '%s' '$cmd'; for arg in "\$@"; do printf '\t%s' "\$arg"; done; printf '\n'; } >> '$sandbox/calls.log'
+exec /bin/$cmd "\$@"
+EOF_STUB
+    chmod 755 "$sandbox/stubs/$cmd"
+    sed "s#/bin/$cmd #$sandbox/stubs/$cmd #g" "$sandbox/home/.local/bin/$name.sh" > "$sandbox/script.tmp"
+    cat "$sandbox/script.tmp" > "$sandbox/home/.local/bin/$name.sh"
+  done
+  # shellcheck disable=SC2016 # The generated callback reads its own argument.
+  printf '\nwait_file_stable() { [ -f "$1" ]; }\n' >> "$sandbox/home/.local/bin/_folder-actions-lib.sh"
+}
+
+_folder_actions_install_video_result_double() {
+  local sandbox="$1" mode="$2"
+  cat > "$sandbox/tools/ffmpeg" <<EOF_TOOL
+#!/bin/sh
+input=""
+output=""
+next_is_input=0
+for arg in "\$@"; do
+  if [ "\$next_is_input" = 1 ]; then input=\$arg; fi
+  next_is_input=0
+  if [ "\$arg" = -i ]; then next_is_input=1; fi
+  output=\$arg
+done
+printf '%s\n' "\$output" >> '$sandbox/outputs.log'
+case '$mode' in
+  INT|TERM)
+    printf '%s\n' partial > "\$output"
+    /bin/kill -'$mode' "\$PPID"
+    exit 1
+    ;;
+esac
+if [ "\$(basename "\$input")" = failed.mov ]; then
+  if [ '$mode' != early ]; then printf '%s\n' partial > "\$output"; fi
+  if [ '$mode' = extra ]; then printf '%s\n' keep > "\$(dirname "\$output")/keep.txt"; fi
+  case '$mode' in
+    partial|early) printf '%s\n' valid-input > "\$(dirname "\$input")/valid.mov" ;;
+  esac
+  exit 1
+fi
+/bin/cat "\$input" > "\$output"
+if [ '$mode' = extra ]; then printf '%s\n' keep > "\$(dirname "\$output")/keep.txt"; fi
+EOF_TOOL
+  chmod 755 "$sandbox/tools/ffmpeg"
+}
+
+test_folder_actions_video_jobs_clean_failed_output_and_continue() (
+  local name mode sandbox watch downloads out failed
+  _folder_actions_tool_scripts_runnable || return 0
+  for name in compress-video convert-video-to-gif; do
+    for mode in partial early; do
+      sandbox=$(new_sandbox)
+      _folder_actions_install_video_script "$sandbox" "$name"
+      _folder_actions_install_video_result_double "$sandbox" "$mode"
+      watch="$sandbox/home/FolderActions/$name"
+      downloads="$sandbox/home/Downloads"
+      printf '%s\n' failed-input > "$watch/failed.mov"
+      printf '%s\n' earlier > "$downloads/earlier.txt"
+
+      out=$(_folder_actions_run_tool_script "$sandbox" "$name" 2>&1) \
+        || fail "$name/$mode: quarantined conversion failures must not abort: $out"
+
+      [[ "$(cat "$downloads/earlier.txt")" == earlier ]] || fail 'earlier output changed'
+      [[ "$(find "$downloads" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" == 2 ]] \
+        || fail "$name/$mode: only the earlier and successful outputs may remain"
+      [[ "$(cat "$downloads"/* | sort)" == $'earlier\nvalid-input' ]] || fail 'unexpected final output bytes'
+      [[ ! -e "$watch/failed.mov" && ! -e "$watch/valid.mov" ]] || fail 'the queue must be drained'
+      failed=("$sandbox/home/FolderActions/.failed/$name/"*)
+      [[ "${#failed[@]}" == 1 && "$(cat "${failed[0]}")" == failed-input ]] || fail 'failed input must be preserved in quarantine'
+      [[ "$(_folder_actions_count_calls_on "$sandbox" rm "$watch/failed.mov")" == 0 ]] || fail 'failed input must not be deleted'
+      [[ ! -e "$sandbox/lock/$name.lock.d" ]] || fail 'lock must be released'
+    done
+  done
+)
+
+test_folder_actions_video_jobs_keep_input_when_staging_fails() (
+  local name sandbox input out rc
+  _folder_actions_tool_scripts_runnable || return 0
+  for name in compress-video convert-video-to-gif; do
+    sandbox=$(new_sandbox)
+    _folder_actions_install_video_script "$sandbox" "$name"
+    _folder_actions_install_tool_double "$sandbox" ffmpeg
+    input="$sandbox/home/FolderActions/$name/sample.mov"
+    printf '%s\n' input > "$input"
+    rmdir "$sandbox/home/Downloads"
+    printf '%s\n' existing > "$sandbox/home/Downloads"
+    rc=0
+    out=$(_folder_actions_run_tool_script "$sandbox" "$name" 2>&1) || rc=$?
+    [[ "$rc" == 1 ]] || fail "$name: staging failure must abort: $out"
+    [[ "$(cat "$input")" == input ]] || fail 'input must stay in the watch directory'
+    [[ "$(cat "$sandbox/home/Downloads")" == existing ]] || fail 'existing destination entry changed'
+    [[ ! -e "$sandbox/ffmpeg.log" ]] || fail 'encoding must not start without staging'
+    [[ ! -e "$sandbox/home/FolderActions/.failed" ]] || fail 'environment errors must not quarantine inputs'
+    [[ ! -e "$sandbox/lock/$name.lock.d" ]] || fail 'lock must be released'
+  done
+)
+
+test_folder_actions_video_jobs_keep_input_when_publish_fails() (
+  local name mode sandbox input out rc target
+  _folder_actions_tool_scripts_runnable || return 0
+  for name in compress-video convert-video-to-gif; do
+    for mode in file directory file-link directory-link dangling-link fifo error; do
+      sandbox=$(new_sandbox)
+      _folder_actions_install_video_script "$sandbox" "$name"
+      _folder_actions_install_tool_double "$sandbox" ffmpeg
+      input="$sandbox/home/FolderActions/$name/sample.mov"
+      printf '%s\n' input > "$input"
+      printf '%s\n' earlier > "$sandbox/earlier.txt"
+      mkdir "$sandbox/earlier-dir"
+      cat > "$sandbox/stubs/link" <<EOF_LINK
+#!/bin/sh
+[ -f '$input' ] || exit 99
+printf '%s\n' "\$2" > '$sandbox/final-path'
+case '$mode' in
+  file) printf '%s\n' earlier > "\$2" ;;
+  directory) /bin/mkdir "\$2" ;;
+  file-link) /bin/ln -s '$sandbox/earlier.txt' "\$2" ;;
+  directory-link) /bin/ln -s '$sandbox/earlier-dir' "\$2" ;;
+  dangling-link) /bin/ln -s '$sandbox/absent' "\$2" ;;
+  fifo) /usr/bin/mkfifo "\$2" ;;
+  error) exit 1 ;;
+esac
+exec /bin/link "\$@"
+EOF_LINK
+      chmod 755 "$sandbox/stubs/link"
+      rc=0
+      out=$(_folder_actions_run_tool_script "$sandbox" "$name" 2>&1) || rc=$?
+      [[ "$rc" == 1 ]] || fail "$name/$mode: publish failure must abort: $out"
+      [[ "$(cat "$input")" == input ]] || fail 'unpublished input must stay in the watch directory'
+      [[ ! -e "$sandbox/home/FolderActions/.failed" ]] || fail 'publish errors must not quarantine inputs'
+      [[ "$(_folder_actions_count_calls_on "$sandbox" rm "$input")" == 0 ]] || fail 'unpublished input must not be deleted'
+      target=$(cat "$sandbox/final-path")
+      case "$mode" in
+        file) [[ "$(cat "$target")" == earlier ]] || fail 'existing file changed' ;;
+        directory) [[ -d "$target" && -z "$(ls -A "$target")" ]] || fail 'existing directory changed' ;;
+        file-link|directory-link|dangling-link) [[ -L "$target" ]] || fail 'existing symlink changed' ;;
+        fifo) [[ -p "$target" ]] || fail 'existing FIFO changed' ;;
+        error) [[ ! -e "$target" ]] || fail 'failed publication created a final output' ;;
+      esac
+      [[ "$(cat "$sandbox/earlier.txt")" == earlier && -z "$(ls -A "$sandbox/earlier-dir")" ]] || fail 'symlink target changed'
+      [[ -z "$(find "$sandbox/home/Downloads" -name '.video-output.*' -print)" ]] || fail 'unpublished staging must be cleaned'
+      [[ ! -e "$sandbox/lock/$name.lock.d" ]] || fail 'lock must be released'
+    done
+  done
+)
+
+test_folder_actions_video_jobs_limit_cleanup_to_owned_output() (
+  local name mode sandbox input out staged rc
+  _folder_actions_tool_scripts_runnable || return 0
+  for name in compress-video convert-video-to-gif; do
+    for mode in extra-failure extra-success remove-error; do
+      sandbox=$(new_sandbox)
+      _folder_actions_install_video_script "$sandbox" "$name"
+      _folder_actions_install_video_result_double "$sandbox" extra
+      input="$sandbox/home/FolderActions/$name/failed.mov"
+      [ "$mode" != extra-success ] || input="$sandbox/home/FolderActions/$name/valid.mov"
+      printf '%s\n' input > "$input"
+      if [ "$mode" = remove-error ]; then
+        cat > "$sandbox/stubs/rm" <<EOF_RM
+#!/bin/sh
+for arg in "\$@"; do
+  if [ -f '$sandbox/outputs.log' ] && [ "\$arg" = "\$(tail -n 1 '$sandbox/outputs.log')" ]; then exit 1; fi
+done
+exec /bin/rm "\$@"
+EOF_RM
+        chmod 755 "$sandbox/stubs/rm"
+      fi
+      rc=0
+      out=$(_folder_actions_run_tool_script "$sandbox" "$name" 2>&1) || rc=$?
+      [[ "$rc" == 0 ]] || fail "$name/$mode: cleanup errors must retain the conversion outcome: $out"
+      staged=$(tail -n 1 "$sandbox/outputs.log")
+      [[ "$(cat "$(dirname "$staged")/keep.txt")" == keep ]] || fail 'cleanup must preserve other entries'
+      if [ "$mode" = remove-error ]; then
+        [[ "$(cat "$staged")" == partial ]] || fail 'failed cleanup must leave staged bytes untouched'
+      else
+        [[ ! -e "$staged" ]] || fail 'owned staged output must be removed'
+      fi
+      assert_contains "$out" 'WARN:'
+      [[ ! -e "$input" ]] || fail 'completed input must be removed or quarantined'
+      if [ "$mode" = extra-success ]; then
+        [[ "$(cat "$sandbox/home/Downloads/"*)" == input ]] || fail 'published output must survive staging cleanup'
+      else
+        [[ -z "$(find "$sandbox/home/Downloads" -maxdepth 1 -type f -print)" ]] || fail 'failed output must not be published'
+        [[ "$(cat "$sandbox/home/FolderActions/.failed/$name/"*)" == input ]] || fail 'failed input bytes must survive cleanup errors'
+      fi
+    done
+  done
+)
+
+test_folder_actions_video_jobs_preserve_signal_contract() (
+  local name sig sandbox input out rc staged
+  _folder_actions_tool_scripts_runnable || return 0
+  for name in compress-video convert-video-to-gif; do
+    for sig in INT TERM; do
+      sandbox=$(new_sandbox)
+      _folder_actions_install_video_script "$sandbox" "$name"
+      _folder_actions_install_video_result_double "$sandbox" "$sig"
+      input="$sandbox/home/FolderActions/$name/sample.mov"
+      printf '%s\n' input > "$input"
+      rc=0
+      # The parallel harness ignores SIGINT in background jobs. Restore the
+      # launched script's signal defaults without changing its minimal environment.
+      out=$(python3 - "$sandbox" "$name" 2>&1 <<'PY_SIGNAL'
+import os
+import signal
+import sys
+
+sandbox, name = sys.argv[1:]
+signal.signal(signal.SIGINT, signal.SIG_DFL)
+signal.signal(signal.SIGTERM, signal.SIG_DFL)
+script = f"{sandbox}/home/.local/bin/{name}.sh"
+os.execve(script, [script], {"HOME": f"{sandbox}/home", "PATH": f"{sandbox}/tools:/usr/bin:/bin"})
+PY_SIGNAL
+      ) || rc=$?
+      [[ "$rc" == 1 ]] || fail "$name/$sig: signalled run must exit 1: $out"
+      assert_contains "$out" "received signal $sig"
+      [[ "$(cat "$input")" == input ]] || fail 'signal must preserve the input'
+      [[ ! -e "$sandbox/home/FolderActions/.failed" ]] || fail 'signal must not quarantine the input'
+      [[ -z "$(find "$sandbox/home/Downloads" -maxdepth 1 -type f -print)" ]] || fail 'signal must not publish incomplete output'
+      staged=$(tail -n 1 "$sandbox/outputs.log")
+      [[ "$(cat "$staged")" == partial ]] || fail 'signal handling must leave active staging alone'
+      [[ ! -e "$sandbox/lock/$name.lock.d" ]] || fail 'signal must release the lock'
+    done
   done
 )
 

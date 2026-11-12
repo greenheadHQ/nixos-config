@@ -43,8 +43,14 @@ _ph_init() {
   _PH_RESULT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/parallel-harness.XXXXXX")"
 }
 
-# run_test 를 override. 순차(_PH_JOBS=1)면 즉시 실행, 아니면 job-pool 병렬 큐잉.
+# The default entry point keeps existing callers unfiltered. An aggregator may
+# wrap this execution primitive, but must call it outside a conditional context.
 run_test() {
+  _ph_run_test "$@"
+}
+
+# 순차(_PH_JOBS=1)면 즉시 실행, 아니면 job-pool 병렬 큐잉.
+_ph_run_test() {
   local name="$1"
   shift
   if [ "$_PH_JOBS" = "1" ]; then

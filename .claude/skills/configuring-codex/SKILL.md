@@ -14,10 +14,10 @@ Codex CLI 호환 레이어와 프로젝트 스킬 발견 문제를 다룹니다.
 
 ## 작성 기준
 
-- CLI 버전의 SoT는 `modules/shared/programs/codex/codex-pin.json`이다 (nix overlay — OpenAI 공식 릴리스 직핀; #890에서 mise npm backend → nix 이관). 설치 버전은 아래 명령으로 별도 확인한다.
-- 확인 날짜: 2026-10-28
-- 확인 버전: codex-cli 0.164.0 (핀된 패키지의 `--version`·`--help` 검증)
-- 재검증: `jq -r .version modules/shared/programs/codex/codex-pin.json && codex --version && codex --help`
+- CLI 설치·업데이트는 OpenAI 공식 native installer와 CLI가 소유한다. Nix는 설정·훅·스킬과 최초 설치를 관리한다.
+- 확인 날짜: 2026-11-12
+- 확인 버전: codex-cli 0.167.2 (공식 installer의 임시 설치본에서 `--version`·`--help`·`update --help` 확인; 배포 상태와 구분)
+- 재검증: `command codex --version && command codex --help && command codex update --help`
 
 ## 목적과 범위
 
@@ -78,68 +78,49 @@ codex 0.106+에서 default (code) collaboration mode에서도 `request_user_inpu
 
 ## 설치/업데이트 경로
 
-Codex CLI 바이너리는 declarative nix overlay로 설치한다 (`modules/shared/programs/codex/package.nix`,
-`libraries/packages.nix`의 `shared` 경유; macOS+NixOS 공통; #890에서 mise npm backend → nix 이관).
-overlay는 OpenAI 공식 GitHub 릴리스의 prebuilt를 직접 핀한다 — nixpkgs lag(수 주)이나
-제3자 flake 신뢰 없이 최신 codex를 추적하기 위함이다. 설치 소스는 upstream이 조립·검증해
-발행하는 codex-package 통합 tarball 하나다 (#1219 — codex + code-mode host 사이드카
-codex-code-mode-host + 번들 rg/zsh 동봉; linux=musl, darwin=signed macho라 소스 컴파일·patchelf
-없음). overlay는 tarball 전체를 `$out/libexec/codex/`에 풀고 `$out/bin/codex` symlink만
-노출한다 — codex가 canonical 실행 경로 옆 `codex-package.json`으로 package layout을 인식해
-사이드카·번들 도구를 libexec 실경로에서 찾는다. 구성 요소 열거는 upstream 소관이라, 릴리스가
-구성 요소를 추가/분리해도 저장소가 추적할 필요 없다(#1220 반쪽 설치 장애 클래스의 구조적 해소;
-mise shim의 비대화형 PATH fragility 회피가 이관 동기 — #815/#821/#823/#845/#858).
+Codex CLI는 [OpenAI 공식 native installer](https://chatgpt.com/codex/install.sh)로 설치한다.
+`modules/shared/programs/codex/default.nix`의 `installCodexCli` activation은 실행 가능한 CLI가
+없을 때만 최초 설치한다. 이미 설치된 release는 반복 `nrs`로 갱신하지 않는다. 초기 설치 실패는
+activation 실패로 드러나며, dry-run은 다운로드·설치를 수행하지 않는다.
 
-- 버전 SoT: `modules/shared/programs/codex/codex-pin.json` (version/tag + flake systems 2개
-  (aarch64-darwin·x86_64-linux)의 codex-package asset/hash 각 1쌍).
-  version/tag/hash는 `update-codex`로 bump하고,
-  platforms/asset 키는 정적 설정이라 손으로 관리한다.
-- 설치/정리 코드 SoT: `default.nix`의 정리 activation 3종(`cleanupLegacyCodexCli`,
-  `cleanupMiseCodexShim`, `cleanupManualNodeCodex`). 이들은 codex를 설치하지 않고, 과거 설치 방식
-  (GitHub ELF/brew cask, mise npm backend shim, 수동 npm 글로벌) 잔재가 PATH에서 codex(nix profile)를
-  shadow하지 못하게 정리만 한다.
-- NixOS MiniPC의 Codex App mobile remote-control은 예외적으로 별도 standalone package를
-  `~/.codex/packages/standalone/current/` 아래에 둔다. 이 standalone은 app-server payload 전용이며,
-  일반 `command -v codex`를 shadow하면 안 된다. 특히 `~/.local/bin/codex -> ~/.codex/packages/standalone/...`
-  symlink는 회귀로 취급하고 `codex-remote-control-ensure.service`/`verify-ai-compat.sh`가 제거 또는 실패 처리한다.
+CLI가 업데이트를 안내하면 사용자가 적용 여부를 선택한다. 직접 업데이트를 원할 때는
+`command codex update`를 사용하며 옵션은 `command codex update --help`로 확인한다.
+CLI를 예약 갱신하는 timer나 activation 절차는 없다.
+설치 버전은 `command codex --version`으로 확인하며 저장소 변경이나 재빌드로 버전을 맞추지 않는다.
 
-업데이트(한 줄로 최신 stable):
+Nix의 관리 범위는 유지한다: `config.toml` 병합, 퇴역 설정 키 제거, 훅·스킬 투영, PATH와
+이전 설치 방식의 잔재 정리. `cleanupMiseCodexShim`과 `cleanupManualNodeCodex`는 mise shim과
+수동 npm 글로벌이 native CLI를 가리지 않도록 유지한다. Node와 패키지 매니저는 계속 mise가 관리한다.
+`npm install -g @openai/codex`를 새 설치 경로로 쓰지 않는다.
+
+일반 CLI의 진입점 `~/.local/bin/codex`는 공식 native 설치본인
+`~/.codex/packages/standalone/releases/<release>/bin/codex`를 가리키는 링크가 정상이다.
+첫 PATH 매치와 링크 대상을 함께 확인해 mise shim·npm 글로벌·오래된 Nix 설치본이 앞서지 않게 한다.
+원격 데몬 전용 실행본은 `~/.codex/packages/app-server-daemon/current/bin/codex`로 분리한다.
+일반 CLI가 이 데몬 전용 경로를 가리키는 경우가 충돌이다. 설정·인증·대화 데이터는 보존한다.
 
 ```bash
-update-codex             # 최신 stable로 codex-pin.json bump + nrs
-update-codex --pre       # alpha/prerelease 포함 최신
-update-codex --no-build  # 핀만 갱신(nrs 생략)
+command codex --version
+command codex --help
+command codex update --help
+type -a codex
 ```
 
-`update-codex`는 OpenAI 릴리스에서 최신 `rust-vX.Y.Z`를 찾아 핀된 플랫폼 해시를 prefetch해
-`codex-pin.json`을 갱신하고 `nrs`로 적용한다(mise 미호출). 갱신 후 `codex-pin.json` 변경을 커밋한다.
-nix는 lock 기반이라 "자동 최신"은 없고 — `update-codex` 한 줄이 그 역할을 한다.
+### 원격 데몬과 업데이트 경계
 
-### 왜 nixpkgs가 아니라 직접 overlay인가
+원격 데몬은 `app-server-daemon` 아래의 전용 실행본을 사용한다. 설치된 native CLI에서
+`from-cli` 방식으로 준비하고 `autoUpdateEnabled=false`를 유지한다. 주기 점검은
+CLI 최신 버전을 내려받지 않으며, 사용자가 갱신한 CLI에 맞춰 데몬 상태를 확인한다.
 
-nixpkgs codex는 cache.nixos.org prebuilt가 있어 편하지만 upstream 대비 수 주 lag이 있고, codex는
-릴리스가 매우 잦아 lag이 실사용에 거슬린다. 그래서 OpenAI 공식 릴리스를 직접 핀해 lag 0 + 제3자
-flake 신뢰 0 + 컴파일 0(prebuilt fetch)으로 간다. 대안(nixpkgs lag / 커뮤니티 flake `codex-cli-nix`의
-단일 메인테이너 신뢰)은 트레이드오프가 있어 채택하지 않았다. config가 요구하는 feature floor(현재
-0.124+ stable hooks, #585/#584)는 항상 직핀 최신이 충족한다.
+SSH proxy가 연결되어 있으면 버전 교체와 재시작을 보류한다. 연결 유무를 검사한 뒤 새 연결이
+들어오는 경합까지 원자적으로 막지는 못한다. 계획된 교체에서는 연결을 해제한 상태를 유지한다.
+이 보류 경로에서는 `remote-control start`처럼 재시작을 유발할 수 있는 동작도 실행하지 않는다.
+프로세스 소유권 판정과 정지·교체는 공식 lifecycle에 맡긴다. 주기 점검에서 원시 PID를
+종료하지 않으며, 소유권을 확인하지 못한 프로세스는 보고만 한다. 데몬 소켓·PID lock 파일도 직접 삭제하지 않는다.
+상세 복구는 [운영 문서](references/runbook-codex-compat.md)의 원격 데몬 절차를 따른다.
 
-`npm install -g @openai/codex` 금지:
-node는 mise에 남으므로(codex만 부분 폐기, #890) 수동 글로벌이 `~/.local/share/mise/installs/node/<ver>/bin`에
-깔리면 PATH상 nix profile보다 앞서 codex를 가린다. 다음 `nrs`의 `cleanupManualNodeCodex`가
-각 node 버전 prefix의 npm으로 `env PATH="$node_prefix/bin:${pkgs.mise}/bin:$PATH" "$npm_bin" uninstall -g @openai/codex`를
-반복 호출해 수동 글로벌을 제거하므로, codex가 사라지거나 꼬인 것처럼 보인다.
-(`lts`/`24`/`latest` 같은 symlink 별칭 디렉토리는 `[ ! -L ]` 가드로 제외해 중복 uninstall을 막는다.)
-
-진단 — codex shadow가 의심되면 PATH 첫 매치를 확인한다:
-
-```bash
-whence -p codex   # PATH 첫 매치 (nix profile/store여야 정상; mise shims 경로면 잔존 shim 회귀)
-type -a codex     # 모든 후보 (node/<ver>/bin이 앞이면 수동 글로벌 잔재)
-readlink -f ~/.codex/packages/standalone/current/bin/codex  # remote-control standalone 예외 경로
-```
-
-검증: `codex --version`, `./scripts/ai/verify-ai-compat.sh`(codex PATH resolve 가드 포함).
-잔존 mise codex shim이 PATH 앞에서 codex(nix profile)를 가리는 회귀는 `managing-mise`의 셸 활성화 구조를 참조한다.
+설정·스킬 노출을 변경한 뒤에는 `nrs`에 이어 `./scripts/ai/verify-ai-compat.sh`로 적용 상태를 확인한다.
+CLI 업데이트는 이 설정 변경 절차와 별개다.
 
 ## 진단 우선순위 (중요)
 
@@ -175,7 +156,7 @@ trust를 하드코딩하지 않고 runtime-owned `config.toml`의 `[projects.*]`
 | 앱(UI persist) | `model`, `model_reasoning_effort`, `service_tier` | Desktop/TUI 선택이 최상위 키로 기록됨. 템플릿에서 제거 |
 | 앱(런타임 상태) | `[projects.*]`, `tui`, `desktop`, `memories`의 위 두 모델 외 설정, `plugins`, `skills`, `marketplaces`, `notify`, `mcp_servers` | 앱이 생성·갱신. 템플릿은 선언하지 않는다 |
 
-`gpt-6.1-terra`는 Codex CLI 0.159.0 이상이 필요하다 ([공식 모델 문서](https://learn.chatgpt.com/docs/models)). 핀과 설치 버전은 위 재검증 명령으로 확인한다.
+`gpt-6.1-terra`는 Codex CLI 0.159.0 이상이 필요하다 ([공식 모델 문서](https://learn.chatgpt.com/docs/models)). 설치 버전은 위 재검증 명령으로 확인한다.
 
 템플릿에서 키를 지워도 배포본에는 user-owned로 남는다. 배포본에서까지 영구 회수해야 하는 정책 키는
 [`retired-config-keys.txt`](../../../modules/shared/programs/codex/files/retired-config-keys.txt)에
@@ -202,7 +183,7 @@ EXIT_ERROR로 막는다(선언과 회수가 겹치면 sync가 매번 썼다 지�
   반영하고 해당 파일·디렉토리를 옮기거나 지운 뒤 `nrs`로 심링크를 복구한다. 검증기도 보존된
   자료와 링크 누락을 구분해 안내한다. 정상 링크·다른 대상의 링크·링크 부재는 자동으로 수렴한다.
 - 활성화 누락: `nrs` 실행 후 `./scripts/ai/verify-ai-compat.sh`로 재검증한다.
-- codex 업데이트가 안 됨: codex는 nix overlay라 버전이 `codex-pin.json`에 핀된다 — 최신화는 `update-codex` 한 줄(자동 추적 아님). `npm install -g @openai/codex`는 `cleanupManualNodeCodex`가 제거하므로 사용하지 않는다 (`whence -p codex`로 PATH 잔재 확인 — nix profile/store 경로여야 정상).
+- CLI 업데이트가 안 됨: `command codex update --help`와 `type -a codex`로 업데이트 인터페이스와 첫 실행 대상을 확인한다. 일반 CLI는 공식 native 설치본이어야 한다. 반복 `nrs`나 npm 재설치로 버전을 갱신하지 않는다.
 
 ## 투영 아키텍처
 

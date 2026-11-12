@@ -139,6 +139,7 @@
   # 경로
   # ═══════════════════════════════════════════════════════════════
   paths = {
+    darwinSystemBinPath = "/usr/bin:/bin:/usr/sbin:/sbin";
     ankiDesktopBaseRelative = "Library/Application Support/Anki2";
     dockerData = "/var/lib/docker-data"; # SSD - 컨테이너 데이터
     mediaData = "/mnt/data"; # HDD - 미디어 파일

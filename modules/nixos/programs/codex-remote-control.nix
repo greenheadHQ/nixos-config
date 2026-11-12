@@ -9,27 +9,11 @@
 
 let
   cfg = config.homeserver.codexRemoteControl;
-  pin = builtins.fromJSON (builtins.readFile ../../shared/programs/codex/codex-pin.json);
-  system = pkgs.stdenv.hostPlatform.system;
-  # CLI 패키징(#1219)이 codex-package 통합 tarball을 단일 소스로 쓰므로, remote-control
-  # standalone payload도 같은 platform asset을 그대로 공유한다 (별도 standalonePackage 선언 불필요).
-  platform = pin.platforms.${system} or (throw "codexRemoteControl: unsupported system '${system}'");
-  standaloneTriple =
-    if system == "x86_64-linux" then
-      "x86_64-unknown-linux-musl"
-    else
-      throw "codexRemoteControl: standalone remote-control is only supported on x86_64-linux";
-
   homeDir = "/home/${username}";
   codexHome = "${homeDir}/.codex";
   stateDir = "/var/lib/codex-remote-control";
   pushoverCredPath = config.age.secrets.pushover-system-monitor.path;
   serviceLib = import ../lib/service-lib.nix { inherit pkgs; };
-
-  standalonePackage = pkgs.fetchurl {
-    url = "https://github.com/openai/codex/releases/download/${pin.tag}/${platform.asset}";
-    hash = platform.hash;
-  };
 
   maintenanceCli = pkgs.writeShellApplication {
     name = "codex-remote-control-maint";
@@ -40,8 +24,7 @@ let
       gawk
       gnugrep
       gnused
-      gnutar
-      gzip
+      python3
       jq
       procps
       util-linux
@@ -64,7 +47,6 @@ in
     systemd.tmpfiles.rules = [
       "d ${codexHome} 0700 ${username} users -"
       "d ${codexHome}/packages 0700 ${username} users -"
-      "d ${codexHome}/packages/standalone 0700 ${username} users -"
       "d ${stateDir} 0750 ${username} users -"
     ];
 
@@ -89,6 +71,7 @@ in
         # lock-acquire-timeout 실패 경로가 status.json 기록과 Pushover 알림까지
         # 완주한다. 120으로 동률이면 SIGTERM과 레이스해 알림이 소실될 수 있다.
         TimeoutSec = "300";
+        SuccessExitStatus = [ 62 ];
         ExecStart = "${maintenanceCli}/bin/codex-remote-control-maint ensure-running";
         LoadCredential = [ "pushover-system-monitor:${pushoverCredPath}" ];
         KillMode = "process";
@@ -102,7 +85,6 @@ in
           codexHome
           stateDir
         ];
-        ReadOnlyPaths = [ "${standalonePackage}" ];
         # PrivateTmp는 쓰지 않는다. Codex 0.156+ app-server는 제어 소켓 실체를 설정 불가한
         # /tmp/codex-daemon-<uid>/에 두고 ~/.codex/app-server-control/*.sock은 symlink로만
         # 남긴다. KillMode=process로 살아남은 데몬도 unit 종료 시 private /tmp가 지워져
@@ -120,15 +102,13 @@ in
         HOME = homeDir;
         CODEX_HOME = codexHome;
         STATE_DIR = stateDir;
-        DESIRED_VERSION = pin.version;
-        STANDALONE_TRIPLE = standaloneTriple;
-        STANDALONE_PACKAGE = "${standalonePackage}";
+        CODEX_BIN = "${homeDir}/.local/bin/codex";
+        CODEX_SETTINGS_HELPER = "${./codex-remote-control/files/codex-daemon-settings.py}";
         SERVICE_LIB = "${serviceLib}";
         ALERT_COOLDOWN_SECONDS = "1800";
         ALERT_REPEAT_SECONDS = "21600";
-        # writeShellApplication prepends its runtime inputs; this tail lets `command -v codex`
-        # resolve to the Nix-managed user profile after stale ~/.local/bin shadows are removed.
-        PATH = lib.mkForce "/etc/profiles/per-user/${username}/bin:/run/current-system/sw/bin";
+        # The CLI selected by the official installer owns the daemon version.
+        PATH = lib.mkForce "${homeDir}/.local/bin:/etc/profiles/per-user/${username}/bin:/run/current-system/sw/bin";
       };
     };
 

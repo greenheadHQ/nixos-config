@@ -34,18 +34,18 @@ EOF
 ## 작성 기준
 
 - 확인 날짜: 2026-07-11
-- 확인 버전: codex-cli $codex_stamp (codex-pin.json/runtime 일치)
+- 확인 버전: codex-cli $codex_stamp (installed CLI verified)
 - 재검증: \`codex --version && codex --help\`
 EOF
 }
 
-# PATH 통제용 디렉토리: warn 스크립트의 기본 모드 외부 명령 의존은 dirname뿐(나머지는
-# bash 내장)이라, dirname만 담은 디렉토리 하나로 PATH를 좁혀 CLI 존재/부재를 결정론적으로
-# 재현한다. --from-head 모드는 git이 추가로 필요하므로 해당 테스트가 별도로 링크한다.
+# Keep the interpreter available for command wrappers while controlling CLI
+# availability. The --from-head case adds Git separately.
 create_version_stamp_path_dir() {
   local bin_dir="$1"
   mkdir -p "$bin_dir"
   ln -s "$(command -v dirname)" "$bin_dir/dirname"
+  ln -s "$BASH" "$bin_dir/bash"
 }
 
 # stub CLI 설치. shebang은 /bin/sh — /usr/bin/env가 좁힌 PATH에서 bash를 못 찾는 문제를 피한다.
@@ -100,7 +100,7 @@ test_warn_skill_version_stamps_skips_when_cli_absent() {
   repo_root="$sandbox/repo"
   bin_dir="$sandbox/bin"
   create_version_stamp_fixture_repo "$repo_root" "0.144.1" "2.1.206"
-  # CLI stub 미설치 — dirname만 있는 PATH 디렉토리로 CLI 부재 환경(CI 등)을 재현한다
+  # No CLI stubs are installed in this restricted PATH.
   create_version_stamp_path_dir "$bin_dir"
 
   output=$(cd "$repo_root" && PATH="$bin_dir" "$BASH" scripts/ai/warn-skill-version-stamps.sh 2>&1)
@@ -114,7 +114,9 @@ test_warn_skill_version_stamps_from_head_detects_stale_head() {
   bin_dir="$sandbox/bin"
   create_version_stamp_fixture_repo "$repo_root" "0.144.1" "2.1.206"
   create_version_stamp_cli_stubs "$bin_dir" "0.145.0" "2.1.206"
-  ln -s "$(command -v git)" "$bin_dir/git"
+  # Preserve the original location for Git launchers that resolve nearby files.
+  printf '#!%s\nexec %q "$@"\n' "$BASH" "$(command -v git)" > "$bin_dir/git"
+  chmod +x "$bin_dir/git"
 
   # HEAD에는 구 스탬프를 커밋하고 working tree만 신 스탬프로 갱신 —
   # 기본 모드는 일치로 침묵하지만 --from-head는 push 대상 HEAD의 drift를 경고해야 한다.

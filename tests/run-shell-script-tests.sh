@@ -14,5 +14,4 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 tomlkit_bootstrap_require "$REPO_ROOT" "${BASH_SOURCE[0]}" "$@"
 
 echo "Running shell script tests..."
-bash "$SCRIPT_DIR/shell-script-tests.sh"
-echo "All shell script tests passed."
+bash "$SCRIPT_DIR/shell-script-tests.sh" "$@"
