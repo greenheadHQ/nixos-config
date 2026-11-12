@@ -5,6 +5,23 @@
 # 배포 레이아웃 기준 shell script fixture 테스트
 set -euo pipefail
 
+# Selection belongs to this invocation only, never to the shared harness or an
+# inherited environment variable. Validate before loading suites or making files.
+_SHELL_TEST_FILTER=""
+_SHELL_TEST_SELECTED=0
+if [ "$#" -ne 0 ]; then
+  if [ "$#" -ne 2 ] || [ "$1" != --filter ] || [ -z "$2" ]; then
+    echo "Usage: shell-script-tests.sh [--filter TEXT]" >&2
+    echo "TEXT is a case-sensitive literal substring of test function names; omit --filter to run all tests." >&2
+    exit 2
+  fi
+  if [ -n "${CI:-}" ]; then
+    echo "ERROR: --filter is unavailable when CI is set; run the full suite." >&2
+    exit 2
+  fi
+  _SHELL_TEST_FILTER="$2"
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FIXTURE_DIR="$SCRIPT_DIR/fixtures/shell-scripts"
@@ -21,6 +38,15 @@ unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_IMPLICIT_WORK_TREE
 # 등록 후 파일 끝의 parallel_barrier 로 수집한다. TEST_JOBS=1 이면 기존 순차 동작으로 폴백한다.
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/lib/parallel-harness.sh"
+
+run_test() {
+  if [ -n "$_SHELL_TEST_FILTER" ] && [[ "$2" != *"$_SHELL_TEST_FILTER"* ]]; then
+    return 0
+  fi
+  _SHELL_TEST_SELECTED=$((_SHELL_TEST_SELECTED + 1))
+  # A conditional call would disable errexit inside the selected test body.
+  _ph_run_test "$@"
+}
 
 # 도메인 스위트(정의 전용) find 디스커버리 — tests/suites/ 한정(기존 test-*.sh 하네스 자동 제외)
 while IFS= read -r -d '' _suite; do
@@ -256,6 +282,11 @@ run_test "line-count assertion rejects missing and unreadable files" test_assert
 run_test "line-count assertion rejects grep error with zero output" test_assert_line_count_rejects_grep_error_with_zero_output
 run_test "line-count assertion keeps sequential and parallel diagnostics" test_assert_line_count_harness_diagnostics
 run_test "suite definitions match aggregator registrations" test_suite_function_registration_parity
+run_test "shell filter selects function names in both modes" test_shell_filter_selects_function_names_in_both_modes
+run_test "shell filter rejects invalid input and zero matches" test_shell_filter_rejects_invalid_input_and_zero_matches
+run_test "shell filter preserves selected failure status" test_shell_filter_preserves_selected_failure_status
+run_test "shell filter rejects CI selection and allows full run" test_shell_filter_rejects_ci_selection_and_allows_full_run
+run_test "shell filter preserves arguments through bootstrap" test_shell_filter_preserves_arguments_through_bootstrap
 run_test "nfu cores reaches all builds" test_nfu_cores_reaches_all_builds
 run_test "nfu cores preserves default settings" test_nfu_cores_preserves_default_settings
 run_test "nfu cores preserves option order and last value" test_nfu_cores_preserves_option_order_and_last_value
@@ -712,3 +743,13 @@ fi
 # 병렬 큐잉된 모든 run_test 를 대기·집계한다(TEST_JOBS=1 순차 모드면 no-op). 실패가 하나라도 있으면
 # non-zero 로 종료해 run-shell-script-tests.sh의 성공 출력과 required CI/수동 통합 검증 통과를 막는다.
 parallel_barrier
+
+if [ -n "$_SHELL_TEST_FILTER" ]; then
+  if [ "$_SHELL_TEST_SELECTED" -eq 0 ]; then
+    echo "ERROR: No shell test function names match --filter (case-sensitive literal substring)." >&2
+    exit 1
+  fi
+  printf 'Selected shell tests passed: %d\n' "$_SHELL_TEST_SELECTED"
+else
+  printf 'Shell tests passed: %d\n' "$_SHELL_TEST_SELECTED"
+fi
