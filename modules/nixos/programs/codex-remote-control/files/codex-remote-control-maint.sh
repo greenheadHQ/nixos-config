@@ -1,41 +1,27 @@
 #!/usr/bin/env bash
-# Maintain the Codex mobile remote-control app-server on greenhead-minipc.
+# Maintain remote control using the CLI version selected by the user.
 set -euo pipefail
 
-CODEX_OPERATOR="${CODEX_OPERATOR:-codex}"
-NORMAL_CODEX_NAME="${NORMAL_CODEX_NAME:-codex}"
-HOME="${HOME:-/home/greenhead}"
+CODEX_BIN="${CODEX_BIN:-$HOME/.local/bin/codex}"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 STATE_DIR="${STATE_DIR:-/var/lib/codex-remote-control}"
-DESIRED_VERSION="${DESIRED_VERSION:-}"
-STANDALONE_TRIPLE="${STANDALONE_TRIPLE:-x86_64-unknown-linux-musl}"
-STANDALONE_PACKAGE="${STANDALONE_PACKAGE:-}"
-STANDALONE_ROOT="${STANDALONE_ROOT:-$CODEX_HOME/packages/standalone}"
-STANDALONE_RELEASE_DIR="${STANDALONE_RELEASE_DIR:-$STANDALONE_ROOT/releases/${DESIRED_VERSION}-${STANDALONE_TRIPLE}}"
-STANDALONE_CURRENT="${STANDALONE_CURRENT:-$STANDALONE_ROOT/current}"
-STANDALONE_BIN="$STANDALONE_CURRENT/bin/codex"
+CODEX_SETTINGS_HELPER="${CODEX_SETTINGS_HELPER:-$(dirname "${BASH_SOURCE[0]}")/codex-daemon-settings.py}"
 STATUS_FILE="$STATE_DIR/status.json"
 LOCK_FILE="$STATE_DIR/maintenance.lock"
 MAINT_LOCK_TIMEOUT_SECONDS="${MAINT_LOCK_TIMEOUT_SECONDS:-120}"
+DAEMON_SETTINGS_LOCK_TIMEOUT_SECONDS="${DAEMON_SETTINGS_LOCK_TIMEOUT_SECONDS:-120}"
 ALERT_COOLDOWN_SECONDS="${ALERT_COOLDOWN_SECONDS:-1800}"
 ALERT_REPEAT_SECONDS="${ALERT_REPEAT_SECONDS:-21600}"
 PUSHOVER_CRED_FILE="${PUSHOVER_CRED_FILE:-}"
 SERVICE_LIB="${SERVICE_LIB:-}"
 CODEX_REMOTE_CONTROL_PS_FILE="${CODEX_REMOTE_CONTROL_PS_FILE:-}"
-CODEX_REMOTE_CONTROL_EXE_FILE="${CODEX_REMOTE_CONTROL_EXE_FILE:-}"
-KILL_LOG="${KILL_LOG:-}"
-DAEMON_LOG_PATH="${DAEMON_LOG_PATH:-$CODEX_HOME/app-server-daemon/app-server.stderr.log}"
-# ensure 시작 시점의 데몬 로그 크기. 알림 근거는 이 offset 이후에 새로 쓰인 ERROR만
-# "이번 실행" 것으로 본다 (데몬 로그는 append-only이고 실행마다 지워지지 않는다).
+DAEMON_LOG_PATH="${DAEMON_LOG_PATH:-$CODEX_HOME/app-server-daemon/daemon.stderr.log}"
 DAEMON_LOG_OFFSET=0
 
 readonly ACTION_NONE="none"
-readonly RC_NORMAL_CODEX_STANDALONE=20
-readonly RC_NORMAL_CODEX_NOT_NIX=21
-readonly RC_STANDALONE_PACKAGE_MISSING=22
-readonly RC_STANDALONE_PACKAGE_MISSING_BIN=23
-readonly RC_STANDALONE_PACKAGE_VERSION_MISMATCH=24
 readonly RC_OPERATOR_CODEX_NOT_FOUND=25
+readonly RC_OPERATOR_VERSION_FAILED=26
+readonly RC_DAEMON_SETTINGS_FAILED=27
 readonly RC_AUTH_API_KEY=30
 readonly RC_AUTH_NOT_CHATGPT=31
 readonly RC_DAEMON_MALFORMED_JSON=40
@@ -43,20 +29,18 @@ readonly RC_DAEMON_NOT_RUNNING=41
 readonly RC_REMOTE_START_NOT_CONNECTED=50
 readonly RC_REMOTE_START_MALFORMED_JSON=51
 readonly RC_REMOTE_START_FAILED=52
-readonly RC_REMOTE_STOP_FAILED=53
 readonly RC_REMOTE_START_VERSION_DRIFT=54
-readonly RC_RESTART_REFUSED=60
-readonly RC_UNMANAGED_WITHOUT_STALE_PROOF=61
+readonly RC_DAEMON_START_FAILED=55
+readonly RC_DAEMON_UPDATE_FAILED=56
 readonly RC_UPDATE_DEFERRED=62
+readonly RC_PROCESS_QUERY_FAILED=63
 readonly RC_UNMANAGED=75
 
 LAST_ACTION="$ACTION_NONE"
 LAST_REPAIR_REASON=""
 OPERATOR_CLI=""
 OPERATOR_CLI_RESOLVED=""
-NORMAL_CODEX_PATH=""
-NORMAL_CODEX_RESOLVED=""
-STANDALONE_VERSION=""
+DESIRED_VERSION=""
 LOGIN_STATUS=""
 AUTH_MODE="unknown"
 DAEMON_STATUS="unknown"
@@ -68,19 +52,9 @@ PID_EVIDENCE=""
 START_STDERR=""
 DAEMON_STDERR=""
 
-die() {
-  echo "ERROR: $*" >&2
-  return 1
-}
-
 set_last_action_if_none() {
   local action="$1"
   [ "$LAST_ACTION" != "$ACTION_NONE" ] || LAST_ACTION="$action"
-}
-
-require_config() {
-  [ -n "$DESIRED_VERSION" ] || die "DESIRED_VERSION is required"
-  [ -n "$STANDALONE_PACKAGE" ] || die "STANDALONE_PACKAGE is required"
 }
 
 mkdir_state() {
@@ -108,170 +82,75 @@ with_lock() {
   "$@" 9>&-
 }
 
-path_under() {
-  local path="$1"
-  local root="$2"
-  case "$path" in
-    "$root" | "$root"/*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-text_mentions_path() {
-  local text="$1"
-  local root="$2"
-  case "$text" in
-    *"$root"*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-version_from_output() {
-  awk '{print $NF}' <<<"$1"
-}
-
 resolve_operator_cli() {
-  if OPERATOR_CLI="$(command -v "$CODEX_OPERATOR" 2>/dev/null)" && [ -n "$OPERATOR_CLI" ]; then
-    OPERATOR_CLI_RESOLVED="$(readlink -f "$OPERATOR_CLI" 2>/dev/null || printf '%s' "$OPERATOR_CLI")"
+  [ -x "$CODEX_BIN" ] || {
+    LAST_REPAIR_REASON="operator-codex-not-found"
+    return "$RC_OPERATOR_CODEX_NOT_FOUND"
+  }
+  OPERATOR_CLI="$CODEX_BIN"
+  OPERATOR_CLI_RESOLVED="$(readlink -f "$CODEX_BIN" 2>/dev/null || printf '%s' "$CODEX_BIN")"
+  local version_output
+  version_output="$("$CODEX_BIN" --version 2>/dev/null)" || {
+    LAST_REPAIR_REASON="operator-version-failed"
+    return "$RC_OPERATOR_VERSION_FAILED"
+  }
+  if [[ "$version_output" =~ ^codex-cli[[:space:]]+([^[:space:]]+)$ ]]; then
+    DESIRED_VERSION="${BASH_REMATCH[1]}"
   else
-    OPERATOR_CLI=""
-    OPERATOR_CLI_RESOLVED=""
+    LAST_REPAIR_REASON="operator-version-malformed"
+    return "$RC_OPERATOR_VERSION_FAILED"
   fi
 }
 
-resolve_normal_codex() {
-  if NORMAL_CODEX_PATH="$(command -v "$NORMAL_CODEX_NAME" 2>/dev/null)" && [ -n "$NORMAL_CODEX_PATH" ]; then
-    NORMAL_CODEX_RESOLVED="$(readlink -f "$NORMAL_CODEX_PATH" 2>/dev/null || printf '%s' "$NORMAL_CODEX_PATH")"
-  else
-    NORMAL_CODEX_PATH=""
-    NORMAL_CODEX_RESOLVED=""
+# The CLI owns package selection and installation. The only external policy is
+# disabling its autonomous daemon updater; user-selected CLI updates are applied
+# below through the official --from-cli command.
+ensure_daemon_policy() {
+  guard_no_ssh_proxy || return $?
+  if ! python3 "$CODEX_SETTINGS_HELPER" "$CODEX_HOME" "$DAEMON_SETTINGS_LOCK_TIMEOUT_SECONDS"; then
+    LAST_REPAIR_REASON="daemon-settings-failed"
+    return "$RC_DAEMON_SETTINGS_FAILED"
   fi
 }
 
-check_standalone_version() {
-  STANDALONE_VERSION=""
-  if [ -x "$STANDALONE_BIN" ]; then
-    STANDALONE_VERSION="$(version_from_output "$("$STANDALONE_BIN" --version 2>/dev/null || true)")"
-  fi
+has_dedicated_selection() {
+  [ -e "$CODEX_HOME/packages/app-server-daemon/current" ] || [ -L "$CODEX_HOME/packages/app-server-daemon/current" ]
 }
 
-ensure_path_invariant() {
-  local local_codex="$HOME/.local/bin/codex"
-  local target=""
-
-  if [ -L "$local_codex" ]; then
-    target="$(readlink -f "$local_codex" 2>/dev/null || true)"
-    if [ -n "$target" ] && path_under "$target" "$STANDALONE_ROOT"; then
-      rm -f "$local_codex"
-      LAST_ACTION="removed-standalone-path-shadow"
-    fi
-  fi
-
-  resolve_normal_codex
-  if [ -n "$NORMAL_CODEX_RESOLVED" ] && path_under "$NORMAL_CODEX_RESOLVED" "$STANDALONE_ROOT"; then
-    LAST_REPAIR_REASON="normal-codex-resolves-to-standalone"
-    return "$RC_NORMAL_CODEX_STANDALONE"
-  fi
-  case "$NORMAL_CODEX_RESOLVED" in
-    /nix/store/*-codex-* | /etc/profiles/per-user/*/bin/codex | /run/current-system/sw/bin/codex | "")
-      return 0
-      ;;
-    *)
-      LAST_REPAIR_REASON="normal-codex-not-nix-managed:$NORMAL_CODEX_PATH->$NORMAL_CODEX_RESOLVED"
-      return "$RC_NORMAL_CODEX_NOT_NIX"
-      ;;
-  esac
+has_local_daemon_selection() {
+  local root="$CODEX_HOME/packages/app-server-daemon" selected releases
+  has_dedicated_selection || return 1
+  [ ! -e "$root/auto-update-version" ] && [ ! -L "$root/auto-update-version" ] || return 1
+  selected="$(readlink -f "$root/current" 2>/dev/null)" || return 1
+  releases="$(readlink -f "$root/releases" 2>/dev/null)" || return 1
+  [ "$(dirname "$selected")" = "$releases" ] || return 1
+  # --from-cli owns local-<digest>-<target> releases and removes the public
+  # latest-channel marker. A same-version latest install still needs migration.
+  case "${selected##*/}" in local-*) return 0 ;; *) return 1 ;; esac
 }
 
-sync_standalone_package() {
-  require_config || return $?
-  ensure_path_invariant || return $?
-  check_standalone_version
-
-  if [ "$STANDALONE_VERSION" = "$DESIRED_VERSION" ] \
-    && [ -x "$STANDALONE_RELEASE_DIR/bin/codex" ] \
-    && [ -L "$STANDALONE_CURRENT" ]; then
-    [ -L "$STANDALONE_RELEASE_DIR/codex" ] || ln -sfn bin/codex "$STANDALONE_RELEASE_DIR/codex"
-    set_last_action_if_none "standalone-already-current"
-    return 0
-  fi
-
-  [ -f "$STANDALONE_PACKAGE" ] || {
-    LAST_REPAIR_REASON="standalone-package-missing:$STANDALONE_PACKAGE"
-    return "$RC_STANDALONE_PACKAGE_MISSING"
-  }
-
-  mkdir -p "$STANDALONE_ROOT/releases" || {
-    LAST_REPAIR_REASON="standalone-sync-failed:mkdir-releases"
-    return 1
-  }
-  local staging
-  staging="$(mktemp -d "$STANDALONE_ROOT/releases/.staging-${DESIRED_VERSION}.XXXXXX")" || {
-    LAST_REPAIR_REASON="standalone-sync-failed:mktemp"
-    return 1
-  }
-  tar -xzf "$STANDALONE_PACKAGE" -C "$staging" || {
-    rm -rf "$staging"
-    LAST_REPAIR_REASON="standalone-sync-failed:extract"
-    return 1
-  }
-  if [ ! -x "$staging/bin/codex" ]; then
-    rm -rf "$staging"
-    LAST_REPAIR_REASON="standalone-package-missing-bin-codex"
-    return "$RC_STANDALONE_PACKAGE_MISSING_BIN"
-  fi
-
-  local extracted_version
-  extracted_version="$(version_from_output "$("$staging/bin/codex" --version 2>/dev/null || true)")"
-  if [ "$extracted_version" != "$DESIRED_VERSION" ]; then
-    rm -rf "$staging"
-    LAST_REPAIR_REASON="standalone-package-version-mismatch:$extracted_version"
-    return "$RC_STANDALONE_PACKAGE_VERSION_MISMATCH"
-  fi
-
-  chmod -R u+rwX,go-rwx "$staging" || {
-    rm -rf "$staging"
-    LAST_REPAIR_REASON="standalone-sync-failed:chmod"
-    return 1
-  }
-  ln -sfn bin/codex "$staging/codex" || {
-    rm -rf "$staging"
-    LAST_REPAIR_REASON="standalone-sync-failed:release-link"
-    return 1
-  }
-  rm -rf "$STANDALONE_RELEASE_DIR" || {
-    rm -rf "$staging"
-    LAST_REPAIR_REASON="standalone-sync-failed:remove-old-release"
-    return 1
-  }
-  mv "$staging" "$STANDALONE_RELEASE_DIR" || {
-    rm -rf "$staging"
-    LAST_REPAIR_REASON="standalone-sync-failed:move-release"
-    return 1
-  }
-
-  if [ -e "$STANDALONE_CURRENT" ] && [ ! -L "$STANDALONE_CURRENT" ]; then
-    rm -rf "$STANDALONE_CURRENT" || {
-      LAST_REPAIR_REASON="standalone-sync-failed:remove-current"
+has_selected_daemon() {
+  has_dedicated_selection && return 0
+  local state="$CODEX_HOME/app-server-daemon" artifact
+  # Match upstream's package-root precedence: a frontend standalone selection
+  # alone is not a daemon installation, and dedicated launch history wins.
+  for artifact in daemon.pid daemon.stderr.log daemon-updater.pid daemon-updater.stderr.log; do
+    if [ -e "$state/$artifact" ] || [ -L "$state/$artifact" ]; then
       return 1
-    }
-  fi
-  ln -sfn "$STANDALONE_RELEASE_DIR" "$STANDALONE_ROOT/.current.tmp" || {
-    LAST_REPAIR_REASON="standalone-sync-failed:current-link"
-    return 1
-  }
-  mv -Tf "$STANDALONE_ROOT/.current.tmp" "$STANDALONE_CURRENT" || {
-    rm -f "$STANDALONE_ROOT/.current.tmp"
-    LAST_REPAIR_REASON="standalone-sync-failed:current-swap"
-    return 1
-  }
-  STANDALONE_VERSION="$DESIRED_VERSION"
-  LAST_ACTION="synced-standalone-package"
+    fi
+  done
+  for artifact in app-server.pid app-server.stderr.log app-server-updater.pid app-server-updater.stderr.log; do
+    if [ -e "$state/$artifact" ] || [ -L "$state/$artifact" ]; then
+      [ -e "$CODEX_HOME/packages/standalone/current" ] || [ -L "$CODEX_HOME/packages/standalone/current" ]
+      return $?
+    fi
+  done
+  return 1
 }
 
 capture_login_status() {
   local raw_status
-  raw_status="$("$CODEX_OPERATOR" login status 2>&1 || true)"
+  raw_status="$("$OPERATOR_CLI" login status 2>&1 || true)"
   case "$raw_status" in
     *"Logged in using ChatGPT"*)
       AUTH_MODE="chatgpt"
@@ -297,7 +176,7 @@ capture_daemon_version() {
   local out
   local err
   err="$(mktemp)"
-  if out="$("$CODEX_OPERATOR" app-server daemon version 2>"$err")"; then
+  if out="$("$OPERATOR_CLI" app-server daemon version 2>"$err")"; then
     DAEMON_STDERR="$(cat "$err")"
     rm -f "$err"
     if jq -e 'type == "object"' >/dev/null 2>&1 <<<"$out"; then
@@ -334,10 +213,11 @@ remote_start_versions_current() {
 }
 
 remote_start() {
+  guard_no_ssh_proxy || return $?
   local out
   local err
   err="$(mktemp)"
-  if out="$("$CODEX_OPERATOR" remote-control start --json 2>"$err")"; then
+  if out="$("$OPERATOR_CLI" remote-control start --json 2>"$err")"; then
     START_STDERR="$(cat "$err")"
     rm -f "$err"
     if jq -e 'type == "object"' >/dev/null 2>&1 <<<"$out"; then
@@ -374,43 +254,25 @@ remote_start() {
   return "$RC_REMOTE_START_FAILED"
 }
 
-remote_stop() {
-  local out
-  local err
-  err="$(mktemp)"
-  if out="$("$CODEX_OPERATOR" remote-control stop --json 2>"$err")"; then
-    rm -f "$err"
-    return 0
-  fi
-  out="$(cat "$err")"
-  rm -f "$err"
-  if contains_unmanaged_error "$out"; then
-    LAST_REPAIR_REASON="remote-control-stop-unmanaged"
-    return "$RC_UNMANAGED"
-  fi
-  LAST_REPAIR_REASON="remote-control-stop-failed"
-  return "$RC_REMOTE_STOP_FAILED"
-}
-
 collect_pid_evidence() {
   if [ -n "$CODEX_REMOTE_CONTROL_PS_FILE" ]; then
-    PID_EVIDENCE="$(cat "$CODEX_REMOTE_CONTROL_PS_FILE" 2>/dev/null || true)"
+    PID_EVIDENCE="$(cat "$CODEX_REMOTE_CONTROL_PS_FILE" 2>/dev/null)" || return "$RC_PROCESS_QUERY_FAILED"
   else
-    local current_user
-    current_user="$(id -un)"
+    local current_user processes rc=0
+    current_user="$(id -un)" || return "$RC_PROCESS_QUERY_FAILED"
+    processes="$(pgrep -a -u "$(id -u)" -f 'codex .*app-server|app-server --listen unix://')" || rc=$?
+    [ "$rc" -le 1 ] || return "$RC_PROCESS_QUERY_FAILED"
     PID_EVIDENCE="$(
       while IFS= read -r line; do
         [ -n "$line" ] || continue
         printf '%s %s %s\n' "$(awk '{print $1}' <<<"$line")" "$current_user" "$(sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+//' <<<"$line")"
-      done < <(pgrep -a -u "$(id -u)" -f 'codex .*app-server|app-server --listen unix://' || true)
+      done <<<"$processes"
     )"
   fi
 }
 
 parse_pid_line() {
   local line="$1"
-  PID_FIELD="$(awk '{print $1}' <<<"$line")"
-  USER_FIELD="$(awk '{print $2}' <<<"$line")"
   CMD_FIELD="$(sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+[^[:space:]]+[[:space:]]+//' <<<"$line")"
 }
 
@@ -422,7 +284,7 @@ is_ssh_proxy_line() {
 }
 
 ssh_proxy_exists() {
-  collect_pid_evidence
+  collect_pid_evidence || return $?
   local line
   while IFS= read -r line; do
     parse_pid_line "$line"
@@ -431,301 +293,83 @@ ssh_proxy_exists() {
   return 1
 }
 
-is_app_server_line() {
-  local cmd="$1"
-  # SSH proxy는 기존 소켓을 사용하는 클라이언트이며 소켓을 소유하는 서버가 아니다.
-  is_ssh_proxy_line "$cmd" && return 1
-  case "$cmd" in
-    *"app-server --listen unix://"* | *"codex app-server"*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-is_same_user_app_server_line() {
-  local line="$1"
-  local current_user
-  current_user="$(id -un)"
-  parse_pid_line "$line"
-  [ "$USER_FIELD" = "$current_user" ] || return 1
-  is_app_server_line "$CMD_FIELD"
-}
-
-is_managed_standalone_cmd() {
-  local cmd="$1"
-  text_mentions_path "$cmd" "$STANDALONE_ROOT"
-}
-
-is_known_legacy_codex_cmd() {
-  local cmd="$1"
-  case "$cmd" in
-    *"/.local/share/mise/installs/npm-openai-codex/"* | *"npm-openai-codex"* | *"/.local/share/mise/installs/node/"* | *"/vendor/"*"unknown-linux-musl/bin/codex app-server"*)
-      return 0
+guard_no_ssh_proxy() {
+  local proxy_rc=0
+  ssh_proxy_exists || proxy_rc=$?
+  case "$proxy_rc" in
+    0)
+      LAST_ACTION="deferred-ssh-connected"
+      LAST_REPAIR_REASON="version-update-deferred-ssh-connected"
+      REMOTE_CONTROL_ENABLED="null"
+      return "$RC_UPDATE_DEFERRED"
+      ;;
+    1) return 0 ;;
+    *)
+      LAST_REPAIR_REASON="process-query-failed"
+      return "$RC_PROCESS_QUERY_FAILED"
       ;;
   esac
-  return 1
 }
 
-# Resolve a PID's actual executable path. The kernel records /proc/$pid/exe at
-# exec() time, so the `current` symlink can be re-pointed afterward without
-# changing an already-running process's executable. A deleted executable is
-# reported with a trailing " (deleted)" marker. Tests inject a PID-to-exe
-# mapping file (one "<pid> <exe path>" line per PID) via CODEX_REMOTE_CONTROL_EXE_FILE.
-pid_exe_path() {
-  local pid="$1"
-  if [ -n "$CODEX_REMOTE_CONTROL_EXE_FILE" ]; then
-    [ -f "$CODEX_REMOTE_CONTROL_EXE_FILE" ] || return 0
-    awk -v pid="$pid" '$1 == pid { sub(/^[[:space:]]*[0-9]+[[:space:]]+/, ""); print; exit }' \
-      "$CODEX_REMOTE_CONTROL_EXE_FILE" 2>/dev/null || true
-  else
-    readlink "/proc/$pid/exe" 2>/dev/null || true
+start_daemon() {
+  guard_no_ssh_proxy || return $?
+  if ! "$OPERATOR_CLI" app-server daemon start >/dev/null 2>&1; then
+    LAST_REPAIR_REASON="daemon-start-failed"
+    return "$RC_DAEMON_START_FAILED"
   fi
 }
 
-# Decide whether an executable path proves a managed-standalone process is stale.
-# It is stale only when the executable clearly originates from the managed
-# standalone tree yet is no longer the desired release: either the binary was
-# deleted (the `current` symlink moved and the old release was removed) or it
-# still lives under an older release directory. Unknown/empty paths are never
-# treated as stale — per-process proof stays required.
-exe_indicates_stale_standalone() {
-  local exe="$1"
-  local clean="$exe"
-  local is_deleted=0
-  case "$exe" in
-    *" (deleted)")
-      clean="${exe% (deleted)}"
-      is_deleted=1
-      ;;
-  esac
-  # Only reason about executables that belong to the managed standalone tree.
-  path_under "$clean" "$STANDALONE_ROOT" || return 1
-  # A deleted managed binary can never be the live desired release.
-  [ "$is_deleted" -eq 1 ] && return 0
-  # A still-present binary under the desired release directory is current.
-  path_under "$clean" "$STANDALONE_RELEASE_DIR" && return 1
-  # Otherwise it runs a superseded release even though `current` has moved on.
-  return 0
-}
-
-# Classify an app-server process — identified by its command line and PID — as
-# stale (return 0) or not (non-zero). Shared by is_stale_unmanaged_line (ps/
-# fixture evidence path) and current_pid_matches_stale_proof (production /proc
-# revalidation before kill) so both paths classify identically; extend the rule
-# here, in one place, rather than in either caller.
-classify_stale_by_cmd_and_pid() {
-  local cmd="$1"
-  local pid="$2"
-  if is_managed_standalone_cmd "$cmd"; then
-    # A managed standalone command line usually means the current release, but
-    # `current` is a symlink: an already-running process can keep executing an
-    # old, since-removed release after `current` moved. Only per-process /proc
-    # executable evidence — not global version drift — can prove that case.
-    exe_indicates_stale_standalone "$(pid_exe_path "$pid")"
-    return $?
+update_daemon_from_cli() {
+  guard_no_ssh_proxy || return $?
+  local err
+  err="$(mktemp)" || return 1
+  if ! "$OPERATOR_CLI" app-server daemon update --from-cli --yes >/dev/null 2>"$err"; then
+    START_STDERR="$(cat "$err")"
+    rm -f "$err"
+    LAST_REPAIR_REASON="daemon-update-from-cli-failed"
+    return "$RC_DAEMON_UPDATE_FAILED"
   fi
-
-  # Kill safety requires per-process evidence. Global daemon version drift is not
-  # enough to prove that an arbitrary same-user app-server PID is stale.
-  is_known_legacy_codex_cmd "$cmd"
-}
-
-is_stale_unmanaged_line() {
-  local line="$1"
-  is_same_user_app_server_line "$line" || return 1
-  classify_stale_by_cmd_and_pid "$CMD_FIELD" "$PID_FIELD"
-}
-
-pid_is_numeric() {
-  case "$1" in
-    "" | *[!0-9]*) return 1 ;;
-    *) return 0 ;;
-  esac
-}
-
-remove_pid_from_fixture() {
-  local pid="$1"
-  [ -n "$CODEX_REMOTE_CONTROL_PS_FILE" ] && [ -f "$CODEX_REMOTE_CONTROL_PS_FILE" ] || return 0
-  local tmp
-  tmp="$(mktemp)"
-  awk -v pid="$pid" '$1 != pid' "$CODEX_REMOTE_CONTROL_PS_FILE" >"$tmp"
-  mv "$tmp" "$CODEX_REMOTE_CONTROL_PS_FILE"
-}
-
-current_pid_matches_stale_proof() {
-  local pid="$1"
-  pid_is_numeric "$pid" || return 1
-
-  # Fixture mode uses fake PIDs; production revalidates live /proc state below.
-  [ -z "$KILL_LOG" ] || return 0
-  [ -r "/proc/$pid/status" ] && [ -r "/proc/$pid/cmdline" ] || return 1
-
-  local current_uid
-  local pid_uid
-  local current_cmd
-  current_uid="$(id -u)"
-  pid_uid="$(awk '/^Uid:/{print $2; exit}' "/proc/$pid/status" 2>/dev/null || true)"
-  [ "$pid_uid" = "$current_uid" ] || return 1
-
-  current_cmd="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)"
-  [ -n "$current_cmd" ] || return 1
-  is_app_server_line "$current_cmd" || return 1
-  classify_stale_by_cmd_and_pid "$current_cmd" "$pid"
-}
-
-kill_pid() {
-  local pid="$1"
-  current_pid_matches_stale_proof "$pid" || {
-    LAST_REPAIR_REASON="stale-pid-revalidation-failed:$pid"
-    return "$RC_UNMANAGED_WITHOUT_STALE_PROOF"
-  }
-  if [ -n "$KILL_LOG" ]; then
-    printf '%s\n' "$pid" >>"$KILL_LOG"
-    remove_pid_from_fixture "$pid"
-  else
-    kill "$pid" 2>/dev/null || true
-    sleep 1
-    if kill -0 "$pid" 2>/dev/null; then
-      current_pid_matches_stale_proof "$pid" || {
-        LAST_REPAIR_REASON="stale-pid-revalidation-failed-before-kill9:$pid"
-        return "$RC_UNMANAGED_WITHOUT_STALE_PROOF"
-      }
-      kill -KILL "$pid" 2>/dev/null || true
-    fi
-  fi
-}
-
-app_server_pid_exists() {
-  collect_pid_evidence
-  [ -z "$PID_EVIDENCE" ] && return 1
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    parse_pid_line "$line"
-    if is_app_server_line "$CMD_FIELD"; then
-      return 0
-    fi
-  done <<<"$PID_EVIDENCE"
-  return 1
-}
-
-check_restart_processes() {
-  if app_server_pid_exists; then
-    LAST_REPAIR_REASON="refusing-restart-while-app-server-pid-exists"
-    return "$RC_RESTART_REFUSED"
-  fi
-
-  # Codex 0.158의 unix_socket.rs가 startup lock 안에서 stale socket을 정리한다.
-  # 여기서 socket/lock을 unlink하면 SSH 재연결이 방금 만든 소켓을 지우거나
-  # 다른 프로세스가 잡고 있는 flock inode를 우회할 수 있다. Codex에 위임한다.
-}
-
-repair_unmanaged_core() {
-  require_config || return $?
-  collect_pid_evidence
-  local killed=0
-  local line
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    if is_stale_unmanaged_line "$line"; then
-      parse_pid_line "$line"
-      kill_pid "$PID_FIELD" || return $?
-      killed=$((killed + 1))
-    fi
-  done <<<"$PID_EVIDENCE"
-
-  if [ "$killed" -eq 0 ]; then
-    LAST_REPAIR_REASON="unmanaged-error-without-stale-pid-proof"
-    return "$RC_UNMANAGED_WITHOUT_STALE_PROOF"
-  fi
-
-  check_restart_processes || return $?
-  LAST_REPAIR_REASON="killed-stale-unmanaged-app-server:$killed"
-  LAST_ACTION="repaired-unmanaged-app-server"
+  rm -f "$err"
+  LAST_ACTION="updated-daemon-from-cli"
 }
 
 ensure_running_core() {
-  require_config || return $?
-  resolve_operator_cli
-  [ -n "$OPERATOR_CLI" ] || {
-    LAST_REPAIR_REASON="operator-codex-not-found"
-    return "$RC_OPERATOR_CODEX_NOT_FOUND"
-  }
-
-  sync_standalone_package || return $?
-  capture_login_status || return $?
-
+  resolve_operator_cli || return $?
   local daemon_rc=0
-  if capture_daemon_version; then
-    if [ "$MANAGED_CODEX_VERSION" != "$DESIRED_VERSION" ] || [ "$APP_SERVER_VERSION" != "$DESIRED_VERSION" ]; then
-      # 연결된 SSH 클라이언트가 있으면 작업 중일 수 있다. remote-control start도
-      # bootstrap/settings 상태에 따라 재시작하므로 보류 경로에서는 호출하지 않는다.
-      if ssh_proxy_exists; then
-        LAST_ACTION="deferred-version-drift-ssh-connected"
-        LAST_REPAIR_REASON="version-update-deferred-ssh-connected"
-        return "$RC_UPDATE_DEFERRED"
-      fi
-      LAST_REPAIR_REASON="daemon-version-drift:${MANAGED_CODEX_VERSION}/${APP_SERVER_VERSION}"
-      local stop_rc=0
-      remote_stop || stop_rc=$?
-      if [ "$stop_rc" -ne 0 ]; then
-        if [ "$stop_rc" -eq "$RC_UNMANAGED" ]; then
-          repair_unmanaged_core || return $?
-        else
-          return "$stop_rc"
-        fi
-      fi
-      check_restart_processes || {
-        local restart_rc=$?
-        [ "$restart_rc" -eq "$RC_RESTART_REFUSED" ] || return "$restart_rc"
-        # `codex remote-control stop`은 app-server만 내리고 `app-server daemon pid-update-loop`
-        # 보조 프로세스를 남긴다 (0.153.x 실측 2건, #1279). 방금 sync가 `current`를 새 release로
-        # 옮겼으므로 잔존 loop의 실행 파일은 구 release다 — 기존 per-process stale proof로만
-        # 종료한다. proof가 없는 프로세스는 지금처럼 fail-closed로 남긴다.
-        repair_unmanaged_core || return $?
-      }
-      remote_start || {
-        local rc=$?
-        if [ "$rc" -eq "$RC_UNMANAGED" ]; then
-          repair_unmanaged_core || return $?
-          remote_start || return $?
-        else
-          return "$rc"
-        fi
-      }
-      LAST_ACTION="restarted-version-drift"
-      return 0
-    fi
-  else
-    daemon_rc=$?
-    if [ "$daemon_rc" -eq "$RC_DAEMON_MALFORMED_JSON" ]; then
-      LAST_REPAIR_REASON="daemon-version-malformed-json"
-      return "$daemon_rc"
-    fi
-    if contains_unmanaged_error "$DAEMON_STDERR"; then
-      repair_unmanaged_core || return $?
-    fi
+  capture_daemon_version || daemon_rc=$?
+  # Even remote-control start may restart an existing daemon. A connected SSH
+  # client therefore permits only the passive version probe above.
+  guard_no_ssh_proxy || return $?
+  if [ "$daemon_rc" -eq "$RC_DAEMON_MALFORMED_JSON" ]; then
+    LAST_REPAIR_REASON="daemon-version-malformed-json"
+    return "$daemon_rc"
   fi
+  if contains_unmanaged_error "$DAEMON_STDERR"; then
+    LAST_REPAIR_REASON="daemon-unmanaged"
+    return "$RC_UNMANAGED"
+  fi
+  capture_login_status || return $?
+  ensure_daemon_policy || return $?
 
-  local start_rc=0
-  remote_start || start_rc=$?
-  if [ "$start_rc" -ne 0 ]; then
-    if [ "$start_rc" -eq "$RC_UNMANAGED" ]; then
-      repair_unmanaged_core || return $?
-      remote_start || return $?
-    else
-      return "$start_rc"
-    fi
+  # --from-cli needs a selected installation, even when it is stopped. On the
+  # first launch seed the disabled-updater policy before bootstrapping it.
+  if [ "$daemon_rc" -ne 0 ] && ! has_selected_daemon; then
+    start_daemon || return $?
   fi
+  # --from-cli restarts even identical binaries. Do not invoke it on every
+  # healthy timer tick. Legacy installations still require a one-time migration.
+  if [ "$daemon_rc" -ne 0 ] || ! has_local_daemon_selection ||
+    ! remote_start_versions_current; then
+    update_daemon_from_cli || return $?
+  fi
+  remote_start || return $?
   set_last_action_if_none "remote-control-healthy"
 }
 
 collect_probe() {
-  resolve_operator_cli
-  resolve_normal_codex
-  check_standalone_version
-  if [ -n "$OPERATOR_CLI" ]; then
-    capture_login_status || true
-    capture_daemon_version || true
-  fi
+  resolve_operator_cli || return 0
+  capture_daemon_version || true
+  # A probe never starts a daemon or changes settings.
 }
 
 collect_probe_preserving_reason() {
@@ -739,11 +383,7 @@ status_json() {
   jq -n \
     --arg timestamp "$(date -Is)" \
     --arg operatorCli "$OPERATOR_CLI_RESOLVED" \
-    --arg normalCodexPath "$NORMAL_CODEX_PATH" \
-    --arg normalCodexResolved "$NORMAL_CODEX_RESOLVED" \
-    --arg standalonePath "$STANDALONE_BIN" \
     --arg desiredVersion "$DESIRED_VERSION" \
-    --arg standaloneVersion "$STANDALONE_VERSION" \
     --arg managedCodexVersion "$MANAGED_CODEX_VERSION" \
     --arg appServerVersion "$APP_SERVER_VERSION" \
     --arg authMode "$AUTH_MODE" \
@@ -758,11 +398,7 @@ status_json() {
     '{
       timestamp: $timestamp,
       operatorCli: $operatorCli,
-      normalCodexPath: $normalCodexPath,
-      normalCodexResolved: $normalCodexResolved,
-      standalonePath: $standalonePath,
       desiredVersion: $desiredVersion,
-      standaloneVersion: $standaloneVersion,
       managedCodexVersion: $managedCodexVersion,
       appServerVersion: $appServerVersion,
       remoteControlEnabled: $remoteControlEnabled,
@@ -802,7 +438,7 @@ load_alerting() {
   fi
 }
 
-ALERT_HOST="${ALERT_HOST:-greenhead-minipc}"
+ALERT_HOST="${ALERT_HOST:-remote-host}"
 # Pushover 본문 상한(1024자) 안에서 근거 라인까지 담기 위한 예산.
 ALERT_BODY_MAX_BYTES=1000
 ALERT_EVIDENCE_LINE_MAX_BYTES=240
@@ -849,7 +485,7 @@ capture_daemon_log_offset() {
 # 오도한다.
 evidence_relevant_for_reason() {
   case "${1%%:*}" in
-    remote-control-* | daemon-version-* | unmanaged-error-without-stale-pid-proof | stale-pid-* | refusing-restart-while-app-server-pid-exists) return 0 ;;
+    remote-control-* | daemon-version-* | daemon-start-* | daemon-update-* | daemon-unmanaged) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -862,64 +498,40 @@ repair_reason_explain() {
   head="${reason%%:*}"
   case "$head" in
     remote-control-start-not-connected)
-      printf '%s\t%s' \
-        "app-server가 백엔드에 연결되지 못한 채 timeout(connecting)" \
-        "ChatGPT 토큰 revoke가 흔한 원인 — 아래 app-server 로그에 401 token_revoked가 보이면 MiniPC에서 'codex login --device-auth'로 재로그인 (시작 전 ~/.codex/auth.json 백업)"
+      printf '%s\t%s' "app-server가 백엔드에 연결되지 못한 채 timeout(connecting)" "아래 app-server 로그를 확인하고 인증 오류가 있으면 해당 호스트에서 로그인 상태 확인"
       ;;
-    remote-control-start-failed)
-      printf '%s\t%s' \
-        "'codex remote-control start' 명령 자체가 실패" \
-        "아래 stderr/app-server 로그 확인. 401 token_revoked면 'codex login --device-auth' 재로그인, 그 외는 MiniPC에서 'codex remote-control start --json'을 직접 실행해 재현"
+    remote-control-start-failed | daemon-start-failed | daemon-update-from-cli-failed)
+      printf '%s\t%s' "공식 Codex 데몬 명령 실패" "stderr와 app-server 로그 확인 후 해당 호스트에서 Codex 상태 확인"
       ;;
     remote-control-start-malformed-json | daemon-version-malformed-json)
-      printf '%s\t%s' \
-        "codex CLI 출력이 JSON이 아님" \
-        "codex 업데이트로 출력 형식이 바뀌었는지 확인 (codex-pin.json 버전 vs 'codex --version')"
+      printf '%s\t%s' "codex CLI 출력이 JSON이 아님" "codex 업데이트로 출력 형식이 바뀌었는지 확인 ('codex --version')"
       ;;
     remote-control-start-version-drift | daemon-version-drift)
-      printf '%s\t%s' \
-        "실행 중 app-server 버전이 pin과 다름" \
-        "maint가 재시작을 시도함. 반복되면 'codex remote-control stop' 후 'systemctl start codex-remote-control-ensure'"
+      printf '%s\t%s' "실행 중 app-server 버전이 선택한 CLI 버전과 다름" "실행 중 작업과 SSH 연결을 확인한 뒤 'codex app-server daemon update --from-cli --yes' 실행"
       ;;
-    remote-control-start-unmanaged | remote-control-stop-unmanaged | unmanaged-error-without-stale-pid-proof | stale-pid-revalidation-failed | stale-pid-revalidation-failed-before-kill9 | refusing-restart-while-app-server-pid-exists)
-      printf '%s\t%s' \
-        "app-server의 관리 상태 또는 안전한 종료 근거를 확인할 수 없음" \
-        "SSH 연결과 실행 중 작업을 확인한 뒤 관리형 서버로 전환. 현재 PID를 일괄 종료하지 말 것"
+    daemon-unmanaged | remote-control-start-unmanaged)
+      printf '%s\t%s' "app-server의 관리 상태를 확인할 수 없음" "SSH 연결과 실행 중 작업을 확인한 뒤 관리형 서버로 전환. 현재 PID를 일괄 종료하지 말 것"
       ;;
     version-update-deferred-ssh-connected)
-      printf '%s\t%s' \
-        "SSH 연결이 있어 Codex 버전 교체를 보류함" \
-        "작업 완료 후 Codex 앱의 SSH 연결을 해제하면 다음 점검에서 교체. 강제 종료하지 말 것"
-      ;;
-    remote-control-stop-failed)
-      printf '%s\t%s' \
-        "app-server 정지 실패" \
-        "'pgrep -a -u greenhead codex'로 남은 프로세스 확인 후 kill -TERM, 다음 ensure가 재시작"
+      printf '%s\t%s' "SSH 연결이 있어 Codex 데몬 변경을 보류함" "작업 완료 후 Codex 앱의 SSH 연결을 해제하면 다음 점검에서 적용. 강제 종료하지 말 것"
       ;;
     auth-not-chatgpt | auth-status-not-chatgpt)
-      printf '%s\t%s' \
-        "ChatGPT 계정 로그인이 아님 (API key 모드 또는 미로그인)" \
-        "MiniPC에서 'codex login --device-auth'"
+      printf '%s\t%s' "ChatGPT 계정 로그인이 아님 (API key 모드 또는 미로그인)" "해당 호스트에서 'codex login status' 확인"
       ;;
     lock-acquire-timeout | lock-open-failed | state-dir-unavailable)
-      printf '%s\t%s' \
-        "maint 상태 디렉토리 또는 lock 획득 실패" \
-        "'pgrep -af codex-remote-control-maint'로 이전 실행 잔존 확인 (이름이 15자를 넘어 -f 없이는 못 찾음), /var/lib/codex-remote-control 권한 확인"
+      printf '%s\t%s' "maint 상태 디렉토리 또는 lock 획득 실패" "이전 maintenance 실행과 상태 디렉토리 권한 확인"
       ;;
-    standalone-package-missing | standalone-package-missing-bin-codex | standalone-package-version-mismatch | standalone-sync-failed)
-      printf '%s\t%s' \
-        "standalone codex 패키지 동기화 실패" \
-        "nrs로 codex-pin.json과 배포 generation을 맞추고 ~/.codex/packages/standalone 권한·디스크 확인"
+    process-query-failed)
+      printf '%s\t%s' "SSH 연결 여부를 확인할 수 없어 데몬 변경을 중단함" "호스트의 프로세스 조회 상태를 확인한 뒤 다시 실행"
       ;;
-    normal-codex-resolves-to-standalone | normal-codex-not-nix-managed | operator-codex-not-found)
-      printf '%s\t%s' \
-        "PATH의 codex가 Nix 관리 바이너리가 아님" \
-        "그림자 codex(~/.local/bin 등)를 제거하고 nrs"
+    daemon-settings-failed)
+      printf '%s\t%s' "데몬 자동 업데이트 정책 설정 실패" "데몬 settings.json 형식과 daemon.lock 점유 상태 확인. 잘못된 설정은 자동으로 덮어쓰지 않음"
+      ;;
+    operator-codex-not-found | operator-version-failed | operator-version-malformed)
+      printf '%s\t%s' "공식 native Codex CLI 실행을 확인할 수 없음" "'codex --version'과 native 설치 경로 확인"
       ;;
     *)
-      printf '%s\t%s' \
-        "분류되지 않은 실패 ($reason)" \
-        "'journalctl -u codex-remote-control-ensure'와 /var/lib/codex-remote-control/status.json 확인"
+      printf '%s\t%s' "분류되지 않은 실패 ($reason)" "'journalctl -u codex-remote-control-ensure'와 maintenance 상태 파일 확인"
       ;;
   esac
 }
@@ -967,6 +579,9 @@ ${evidence}"
 
 send_alerts() {
   local exit_code="$1"
+  # An active SSH client defers inspection; it is not evidence of an outage or
+  # recovery. Preserve the last observed health state and notification cooldown.
+  [ "$exit_code" -ne "$RC_UPDATE_DEFERRED" ] || return 0
   command -v send_notification >/dev/null 2>&1 || return 0
   [ -n "${PUSHOVER_TOKEN:-}" ] && [ -n "${PUSHOVER_USER:-}" ] || return 0
 
@@ -1003,7 +618,6 @@ send_alerts() {
 }
 
 cmd_probe() {
-  require_config || return $?
   collect_probe
   status_json 0
 }
@@ -1014,30 +628,6 @@ cmd_health_json() {
   else
     cmd_probe
   fi
-}
-
-cmd_ensure_standalone() {
-  local rc=0
-  with_lock sync_standalone_package || rc=$?
-  if [ "$rc" -eq 0 ]; then
-    collect_probe
-  else
-    collect_probe_preserving_reason
-  fi
-  write_status "$rc" || true
-  return "$rc"
-}
-
-cmd_repair_unmanaged() {
-  local rc=0
-  with_lock repair_unmanaged_core || rc=$?
-  if [ "$rc" -eq 0 ]; then
-    collect_probe
-  else
-    collect_probe_preserving_reason
-  fi
-  write_status "$rc" || true
-  return "$rc"
 }
 
 cmd_ensure_running() {
@@ -1055,7 +645,7 @@ cmd_ensure_running() {
 
 usage() {
   cat >&2 <<'EOF'
-Usage: codex-remote-control-maint <probe|ensure-standalone|ensure-running|repair-unmanaged|health-json>
+Usage: codex-remote-control-maint <probe|ensure-running|health-json>
 EOF
 }
 
@@ -1063,9 +653,7 @@ main() {
   local cmd="${1:-}"
   case "$cmd" in
     probe) cmd_probe ;;
-    ensure-standalone) cmd_ensure_standalone ;;
     ensure-running) cmd_ensure_running ;;
-    repair-unmanaged) cmd_repair_unmanaged ;;
     health-json) cmd_health_json ;;
     -h | --help | help) usage ;;
     *)

@@ -297,66 +297,87 @@ fi
 echo ""
 echo "=== Codex 바이너리 PATH resolve 확인 ==="
 
-standalone_root="$HOME/.codex/packages/standalone"
+# BEGIN Codex executable path checks
+# Inspect installation and PATH independently: an application may inject its own
+# CLI into this process without changing the user's native installation.
+standalone_root="$(cd "$HOME" && pwd -P)/.codex/packages/standalone"
+native_codex="$HOME/.local/bin/codex"
 
-# 회귀 가드 (#890): codex는 declarative nix overlay(nix profile/store)로 설치된다. mise npm
-# backend에서 이관된 뒤로, 잔존 mise codex shim이 PATH 앞에서 codex(nix profile)를 shadow하면 안 된다 —
-# config 미등록 dangling shim 호출은 mise version resolve(fork 폭주, os error 35)를 재유발한다.
-# 의존처(codex-exec-supervised, shell의 codex/codex-apps 런처)가 전부
-# command -v codex에 의존하므로 이 셸 컨텍스트에서 codex가 nix 경로로 resolve되는지 검증한다.
-# 주의: mise shim은 그 자체가 nix mise 바이너리로의 symlink라 readlink -f 결과가 nix store가 되어
-# shim을 못 거른다. 따라서 command -v가 돌려준 첫 PATH 매치 경로 자체로 mise/node 잔재를 판정하고,
-# 그 외에는 readlink -f 타깃이 -codex- store path인지로 codex overlay를 확인한다.
-# command -v는 바이너리를 실행하지 않고 PATH lookup만 하므로 fork 폭주를 유발하지 않는다.
+_codex_is_native_executable() {
+  local resolved="$1" release
+  case "$resolved" in
+    "$standalone_root"/releases/*/bin/codex)
+      release="${resolved#"$standalone_root"/releases/}"
+      release="${release%/bin/codex}"
+      [ -n "$release" ] && [[ "$release" != */* ]] && [ -f "$resolved" ] && [ -x "$resolved" ]
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+if [ -L "$native_codex" ]; then
+  native_resolved="$(readlink -f "$native_codex" 2>/dev/null)" || native_resolved=""
+  if _codex_is_native_executable "$native_resolved"; then
+    pass "Codex native installation is ready"
+  else
+    case "$native_resolved" in
+      /nix/store/*-codex-*)
+        warn "Codex local entry still uses the previous Nix installation; native migration is needed"
+        ;;
+      *) fail "Codex native entry does not link to an executable native release" ;;
+    esac
+  fi
+elif [ -e "$native_codex" ]; then
+  fail "Codex native entry is not a release symlink; preserve and inspect the existing entry"
+else
+  warn "Codex native installation is missing"
+fi
+
+# Look up the first PATH entry before resolving symlinks. A mise shim can itself
+# resolve into the Nix store, so resolving it first would hide the stale shim.
+# Never execute the discovered command: even --version could invoke that shim.
 if codex_path="$(command -v codex 2>/dev/null)" && [ -n "$codex_path" ]; then
   case "$codex_path" in
     */mise/shims/*)
-      fail "codex가 mise shim으로 resolve됨 ($codex_path) — 잔존 shim이 codex(nix profile)를 shadow (#890). '~/.local/share/mise/shims/codex' 제거 후 nrs"
+      fail "Codex PATH selects a mise shim; remove the stale shim before using the native CLI"
       ;;
     */installs/node/*)
-      fail "codex가 mise node 글로벌로 resolve됨 ($codex_path) — 수동 npm 글로벌이 codex(nix profile)를 shadow (cleanupManualNodeCodex 확인)"
+      fail "Codex PATH selects a Node global installation; native migration is needed"
+      ;;
+    */injectedCLI/codex)
+      warn "Codex PATH selects the application's injectedCLI; native installation was checked separately"
       ;;
     *)
-      codex_resolved="$(readlink -f "$codex_path" 2>/dev/null || echo "$codex_path")"
-      case "$codex_resolved" in
-        "$standalone_root"/*)
-          fail "codex가 Codex App standalone으로 resolve됨 ($codex_path → $codex_resolved) — remote-control payload가 일반 CLI PATH를 shadow함"
-          ;;
-        /nix/store/*-codex-*)
-          pass "codex PATH resolve 정상 (nix overlay): $codex_path"
-          ;;
-        *)
-          warn "codex가 nix overlay가 아닌 경로로 resolve됨 ($codex_path → $codex_resolved) — brew/수동 설치 잔재 가능"
-          ;;
-      esac
+      codex_resolved="$(readlink -f "$codex_path" 2>/dev/null)" || codex_resolved=""
+      if _codex_is_native_executable "$codex_resolved"; then
+        pass "Codex PATH selects an executable native release"
+      else
+        case "$codex_resolved" in
+          /nix/store/*-codex-*)
+            warn "Codex PATH still selects the previous Nix installation; native migration is needed"
+            ;;
+          "$standalone_root"/*)
+            fail "Codex PATH selects an invalid standalone release"
+            ;;
+          *) warn "Codex PATH selects an unrecognized installation; inspect it before use" ;;
+        esac
+      fi
       ;;
   esac
 else
-  warn "codex가 PATH에서 resolve되지 않음 — codex(nix overlay) 미활성(nrs 전) 또는 비대화형 노출 회귀 가능"
+  warn "Codex is not available on PATH; native installation was checked separately"
 fi
 
 standalone_codex="$HOME/.codex/packages/standalone/current/bin/codex"
 if [ -e "$standalone_codex" ] || [ -L "$standalone_codex" ]; then
-  standalone_resolved="$(readlink -f "$standalone_codex" 2>/dev/null || echo "$standalone_codex")"
-  case "$standalone_resolved" in
-    "$standalone_root"/releases/*/bin/codex)
-      pass "Codex App remote-control standalone 경로 정상: $standalone_codex → $standalone_resolved"
-      ;;
-    *)
-      fail "Codex App remote-control standalone이 관리 경로 밖을 가리킴: $standalone_codex → $standalone_resolved"
-      ;;
-  esac
+  standalone_resolved="$(readlink -f "$standalone_codex" 2>/dev/null)" || standalone_resolved=""
+  if _codex_is_native_executable "$standalone_resolved"; then
+    pass "Codex standalone current selects an executable native release"
+  else
+    fail "Codex standalone current does not select an executable native release"
+  fi
 fi
-
-legacy_local_codex="$HOME/.local/bin/codex"
-if [ -L "$legacy_local_codex" ]; then
-  legacy_local_resolved="$(readlink -f "$legacy_local_codex" 2>/dev/null || echo "$legacy_local_codex")"
-  case "$legacy_local_resolved" in
-    "$standalone_root"/*)
-      fail "\$HOME/.local/bin/codex가 Codex App standalone을 PATH shadow함: $legacy_local_codex → $legacy_local_resolved"
-      ;;
-  esac
-fi
+# END Codex executable path checks
 
 echo ""
 echo "=== AGENTS.md 심링크 확인 ==="

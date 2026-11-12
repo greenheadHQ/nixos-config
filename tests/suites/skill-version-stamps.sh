@@ -34,7 +34,7 @@ EOF
 ## 작성 기준
 
 - 확인 날짜: 2026-07-11
-- 확인 버전: codex-cli $codex_stamp (codex-pin.json/runtime 일치)
+- 확인 버전: codex-cli $codex_stamp (installed CLI verified)
 - 재검증: \`codex --version && codex --help\`
 EOF
 }

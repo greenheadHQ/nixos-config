@@ -32,6 +32,15 @@ done < <(find "$SCRIPT_DIR/suites" -maxdepth 1 -type f -name '*.sh' -print0 | so
 # 실패하지 않은 채 그 테스트만 죽는다(PR #1179 에서 claude-rc 52개가 그렇게 죽었다). 이 정의/등록
 # parity 는 tests/suites/test-infra.sh 의 test_suite_function_registration_parity 가 강제한다.
 run_test "1Password shortcuts preserve mutable settings" test_onepassword_shortcuts_preserve_mutable_settings
+run_test "native CLI install respects dry-run" test_codex_native_install_respects_dry_run
+run_test "native CLI installs officially once" test_codex_native_install_uses_official_installer_once
+run_test "native CLI checks executable completion" test_codex_native_install_checks_executable_completion
+run_test "native CLI installation propagates failures" test_codex_native_install_propagates_failures
+run_test "native CLI replaces dangling link" test_codex_native_install_replaces_dangling_link
+run_test "native CLI path accepts official installation" test_codex_native_path_accepts_native_installation
+run_test "native CLI path reports shadowing without execution" test_codex_native_path_reports_shadowing_without_execution
+run_test "native CLI path rejects invalid installation" test_codex_native_path_rejects_invalid_installations
+run_test "native CLI path supports system Bash" test_codex_native_path_supports_system_bash32
 run_test "1Password shortcuts wrapper explains TCC timeout" test_onepassword_shortcuts_wrapper_explains_timeout
 run_test "1Password shortcuts wrapper classifies exit status" test_onepassword_shortcuts_wrapper_classifies_exit_status
 run_test "1Password shortcuts real external SIGKILL" test_onepassword_shortcuts_real_external_sigkill
@@ -205,51 +214,39 @@ run_test "claude remote-control ignores remote-control substring decoy" test_cla
 run_test "claude remote-control ignores prompt token decoy" test_claude_remote_control_ignores_prompt_token_decoy
 run_test "claude remote-control interactive stop waits for parent lock release" test_claude_remote_control_interactive_stop_waits_for_parent_lock_release
 run_test "claude remote-control interactive stop preserves registration on lock release timeout" test_claude_remote_control_interactive_stop_preserves_registration_when_parent_lock_release_times_out
-if [ "$(uname -s)" = "Linux" ]; then
-  run_test "codex remote-control repeated alerts wait six hours" test_codex_remote_control_repeated_alerts_wait_six_hours
-  run_test "codex remote-control proxy is not a server" test_codex_remote_control_proxy_is_not_a_server
-  run_test "codex remote-control drift defers with ssh proxy" test_codex_remote_control_drift_defers_with_ssh_proxy
-  run_test "codex remote-control deferred unmanaged server stays unhealthy" test_codex_remote_control_deferred_server_is_not_restarted_or_marked_healthy
-  run_test "codex remote-control restart preserves codex lock inodes" test_codex_remote_control_restart_preserves_codex_lock_inodes
-  run_test "codex remote-control unmanaged alert does not blame manual launch" test_codex_remote_control_unmanaged_alert_does_not_blame_manual_launch
-  run_test "codex remote-control probe parses daemon JSON" test_codex_remote_control_probe_parses_daemon_json
-  run_test "codex remote-control probe marks malformed daemon JSON" test_codex_remote_control_probe_marks_malformed_daemon_json
-  run_test "codex remote-control ensure-running rejects malformed daemon JSON" test_codex_remote_control_ensure_running_rejects_malformed_daemon_json
-  run_test "codex remote-control starts when daemon absent" test_codex_remote_control_ensure_running_starts_when_absent
-  run_test "codex remote-control rejects stale start versions" test_codex_remote_control_rejects_stale_start_versions
-  run_test "codex remote-control auth failure is non-destructive" test_codex_remote_control_auth_failure_is_non_destructive
-  run_test "codex remote-control login status is sanitized" test_codex_remote_control_login_status_is_sanitized
-  run_test "codex remote-control missing operator reason is preserved" test_codex_remote_control_missing_operator_reason_is_preserved
-  run_test "codex remote-control removes standalone PATH shadow" test_codex_remote_control_removes_standalone_path_shadow
-  run_test "codex remote-control rejects direct standalone PATH shadow" test_codex_remote_control_rejects_direct_standalone_path_shadow
-  run_test "codex remote-control rejects non-Nix PATH shadow" test_codex_remote_control_rejects_non_nix_path_shadow
-  run_test "codex remote-control sync failure is not marked successful" test_codex_remote_control_sync_failure_is_not_marked_successful
-  run_test "codex remote-control lock failure does not run core action" test_codex_remote_control_lock_failure_does_not_run_core_action
-  run_test "codex remote-control lock acquisition timeout is recorded" test_codex_remote_control_lock_acquire_timeout_is_recorded
-  run_test "codex remote-control spawned daemon does not inherit lock fd" test_codex_remote_control_spawned_daemon_does_not_inherit_lock_fd
-  run_test "codex remote-control repair kills proven stale process" test_codex_remote_control_repair_kills_proven_stale_unmanaged_process
-  run_test "codex remote-control repair refuses socket cleanup when PID remains" test_codex_remote_control_repair_refuses_socket_cleanup_when_pid_remains
-  run_test "codex remote-control repair refuses unproven stale process" test_codex_remote_control_repair_does_not_kill_without_stale_proof
-  run_test "codex remote-control repair refuses version-drift-only kill" test_codex_remote_control_repair_does_not_kill_on_version_drift_only
-  run_test "codex remote-control repair preserves current managed app-server" test_codex_remote_control_repair_preserves_current_managed_app_server
-  run_test "codex remote-control repair reaps stale deleted managed app-server" test_codex_remote_control_repair_kills_stale_deleted_managed_app_server
-  run_test "codex remote-control repair reaps superseded managed app-server" test_codex_remote_control_repair_kills_stale_superseded_managed_app_server
-  run_test "codex remote-control cleans sockets only when no PID after drift" test_codex_remote_control_socket_cleanup_when_no_pid_after_drift
-run_test "codex remote-control drift restart reaps stale pid-update-loop" test_codex_remote_control_drift_restart_reaps_stale_pid_update_loop
-run_test "codex remote-control drift restart fails closed without stale proof" test_codex_remote_control_drift_restart_keeps_failing_closed_without_stale_proof
-  run_test "codex remote-control alert recovers after failure" test_codex_remote_control_alert_recovery_after_failure
-  run_test "codex remote-control alert stays quiet on healthy success" test_codex_remote_control_alert_success_without_failure_is_quiet
-  run_test "codex remote-control alert failure cooldown is stateful" test_codex_remote_control_alert_failure_sets_failed_and_cools_down
+run_test "codex remote-control probe parses daemon json" test_codex_remote_control_probe_parses_daemon_json
+run_test "codex remote-control probe marks malformed daemon json" test_codex_remote_control_probe_marks_malformed_daemon_json
+run_test "codex remote-control ensure running rejects malformed daemon json" test_codex_remote_control_ensure_running_rejects_malformed_daemon_json
+run_test "codex remote-control ensure running starts when absent" test_codex_remote_control_ensure_running_starts_when_absent
+run_test "codex remote-control rejects stale start versions" test_codex_remote_control_rejects_stale_start_versions
+run_test "codex remote-control auth failure is non destructive" test_codex_remote_control_auth_failure_is_non_destructive
+run_test "codex remote-control login status is sanitized" test_codex_remote_control_login_status_is_sanitized
+run_test "codex remote-control missing operator reason is preserved" test_codex_remote_control_missing_operator_reason_is_preserved
+run_test "codex remote-control lock failure does not run core action" test_codex_remote_control_lock_failure_does_not_run_core_action
+run_test "codex remote-control lock acquire timeout is recorded" test_codex_remote_control_lock_acquire_timeout_is_recorded
+run_test "codex remote-control spawned daemon does not inherit lock fd" test_codex_remote_control_spawned_daemon_does_not_inherit_lock_fd
+run_test "codex remote-control alert recovery after failure" test_codex_remote_control_alert_recovery_after_failure
+run_test "codex remote-control alert success without failure is quiet" test_codex_remote_control_alert_success_without_failure_is_quiet
+run_test "codex remote-control alert failure sets failed and cools down" test_codex_remote_control_alert_failure_sets_failed_and_cools_down
+run_test "codex remote-control alert without pushover token does not mutate state" test_codex_remote_control_alert_without_pushover_token_does_not_mutate_state
 run_test "codex remote-control alert body explains cause and evidence" test_codex_remote_control_alert_body_explains_cause_and_evidence
+run_test "codex remote-control restart preserves codex lock inodes" test_codex_remote_control_restart_preserves_codex_lock_inodes
+run_test "codex remote-control unmanaged alert does not blame manual launch" test_codex_remote_control_unmanaged_alert_does_not_blame_manual_launch
 run_test "codex remote-control alert evidence scoped to current failure" test_codex_remote_control_alert_evidence_scoped_to_current_failure
 run_test "codex remote-control alert truncation keeps valid utf8" test_codex_remote_control_alert_truncation_keeps_valid_utf8
-  run_test "codex remote-control alert missing token does not mutate state" test_codex_remote_control_alert_without_pushover_token_does_not_mutate_state
-  run_test "codex remote-control sync links current standalone release" test_codex_remote_control_sync_standalone_package_success_links_current_release
-  run_test "codex remote-control sync extract failure propagates status" test_codex_remote_control_sync_extract_failure_propagates_status
-  run_test "codex remote-control sync records login status paths" test_codex_remote_control_sync_records_login_status_success_and_api_key_paths
-else
-  echo "N/A: codex remote-control fixtures require Linux/NixOS service scripts" >&2
-fi
+run_test "codex remote-control repeated alerts wait six hours" test_codex_remote_control_repeated_alerts_wait_six_hours
+run_test "codex remote-control uses native cli version without reinstalling" test_codex_remote_control_uses_native_cli_version_without_reinstalling
+run_test "codex remote-control first launch seeds policy before bootstrap" test_codex_remote_control_first_launch_seeds_policy_before_bootstrap
+run_test "codex remote-control migrates same version legacy selection once" test_codex_remote_control_migrates_same_version_legacy_selection_once
+run_test "codex remote-control stopped selection updates before starting" test_codex_remote_control_stopped_selection_updates_before_starting
+run_test "codex remote-control native failures stop followup actions" test_codex_remote_control_native_failures_stop_followup_actions
+run_test "codex remote-control ssh defers every daemon state" test_codex_remote_control_ssh_defers_every_daemon_state
+run_test "codex remote-control rechecks ssh before policy and start" test_codex_remote_control_rechecks_ssh_before_policy_and_start
+run_test "codex remote-control settings merge preserves unknown and rejects malformed" test_codex_remote_control_settings_merge_preserves_unknown_and_rejects_malformed
+run_test "codex remote-control settings lock serializes and preserves inode" test_codex_remote_control_settings_lock_serializes_and_preserves_inode
+run_test "codex remote-control settings failure prevents native commands" test_codex_remote_control_settings_failure_prevents_native_commands
+run_test "codex remote-control pins same version latest selection once" test_codex_remote_control_pins_same_version_latest_selection_once
+run_test "codex remote-control process query failure is non destructive" test_codex_remote_control_process_query_failure_is_non_destructive
 run_test "missing managed helpers fail closed" test_missing_managed_helpers_fail_closed
 run_test "fixture git setup ignores host global hooks" test_fixture_git_is_hermetic_against_global_hooks
 run_test "line-count assertion preserves exact line counts" test_assert_line_count_preserves_exact_line_counts
