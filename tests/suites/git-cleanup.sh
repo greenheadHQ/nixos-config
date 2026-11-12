@@ -184,7 +184,7 @@ run_git_cleanup_dry_run() {
   run_git_cleanup_dry_run_with_exact_path "$repo_root" "$path_value" "$tz" "$fixed_now"
 }
 
-# git-cleanup.sh가 date 외에 필요로 하는 외부 명령(bash·git·awk·grep·sed·tr·cat)만
+# git-cleanup.sh와 Git launcher가 필요한 명령(bash·git·dirname·awk·grep·sed·tr·cat)만
 # 심링크한 PATH 디렉터리를 만든다. bash는 스크립트의 `#!/usr/bin/env bash` shebang을 env가
 # 해석하는 데 필요하다. date는 절대 포함하지 않는다 — 이슈 검증 절차 5(날짜 명령 부재
 # 조건)를 재현하려면 PATH 전체에서 date를 찾을 수 없어야 한다.
@@ -192,9 +192,15 @@ install_git_cleanup_path_without_date() {
   local stub_dir="$1"
   mkdir -p "$stub_dir"
   local cmd real
-  for cmd in bash git awk grep sed tr cat; do
+  for cmd in bash git dirname awk grep sed tr cat; do
     real="$(command -v "$cmd")" || fail "필수 명령을 찾지 못했다: $cmd"
-    ln -sf "$real" "$stub_dir/$cmd"
+    if [[ "$cmd" == git ]]; then
+      # Preserve the original location for Git launchers that resolve nearby files.
+      printf '#!%s\nexec %q "$@"\n' "$BASH" "$real" > "$stub_dir/$cmd"
+      chmod +x "$stub_dir/$cmd"
+    else
+      ln -sf "$real" "$stub_dir/$cmd"
+    fi
   done
 }
 
