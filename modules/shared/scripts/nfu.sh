@@ -32,13 +32,14 @@ while [[ $# -gt 0 ]]; do
     -a|--all)    UPDATE_ALL=true ;;
     --cores)
       [[ -z "${2:-}" || ! "$2" =~ ^[1-9][0-9]*$ ]] && { log_error "--cores: positive integer required"; exit 1; }
-      NRS_ARGS+=("--cores" "$2"); shift ;;
+      NRS_ARGS+=("--cores" "$2")
+      FOD_ARGS+=("--cores" "$2"); shift ;;
     --no-cache-check) FOD_ARGS+=(--no-cache-check) ;;
     -h|--help)
       echo "사용법: nfu [-a|--all] [--cores N] [--no-cache-check]"
       echo "  (기본)           fzf로 업데이트할 input 선택"
       echo "  -a, --all        모든 input 일괄 업데이트"
-      echo "  --cores N        nrs에 --cores N 전달 (NixOS 과열 방지)"
+      echo "  --cores N        FOD 검증 빌드와 nrs에 --cores N 전달"
       echo "  --no-cache-check 소스 빌드 사전 확인 건너뛰기"
       exit 0 ;;
     *) log_error "Unknown argument: $1"; exit 1 ;;
@@ -109,7 +110,7 @@ NEED_ROLLBACK=false
 log_info "═══ 시스템 적용 (nrs) ═══"
 # --force 항상 전달: nfu는 명시적 업데이트이므로 preflight heavy package 체크 우회
 # (fix-fod-hashes.sh가 이미 빌드 검증 완료)
-~/.local/bin/nrs --force "${NRS_ARGS[@]}"
+~/.local/bin/nrs --force ${NRS_ARGS[@]+"${NRS_ARGS[@]}"}
 
 echo ""
 log_info "═══ 업데이트 완료 ═══"

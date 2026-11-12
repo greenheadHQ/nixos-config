@@ -256,6 +256,12 @@ run_test "line-count assertion rejects missing and unreadable files" test_assert
 run_test "line-count assertion rejects grep error with zero output" test_assert_line_count_rejects_grep_error_with_zero_output
 run_test "line-count assertion keeps sequential and parallel diagnostics" test_assert_line_count_harness_diagnostics
 run_test "suite definitions match aggregator registrations" test_suite_function_registration_parity
+run_test "nfu cores reaches all builds" test_nfu_cores_reaches_all_builds
+run_test "nfu cores preserves default settings" test_nfu_cores_preserves_default_settings
+run_test "nfu cores preserves option order and last value" test_nfu_cores_preserves_option_order_and_last_value
+run_test "nfu cores rejects invalid before work" test_nfu_cores_rejects_invalid_before_work
+run_test "nfu FOD failure prevents switch" test_nfu_fod_failure_prevents_switch
+run_test "nfu cores supports system Bash 3.2" test_nfu_cores_supports_system_bash32
 run_test "nix sources use stdenv.hostPlatform predicates" test_nix_sources_use_host_platform_predicates
 run_test "deprecated stdenv predicate scan detects regression" test_deprecated_stdenv_predicate_scan_detects_regression
 run_test "nixos nrs offline force smoke" test_nixos_nrs_offline_force_smoke

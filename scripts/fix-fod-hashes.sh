@@ -13,14 +13,18 @@
 # 전체 플랫폼을 커버하려면 각 머신에서 개별 실행해야 한다.
 #
 # 사용법:
-#   ./scripts/fix-fod-hashes.sh          # 독립 실행
+#   ./scripts/fix-fod-hashes.sh [--cores N] [--no-cache-check]
 #   nfu가 자동 호출하거나, nix flake update 후 수동 실행
 set -euo pipefail
 
 NO_CACHE_CHECK=false
+CORES_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-cache-check) NO_CACHE_CHECK=true ;;
+    --cores)
+      [[ -z "${2:-}" || ! "$2" =~ ^[1-9][0-9]*$ ]] && { echo "--cores: positive integer required" >&2; exit 1; }
+      CORES_ARGS=(--cores "$2"); shift ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
   shift
@@ -47,7 +51,7 @@ cache_precheck() {
 
   echo "캐시 상태 확인 중..."
   local dry_output
-  if ! dry_output=$(nix build ".#${ATTR}" --dry-run 2>&1); then
+  if ! dry_output=$(nix build ".#${ATTR}" --dry-run ${CORES_ARGS[@]+"${CORES_ARGS[@]}"} 2>&1); then
     echo "⚠️  dry-run 실패 — 캐시 확인을 건너뜁니다."
     return 0
   fi
@@ -247,7 +251,7 @@ for (( round=1; round<=MAX_ROUNDS+1; round++ )); do
 
   build_log=$(mktemp)
   set +e
-  nix build ".#${ATTR}" --no-link 2>&1 | tee "$build_log"
+  nix build ".#${ATTR}" --no-link ${CORES_ARGS[@]+"${CORES_ARGS[@]}"} 2>&1 | tee "$build_log"
   build_rc=${PIPESTATUS[0]}
   set -e
   build_output=$(cat "$build_log")
