@@ -45,7 +45,7 @@ nix flake check --no-build --all-systems  # flake 평가 오류 검사
 
 | 방법 | 명령어/설정 | 효과 |
 |------|------------|------|
-| 오프라인 빌드 | `nrs --offline` | 네트워크 요청 없음 (~10초, 18배 빠름) |
+| 오프라인 빌드 | `nrs --offline` | Nix substituter 미사용; activation의 외부 설치·조회는 별도 |
 | 병렬 다운로드 | `max-substitution-jobs = 128` | 동시 128개 다운로드 (기본 16) |
 | HTTP 연결 | `http-connections = 50` | 동시 50 연결 (기본 25) |
 | 다운로드 버퍼 | `download-buffer-size = 256 * 1024 * 1024` | 기본 64 MiB → 256 MiB |
@@ -87,7 +87,7 @@ cd ~/Workspace/nixos-config  # 자동 활성화 (이후 이탈 시 자동 해제
 ```
 
 - nix-direnv가 `.direnv/`에 결과를 캐싱 (첫 로드 ~수 초, 이후 ~100ms)
-- devShell 내 도구(gitleaks, lefthook 등)는 direnv 환경에서만 사용 가능
+- direnv 또는 `nix develop`으로 gitleaks·lefthook 등 표준 도구 환경을 준비한다. gitleaks의 PATH/Nix bootstrap과 pre-push runtime 경로도 있으므로 direnv 미활성만으로 hook 실패를 단정하지 않는다.
 
 ## Pre-commit Hooks (lefthook)
 
@@ -97,14 +97,14 @@ Hook 실행 명령과 조건은 `lefthook.yml`, staged snapshot과 설치 정책
 - whole-repo / whole-corpus pre-commit hook은 staged index snapshot에서 실행된다.
 - `gitleaks`는 staged `.gitleaks.toml` / `.gitleaksignore` policy만 사용한다.
 - installed `git commit` 경로는 worktree-local pre-Lefthook guard가 `lefthook.yml` drift와 unsupported merged config surface를 차단한다.
-- direnv 환경이 비활성 상태에서 커밋하면 hook 도구가 없어 실패할 수 있다. `direnv allow` 실행으로 해결.
+- hook 실패 시 해당 도구의 PATH·bootstrap·runtime profile 오류를 확인한다. 표준 개발 환경은 `direnv allow` 후 활성화하거나 `nix develop`으로 진입한다.
 
 ## 자주 발생하는 문제
 
 1. flake 인식 안 됨: `git add` 필요 (untracked 파일은 무시됨)
 2. experimental features 비활성화: `nix-command flakes` 활성화 필요
 3. 빌드 느림: `nrs --offline` 사용 또는 substituter 설정 확인
-4. gitleaks/lefthook not found: direnv 환경 미활성 — `direnv allow` 실행
+4. gitleaks/lefthook not found: 실패한 도구의 PATH와 bootstrap 로그 확인 → direnv/devShell 환경 준비
 5. builtins.toJSON 한 줄 출력: `pkgs.formats.json` 사용으로 pretty-print
 
 ## 레퍼런스

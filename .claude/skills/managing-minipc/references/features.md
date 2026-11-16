@@ -48,10 +48,10 @@ grep -n "homeserver\\." modules/nixos/configuration.nix
 | 설정 | 값 | 동작 |
 |------|-----|------|
 | `boot.kernel.sysctl."kernel.panic"` | `10` | 커널 패닉 시 10초 후 자동 재부팅 |
-| `systemd.settings.Manager.RuntimeWatchdogSec` | `"30s"` | systemd가 30초 내 ping 실패 시 hang 판정 |
-| `systemd.settings.Manager.RebootWatchdogSec` | `"10min"` | hang 판정 후 10분 내 강제 재부팅 |
+| `systemd.settings.Manager.RuntimeWatchdogSec` | `"30s"` | 하드웨어 watchdog에 이 기한 내 접촉하지 못하면 재부팅 |
+| `systemd.settings.Manager.RebootWatchdogSec` | `"10min"` | 정상 재부팅 요청 후 `systemd-shutdown`이 맡는 종료 두 번째 단계의 watchdog 기한 |
 
-이 설정들은 하드웨어와 무관한 범용 설정이므로 `modules/nixos/configuration.nix`에 배치.
+설정 선언은 공통 `modules/nixos/configuration.nix`에 배치한다. 두 watchdog 기한은 연속되지 않으며, 실제 동작에는 하드웨어 watchdog이 필요하다. 지원하는 기한에 따라 설정값이 보정될 수 있다.
 
 ### Wake-on-LAN (hosts/greenhead-minipc/default.nix — 하드웨어 종속)
 
@@ -157,7 +157,7 @@ services.openssh = {
 ```nix
 services.tailscale = {
   enable = true;
-  useRoutingFeatures = "server";  # subnet router만 허용 (exit node 비활성화)
+  useRoutingFeatures = "server";  # 서버 측 IP forwarding 활성화. subnet/exit node 광고는 별도 설정
 };
 ```
 

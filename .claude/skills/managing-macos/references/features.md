@@ -124,7 +124,7 @@ locale charmap  # UTF-8 확인
 |------|--------|------|
 | `nrs` | `~/.local/bin/nrs` | rebuild (미리보기 + 적용) |
 | `nrs --offline` | `~/.local/bin/nrs --offline` | 오프라인 rebuild |
-| `nrs --force` | `~/.local/bin/nrs --force` | NO_CHANGES 스킵 우회 (activation scripts 강제 재실행) |
+| `nrs --force` | `~/.local/bin/nrs --force` | NO_CHANGES·worktree 누락 엔트리 차단 우회, cask 충돌 제거 확인 생략 |
 | `nrp` | `~/.local/bin/nrp` | 미리보기 전용 |
 | `nrp --offline` | `~/.local/bin/nrp --offline` | 오프라인 미리보기 |
 | `nrh` | `~/.local/bin/nrh` | 최근 10개 세대 |
@@ -394,7 +394,7 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 
 ### 직접 설치 앱의 adopt 전환
 
-`nrs`(brew bundle)는 cask 설치 시 `--force`가 없으면 `--adopt`를 자동으로 추가하므로(`Homebrew bundle/cask.rb`), 직접 설치된 앱도 대개 자동으로 adopt됩니다. 아래는 자동 adopt가 실패하는 경우(번들 버전 충돌 등)나 동작을 이해할 때 참고용입니다.
+`nrs`가 실행하는 `brew bundle`은 cask 설치 명령에 `--force`를 전달하지 않을 때 `--adopt`를 자동으로 추가하므로(`Homebrew bundle/cask.rb`), 직접 설치된 앱도 대개 자동으로 adopt됩니다. `nrs --force`는 wrapper 내부의 우회·확인 생략 옵션이며 `brew bundle`이나 cask 설치 명령의 `--force`로 전달되지 않습니다. 아래는 자동 adopt가 실패하는 경우(번들 버전 충돌 등)나 동작을 이해할 때 참고용입니다.
 
 `--adopt`가 하는 일:
 
@@ -463,7 +463,7 @@ macOS launchd의 WatchPaths를 사용하여 특정 폴더를 감시하고, 파�
 
 1. 감시 폴더에 파일을 드래그 앤 드롭
 2. 자동으로 스크립트가 실행됨
-3. 결과물은 `~/Downloads/`에 저장됨
+3. 로컬 처리 액션(compress-rar, compress-video, rename-asset, convert-video-to-gif)의 결과물은 `~/Downloads/`에 저장됨
    - compress-rar는 `~/Downloads/<이름>/<이름>.rar`를 만든다 (`<이름>`은 확장자를 뺀 파일명).
      그 이름이 이미 있으면 앞선 결과를 건드리지 않고 `<이름>_2/<이름>_2.rar`, `<이름>_3/<이름>_3.rar`처럼
      폴더와 보관본에 같은 번호를 붙인다. 보관본 안의 항목은 원래 파일명(`sample.txt`) 그대로다 (#1403).
@@ -473,6 +473,8 @@ macOS launchd의 WatchPaths를 사용하여 특정 폴더를 감시하고, 파�
      하므로, `<이름>`이 약 247자 이상이면(번호 자릿수에 따라 다르며 `_2`는 250자부터) 번호 붙은 결과를
      만들 수 없어 압축 실패가 된다. 이렇게 긴 파일명은 아래 격리 이름도 한도를 넘어 격리되지 않고,
      watch dir에 남은 채 run이 중단된다.
+
+4. upload-immich는 서버에 업로드하고 저장 결과와 남은 로컬 원본을 알림으로 안내함
 
 ### 처리 실패 시 격리 (compress-rar / compress-video / rename-asset / convert-video-to-gif)
 
@@ -484,8 +486,8 @@ compress-rar는 결과 폴더 이름 하나만 만들 수 없을 때(이름 길�
 - `wait_file_stable`이 30초 내 안정화를 확인한 뒤에만 처리에 들어가므로,
   복사 중 파일이 실패로 격리되는 일은 거의 없다.
 - 격리 시 Pushover 알림이 절대경로와 함께 best-effort로 발송된다
-  (`pushover-folder-actions` credential이 활성이면 발송, 부재/네트워크 실패는
-  log_warn만 남기고 silent skip).
+  (`pushover-folder-actions` credential이 있으면 발송을 시도한다. credential 부재는
+  조용히 건너뛰며, helper 부재·source 실패·API 호출 실패는 `log_warn`을 남긴다).
 - 격리 디렉토리는 watch root 밖이므로 launchd `WatchPaths`를 추가로 트리거하지 않는다.
 - `wait_file_stable`이 timeout으로 false를 반환한 파일은 같은 run에서는 deferred
   처리되고 격리되지 않는다. 단 launchd `WatchPaths`는 watch dir 변경 시에만

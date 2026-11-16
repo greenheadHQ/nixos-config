@@ -13,9 +13,9 @@ ls -la /var/lib/docker-data/copyparty/config/copyparty.conf  # 설정 파일 존
 ```
 
 해결:
-- `ConditionPathExists` 실패 시: `copyparty-config` 서비스가 먼저 성공해야 함
-- 설정 생성 실패 시: agenix 시크릿 복호화 확인 (`ls -la /run/agenix/copyparty-password`)
-- `sudo systemctl restart copyparty-config && sudo systemctl restart podman-copyparty`
+- `ConditionPathExists` 실패 시: 입력 비밀번호 파일의 존재·agenix 복호화 상태 확인 (`ls -la /run/agenix/copyparty-password`)
+- 설정 생성 실패 시: `copyparty-config` 로그와 생성된 conf를 별도로 확인. 이 기동 조건은 conf의 존재나 생성 성공을 보장하지 않는다.
+- 입력·설정 생성 문제 해결 후 `sudo systemctl restart copyparty-config && sudo systemctl restart podman-copyparty`
 
 ## 2. 로그인 실패
 

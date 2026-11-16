@@ -198,7 +198,7 @@
       };
     }
     # #872: Mac 전용 1Password Service Account token (방식 B, epic #780 Phase 2b).
-    # 셸 _gh_pat()이 이 토큰으로 github-pat을 무인 발급해 $TMPDIR 캐시에 둔다.
+    # gh-pat-mac 실행 파일이 이 토큰으로 github-pat을 무인 조회해 per-user temp 캐시에 둔다.
     # personal 호스트에만 배포(개인 Mac 키 recipient) → work role 호스트는 미배포(agenix graceful).
     // lib.optionalAttrs (pkgs.stdenv.hostPlatform.isDarwin && hostType == "personal") {
       opnix-service-account-token-mac = {
@@ -208,7 +208,7 @@
         path = "${config.home.homeDirectory}/${constants.onePassword.saTokenMacRelPath}";
         mode = "0400";
       };
-      # 무인 minipc SSH 개인키 (#1094 C안) — ssh minipc-headless alias가 IdentityFile로 사용.
+      # 무인 minipc SSH 개인키 (#1094 C안) — dispatcher·조건부 Match·minipc-headless 별칭의 IdentityFile.
       # 경로 단일 소스: constants.onePassword.headlessKeyRelPath.
       minipc-headless = {
         file = ../../../../secrets/minipc-headless.age;

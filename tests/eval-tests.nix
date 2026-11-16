@@ -1762,9 +1762,9 @@ let
       cond = fw.checkReversePath == true;
     }
     {
-      # Opus 피드백: useRoutingFeatures = "both"이면 exit node 활성화 가능
-      # "server"는 subnet router만 허용 (exit node 비활성화)
-      name = "Test 7a: Tailscale useRoutingFeatures가 server이어야 함 (exit node 방지)";
+      # "server"는 서버 측 IP forwarding을 활성화한다. subnet/exit node 광고는
+      # 별도 Tailscale 설정이며, 이 값 검사로 광고 여부를 보장하지 않는다.
+      name = "Test 7a: Tailscale useRoutingFeatures가 server이어야 함 (서버 측 forwarding 유지)";
       cond = nixosCfg.services.tailscale.useRoutingFeatures == "server";
     }
     # 셸 startup 최적화 회귀 lock — modules/nixos/configuration.nix.

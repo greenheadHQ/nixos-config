@@ -6,7 +6,7 @@
 # 사용법:
 #   nrs           # 일반 rebuild
 #   nrs --offline # 오프라인 rebuild (빠름)
-#   nrs --force   # NO_CHANGES 스킵 우회 (activation scripts 강제 재실행)
+#   nrs --force   # NO_CHANGES·worktree 누락 엔트리 차단 우회, cask 충돌 제거 확인 생략
 #   nrs --help    # 사용법 출력
 
 set -euo pipefail

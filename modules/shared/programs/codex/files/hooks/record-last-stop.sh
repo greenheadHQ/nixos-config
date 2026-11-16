@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Codex-only divergence from Claude hook: skip programmatic/nested codex sessions
-# to avoid duplicate notifications + statusline TTL contamination.
+# Programmatic/nested Codex 세션은 상위 세션의 마커를 덮어쓰지 않도록 제외한다.
 # Codex 전용 hook — Claude 쪽 동일 hook 은 statusline Cache TTL 기능 제거로 삭제됨 (issue #585).
 if [ "${CLAUDECODE:-}" = "1" ] || [ "${CODEX_PROGRAMMATIC:-}" = "1" ]; then
   exit 0
 fi
-# record-last-stop.sh — 프롬프트 캐시 TTL 추적용 타임스탬프 기록
-# statusline.sh가 세션별 파일을 읽어 캐시 남은 시간을 계산한다.
-# 주의: settings.json의 Stop 훅 배열에서 첫 번째로 실행되어야 한다.
-# 다른 Stop 훅보다 먼저 타임스탬프를 기록하여
-# statusline 카운트다운의 레이스 컨디션을 최소화한다.
-# Codex에서는 _stop-dispatcher.sh가 이 순서를 직렬로 보장한다 (issue #585).
+# record-last-stop.sh — Stop 시 세션별 last-stop 마커에 타임스탬프를 기록한다.
+# 현재 저장소의 statusline.sh는 이 마커를 읽지 않는다. 외부 소비 여부를 확인하기 전까지
+# 기존 마커 형식과 기록 순서는 유지한다.
+# config.toml의 [[hooks.Stop]]은 _stop-dispatcher.sh 하나를 호출하고, dispatcher가
+# 이 마커 기록 → nrs-session-cleanup 순서를 직렬로 보장한다 (issue #585).
 # 공통 helper SSOT: modules/shared/programs/claude/files/lib/hook-runtime.sh.
 # 정책: hook-runtime.sh 미발견 시 inline fallback 자체 로직 실행 (자체 동작 보존).
 

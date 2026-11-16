@@ -1,4 +1,4 @@
-"""loopback AnkiConnect(API version 6) 클라이언트. 컬렉션을 만지는 유일한 경로다 — 파일 접근 없음."""
+"""인증된 loopback AnkiConnect(API version 6) 조회 클라이언트. 변경은 helper의 작업 원장을 통하며 파일에 직접 접근하지 않는다."""
 
 from __future__ import annotations
 

@@ -29,10 +29,10 @@ sudo가 필요한 이유:
 | launchd 서비스 | 시스템 데몬 등록 |
 | macOS 시스템 설정 | `system.defaults` (Dock, Finder 등) |
 
-실행 방법:
+설치 이후에는 `nrs`로 적용합니다. `nrs`가 필요한 sudo 호출과 잠금·미리보기·launchd 정리·후처리를 수행합니다.
+
 ```bash
-# Private 저장소 사용 시 SSH_AUTH_SOCK 유지 필요
-sudo --preserve-env=SSH_AUTH_SOCK darwin-rebuild switch --flake .
+nrs
 ```
 
 > 참고: Home Manager만 단독으로 사용하면 (`home-manager switch`) sudo 없이 가능합니다. 하지만 nix-darwin과 통합된 구조에서는 `darwin-rebuild`가 시스템 + 사용자 설정을 모두 처리하므로 sudo가 필요합니다.
@@ -53,22 +53,25 @@ zsh: command not found: darwin-rebuild
 nix --extra-experimental-features "nix-command flakes" run nix-darwin -- switch --flake .
 ```
 
-부트스트랩 완료 후에는 `darwin-rebuild switch --flake .` 명령어를 사용할 수 있습니다.
+이 명령은 `nrs`가 아직 배포되지 않은 최초 부트스트랩용입니다. 완료 후의 적용·복구에는 `nrs`를 사용합니다.
 
 ---
 
 ## darwin-rebuild: command not found (설정 적용 후)
 
-새 터미널에서 `darwin-rebuild` 명령어를 찾지 못하는 경우:
+새 터미널에서 Nix 명령을 찾지 못하면 로그인 셸을 다시 열어 환경을 로드한 뒤 배포된 `nrs` entrypoint로 실행합니다.
 
 ```bash
-# 방법 1: 전체 경로로 실행
-sudo /run/current-system/sw/bin/darwin-rebuild switch --flake .
-
-# 방법 2: 쉘 재시작 후 다시 시도
-exec $SHELL
-darwin-rebuild switch --flake .
+exec "$SHELL" -l
 ```
+
+새 셸에서 배포된 wrapper를 실행합니다.
+
+```bash
+"$HOME/.local/bin/nrs"
+```
+
+배포된 entrypoint가 없다면 설치 완료 여부를 먼저 확인하고, 최초 설치 중인 경우에만 위 부트스트랩 절차를 사용합니다.
 
 ---
 
@@ -92,8 +95,9 @@ Please check there is nothing critical in these files, rename them by adding .be
 ```bash
 sudo mv /etc/bashrc /etc/bashrc.before-nix-darwin
 sudo mv /etc/zshrc /etc/zshrc.before-nix-darwin
-sudo --preserve-env=SSH_AUTH_SOCK nix run nix-darwin -- switch --flake .
 ```
+
+기존 설치에서는 `"$HOME/.local/bin/nrs"`로 다시 적용합니다. `nrs`가 아직 없는 최초 설치 도중이라면 [부트스트랩 절차](#darwin-rebuild-command-not-found-부트스트랩-전)의 명령을 다시 실행합니다.
 
 > 참고: 백업된 파일은 나중에 필요하면 복원할 수 있습니다.
 
@@ -107,24 +111,23 @@ error: primary user `username` does not exist, aborting activation
 Please ensure that `system.primaryUser` is set to the name of an existing user.
 ```
 
-원인: `flake.nix`의 `username` 변수가 현재 macOS 사용자와 일치하지 않습니다.
+원인: 선택한 `darwinHosts` 항목의 사용자명이 해당 Mac에 존재하지 않습니다.
 
 해결:
 
-1. 현재 사용자명 확인:
+1. 설정을 적용할 사용자의 셸에서 사용자명과 호스트명을 확인합니다.
    ```bash
    whoami
+   scutil --get LocalHostName
    ```
 
-2. `flake.nix`에서 `username` 수정:
-   ```nix
-   username = "your-actual-username";  # whoami 결과로 변경
-   ```
+2. `flake.nix`의 `darwinHosts`에서 현재 호스트에 대응하는 항목을 찾습니다. 해당 `mkDarwinHost` 호출의 첫 인자를 실제 사용자명으로 맞춥니다. 두 번째 인자인 `hostType`은 해당 항목의 기존 값을 사용합니다.
 
-3. 다시 빌드:
+3. 기존 설치에서는 배포된 wrapper로 다시 적용합니다.
    ```bash
-   sudo --preserve-env=SSH_AUTH_SOCK nix run nix-darwin -- switch --flake .
+   "$HOME/.local/bin/nrs"
    ```
+   `nrs`가 아직 없는 최초 설치 도중이라면 [부트스트랩 절차](#darwin-rebuild-command-not-found-부트스트랩-전)의 명령을 다시 실행합니다.
 
 ---
 
@@ -183,10 +186,11 @@ system.activationScripts.postActivation.text = ''
 
 임시 복구 (이미 발생한 경우):
 
+설정을 적용할 사용자의 일반 셸에서 실행합니다. `activateSettings`는 root 권한으로 호출하고, 그 뒤 같은 사용자 셸에서 스크롤 방향을 다시 기록합니다.
+
 ```bash
-# 스크롤 방향 다시 적용 (자연스러운 스크롤 비활성화)
+sudo /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
 defaults write -g com.apple.swipescrolldirection -bool false
-/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
 ```
 
 ---

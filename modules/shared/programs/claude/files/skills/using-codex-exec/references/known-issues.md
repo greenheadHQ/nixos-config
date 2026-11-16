@@ -637,7 +637,7 @@ cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised -s workspa
 배경 (issue #593): §14의 stdin pipe 패턴을 따른 호출도 다음 추가 요인이 결합되면 silent hang 가능:
 
 1. `-c hooks.<event>='[...]'` inline TOML override — Mac codex 0.128 8 PoC variant 중 vH(host HOME + no override + stdin pipe + read-only)만 OK, override 포함 vA-G + vJ 모두 hang. Agent D source 분석은 `-c` parse/merge 정상이지만 override shape가 hook engine MatcherGroup 등록 실패 가능성을 시사 (정밀 위치 [UNVERIFIED]).
-2. (역사 각주 — 현행 소멸) 도입 당시(2026-05) npm wrapper(@openai/codex) 패키징은 `codex-cli/bin/codex.js`의 `spawn(binaryPath, args, {stdio:"inherit", env})`이 detach/process group 생성 없이 native를 호출해, `timeout` 단독으로는 wrapper PID만 죽고 native binary가 잔존할 수 있었다. 현행 패키징(`modules/shared/programs/codex/` — upstream tarball의 native binary 직핀)에는 중간 npm 프로세스가 없어 이 실패 모드는 재현 불가다 (2026-08 실측: `timeout --kill-after` 단독 감독에서 exit 124 직후 codex 프로세스 잔존 0).
+2. (역사 각주 — 현행 소멸) 도입 당시(2026-05) npm wrapper(@openai/codex) 패키징은 `codex-cli/bin/codex.js`의 `spawn(binaryPath, args, {stdio:"inherit", env})`이 detach/process group 생성 없이 native를 호출해, `timeout` 단독으로는 wrapper PID만 죽고 native binary가 잔존할 수 있었다. 현재 `modules/shared/programs/codex/`는 공식 native installer로 최초 설치하며, CLI가 갱신을 소유한다. 일반 CLI 경로에 중간 npm 프로세스가 없는 구조는 유지된다. 2026-08 당시 native binary 직핀 설치에서의 실측은 `timeout --kill-after` 단독 감독의 exit 124 직후 codex 프로세스 잔존 0이었다.
 
 후속 5-variant 실측에서도 `-c hooks.*` inline override 제거 시 12초 안에 성공하고 override
 포함 시 hang했다. `Reading additional input...` banner만으로 hang을 판정하지 말고 banner + 무진척 +

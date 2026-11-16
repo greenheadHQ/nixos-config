@@ -34,7 +34,7 @@ Git 관련 설정 및 도구 구성입니다.
 | `push.autoSetupRemote` | `true` | 첫 push 시 upstream 자동 설정 |
 | `pull.rebase` | `true` | pull 기본 동작을 rebase로 통일 |
 | `merge.conflictStyle` | `zdiff3` | base 문맥 포함 충돌 표시 |
-| `branch.sort` | `committerdate` | 최근 커밋 브랜치 우선 정렬 |
+| `branch.sort` | `committerdate` | 마지막 커밋 시각이 오래된 브랜치부터 정렬 |
 | `init.defaultBranch` | `main` | 기본 브랜치명 |
 
 ### delta 설정 (feature 구조)

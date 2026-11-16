@@ -78,7 +78,7 @@ in
     in
     {
       home.username = username;
-      # mkForce: nix-darwin에서 users.users.${name}.home이 null이므로 강제 설정 필요
+      # configuration.nix의 users.users.${username}.home과 같은 경로를 Home Manager에도 우선 적용
       home.homeDirectory = lib.mkForce "/Users/${username}";
 
       # 프로그램별 모듈 임포트

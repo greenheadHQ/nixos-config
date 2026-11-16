@@ -27,8 +27,8 @@
   boot.kernel.sysctl."kernel.panic" = 10;
 
   # systemd watchdog — 시스템 hang 감지 시 자동 재부팅
-  # RuntimeWatchdogSec: systemd가 이 간격 내에 하드웨어 watchdog을 ping해야 함 (못하면 hang 판정)
-  # RebootWatchdogSec: hang 판정 후 강제 재부팅까지 대기 시간
+  # RuntimeWatchdogSec: 하드웨어 watchdog에 이 기한 내 접촉하지 못하면 재부팅
+  # RebootWatchdogSec: 재부팅 종료 두 번째 단계(systemd-shutdown)의 기한. 런타임 기한에 더하는 대기 시간이 아님
   systemd.settings.Manager = {
     RuntimeWatchdogSec = "30s";
     RebootWatchdogSec = "10min";

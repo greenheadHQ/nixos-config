@@ -97,10 +97,12 @@ fi
     echo "  expected location: $REBUILD_DEPLOYED_LIB_DIR" >&2
     [[ -n "$REBUILD_REPO_LIB_DIR" ]] && echo "  also tried (repo): $REBUILD_REPO_LIB_DIR" >&2
     echo "  required helpers (manifest): ${REBUILD_HELPERS[*]}" >&2
-    # mixed-version 배포(예: rebuild-common.sh 는 새 버전인데 lib/rebuild/ 는 일부 helper
-    # 누락)에서 hard-fail 하면 사용자가 진단 정보 없이 막힌다. 안내 한 줄을 더해 nrs --force
-    # 로 generation 을 재활성화하면 deploy 가 정합 상태로 돌아간다.
-    echo "  if this is a mixed-version deployment (partial home-manager update), run 'nrs --force' once to refresh ~/.local/lib/." >&2
+    # 이 실패는 진입점의 parse_args보다 먼저 발생하므로 --force로 우회할 수 없다.
+    # repo fallback은 이 loader 자체를 repo layout에서 source할 때만 적용된다.
+    # repo-local nrs.sh도 먼저 배포된 loader를 source하므로 그것만 실행해선 복구되지 않는다.
+    echo "  nrs cannot parse --force until the required helpers are available." >&2
+    echo "  Inspect the missing deployment entries and restore them from a matching Home Manager generation." >&2
+    echo "  Verify the complete helper set before rerunning nrs; see modules/shared/scripts/README.md." >&2
     exit 1
 }
 

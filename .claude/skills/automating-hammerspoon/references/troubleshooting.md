@@ -100,24 +100,17 @@ ipc port is no longer valid (early)
 stack overflow
 ```
 
-해결: Hammerspoon 재시작
+해결: Hammerspoon 앱 재시작
 
 ```bash
 pkill Hammerspoon && open -a Hammerspoon
-# 또는
-hsr  # alias 사용 (IPC가 작동할 때만)
 ```
 
-영향: IPC 모듈이 없으면 `darwin-rebuild` 시 자동 리로드가 작동하지 않음
+`hsr`은 IPC가 정상일 때 `hs -c "hs.reload()"`로 설정만 다시 읽는 명령입니다. IPC 포트 오류를 복구하는 앱 재시작과는 별개입니다.
 
-`modules/darwin/configuration.nix`의 activation script에서 `hs -c "hs.reload()"`를 실행하는데, IPC 모듈이 로드되지 않은 상태에서는 이 명령이 실패합니다 (`|| true`로 무시됨).
+현재 `modules/darwin/configuration.nix`의 activation에는 `hs.reload()` 호출이 없습니다. `nrs`가 실제 rebuild를 마치면 `modules/darwin/scripts/nrs.sh`의 `restart_hammerspoon()`이 실행 중인 앱을 종료한 뒤 `open -a Hammerspoon`으로 시작합니다. 변경 없음으로 rebuild를 건너뛴 경로에서는 이 재시작 단계도 실행하지 않습니다. IPC 모듈은 `hs`와 `hsr`의 수동 명령에 필요합니다.
 
-```nix
-# darwin-rebuild 시 실행되는 activation script
-/Applications/Hammerspoon.app/Contents/Frameworks/hs/hs -c "hs.reload()" 2>/dev/null || true
-```
-
-결과: IPC 모듈 추가 전에는 `nrs` 실행 후에도 Hammerspoon 설정이 자동 리로드되지 않아 수동 리로드가 필요했음. 오랫동안 원인을 모른 채 수동 리로드를 해왔는데, IPC 모듈 누락이 원인이었음.
+과거에는 activation에서 IPC reload를 호출했으며, 당시 IPC 모듈 누락으로 `nrs` 뒤 수동 리로드가 필요했던 문제가 있었습니다. 현행 `nrs`의 앱 재시작은 그 IPC 호출을 사용하지 않습니다.
 
 ---
 

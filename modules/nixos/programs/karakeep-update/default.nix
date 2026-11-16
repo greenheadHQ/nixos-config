@@ -15,4 +15,6 @@ import ../../lib/mk-update-module.nix {
   pushoverSecretFile = ../../../../secrets/pushover-karakeep.age;
 
   updateScriptFile = ./files/update-script.sh;
+  updateCommand = "sudo karakeep-update --ack-bridge-risk";
+  updatePreparation = "태그 적용 전에 .claude/skills/hosting-karakeep/references/update-guide.md의 브리지 영향·백업·검증 절차를 확인하세요. 확인을 마친 뒤 modules/nixos/programs/docker/karakeep.nix의 고정 태그를 수정하고 nrs로 적용하세요(이때 재시작 가능). 아래 명령은 현재 태그만 갱신합니다.";
 }

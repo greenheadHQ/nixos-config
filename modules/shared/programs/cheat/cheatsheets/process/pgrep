@@ -61,6 +61,6 @@ pgrep — 이름/속성으로 PID 검색. 출력은 PID(들). top/htop의 시각
 
 Tip
 - 결과를 죽이려면 pgrep 대신 pkill을 직접 쓴다 (cheat process/pkill).
-- top 화면의 COMMAND 컬럼은 잘려 있으니 `pgrep -f` 또는 `ps -Ao command` 로 풀 이름 확인.
+- top 화면의 COMMAND 컬럼은 잘려 있으니 `pgrep -f` 또는 `ps -ww -Ao command` 로 풀 이름 확인.
 - 매칭 0건이면 exit code 1 — 스크립트에서 `if pgrep -x foo; then ...` 패턴 활용.
 - macOS BSD pgrep와 Linux procps-ng pgrep 옵션은 거의 동일 (-a만 Linux 전용).

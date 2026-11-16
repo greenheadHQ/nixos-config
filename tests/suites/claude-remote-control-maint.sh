@@ -1858,6 +1858,21 @@ EOF
     [ "$GLOBAL_ACTION" = "completed" ] \
       || fail "unknown global action must not mutate the previous value"
 
+    # 승인 snapshot의 불일치는 일회성 재확인 대상이다. 전역 실패 알림도
+    # 선언 오류와 구별해 현재 전체 tuple의 재승인을 안내해야 한다.
+    (
+      GLOBAL_ACTION="invalid-drift-approval"
+      actual="$(failure_alert_body 1)"
+      assert_contains "$actual" "새 defer snapshot"
+      assert_contains "$actual" "전체 path/version"
+      assert_contains "$actual" "작업 직전 승인을 다시"
+      assert_not_contains "$actual" "Nix에서 확인"
+
+      GLOBAL_ACTION="invalid-drift-policy"
+      actual="$(failure_alert_body 1)"
+      assert_contains "$actual" "launchd/systemd 환경변수 선언을 Nix에서 확인"
+    )
+
     while IFS=$'\t' read -r action expected_state expected_failure; do
       [ -n "$action" ] || continue
       actual="$(instance_action_metadata "$action")" \

@@ -37,7 +37,7 @@ copyparty = {
 - copyparty Podman 컨테이너: `copyparty/ac` 이미지 (pinned tag — 정본은 이 파일의 `image =` 줄)
 - `--entrypoint=python3`: 이미지 기본 ENTRYPOINT 오버라이드 (initcfg 볼륨 충돌 방지)
 - cmd: `["-m" "copyparty" "-c" "/cfg/config.conf"]`
-- ConditionPathExists: 설정 파일 없으면 시작 방지
+- ConditionPathExists: 입력 비밀번호 파일(`config.age.secrets.copyparty-password.path`)이 없으면 시작을 건너뜀. 생성된 conf의 존재나 설정 생성 성공 여부는 별도 확인
 - 127.0.0.1 바인딩: Caddy 리버스 프록시가 유일한 외부 진입점
 
 ### 5. 활성화

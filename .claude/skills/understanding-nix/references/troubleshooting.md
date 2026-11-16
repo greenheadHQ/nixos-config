@@ -31,12 +31,12 @@ gitleaks: command not found
 lefthook: command not found
 ```
 
-원인: `gitleaks`, `lefthook` 등 pre-commit hook 도구들이 `flake.nix`의 `devShell`에만 설치되어 있음. direnv 환경이 활성화되지 않은 상태에서 커밋 시도.
+확인할 경로: devShell은 gitleaks·lefthook 등 표준 도구를 제공한다. gitleaks는 mise 전역 fallback도 있고, staged-policy runner는 PATH에 없으면 repo-pinned `nix shell`로 bootstrap한다. pre-push 검사는 검증된 runtime profile을 준비해 사용한다. 따라서 direnv 미활성만으로 원인을 단정하지 말고, 실패한 도구명과 PATH·Nix bootstrap·runtime profile 오류를 확인한다.
 
 해결:
 
 ```bash
-# 1. 프로젝트 디렉토리에서 direnv 허용
+# 1. 표준 도구 환경을 준비할 때 프로젝트 디렉토리에서 direnv 허용
 cd ~/Workspace/nixos-config
 direnv allow
 
@@ -158,8 +158,9 @@ ls -d /nix/store/*-source 2>/dev/null | wc -l
 nrs --offline
 ```
 
-- 네트워크 요청 없이 로컬 캐시만 사용
-- 속도: 3분 -> 10초 (약 18배 향상)
+- Nix build/switch에 `--offline`을 전달해 substituter를 사용하지 않는다. 필요한 store 경로가 로컬에 있어야 한다.
+- activation의 native CLI 최초 설치·Homebrew 조회 등은 별도 동작이므로 전체 실행의 네트워크 접근을 막지는 않는다.
+- 과거 관측치: 약 3분 → 약 10초. 캐시와 activation 상태에 따라 달라지며 현재 성능을 보장하지 않는다.
 
 방법 2: 병렬 다운로드 설정 증가
 

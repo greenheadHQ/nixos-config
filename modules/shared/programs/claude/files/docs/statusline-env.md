@@ -13,10 +13,13 @@ Claude Code v2.1.139 부터 hook/statusline 자식 프로세스에서 controllin
 export CLAUDE_STATUSLINE_COLUMNS=200
 ```
 
-위 변수가 설정되면 다른 어떤 감지 경로보다도 우선 적용된다. 값은 **raw 터미널 cols**
-이며, statusline.sh 가 내부적으로 `EFF_COLS = COLS - 40` 보정을 자동 처리한다.
+위 변수에 유효한 값을 설정하면 다른 감지 경로보다 우선 적용된다. 값은 **raw 터미널 cols**이며,
+statusline.sh 가 아래 임계값 매트릭스의 구간별 보정을 적용한다.
 
-### 폭 감지 우선순위 (6슬롯 chain)
+이전 이름인 `STATUSLINE_COLS`는 지원하지 않는다. 기존 설정은 `CLAUDE_STATUSLINE_COLUMNS`로
+바꾼다.
+
+### 폭 감지 우선순위 (5단계 chain)
 
 statusline.sh 는 아래 순서로 폭을 결정한다. 한 단계가 양수 값을 반환하면 즉시 그
 값을 사용한다.
@@ -24,7 +27,6 @@ statusline.sh 는 아래 순서로 폭을 결정한다. 한 단계가 양수 값
 | 단계 | 출처 | 비고 |
 |------|------|------|
 | 1 | `CLAUDE_STATUSLINE_COLUMNS` env | 사용자 명시 override, 항상 우선 |
-| 1.5 | `STATUSLINE_COLS` env | v0.2.x deprecated alias — silent regression 방지용이라 제거 금지 |
 | 2 | stdin `terminal.columns` | Claude Code v2.1.141+ 가 stdin JSON으로 전달 (채택 완료) |
 | 3 | `COLUMNS` env | v2.1.153+ Claude Code가 export (그 이전에는 interactive parent shell이 export한 경우만 hit) |
 | 4 | `stty size </dev/tty` | pre-2.1.139 compatibility branch. v2.1.139+ 에서는 항상 실패 |
@@ -32,7 +34,7 @@ statusline.sh 는 아래 순서로 폭을 결정한다. 한 단계가 양수 값
 
 ### 임계값 매트릭스
 
-rate_limits progressive disclosure (`statusline.sh` 의 `RATE_DETAIL` 임계값):
+rate_limits progressive disclosure (`statusline.sh` 의 `WIDTH_DETAIL` 임계값):
 
 | EFF_COLS 범위 | rate_limits 표시 |
 |---------------|------------------|

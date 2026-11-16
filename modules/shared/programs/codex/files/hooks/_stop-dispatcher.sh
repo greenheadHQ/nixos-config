@@ -6,7 +6,7 @@
 # inline [[hooks.Stop]]에 dispatcher 1개만 등록하고 dispatcher가 sub-script를 순차 호출한다.
 #
 # Ordering rationale:
-#   1. record-last-stop      — statusline TTL race 방어를 위해 first-write로 고정한다.
+#   1. record-last-stop      — 기존 마커 기록 순서를 유지한다. 현재 저장소의 statusline은 읽지 않는다.
 #   2. nrs-session-cleanup   — /tmp/nrs-state lock 즉시 해제. 동시 worktree의 새 nrs가
 #                              lock 대기로 차단되는 회귀를 막는다.
 #

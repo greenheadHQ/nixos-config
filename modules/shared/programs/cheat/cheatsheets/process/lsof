@@ -23,8 +23,11 @@ lsof — 열린 파일/소켓/포트를 누가 잡고 있는지 조회. "이 포
 
   lsof -p PID1,PID2          여러 PID
 
-  lsof -c COMMAND            이름 패턴으로 매칭 (부분일치)
+  lsof -c COMMAND            COMMAND로 시작하는 실행명 매칭 (접두어)
                              $ lsof -c ssh
+
+  lsof -c /REGEXP/           실행명에 정규식 매칭
+                             $ lsof -c /ssh/
 
 [파일 → 누가 잡고 있나]
   lsof FILE                  특정 파일을 연 프로세스
@@ -45,5 +48,5 @@ Tip
 - "PID Y가 뭐 열고 있지?" → lsof -p Y
 - "log file이 안 줄어드네" → lsof | grep '(deleted)' (rotate 후 reopen 누락 의심)
 - 권한 부족 시 sudo lsof — 다른 사용자 프로세스/소켓도 조회.
-- 출력 첫 컬럼이 COMMAND (잘릴 수 있음) — PID로 ps -Ao command 재확인.
+- 출력 첫 컬럼이 COMMAND (잘릴 수 있음) — PID로 ps -ww -p PID -o command 재확인.
 - 시나리오 예시는 cheat process/scenarios 참고.

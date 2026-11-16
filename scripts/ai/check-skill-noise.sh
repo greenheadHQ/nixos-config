@@ -16,7 +16,8 @@
 #
 # 회귀 차단:
 # - lefthook pre-commit `skill-noise-check` / `local-skill-noise-check` 항목으로 자동 통합 완료.
-# - CI step (GitHub Actions) 통합은 `.github/workflows/` 부재로 별도 follow-up.
+# - required CI는 tests/run-all-tests.sh에서 checker와 pre-commit 배선의 합성 회귀를 실행한다.
+#   실제 저장소 skill corpus 검사는 위 pre-commit의 staged snapshot에서 수행한다.
 
 set -euo pipefail
 

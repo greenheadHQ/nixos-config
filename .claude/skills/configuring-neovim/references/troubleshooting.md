@@ -65,8 +65,9 @@ nvim -c ':!which gcc'
 :Mason  " 이 명령이 동작하면 비활성화 실패
 ```
 
-원인: `disabled.lua`에서 `williamboman/mason.nvim` 사용 (잘못된 org명).
-해결: `mason-org/mason.nvim`으로 변경.
+확인: 현재 로드된 `lua/plugins/disabled.lua`가 아래 spec을 포함하는지, 다른 spec이 같은 플러그인의 `name`이나 `enabled`를 재정의하는지 확인한다. lazy.nvim은 기본적으로 repo 이름으로 병합하므로 owner만 옛 이름이라는 이유로 비활성화가 실패하지는 않는다.
+
+저장소 주소는 현재 upstream인 `mason-org`로 유지한다.
 
 ```lua
 -- lua/plugins/disabled.lua
@@ -140,7 +141,7 @@ macism    " 현재 입력소스 ID 출력
 
 langmap/langmapper를 사용하지 않는 이유: 한글 IME는 자음 입력 시 조합(pre-edit) 상태로 대기하여 Neovim에 즉시 전달되지 않음. 이로 인해 `<leader>ff` 같은 키맵에서 extra keystroke가 필요해짐. 러시아어(키릴)와 달리 1:1 매핑이 불가능한 한글 IME의 근본 제약.
 
-NixOS/SSH: `vim.fn.executable("macism") == 1`로 자동 비활성화. 성능 영향 없음.
+일반적인 NixOS SSH 세션처럼 macism이 없는 환경에서는 FocusGained 전환을 등록하지 않고 im-select도 조용히 건너뛴다. macism이 있는 Mac SSH 세션에서도 SSH 여부와 관계없이 전환을 시도한다.
 
 ## 플러그인 업데이트
 
@@ -250,16 +251,13 @@ Plugin echasnovski/mini.surround was renamed to nvim-mini/mini.surround
 Please update your config for LazyVim
 ```
 
-원인: mini.nvim 0.17.0 (2025-12)에서 `echasnovski` 개인 계정 → `nvim-mini` 조직으로 이전. lazy.nvim은 `owner/repo` 문자열로 매칭하므로 옛 이름이면 경고 발생.
+조직 이전을 알리는 경고다. 현재 저장소는 `nvim-mini/mini.surround`이므로 spec의 주소를 갱신한다. lazy.nvim은 기본적으로 repo 이름으로 병합하므로 이 경고를 비활성화 매칭 실패와 동일시하지 않는다.
 
 해결: `disabled.lua`에서 조직명 변경.
 
 ```lua
--- 올바른 방법
+-- 현재 공식 저장소
 { "nvim-mini/mini.surround", enabled = false }
-
--- 잘못된 방법 (경고 발생)
-{ "echasnovski/mini.surround", enabled = false }
 ```
 
 교훈: LazyVim 업데이트 후 플러그인 조직 이전 경고가 나타나면 `disabled.lua`의 `owner/repo`를 확인할 것.
@@ -311,7 +309,7 @@ echo -e "\033[38;2;255;100;0mTRUECOLOR\033[0m"
 
 증상: 파일 탐색기에서 숨김 파일이 안 보인다.
 
-해결: 기본 설정에서 dotfile과 gitignored 파일을 표시한다. 안 보인다면 탐색기에서 `H`를 눌러 숨김 파일 토글을 확인.
+해결: `editor.lua`의 `opts.picker.sources.explorer.hidden/ignored`로 dotfile과 gitignored 파일을 기본 표시한다. 안 보인다면 탐색기에서 `H`로 숨김 파일, `I`로 gitignored 파일 토글을 확인.
 
 ## 버퍼 탐색 불가
 

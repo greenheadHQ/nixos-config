@@ -55,7 +55,7 @@ in
         markdownlint-cli2 # Markdown (LazyVim lang.markdown extra 의존)
 
         # ── 빌드 도구 ──
-        tree-sitter # nvim-treesitter 파서 컴파일 CLI (>= 0.25)
+        tree-sitter # 파서 컴파일 CLI (:checkhealth nvim-treesitter로 버전 호환성 확인)
         nodejs # 일부 LSP 런타임 의존성
       ]
       # ── Linux 전용 ──

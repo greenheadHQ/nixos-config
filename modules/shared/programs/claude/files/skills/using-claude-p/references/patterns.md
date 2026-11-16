@@ -394,20 +394,25 @@ payload의 세부 필드는 고정하지 말고 패턴 8처럼 `type=result`를 
 
 ## 패턴 11: `--bare` 격리 실행
 
-```bash
-test -n "$ANTHROPIC_API_KEY" || echo "FAIL: API key required for --bare"
+아래는 Anthropic API key를 사용하는 예제다. `apiKeyHelper`나 외부 제공자 인증을 사용하는
+환경은 해당 자격 경로를 유지하며, 이 예제의 API key 검사를 적용하지 않는다.
+
+```zsh
+test -n "${ANTHROPIC_API_KEY:-}" || { echo "FAIL: API key missing for this example" >&2; exit 1; }
 set -o pipefail
 echo "주입한 prompt만 사용해 한 줄로 답해" | \
   env ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" claude -p --bare --output-format json \
   > /tmp/bare.json 2> /tmp/bare.stderr
-claude_rc=${PIPESTATUS[1]}
+pipe_rcs=("${pipestatus[@]}")
 # json 출력이므로 test -s만으로는 부족하다 — 패턴 8과 동일하게 result/success까지 파싱해 판정한다.
-[ "$claude_rc" -eq 0 ] && test -s /tmp/bare.json
+[ "${pipe_rcs[1]}" -eq 0 ] && [ "${pipe_rcs[2]}" -eq 0 ] && test -s /tmp/bare.json
 ```
 
 `--bare`는 hooks, LSP, plugin sync, attribution, auto-memory, background prefetch, keychain read,
-CLAUDE.md auto-discovery를 skip하고 `CLAUDE_CODE_SIMPLE=1`을 설정한다. auth는 API key 또는
-settings `apiKeyHelper` 경로가 필요하며, skills는 계속 resolve된다 (2.1.206 help).
+CLAUDE.md auto-discovery를 skip하고 `CLAUDE_CODE_SIMPLE=1`을 설정한다. Anthropic 인증은 API key 또는
+`--settings`로 전달한 `apiKeyHelper`가 필요하다. Bedrock/Vertex/Foundry는 자체 자격 경로를 사용한다.
+skills는 계속 resolve된다 (help 재확인: 2026-11-16, v2.1.325;
+재검증: `claude --version && claude --help && claude -p --help`). 실제 인증·모델 실행은 별도 검증 대상이다.
 
 ## 패턴 12: session ID 고정·fork
 

@@ -507,9 +507,10 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     ) -> dict[str, Any]:
         """Start a fresh difficulty assessment for these 학습 Basic cards after the user chooses reassessment.
         During note inspection/editing, explain why and ask before calling; ordinary edits do not reset it.
-        Writes only a small card custom-data anchor, preserving siblings, notes, flags, scheduling and logs.
-        Rejects insufficient custom-data capacity. More than 20 cards requires preview/confirmation and a
-        restore point. Reuse request_id for retries; inspect the receipt after a lost response."""
+        Writes a small card custom-data anchor and resets an existing mobile difficulty summary.
+        Preserves siblings, notes, flags, scheduling and logs. Rejects insufficient custom-data capacity.
+        More than 20 cards requires preview/confirmation and a restore point. Reuse request_id for retries;
+        inspect the receipt after a lost response."""
         return await operations.run("reassess_difficulty", {"card_ids": card_ids},
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
 
@@ -641,8 +642,9 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     @mcp.tool(name="anki_sync_now", annotations=SYNC)
     async def anki_sync_now() -> dict[str, Any]:
         """Sync the host collection with AnkiWeb now (normal merge only; never a full upload/download).
-        Triggers the host's sync service and waits for that run's result. If a run is already in progress the
-        request joins it and your latest changes ride the next run."""
+        Triggers the host's sync service and waits for that run's result. If a run is already in progress,
+        returns already-running immediately without starting or queuing another run. Call again after it
+        finishes to request a new run and check its result."""
         return await deps.syncer.run()
 
     # 절단 헬퍼를 명시적으로 노출하지는 않지만, 도구 설명이 참조하는 동작이 이 모듈에 있음을 표시

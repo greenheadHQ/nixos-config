@@ -607,8 +607,8 @@ start_missing_instance() {
     local path="$1" spawn="$2" capacity="$3" permission_mode="$4"
     local action reaped launch_status started_pid started_version
     # A wrapper-bypassed plain CLI server in the same cwd does not hold our
-    # lock. Starting another server here permanently creates an undeletable
-    # ghost environment, so ensure must share the wrapper's cwd guard.
+    # lock. Starting another server here creates a duplicate environment and
+    # can leave inactive list entries, so ensure shares the wrapper's cwd guard.
     if has_unmanaged_server_for_path "$path"; then
         action="unmanaged-server-present"
         record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action"
@@ -1104,8 +1104,13 @@ action_explain() {
         lock-acquire-timeout | lock-setup-failed)
             printf '%s\t%s' "ensure lifecycle lock을 얻지 못함" "다른 ensure/claude-rc start·stop 진행 중인지, ensure.lock fd 누수인지 확인"
             ;;
-        declared-instances-invalid | invalid-drift-policy | invalid-drift-approval)
-            printf '%s\t%s' "선언 환경변수(instances/drift policy/approval JSON)가 잘못됨" "launchd/systemd 환경변수 선언을 Nix에서 확인"
+        invalid-drift-approval)
+            printf '%s\t%s' \
+                "confirmed 승인 JSON이 비었거나 형식이 잘못됐거나 현재 drift 집합과 다름" \
+                "새 defer snapshot의 전체 path/version을 확인하고 작업 직전 승인을 다시 받은 뒤 confirmed로 실행"
+            ;;
+        declared-instances-invalid | invalid-drift-policy)
+            printf '%s\t%s' "선언 환경변수(instances/drift policy)가 잘못됨" "launchd/systemd 환경변수 선언을 Nix에서 확인"
             ;;
         desired-version-unresolvable)
             printf '%s\t%s' "launcher(~/.local/bin/claude)가 없거나 versions 디렉토리 밖을 가리킴" "'readlink -f ~/.local/bin/claude'와 ~/.local/share/claude/versions 확인"

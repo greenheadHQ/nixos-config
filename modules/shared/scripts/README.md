@@ -50,6 +50,23 @@
   `CODEX_MISSING_MANAGED_ARTIFACTS`
 - Caller는 underscored helper와 internal rebuild state를 직접 참조하지 않는다.
 
+## Helper 배포 누락 복구
+
+`rebuild helper directory not found`는 필수 helper set을 찾지 못했다는 오류다.
+진입점이 인수를 해석하기 전에 loader가 종료하므로 `nrs --force`도 이 오류를
+우회하지 못한다. repo-local `nrs.sh` 역시 배포된 `~/.local/lib/rebuild-common.sh`를
+먼저 source하므로, 그 entrypoint만 바꿔 실행해도 누락 배포는 복구되지 않는다.
+
+오류가 출력한 expected location과 required helpers를 현재 Home Manager generation의
+배포 매핑과 대조한다. loader와 같은 generation의 helper set임을 확인할 수 있을 때만
+누락·손상된 배포 entry를 해당 generation에서 복원하고, 필수 파일이 모두 읽히는지
+확인한 뒤 `nrs`를 다시 실행한다. generation 근거가 없거나 전체 set을 확인할 수 없으면
+복구 원본부터 확인한다. 임의의 인접 디렉터리나 다른 버전의 helper를 섞지 않는다.
+
+loader의 repo fallback은 loader 자체가 `modules/shared/scripts/` layout에서
+source될 때 그 옆 `lib/rebuild/`의 완전한 set을 선택하는 경로다. 배포된 loader가
+현재 작업 디렉터리의 repo를 자동으로 fallback하는 경로는 아니다.
+
 ## Worktree 링크 보존
 
 `nrs-relink`는 main checkout 내부와 외부의 Git 등록 worktree를 지원한다.

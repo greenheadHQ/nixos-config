@@ -2,7 +2,8 @@
 
 Ratings are observations, not diagnoses of a note or the learner. Replaying the
 log instead of incrementing counters also handles native Undo and merged logs.
-Only the optional reassessment anchor is stored on the card (and synced).
+The optional reassessment anchor is stored on the card and synced. If a mobile
+summary is already present, reassessment resets that summary as well.
 """
 from __future__ import annotations
 

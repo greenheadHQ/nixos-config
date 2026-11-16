@@ -165,7 +165,7 @@ async def test_sync_now_completes_when_new_run_lands(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_sync_now_joins_running_job_without_triggering(tmp_path):
+async def test_sync_now_reports_running_job_without_triggering(tmp_path):
     status = tmp_path / "main.json"
     _write(status, result="running", runId="cur")
     fake = FakeSystemd(status, active="active", invocation="cur")

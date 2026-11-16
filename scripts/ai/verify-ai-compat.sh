@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # verify-ai-compat.sh — Claude Code + Codex CLI 호환 구조 검증
 # 사용: `./scripts/ai/verify-ai-compat.sh` 또는 devShell에서 `verify-ai-compat`
-# tomlkit 미가용 환경에서는 자동으로 `nix shell .#pythonWithTomlkit --command bash "$0"`로
-# 재실행된다 (아래 tomlkit self-wrap 섹션 참조).
+# 일반 모드는 검증된 prePushRuntime profile을 재사용한다. profile이 없거나 stale이면
+# Nix 가용 시 선택한 flake의 prePushRuntime으로 self-wrap한다 (공통 bootstrap 정책 참조).
 #
 # 스킬 제거/개명 퇴역 체크리스트:
 # - 소스 디렉토리 삭제/이동: modules/shared/programs/claude/files/skills/ 또는 .claude/skills/
@@ -87,9 +87,8 @@ RETIRED_EXECUTABLES=(
   ".local/bin/codex""-sync"
 )
 
-# SKILL.md tool-neutral lint has its own exclusion policy. It currently matches
-# the shared exposure exclusions because these skills are legacy adapters,
-# but future exposure-only exclusions must be added deliberately.
+# SKILL.md tool-neutral lint and shared exposure have independent exclusions.
+# An exposure-only exclusion does not bypass lint; add lint exclusions deliberately.
 SKILL_NEUTRAL_LINT_EXCLUDE=(
   set-icons
   using-claude-p
@@ -149,9 +148,9 @@ fi
 # ─── tomlkit bootstrap ───
 # sync-codex-config.py의 `check` subcommand가 tomlkit에 의존한다. 정책과 재실행 guard는
 # scripts/ai/lib/tomlkit-bootstrap.sh 단일 소스에서 관리한다.
-# Python 사전 체크보다 먼저 실행한다. host python3가 없거나 3.11 미만이어도
-# nix shell .#pythonWithTomlkit으로 self-wrap된 뒤 그 안의 python3로 다시 사전 체크를 수행한다.
-# 그래야 파일 상단의 "tomlkit 미가용 시 자동 재실행" 계약이 실제로 성립한다.
+# 일반 모드는 Python 사전 체크보다 먼저 runtime을 준비한다. 검증된 profile 또는
+# prePushRuntime self-wrap 환경의 python3로 사전 체크를 수행하며, host python3가 없거나
+# 3.11 미만인 경우의 runtime 준비·fallback 조건도 공통 helper의 정책을 따른다.
 _VERIFY_AI_COMPAT_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 if [ "$RUN_GUARDRAIL_FIXTURES" -eq 0 ]; then
   # shellcheck disable=SC1091  # source file은 repo 내부 고정 경로

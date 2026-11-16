@@ -68,7 +68,8 @@ run_driver "shell-script-tests" \
 
 run_driver "claude-rc-runtime-tests" bash tests/run-claude-rc-runtime-tests.sh
 
-# 3) codex-hook-fixtures — Codex stable hook 회귀 차단 결정적 fixture. --no-live, Python stdlib only.
+# 3) codex-hook-fixtures — Codex stable hook 회귀 차단 결정적 fixture (--no-live).
+#    tomlkit이 필요하며, runner의 공통 bootstrap이 검증된 prePushRuntime profile을 우선 사용한다.
 run_driver "codex-hook-fixtures" bash tests/test-codex-hook-fixtures.sh --no-live
 
 # 4) codex-exec-supervised — codex-exec-supervised wrapper의 env validation 경계(타임아웃 cap/양수/
@@ -112,8 +113,8 @@ run_driver "copyparty-mount-tests" bash tests/run-copyparty-mount-tests.sh
 
 # 7d) guardrail-lint-fixtures — skill-neutral-lint 엔진의 fixture self-test(17개). hermetic 하고
 #     python3 만 요구하므로(codex/nix/jq 불필요) 통합 러너에 저비용으로 붙는다. 이 게이트가 지키는
-#     것은 lint 엔진의 fixture self-test 까지이고, verify-ai-compat.sh 본체(codex 설정·hook·
-#     capability probe 검사)는 여전히 어떤 자동 게이트에도 없다 — 커버리지를 과대평가하지 말 것.
+#     것은 lint 엔진의 fixture self-test까지다. verify-ai-compat.sh 본체의 Codex 설정·설치/PATH·
+#     스킬 투영·hook 배선 등 host-state 검사는 이 게이트에서 실행하지 않는다.
 run_driver "guardrail-lint-fixtures" bash scripts/ai/verify-ai-compat.sh --run-fixture-tests
 
 # 8) flake-check — 전 시스템 flake 평가 게이트(repo 전역). eval-tests의 선택적 평가가 강제하지

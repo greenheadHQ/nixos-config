@@ -2,8 +2,9 @@
 
 구성 요소:
   config.py      env → Settings (nixos 모듈이 단일 소스에서 주입)
-  ankiconnect.py loopback AnkiConnect(HTTP) 클라이언트 — 컬렉션 조회·변경은 전부 이 경로
-  helper.py      anki_host_sync 헬퍼 애드온(/status) — 변경 작업 전 busy 확인
+  ankiconnect.py 인증된 loopback AnkiConnect(HTTP) 조회 클라이언트
+  helper.py      anki_host_sync 헬퍼 HTTP — 상태·확장 조회 및 작업 원장 기반 변경
+  operations.py  helper의 준비·적용·전달 endpoint를 통한 변경 작업 조정
   syncstatus.py  "지금 동기화" — sync 유닛 트리거 + 상태 사본(runId 규칙)
   shaping.py     응답 축소(필드 절단·페이지네이션)
   tools.py       MCP 도구 정의(조회 계층 + 변경 계층의 추가·수정·태그, annotations)

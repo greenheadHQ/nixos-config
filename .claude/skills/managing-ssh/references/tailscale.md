@@ -39,34 +39,25 @@ child와 Claude shell snapshot은 `~/.local/share/nixos-config/headless-ssh/bin/
 | 컴포넌트 | 역할 |
 | -------- | ---- |
 | `programs.ssh.settings."*".IdentityAgent` | 1Password agent socket 사용 (`constants.onePassword.agentSocketRelPath`) |
-| `programs.ssh.settings."minipc"` | Tailscale IP, `User = "greenhead"`, `IdentityFile = ~/.ssh/mac-ssh.pub`, `IdentitiesOnly = yes` |
+| `programs.ssh.settings."minipc"` | 개인 Mac의 MiniPC 별칭·목적지·사용자·연결 재사용 설정 (`IdentityFile`은 조건부 `Match`에서 선택) |
+| `programs.ssh.settings."minipc-codex"` | 명시적 무인 조건에서 headless IdentityFile, `IdentityAgent = none`, `BatchMode = yes`; 대화형 master 재사용 차단 |
+| `programs.ssh.settings."minipc-interactive-identity"` | 같은 MiniPC 별칭에서 무인 조건이 거짓이면 `~/.ssh/mac-ssh.pub` 선택 |
 | `programs.ssh.settings."minipc-emergency"` | 1Password 우회 fallback (`IdentityAgent = none`, `~/.ssh/emergency_ed25519`) |
 | `~/.local/share/nixos-config/headless-ssh/bin/ssh` | personal automation의 MiniPC 전용 dispatcher; 다른 SSH 목적지는 raw OpenSSH로 전달 |
-| `~/.ssh/minipc-headless` | dispatcher 전용 agenix materialization (`IdentityAgent none`, mode 0400) |
+| `~/.ssh/minipc-headless` | dispatcher·조건부 `Match`·`minipc-headless` 별칭용 agenix materialization (`IdentityAgent none`, mode 0400) |
 | `home.file.".config/1Password/ssh/agent.toml"` | SSH vault를 1Password agent에 노출 (`constants.onePassword.vaults.ssh`) |
 | `home.file.".ssh/mac-ssh.pub"` | `constants.sshDeviceKeys.macSsh` 공개키 배포 |
 | `launchd.agents.onepassword-autostart` | 로그인 시 1Password 백그라운드 기동 |
 
-생성되는 `~/.ssh/config`:
+개인 Mac의 생성 구성은 `Match`와 `Host`를 나누어 identity를 선택한다.
+`NIXOS_CONFIG_HEADLESS_SSH=1` 또는 비어 있지 않은 `CODEX_PROGRAMMATIC`이 있으면
+headless용 `Match`가 먼저 적용되고, 이 조건이 거짓인 MiniPC 별칭에는 interactive용
+`Match`가 mac-ssh 공개키를 지정한다. `Host minipc` 블록 자체에는 `IdentityFile`을 두지 않는다.
+`minipc-emergency`는 별도 `Host`에서 emergency 개인키와 `IdentityAgent none`을 지정한다.
 
-```text
-Host *
-  AddKeysToAgent yes
-  IdentityAgent <home>/<constants.onePassword.agentSocketRelPath>
-
-Host minipc
-  HostName <constants.network.minipcTailscaleIP>
-  User greenhead
-  IdentityFile ~/.ssh/mac-ssh.pub
-  IdentitiesOnly yes
-
-Host minipc-emergency
-  HostName <constants.network.minipcTailscaleIP>
-  User greenhead
-  IdentityFile ~/.ssh/emergency_ed25519
-  IdentityAgent none
-  IdentitiesOnly yes
-```
+정확한 대상 패턴·블록 순서·옵션은 `modules/darwin/programs/ssh/default.nix`를 기준으로 본다.
+조건부 `Match`는 직접 ssh/scp/sftp 호출의 키 선택을 보완하며, 인증 단계의 deadline과
+옵션 검사는 dispatcher가 담당한다. 이 MiniPC 구성은 personal 호스트에만 배포된다.
 
 확인 방법:
 
@@ -116,7 +107,7 @@ MiniPC(greenhead-minipc)에서는 NixOS 모듈로 Tailscale을 관리합니다.
 ```nix
 services.tailscale = {
   enable = true;
-  useRoutingFeatures = "server";  # subnet router만 허용
+  useRoutingFeatures = "server";  # IP forwarding 활성화; route/exit-node 광고는 별도 설정
 };
 
 networking.firewall = {
@@ -131,7 +122,7 @@ networking.firewall = {
 | 항목 | 설명 |
 |------|------|
 | VPN 접근 | MiniPC는 `constants.network.minipcTailscaleIP`로 접근 |
-| Routing 기능 | `useRoutingFeatures = "server"` |
+| Routing 기능 | `server`로 IP forwarding 활성화; subnet route·exit node 광고는 별도 설정 |
 | 방화벽 | `tailscale0` 전체 신뢰 + Tailscale UDP 포트 허용 |
 | TCP 포트 개방 | per-interface `allowedTCPPorts` 규칙은 사용하지 않음 |
 

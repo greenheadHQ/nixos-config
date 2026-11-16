@@ -4,7 +4,7 @@
 # 사용법:
 #   nrs                       # 일반 rebuild
 #   nrs --offline             # 오프라인 rebuild (빠름)
-#   nrs --force               # 소스 빌드 경고 무시
+#   nrs --force               # NO_CHANGES 스킵·worktree symlink guard 우회, 소스 빌드 경고 무시
 #   nrs --force --cores 2    # 코어 제한으로 진행
 #   nrs --help                # 사용법 출력
 

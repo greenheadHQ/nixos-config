@@ -9,7 +9,7 @@
 #   - _write_version_check_curl_stub dir github_status_file github_body_file notify_log
 #                                                   : GitHub/Pushover 요청을 상태 파일로 대역
 #   - _run_generic_version_check stub_dir service_lib pushover_cred state_dir \
-#         container_name container_image github_repo display_name
+#         container_name container_image github_repo display_name [update_command] [update_preparation]
 #                                                   : generic-version-check.sh 1회 실행
 #   - _write_immich_version_check_curl_stub / _run_immich_version_check
 #                                                   : 위와 동일 계약 + Immich API 현재 버전 조회 대역
@@ -18,7 +18,7 @@
 #   - _write_large_ascii_release_body_github_json out tag workdir
 #                                                   : 400줄 x 240자(약 96KB) 릴리즈 노트를
 #                                                     담은 GitHub 응답 JSON 생성 (SIGPIPE 재현용)
-#   - _expected_large_ascii_release_body           : 위 본문을 20줄·1024자로 자른 기대값
+#   - _expected_large_ascii_release_body limit     : 위 본문을 남은 문자 예산으로 자른 기대값
 
 _version_check_service_lib_path() {
   printf '%s\n' "$REPO_ROOT/modules/nixos/lib/service-lib.sh"
@@ -99,6 +99,8 @@ _run_generic_version_check() {
     CONTAINER_IMAGE="$container_image" \
     GITHUB_REPO="$github_repo" \
     SERVICE_DISPLAY_NAME="$display_name" \
+    UPDATE_COMMAND="${9:-}" \
+    UPDATE_PREPARATION="${10:-}" \
     bash "$(_version_check_generic_script_path)"
 }
 
@@ -508,22 +510,26 @@ PY
   jq -n --rawfile body "$body_file" --arg tag "$tag" '{tag_name: $tag, body: $body}' > "$out"
 }
 
-# 위 본문을 "앞 20줄, 이어서 최대 1024자"로 절단한 결과를 손계산한 값.
-# 240자 줄 4개(각 줄 뒤 개행 포함, 241자 x 4 = 964자) + 5번째 줄의 앞 60자 = 1024자.
+# 최대 예산이 1024자이므로 240자 줄 5개면 기대값을 구성하기에 충분하다.
+# 고정 헤더·안내를 제외한 예산은 테스트에서 Python으로 독립 계산한다.
 _expected_large_ascii_release_body() {
-  local line
+  local limit="$1" line body
   line=$(printf 'A%.0s' $(seq 1 240))
-  printf '%s\n%s\n%s\n%s\n%s' "$line" "$line" "$line" "$line" "${line:0:60}"
+  printf -v body '%s\n%s\n%s\n%s\n%s' "$line" "$line" "$line" "$line" "$line"
+  printf '%s' "${body:0:limit}"
 }
 
 test_version_check_new_version_large_release_body_notifies_without_sigpipe() {
-  local expected_release_body expected_message attempt
-  expected_release_body=$(_expected_large_ascii_release_body)
-  expected_message="v9.9.9 출시됨
+  local expected_release_body expected_message attempt header guidance body_limit
+  header="v9.9.9 출시됨"
+  guidance="업데이트: sudo demo-update"
+  body_limit=$(python3 -c 'import sys; print(1024 - len(sys.argv[1]) - len(sys.argv[2]) - 4)' "$header" "$guidance")
+  expected_release_body=$(_expected_large_ascii_release_body "$body_limit")
+  expected_message="${header}
 
 ${expected_release_body}
 
-업데이트: sudo demo-update"
+${guidance}"
 
   # 96KB 본문은 파이프 버퍼(보통 64KB)를 넘으므로 수정 전 코드는 사실상 매 시도마다
   # 결정적으로 실패한다. 3회 반복은 "결정적 실패를 반복해도 안정적으로 통과하는지"를
@@ -561,18 +567,24 @@ ${expected_release_body}
     local actual_message
     actual_message=$(_extract_last_pushover_message "$notify_log")
     [ "$actual_message" = "$expected_message" ] \
-      || fail "attempt $attempt: notified message does not match the expected 20-line/1024-char truncation"
+      || fail "attempt $attempt: notified message does not match the expected release-body budget"
+    [ "$(jq -n --arg message "$actual_message" '$message | length')" -le 1024 ] \
+      || fail "attempt $attempt: complete notification exceeds 1024 characters"
   done
 }
 
 test_immich_version_check_new_version_large_release_body_notifies_without_sigpipe() {
-  local expected_release_body expected_message attempt
-  expected_release_body=$(_expected_large_ascii_release_body)
-  expected_message="현재: v1.0.0 → 최신: v9.9.9
+  local expected_release_body expected_message attempt header guidance body_limit
+  header="현재: v1.0.0 → 최신: v9.9.9"
+  guidance="새 버전은 DB 백업과 릴리스 노트를 확인한 뒤 modules/nixos/programs/docker/immich.nix의 서버·ML 고정 태그를 함께 수정하고 nrs로 적용하세요.
+현재 태그 재갱신: sudo immich-update"
+  body_limit=$(python3 -c 'import sys; print(1024 - len(sys.argv[1]) - len(sys.argv[2]) - 4)' "$header" "$guidance")
+  expected_release_body=$(_expected_large_ascii_release_body "$body_limit")
+  expected_message="${header}
 
 ${expected_release_body}
 
-업데이트: sudo immich-update"
+${guidance}"
 
   # 96KB 본문은 파이프 버퍼(보통 64KB)를 넘으므로 수정 전 코드는 사실상 매 시도마다
   # 결정적으로 실패한다. 3회 반복은 "결정적 실패를 반복해도 안정적으로 통과하는지"를
@@ -619,7 +631,9 @@ ${expected_release_body}
     local actual_message
     actual_message=$(_extract_last_pushover_message "$notify_log")
     [ "$actual_message" = "$expected_message" ] \
-      || fail "attempt $attempt: immich notified message does not match the expected 20-line/1024-char truncation"
+      || fail "attempt $attempt: immich notified message does not match the expected release-body budget"
+    [ "$(jq -n --arg message "$actual_message" '$message | length')" -le 1024 ] \
+      || fail "attempt $attempt: complete notification exceeds 1024 characters"
   done
 }
 
@@ -894,16 +908,11 @@ test_version_check_release_body_unicode_boundary_not_corrupted() {
 
   # 한 줄짜리 본문(개행 없음)이라 20줄 제한은 걸리지 않고 1024자 제한만 걸린다.
   # "한글이모지🎉테스트" 9코드포인트 x 130 = 1170코드포인트로 1024자 경계를 넘는다.
-  local body_unicode expected_release_body expected_message actual_message
+  local body_unicode expected_release_body expected_message actual_message header guidance
   body_unicode=$(python3 -c "print('한글이모지🎉테스트' * 130, end='')")
-  expected_release_body=$(python3 - "$body_unicode" <<'PY'
-import sys
-body = sys.argv[1]
-lines = body.split("\n")[:20]
-joined = "\n".join(lines)
-sys.stdout.write(joined[:1024])
-PY
-)
+  header="v2.0.0 출시됨"
+  guidance="업데이트: sudo demo-update"
+  expected_release_body=$(python3 -c "import sys; print(sys.argv[1][:1024-len(sys.argv[2])-len(sys.argv[3])-4], end='')" "$body_unicode" "$header" "$guidance")
 
   printf '%s\n' "$((1000000 + 3600))" > "$clock_file"
   jq -n --arg tag "2.0.0" --arg body "$body_unicode" '{tag_name: $tag, body: $body}' > "$github_body"
@@ -911,16 +920,20 @@ PY
     "demo" "demo:1.2" "demo/demo" "Demo" \
     || fail "unicode body must still exit 0 under LC_ALL=C"
 
-  expected_message="v2.0.0 출시됨
+  expected_message="${header}
 
 ${expected_release_body}
 
-업데이트: sudo demo-update"
+${guidance}"
   actual_message=$(_extract_last_pushover_message "$notify_log")
   [ "$actual_message" = "$expected_message" ] \
     || fail "unicode boundary truncation does not match Python's independent codepoint slice"
 
-  # 코드포인트 경계에서 잘렸다면 유효한 UTF-8 이 아니게 된다(멀티바이트 시퀀스 중간 절단).
+  [ "$(jq -n --arg message "$actual_message" '$message | length')" -le 1024 ] \
+    || fail "unicode notification exceeds the complete-message budget"
+  assert_contains "$actual_message" "업데이트: sudo demo-update"
+
+  # 멀티바이트 시퀀스 중간에서 절단되면 유효한 UTF-8이 아니므로 디코딩으로 확인한다.
   printf '%s' "$actual_message" | python3 -c "
 import sys
 data = sys.stdin.buffer.read()
@@ -1024,3 +1037,90 @@ EOF
     done
   done
 )
+
+# 실제 명령은 실행하지 않고 알림 경로만 대역으로 검증한다. 서비스별 필수 인자와
+# 고정 태그 적용 절차가 기본 명령 생성 과정에서 빠지지 않아야 한다.
+test_version_check_service_update_guidance_preserves_required_steps() {
+  local service sandbox preparation command message detect_major_mismatch body legacy_message
+  for service in copyparty karakeep uptime-kuma; do
+    sandbox=$(new_sandbox)
+    mkdir -p "$sandbox/state"
+    _write_fake_clock_stub "$sandbox/bin" "$sandbox/clock"
+    _write_version_check_curl_stub "$sandbox/bin" "$sandbox/github-status" "$sandbox/github-body" "$sandbox/notify.log"
+    _write_version_check_pushover_cred "$sandbox/pushover"
+    printf '1000000\n' > "$sandbox/clock"
+    printf '0\n' > "$sandbox/github-status"
+    body=$(printf 'A%.0s' $(seq 1 800))
+    jq -n --arg body "$body" '{tag_name: "v2.0.0", body: $body}' > "$sandbox/github-body"
+    printf '1.0.0\n' > "$sandbox/state/last-notified-version"
+    command="sudo $service-update"
+    case "$service" in
+      copyparty)
+        preparation="새 버전은 modules/nixos/programs/docker/copyparty.nix의 고정 태그를 수정하고 nrs로 적용해야 합니다. 아래 명령은 적용된 태그만 갱신합니다."
+        ;;
+      karakeep)
+        command="$command --ack-bridge-risk"
+        preparation="태그 적용 전에 .claude/skills/hosting-karakeep/references/update-guide.md의 브리지 영향·백업·검증 절차를 확인하세요. 확인을 마친 뒤 modules/nixos/programs/docker/karakeep.nix의 고정 태그를 수정하고 nrs로 적용하세요(이때 재시작 가능). 아래 명령은 현재 태그만 갱신합니다."
+        ;;
+      uptime-kuma)
+        preparation="백업과 릴리스 노트를 확인한 뒤 modules/nixos/programs/docker/uptime-kuma.nix의 고정 태그를 수정하고 nrs로 적용하세요. 아래 명령은 적용된 태그만 갱신합니다."
+        ;;
+    esac
+    # 800자 본문은 기존 짧은 안내에서 유효했던 입력이다.
+    legacy_message="v2.0.0 출시됨
+
+${body}
+
+업데이트: sudo $service-update"
+    [ "$(jq -n --arg message "$legacy_message" '$message | length')" -le 1024 ] \
+      || fail "$service fixture must fit the former notification format"
+    detect_major_mismatch=false
+    if [ "$service" = uptime-kuma ]; then
+      detect_major_mismatch=true
+    fi
+    DETECT_MAJOR_MISMATCH="$detect_major_mismatch" \
+      _run_generic_version_check "$sandbox/bin" "$(_version_check_service_lib_path)" \
+      "$sandbox/pushover" "$sandbox/state" "$service" "$service:1.0.0" \
+      "demo/$service" "$service" "$command" "$preparation" \
+      || fail "$service guidance notification must succeed"
+    message=$(_extract_last_pushover_message "$sandbox/notify.log")
+    assert_contains "$message" "$preparation
+확인 후: $command"
+    assert_not_contains "$message" "업데이트: sudo $service-update"
+    [ "$(jq -n --arg message "$message" '$message | length')" -le 1024 ] \
+      || fail "$service guidance must fit the complete-message budget"
+    if [ "$service" = karakeep ]; then
+      assert_not_contains "$message" "$body"
+    fi
+    if [ "$service" = uptime-kuma ]; then
+      assert_contains "$message" "현재 이미지 태그 :1.0.0은 1.x만 지원"
+    fi
+    assert_file_contains "$sandbox/state/last-notified-version" "2.0.0"
+  done
+}
+
+# 임의의 외부 값이 고정 부분만으로 한도를 넘으면 성공 상태를 기록하지 않는다.
+test_version_check_oversized_fixed_guidance_does_not_record_success() {
+  local sandbox rc preparation
+  sandbox=$(new_sandbox)
+  mkdir -p "$sandbox/state"
+  _write_fake_clock_stub "$sandbox/bin" "$sandbox/clock"
+  _write_version_check_curl_stub "$sandbox/bin" "$sandbox/github-status" "$sandbox/github-body" "$sandbox/notify.log"
+  _write_version_check_pushover_cred "$sandbox/pushover"
+  printf '1000000\n' > "$sandbox/clock"
+  printf '0\n' > "$sandbox/github-status"
+  printf '{"tag_name":"v2.0.0","body":"release notes"}\n' > "$sandbox/github-body"
+  printf '1.0.0\n' > "$sandbox/state/last-notified-version"
+  preparation=$(printf 'A%.0s' $(seq 1 1025))
+  rc=0
+  _run_generic_version_check "$sandbox/bin" "$(_version_check_service_lib_path)" \
+    "$sandbox/pushover" "$sandbox/state" "demo" "demo:1.0.0" "demo/demo" "Demo" \
+    "sudo demo-update" "$preparation" || rc=$?
+  [ "$rc" -ne 0 ] || fail "fixed guidance beyond the limit must fail"
+  [ "$(cat "$sandbox/state/last-notified-version")" = "1.0.0" ] \
+    || fail "oversized fixed guidance must not record a notified version"
+  [ ! -e "$sandbox/state/last-success" ] || fail "oversized fixed guidance must not record success"
+  assert_line_count "$sandbox/notify.log" 'https://api.pushover.net/1/messages.json' 1
+  assert_contains "$(cat "$sandbox/notify.log")" "오류 발생: 스크립트 실패"
+  assert_not_contains "$(cat "$sandbox/notify.log")" "Demo 업데이트 알림"
+}

@@ -129,7 +129,10 @@ NIXEOF
     fi
     echo "✓ hosts/$hostname/default.nix 생성됨 (SSH_KEY_NAME 수정 필요)"
     echo
-    echo "  ⚠️  hardware-configuration.nix는 NixOS 설치 후 생성됩니다."
+    echo "  ⚠️  hardware-configuration.nix는 대상 호스트에서 nixos-generate-config로 직접 생성·검토해야 합니다."
+    echo "      nixos-install --flake는 이 파일을 생성하지 않습니다. 생성한 호스트 구성을 빌드하기 전에 준비하세요."
+    echo "      disko가 파일시스템을 관리한다면 --show-hardware-config --no-filesystems로 생성하세요."
+    echo "      상세: .claude/skills/managing-minipc/references/installation.md의 hardware-configuration.nix 교체 절"
     echo "  ⚠️  필요하면 disko.nix도 추가하세요."
   fi
   echo

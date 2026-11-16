@@ -12,16 +12,25 @@
 - `| head`, `| tail`, 뒤이은 `; echo $?`는 원래 exit를 가릴 수 있으므로 판정 경로에 두지 않는다.
 
 ```zsh
+[ -s prompt.md ] || { echo "missing/empty prompt" >&2; exit 1; }
+rm -f result.md || exit 1
 set -o pipefail
-cat prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
-  -s workspace-write -o result.md - >stdout.log 2>stderr.log
-codex_rc=$pipestatus[2]
+if cat prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
+  -s workspace-write -o result.md - >stdout.log 2>stderr.log; then
+  pipe_rcs=("${pipestatus[@]}")
+else
+  pipe_rcs=("${pipestatus[@]}")
+fi
+[ "${pipe_rcs[1]}" -eq 0 ] && [ "${pipe_rcs[2]}" -eq 0 ] \
+  && test -f result.md && test -s result.md
 ```
 
 ## 성공 계약
 
 프로세스 exit만으로 업무 성공을 판정하지 않는다. 실패 판정의 정본은 ① rc → ② 결과 파일
 순서이며, stderr는 실패 판정 입력이 아니라 원인 분류 입력이다 (조건 3; 재확인: 2026-08-15, 0.147.0).
+실행 전에 이전 결과 파일을 삭제·초기화하고, 실패하면 호출하지 않는다. 이전 결과의 존재나
+내용이 이번 실행의 성공 근거가 되어서는 안 된다.
 
 1. wrapper/CLI exit가 0이다.
 2. 기대 산출물이 존재하고 비어 있지 않으며(`test -s "$RESULT"`) 내용이 형식 계약을 만족한다:
@@ -73,20 +82,27 @@ Bash tool `run_in_background` 완료 알림의 exit code는 codex가 아니라 �
 꼬리 `echo "EXIT=$?"`는 관측성조차 제공하지 못한다(알림에서 값이 회수된 사례 0건). 표준 발사 형태:
 
 ```zsh
-cat "$PROMPT" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
-  -s workspace-write -o "$OUT" - > "$OUT.stdout" 2> "$OUT.stderr"
-pipe_rcs=("${pipestatus[@]}")  # 배열을 먼저 스냅샷한다 — 다음 명령이 리셋한다
+rm -f -- "$OUT" "$OUT.rc" || exit 1
+[ -s "$PROMPT" ] || { echo "missing/empty prompt" >&2; exit 1; }
+set -o pipefail
+if cat "$PROMPT" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
+  -s workspace-write -o "$OUT" - > "$OUT.stdout" 2> "$OUT.stderr"; then
+  pipe_rcs=("${pipestatus[@]}")
+else
+  pipe_rcs=("${pipestatus[@]}")  # set -e여도 실패 rc를 보존한 뒤 .rc를 기록한다
+fi
 rc="${pipe_rcs[2]}"            # codex의 rc (zsh 1-base). 파이프 없는 발사는 rc=$?
 [ -n "$rc" ] && [ -n "${pipe_rcs[1]}" ] || { echo "rc 캡처 실패 — 셸/배열 불일치" >&2; exit 1; }
 [ "${pipe_rcs[1]}" = "0" ] || rc="${pipe_rcs[1]}"   # 좌측 cat 실패도 rc에 반영 (= 문자열 비교 — 빈 값이면 위 guard가 먼저 잡는다)
-printf '%s' "$rc" > "$OUT.rc"  # rc 영속화 — 알림 유실 대비·다수 병렬 배리어의 정본
-exit $rc                       # 하네스 완료 알림에 codex rc가 실리게 한다
+printf '%s' "$rc" > "$OUT.rc" || exit 1  # rc 영속화 — 알림 유실 대비·다수 병렬 배리어의 정본
+exit "$rc"                     # 하네스 완료 알림에 codex rc가 실리게 한다
 ```
 
 - Bash tool 셸은 zsh다. bash에서 재사용하려면 `pipestatus` → `PIPESTATUS`, 인덱스 1-base →
   0-base로 함께 바꾼다 — 한쪽만 바꾸면 rc가 빈 값이 되어 `.rc`가 비고 계약이 무력화된다
   (위 `[ -n "$rc" ]` 가드가 그 상태를 fail-closed로 잡는다).
-- `.rc` 파일 부재 자체를 실패로 취급한다 — guard 조기 exit 경로가 은폐되지 않는다.
+- `.rc`는 매 실행 전에 지우며, 파일 부재 자체를 실패로 취급한다 — guard 조기 exit 경로를 이전
+  `.rc`가 가리지 않는다. `.rc=0`만으로 작업 성공을 판정하지 않고 위 결과 파일·형식 계약도 확인한다.
 - 좌측 `cat` 실패(프롬프트 파일 부재·손상)는 codex가 빈 stdin으로 exit 0을 낼 수 있어 위
   스냅샷 없이는 성공으로 오판된다 — 셸 transport 계약의 배열 스냅샷 규칙과 동일 축이다.
 
@@ -147,6 +163,7 @@ wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 b
 - `command codex --version`으로 기대 버전 확인
 - `pwd`가 대상 저장소 루트인지 확인
 - 프롬프트 파일 경로와 결과 파일 경로를 분리
+- 이전 결과 파일과 해당 실행의 `.rc`를 초기화하고, 초기화 실패 시 실행 중단
 - fan-out 전 패턴 8 스모크 1회 통과
 
 실행 후:

@@ -3,34 +3,36 @@ tags: [ neovim, lazyvim, terminal, shell, snacks ]
 ---
 터미널 / 셸 명령 실행
 
-플로팅 터미널 (snacks.nvim)
+하단 터미널 (snacks.nvim)
 
-  Ctrl+/        플로팅 터미널 토글 (Root Dir 기준) — 한 번 더 누르면 숨김
-  <leader>ft    플로팅 터미널 (Root Dir)        = Ctrl+/
-  <leader>fT    플로팅 터미널 (cwd)             모노레포 전체 기준
+  Ctrl+/        하단 터미널 토글 (Root Dir 기준) — 한 번 더 누르면 숨김
+  <leader>ft    하단 터미널 (Root Dir)        = Ctrl+/
+  <leader>fT    하단 터미널 (cwd)             모노레포 전체 기준
   <leader>gg    lazygit 열기
-  <leader>C     cheatsheet 브라우저 (fzf)
+  <leader>C     플로팅 cheatsheet 브라우저 (fzf)
 
   Ctrl+/ 는 Normal/Terminal 양쪽에 매핑되어 있어 터미널 안에서 눌러도 접힌다.
   숨기는 것은 프로세스를 죽이지 않으므로 다시 열면 하던 작업이 그대로 이어진다.
   단 셸에서 exit 하거나 실행한 명령이 스스로 끝나면 창이 닫히고 세션도 사라진다
   (snacks 기본 auto_close) → 다음에 열면 새 세션.
 
+  ※ 일반 셸은 하단 split으로 열린다. 명령을 지정한 Snacks.terminal은 기본적으로
+    플로팅 창을 사용하며, <leader>C는 float style도 명시한다.
   ※ 모노레포: 소문자(ft)는 LSP root(현재 패키지), 대문자(fT)는 cwd(전체)
 
 터미널 모드 ↔ Normal 모드
 
   Ctrl+\        Normal 모드로 탈출   (커스텀, Vim 순정은 <C-\><C-n> 두 번)
-  Esc Esc       Normal 모드로 탈출   (snacks 플로팅 터미널 한정, 200ms 안에 두 번)
+  Esc Esc       Normal 모드로 탈출   (Snacks 터미널, 200ms 안에 두 번)
   i / a         다시 입력(Terminal) 모드로
-  q             (Normal 모드에서) 플로팅 터미널 숨기기 = Ctrl+/
+  q             (Normal 모드에서) Snacks 터미널 숨기기
 
   Normal 모드로 나오면 hjkl 스크롤, y 복사, / 검색이 그대로 동작한다.
   → 긴 빌드 로그에서 에러 줄만 찾아 복사할 때 유용.
 
   터미널 모드에서는 한글 IM 자동 전환을 적용하지 않는다 (입력 의도 존중).
 
-윈도우로 터미널 열기 (플로팅 대신 split 차지)
+내장 터미널 열기 (현재 윈도우 또는 새 split)
 
   :terminal     현재 윈도우를 터미널로        :term 로 축약 가능
   :sp | term    가로 분할에 터미널
