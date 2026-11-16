@@ -10,7 +10,8 @@
 
 아래 명령은 이 저장소 루트에서 `nix develop --command bash`로 연 Bash 셸에서 실행한다. argv는 배포된
 래퍼가 사용하는 `claude-rc-pid-argv` helper로 읽는다. 이 helper는 일반 PATH에 노출되지 않을 수
-있으므로, 현재 래퍼 패키지의 참조에서 실행 파일 하나를 찾는다. 조회 실패·0개·여러 개면
+있으므로, 현재 launcher 패키지의 전이 의존성에서 실행 파일 하나를 찾는다. 개인 Mac의 바깥
+SSH launcher가 참조하는 내부 래퍼까지 조회한다. 조회 실패·0개·여러 개면
 진행하지 않는다. `ps args` 문자열로 대체하지 않는다.
 
 ```bash
@@ -19,7 +20,7 @@ CLAUDE_RC_PID_ARGV_HELPER="$(
   wrapper="$(type -P claude-rc)" || exit 1
   wrapper="$(readlink -f "$wrapper")" || exit 1
   case "$wrapper" in /nix/store/*/bin/claude-rc) ;; *) exit 1 ;; esac
-  references="$(nix-store --query --references "$(dirname "$(dirname "$wrapper")")")" || exit 1
+  references="$(nix-store --query --requisites "$(dirname "$(dirname "$wrapper")")")" || exit 1
   helpers=()
   while IFS= read -r reference; do
     helper="$reference/bin/claude-rc-pid-argv"
