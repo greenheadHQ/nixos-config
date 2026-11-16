@@ -13,7 +13,7 @@
 .agents/skills/wt-plugin--*
 .codex/
 
-# 퇴역한 update-codex의 원자적 핀 교체 임시 파일 — 이전 실행의 잔재 유입 방어 (#890)
+# update-codex 원자적 핀 교체용 임시 파일 (EXIT trap 정리; SIGKILL 시 잔류 방어, #890)
 modules/shared/programs/codex/.codex-pin.*
 
 # 퇴역한 codex-sync 시절 부산물 방어 (#41 도입, 현재 산출 주체 없음 — 현행 투영은
