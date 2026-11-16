@@ -158,7 +158,9 @@ review뿐 아니라 모든 exec 실행에도 영향을 주므로 주의한다.
 
 ### Codex 지시 파일 우선순위
 
-각 디렉토리에서 기본 탐색 순서는 다음과 같으며, 비어 있지 않은 첫 파일 하나를 읽는다.
+각 디렉토리에서 다음 순서로 처음 발견한 일반 파일 하나를 선택한다. 선택한 파일이 비어 있거나
+공백뿐이면 내용은 추가하지 않으며, 같은 디렉토리의 다음 파일 이름으로 fallback하지 않는다
+([0.167.2 탐색 구현](https://github.com/openai/codex/blob/rust-v0.167.2/codex-rs/core/src/agents_md.rs#L246)).
 
 ```
 AGENTS.override.md > AGENTS.md

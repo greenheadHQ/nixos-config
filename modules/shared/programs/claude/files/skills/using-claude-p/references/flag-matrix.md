@@ -60,7 +60,7 @@ print 모드는 workspace trust dialog를 생략하고 invalid settings를 조�
 | `--plugin-url <url>` | plugin zip URL 로드 | repeatable |
 | `--agent <agent>` | 현재 세션 agent override | |
 | `--agents <json>` | custom agents JSON 정의 | v2.1.206 help 재확인 |
-| `--bare` | hooks, LSP, plugin sync, attribution, auto-memory, background prefetch, keychain read, CLAUDE.md auto-discovery skip | `CLAUDE_CODE_SIMPLE=1`; Anthropic 인증은 `ANTHROPIC_API_KEY` 또는 `--settings`의 `apiKeyHelper`, Bedrock/Vertex/Foundry는 자체 자격 경로. skills는 계속 resolve (help 재확인: 2026-11-16, v2.1.325) |
+| `--bare` | hooks, LSP, plugin sync, attribution, auto-memory, background prefetch, keychain read, CLAUDE.md auto-discovery skip | `CLAUDE_CODE_SIMPLE=1`; Anthropic 인증은 `ANTHROPIC_API_KEY` 또는 `--settings`의 `apiKeyHelper`, Bedrock/Vertex/Foundry는 자체 자격 경로. v2.1.325 help는 `/skill-name` 명시 호출의 resolve를 안내한다. 공식 참조의 자동 탐색 skip·`--add-dir` 경로 로드와 구분하며 일반 위치의 자동 로드를 가정하지 않는다 ([패턴 11](patterns.md#패턴-11---bare-격리-실행); help 재확인: 2026-11-16) |
 | `--safe-mode` | admin policy 외 customizations 비활성화 | `CLAUDE_CODE_SAFE_MODE=1`; auth/model/built-in tools/permissions 유지 |
 | `--effort <level>` | effort level: `low`, `medium`, `high`, `xhigh`, `max` | |
 | `--name <name>`, `-n` | session display name | |

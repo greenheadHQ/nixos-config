@@ -400,18 +400,37 @@ payload의 세부 필드는 고정하지 말고 패턴 8처럼 `type=result`를 
 ```zsh
 test -n "${ANTHROPIC_API_KEY:-}" || { echo "FAIL: API key missing for this example" >&2; exit 1; }
 set -o pipefail
-echo "주입한 prompt만 사용해 한 줄로 답해" | \
+if echo "주입한 prompt만 사용해 한 줄로 답해" | \
   env ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" claude -p --bare --output-format json \
-  > /tmp/bare.json 2> /tmp/bare.stderr
-pipe_rcs=("${pipestatus[@]}")
+  > /tmp/bare.json 2> /tmp/bare.stderr; then
+  pipe_rcs=("${pipestatus[@]}")
+else
+  pipe_rcs=("${pipestatus[@]}")
+fi
 # json 출력이므로 test -s만으로는 부족하다 — 패턴 8과 동일하게 result/success까지 파싱해 판정한다.
-[ "${pipe_rcs[1]}" -eq 0 ] && [ "${pipe_rcs[2]}" -eq 0 ] && test -s /tmp/bare.json
+[ "${pipe_rcs[1]}" -eq 0 ] && [ "${pipe_rcs[2]}" -eq 0 ] && test -s /tmp/bare.json && python3 -c "
+import json, sys
+data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())
+items = data if isinstance(data, list) else [data]
+results = [d for d in items if isinstance(d, dict) and d.get('type') == 'result']
+if not results:
+    raise SystemExit('no result event')
+result = results[-1]
+if result.get('subtype') != 'success' or result.get('is_error', False):
+    raise SystemExit('result is not successful')
+if result.get('terminal_reason') not in (None, 'completed') or result.get('permission_denials'):
+    raise SystemExit('result did not complete or permission was denied')
+print(result.get('result', ''))" < /tmp/bare.json
 ```
 
 `--bare`는 hooks, LSP, plugin sync, attribution, auto-memory, background prefetch, keychain read,
 CLAUDE.md auto-discovery를 skip하고 `CLAUDE_CODE_SIMPLE=1`을 설정한다. Anthropic 인증은 API key 또는
 `--settings`로 전달한 `apiKeyHelper`가 필요하다. Bedrock/Vertex/Foundry는 자체 자격 경로를 사용한다.
-skills는 계속 resolve된다 (help 재확인: 2026-11-16, v2.1.325;
+v2.1.325 help는 `/skill-name` 명시 호출이 계속 resolve된다고 안내한다. 반면
+[공식 CLI 참조](https://code.claude.com/docs/en/cli-reference#cli-flags)는 skill 자동 탐색을 건너뛰며
+`--add-dir`로 지정한 디렉토리의 skill은 로드한다고 설명한다. 명시 호출의 해석과 자동 탐색을
+구분하고, 필요한 skill 경로는 `--add-dir`로 명시한다. 일반 위치와 추가 경로의 실제 로드 동작은
+이번 도움말 확인만으로 실측한 것이 아니다 (help 재확인: 2026-11-16, v2.1.325;
 재검증: `claude --version && claude --help && claude -p --help`). 실제 인증·모델 실행은 별도 검증 대상이다.
 
 ## 패턴 12: session ID 고정·fork

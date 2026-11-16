@@ -71,7 +71,23 @@ exec "$SHELL" -l
 "$HOME/.local/bin/nrs"
 ```
 
-배포된 entrypoint가 없다면 설치 완료 여부를 먼저 확인하고, 최초 설치 중인 경우에만 위 부트스트랩 절차를 사용합니다.
+기존 설치에서 entrypoint만 없어진 경우에는 현재 Home Manager generation에 보존된 wrapper를 사용합니다.
+아래 경로는 `nrs-relink`도 사용하는 `current-home` gcroot의 배포 매핑입니다.
+
+```bash
+nrs_recovery_entry="$HOME/.local/state/home-manager/gcroots/current-home/home-files/.local/bin/nrs"
+test -x "$nrs_recovery_entry" && "$nrs_recovery_entry" --help
+```
+
+위 검사가 성공했을 때만 같은 wrapper로 현재 flake의 설정을 다시 적용하여 entrypoint를 재배포합니다.
+
+```bash
+"$nrs_recovery_entry" --force
+```
+
+gcroot·wrapper가 없거나 helper 로딩이 실패하면 재적용하지 않고
+[helper 배포 누락 복구](../../../../modules/shared/scripts/README.md#helper-배포-누락-복구)의
+같은 generation 확인 절차를 따릅니다. 최초 설치 중인 경우에만 위 부트스트랩 절차를 사용합니다.
 
 ---
 
