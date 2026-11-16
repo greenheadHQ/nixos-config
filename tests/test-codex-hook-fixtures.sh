@@ -65,7 +65,7 @@ done
 # ─── tomlkit bootstrap ───
 # sync-preservation 시나리오는 sync-codex-config.py를 통해 tomlkit을 요구한다. 직접 실행과
 # lefthook 경로의 runtime 일관성을 위해 tests/run-shell-script-tests.sh와 동일하게
-# scripts/ai/lib/tomlkit-bootstrap.sh를 source하여 repo-pinned pythonWithTomlkit으로 self-wrap한다.
+# scripts/ai/lib/tomlkit-bootstrap.sh의 검증된 profile 재사용·prePushRuntime self-wrap 정책을 따른다.
 # `_TOMLKIT_BOOTSTRAP_READY=1`이 이미 set이면 즉시 반환되므로 profile runner 안에서 중첩 nix shell이 발생하지 않는다.
 # bootstrap이 exec로 프로세스를 교체할 수 있으므로 sandbox tracking 임시 파일은 그 이후에 생성한다.
 # shellcheck disable=SC1091  # source file은 repo 내부 고정 경로

@@ -4,8 +4,8 @@
 결과는 sync 스크립트가 /run 게시판에 남기는 상태 사본에서 읽는다. 상태 파일만으로는 "실행 중"과
 "죽은 흔적"을 구분할 수 없으므로 `systemctl show -p ActiveState,InvocationID`로 유닛을 실측해 대조한다:
 
-  - 유닛 active + InvocationID == runId + result running → 이미 진행 중. 새 회차는 생기지 않는다(systemd가 진행
-    중인 job에 합류) — 그 사실을 그대로 알린다.
+  - 유닛 active + InvocationID == runId + result running → 이미 진행 중. run()은 완료를 기다리거나 새 회차를
+    요청·예약하지 않고 already-running과 상태 사본을 즉시 반환한다.
   - 유닛 inactive + result running → 죽은 흔적. 트리거 가능.
   - 트리거 뒤: runId가 바뀌고 result ≠ running → 그 회차의 결과. 유닛이 inactive로 돌아왔는데 runId가 그대로면
     건너뛴 회차(락 경합·ConditionPathExists 스킵) — 무한 폴링 대신 그 사실을 알린다.
@@ -254,8 +254,8 @@ class SyncNow:
             if kind == "running":
                 return {
                     "outcome": "already-running",
-                    "detail": "a sync run is already in progress; systemd merges start requests into the running job, "
-                    "so changes made just now will be picked up by the next run",
+                    "detail": "a sync run is already in progress; this call does not wait for it or queue another run. "
+                    "Call again after it finishes to request a new run and check its result",
                     "status": summarize(before),
                 }
             rc, _out, err = await bounded(self._run(["systemctl", "start", "--no-block", self._unit]))

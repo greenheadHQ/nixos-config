@@ -72,8 +72,8 @@ vim.api.nvim_create_autocmd("FileType", {
 -- ── FocusGained: 외부 앱에서 돌아올 때 영문 IM 전환 (macOS) ──
 -- Vim 내장 명령(dd, yy, w, gj 등)은 한글 키맵 등가를 만들 수 없으므로
 -- 포커스 복귀 시 영문으로 전환하여 내장 명령이 정상 동작하게 함
--- 플러그인 키맵(<leader>ff 등)은 langmapper.nvim이 별도 처리 (plugins/korean.lua)
--- macism이 없는 환경(NixOS, SSH)에서는 자동으로 건너뜀
+-- Insert/Command 모드를 벗어날 때의 전환은 im-select.nvim이 처리 (plugins/editor.lua)
+-- macism이 없는 환경에서는 건너뜀. SSH 여부는 검사하지 않음
 if vim.fn.executable("macism") == 1 then
   vim.api.nvim_create_autocmd("FocusGained", {
     group = vim.api.nvim_create_augroup("korean_im_focus", { clear = true }),

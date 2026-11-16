@@ -18,8 +18,9 @@
 #     1회로 제한되지 않는다: holder 의 빌드가 _SSC_LOCK_TIMEOUT_SECONDS 보다 오래 걸리면
 #     만료된 대기자가 차례로 lock 을 승계해 빌드가 대기자 수만큼 늘어난다(실측: 대기자
 #     4명→4회, 6명→6회). 정상 부하에서는 빌드가 타임아웃보다 훨씬 빨라 1회로 수렴한다.
-#   - 캐시 정리는 OS 임시디렉토리 정책(macOS /var/folders, /tmp 청소 등)에 위임한다. 같은 staged
-#     내용은 같은 hash 로 재사용되고, 다른 hash 누적은 OS tmp 청소로 회수된다.
+#   - provide 호출 시 현재 trees/<hash>는 보존하고, TTL 이상 지난 다른 trees와 builds 항목을
+#     best-effort 정리한다. 같은 staged 내용은 같은 hash로 재사용하며, 잔여 임시디렉토리
+#     정리는 OS 정책에 따른다.
 #
 # 사용:
 #   . "$REPO_ROOT/scripts/ai/lib/staged-snapshot-cache.sh"
@@ -39,8 +40,8 @@
 _SSC_LOCK_TIMEOUT_SECONDS="${STAGED_SNAPSHOT_CACHE_LOCK_TIMEOUT_SECONDS:-120}"
 # polling 간격(초)
 _SSC_POLL_INTERVAL="0.1"
-# 오래된 캐시 GC TTL(초). provide 진입 시 현재 hash 를 제외하고 이보다 오래된(mtime) trees/builds
-# 를 제거한다. gitleaks 가 막은 staged secret 사본의 잔존과 tree-hash 별 디스크 누적을 OS tmp
+# 오래된 캐시 GC TTL(초). provide 진입 시 현재 trees/<hash>를 보존하고, mtime이 TTL 이상 지난
+# 다른 trees와 builds 항목을 제거한다. gitleaks 가 막은 staged secret 사본의 잔존과 tree-hash 별 디스크 누적을 OS tmp
 # 청소에만 의존하지 않고 정리하기 위함이다(기존 per-run 의 즉시 정리 동작에 근접).
 STAGED_SNAPSHOT_CACHE_TTL_SECONDS="${STAGED_SNAPSHOT_CACHE_TTL_SECONDS:-3600}" # 1h
 
@@ -109,7 +110,7 @@ _ssc_mtime() {
   fi
 }
 
-# best-effort GC: 현재 hash 를 제외하고, mtime 이 TTL 보다 오래된 trees/builds 항목을 제거한다.
+# best-effort GC: 현재 trees/<hash>를 보존하고, mtime이 TTL 이상 지난 다른 trees와 builds를 제거한다.
 # lease 추적 없이 mtime 만 보므로(단일 사용자 전제) 막 빌드됐거나 방금 쓰인 캐시(mtime 최신)는
 # 건드리지 않는다. secret 사본 잔존과 디스크 누적을 OS tmp 청소에만 의존하지 않고 줄인다.
 _ssc_gc() {
@@ -278,7 +279,7 @@ _ssc_provide_impl() {
   fi
   [ -n "$tree_hash" ] || { _ssc_die "empty tree hash"; return 1; }
 
-  # 2. 캐시 base (per-repo_id 격리 + umask 077 + 소유권 검증). 정리는 OS tmp 정책에 위임.
+  # 2. 캐시 base (per-repo_id 격리 + umask 077 + 소유권 검증). 오래된 trees/builds는 아래 TTL GC로 정리한다.
   # 부모 디렉토리 symlink는 nix 2.20+ flake fetcher의 path: input 검증에서 거부된다
   # (NixOS/nix#11941, #3513 등). macOS의 /tmp -> /private/tmp symlink가 그대로
   # 전파되면 캐시 worktree를 path: input으로 잡는 모든 nix eval(예: tests/eval-tests.nix의
@@ -300,7 +301,7 @@ _ssc_provide_impl() {
   _ssc_safe_mkdir "$builds_dir" || return 1
   _ssc_safe_mkdir "$locks_dir" || return 1
 
-  # 오래된 캐시 정리 (secret 사본 잔존·디스크 누적 방지). 현재 tree_hash 는 보존한다.
+  # 오래된 캐시 정리 (secret 사본 잔존·디스크 누적 방지). 현재 trees/<hash>는 보존한다.
   _ssc_gc "$trees_dir" "$builds_dir" "$tree_hash" || true
 
   # 3. 획득/빌드

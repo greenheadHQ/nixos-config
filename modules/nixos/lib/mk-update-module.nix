@@ -45,6 +45,10 @@
   # 추가 tmpfiles.rules (백업 디렉토리 등)
   extraTmpfilesRules ? [ ],
 
+  # 알림에 표시할 서비스별 명령·선행 절차 (여기서 실행하지 않음)
+  updateCommand ? "sudo ${serviceName}-update",
+  updatePreparation ? "",
+
   # major version mismatch 감지 여부 (version-check.sh)
   detectMajorMismatch ? false,
 }:
@@ -109,6 +113,8 @@ let
   );
 
   checkEnv = {
+    UPDATE_COMMAND = updateCommand;
+    UPDATE_PREPARATION = updatePreparation;
     PUSHOVER_CRED_FILE = pushoverCredPath;
     SERVICE_LIB = "${serviceLib}";
     STATE_DIR = stateDir;

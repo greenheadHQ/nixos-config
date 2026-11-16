@@ -8,7 +8,10 @@ literal raw 실행을 요청한 경우에만 `env ... codex exec`로 wrapper를 
 
 모든 예제는 stdout, stderr, `-o` 결과를 분리한다. JSON/JSONL parser 앞 `2>&1`, 판정 pipeline의
 `head`/`tail`, 원 exit를 가리는 후속 `echo $?`를 금지한다. pipeline은 `set -o pipefail`과 zsh
-`pipestatus`로 Codex exit를 보존한다.
+`pipestatus` 배열을 호출 직후 저장해 양쪽 exit를 보존한다. 결과 파일은 매 호출 전에 초기화하고,
+rc가 모두 0일 때만 파일·내용을 검사한다 ([성공 계약](execution-contracts.md#성공-계약)).
+고정 `/tmp` 경로는 단일 실행 예제다. 동시 실행에는 실행별 디렉토리를 사용한다.
+파이프를 `if` 조건에 두는 이유는 `set -e`가 켜져 있어도 실패 rc를 먼저 회수하기 위해서다.
 
 ## 패턴 1: 기본 exec — 파일 프롬프트 → 결과 저장
 
@@ -27,13 +30,18 @@ PROMPT
 # 발사 guard 2줄 — 조립 실패(빈/부재 프롬프트)가 빈 stdin + exit 0으로 무증상 통과하는 것을 차단
 # (known-issues §21; 같은 턴 병렬 호출에서는 "별도 호출로 분리" ≠ "앞 호출 성공"이므로 발사가 재검증)
 [ -s /tmp/codex-prompt.md ] || { echo "missing/empty prompt" >&2; exit 1; }
+rm -f /tmp/codex-result.md || exit 1
 # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
 set -o pipefail
-cat /tmp/codex-prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
+if cat /tmp/codex-prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   -s workspace-write -o /tmp/codex-result.md - \
-  > /tmp/codex.stdout 2> /tmp/codex.stderr
-codex_rc=$pipestatus[2]
-test "$codex_rc" -eq 0 && test -s /tmp/codex-result.md
+  > /tmp/codex.stdout 2> /tmp/codex.stderr; then
+  pipe_rcs=("${pipestatus[@]}")
+else
+  pipe_rcs=("${pipestatus[@]}")
+fi
+[ "${pipe_rcs[1]}" -eq 0 ] && [ "${pipe_rcs[2]}" -eq 0 ] \
+  && test -f /tmp/codex-result.md && test -s /tmp/codex-result.md
 ```
 
 핵심 요소:
@@ -49,9 +57,11 @@ test "$codex_rc" -eq 0 && test -s /tmp/codex-result.md
 ### 브랜치 비교
 
 ```bash
+rm -f /tmp/review.md || exit 1
+review_rc=0
 env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --base main \
-  -o /tmp/review.md > /tmp/review.stdout 2> /tmp/review.stderr
-test -s /tmp/review.md
+  -o /tmp/review.md > /tmp/review.stdout 2> /tmp/review.stderr || review_rc=$?
+[ "$review_rc" -eq 0 ] && test -f /tmp/review.md && test -s /tmp/review.md
 ```
 
 현재 브랜치를 `main`과 비교하여 리뷰한다.
@@ -59,9 +69,11 @@ test -s /tmp/review.md
 ### 미커밋 변경
 
 ```bash
+rm -f /tmp/review.md || exit 1
+review_rc=0
 env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --uncommitted \
-  -o /tmp/review.md > /tmp/review.stdout 2> /tmp/review.stderr
-test -s /tmp/review.md
+  -o /tmp/review.md > /tmp/review.stdout 2> /tmp/review.stderr || review_rc=$?
+[ "$review_rc" -eq 0 ] && test -f /tmp/review.md && test -s /tmp/review.md
 ```
 
 staged/unstaged/untracked 변경을 함께 리뷰한다. 커밋 전 self-review에 적합.
@@ -69,14 +81,14 @@ staged/unstaged/untracked 변경을 함께 리뷰한다. 커밋 전 self-review�
 ### 특정 커밋
 
 ```bash
+rm -f /tmp/review.md || exit 1
+review_rc=0
 env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --commit abc1234 \
-  -o /tmp/review.md > /tmp/review.stdout 2> /tmp/review.stderr
-env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --commit abc1234 --title "Fix sandbox leak" \
-  -o /tmp/review.md > /tmp/review.stdout 2> /tmp/review.stderr
-test -s /tmp/review.md
+  -o /tmp/review.md > /tmp/review.stdout 2> /tmp/review.stderr || review_rc=$?
+[ "$review_rc" -eq 0 ] && test -f /tmp/review.md && test -s /tmp/review.md
 ```
 
-`--title`은 `--commit`과 함께 사용하여 리뷰 요약에 커밋 제목을 표시한다.
+커밋 제목을 리뷰 요약에 표시하려면 위 호출에 `--title "Fix sandbox leak"`를 추가한다.
 각 호출은 exit 0과 `test -s /tmp/review.md`를 모두 통과해야 성공이다.
 
 ### 주의사항
@@ -88,10 +100,18 @@ test -s /tmp/review.md
 
 scope flag 없이 PROMPT을 stdin으로 전달하여 review를 실행한다.
 
-```bash
-cat prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised review \
-  -o /tmp/result.md - > /tmp/result.stdout 2> /tmp/result.stderr
-test -s /tmp/result.md
+```zsh
+[ -s prompt.md ] || { echo "missing/empty prompt" >&2; exit 1; }
+rm -f /tmp/result.md || exit 1
+set -o pipefail
+if cat prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised review \
+  -o /tmp/result.md - > /tmp/result.stdout 2> /tmp/result.stderr; then
+  pipe_rcs=("${pipestatus[@]}")
+else
+  pipe_rcs=("${pipestatus[@]}")
+fi
+[ "${pipe_rcs[1]}" -eq 0 ] && [ "${pipe_rcs[2]}" -eq 0 ] \
+  && test -f /tmp/result.md && test -s /tmp/result.md
 ```
 
 > ⚠️ scope flag 미사용: PROMPT 사용 시 scope flag(`--uncommitted`/`--base`/`--commit`)와
@@ -124,9 +144,11 @@ EOF
 2. scope flag으로 리뷰를 실행한다:
 
 ```bash
+rm -f /tmp/review.md || exit 1
+review_rc=0
 env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --base main \
-  -o /tmp/review.md > /tmp/review.stdout 2> /tmp/review.stderr
-test -s /tmp/review.md
+  -o /tmp/review.md > /tmp/review.stdout 2> /tmp/review.stderr || review_rc=$?
+[ "$review_rc" -eq 0 ] && test -f /tmp/review.md && test -s /tmp/review.md
 ```
 
 ### 전역 정책 (모든 프로젝트에 적용)
@@ -136,11 +158,23 @@ review뿐 아니라 모든 exec 실행에도 영향을 주므로 주의한다.
 
 ### Codex 지시 파일 우선순위
 
+각 디렉토리에서 다음 순서로 처음 발견한 일반 파일 하나를 선택한다. 선택한 파일이 비어 있거나
+공백뿐이면 내용은 추가하지 않으며, 같은 디렉토리의 다음 파일 이름으로 fallback하지 않는다
+([0.167.2 탐색 구현](https://github.com/openai/codex/blob/rust-v0.167.2/codex-rs/core/src/agents_md.rs#L246)).
+
 ```
-AGENTS.override.md > AGENTS.md > TEAM_GUIDE.md > .agents.md
+AGENTS.override.md > AGENTS.md
 ```
 
-디렉토리 트리 깊은 곳의 파일이 상위를 오버라이드한다.
+다른 이름은 `project_doc_fallback_filenames`에 등록해야 탐색된다. 예를 들어 아래 설정을
+사용한 경우에만 두 기본 이름 뒤에 `TEAM_GUIDE.md`, `.agents.md`가 순서대로 추가된다:
+
+```toml
+project_doc_fallback_filenames = ["TEAM_GUIDE.md", ".agents.md"]
+```
+
+프로젝트 루트에서 현재 cwd까지 찾은 파일을 합치며, 더 깊은 디렉토리의 지시가 상위 지시보다
+뒤에 적용된다 ([공식 탐색 규칙](https://learn.chatgpt.com/docs/agent-configuration/agents-md#how-codex-discovers-guidance)).
 
 적용 범위 (재확인: 2026-08-15, 0.147.0 marker 실측): `codex exec`는 형식·내용 지시를 모두
 따르지만, `codex exec review`는 내용·스코프 지시만 반영하고 출력 형식 지시는 무시한다
@@ -165,11 +199,19 @@ PROMPT
 
 ⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. diff가 클 수 있으므로 stdin pipe를 사용한다.
 
-```bash
-cat /tmp/review-prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
+```zsh
+[ -s /tmp/review-prompt.md ] || { echo "missing/empty prompt" >&2; exit 1; }
+rm -f /tmp/review-result.md || exit 1
+set -o pipefail
+if cat /tmp/review-prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   -s workspace-write -o /tmp/review-result.md - \
-  > /tmp/review.stdout 2> /tmp/review.stderr
-test -s /tmp/review-result.md
+  > /tmp/review.stdout 2> /tmp/review.stderr; then
+  pipe_rcs=("${pipestatus[@]}")
+else
+  pipe_rcs=("${pipestatus[@]}")
+fi
+[ "${pipe_rcs[1]}" -eq 0 ] && [ "${pipe_rcs[2]}" -eq 0 ] \
+  && test -f /tmp/review-result.md && test -s /tmp/review-result.md
 ```
 
 ### 미커밋 변경 리뷰
@@ -183,11 +225,19 @@ $(git diff --cached)
 PROMPT
 ```
 
-```bash
-cat /tmp/review-prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
+```zsh
+[ -s /tmp/review-prompt.md ] || { echo "missing/empty prompt" >&2; exit 1; }
+rm -f /tmp/review-result.md || exit 1
+set -o pipefail
+if cat /tmp/review-prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   -s workspace-write -o /tmp/review-result.md - \
-  > /tmp/review.stdout 2> /tmp/review.stderr
-test -s /tmp/review-result.md
+  > /tmp/review.stdout 2> /tmp/review.stderr; then
+  pipe_rcs=("${pipestatus[@]}")
+else
+  pipe_rcs=("${pipestatus[@]}")
+fi
+[ "${pipe_rcs[1]}" -eq 0 ] && [ "${pipe_rcs[2]}" -eq 0 ] \
+  && test -f /tmp/review-result.md && test -s /tmp/review-result.md
 ```
 
 ### 장점
@@ -253,14 +303,18 @@ PROMPT
 
 ⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. diff가 클 수 있으므로 stdin pipe를 사용한다.
 
-```bash
-rm -f /tmp/review-structured.json   # 이전 실행의 유효 JSON 잔존이 성공 오판을 만든다
+```zsh
+[ -s /tmp/review-prompt.md ] || { echo "missing/empty prompt" >&2; exit 1; }
+rm -f /tmp/review-structured.json || exit 1   # 이전 실행의 유효 JSON 잔존이 성공 오판을 만든다
 set -o pipefail
-cat /tmp/review-prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised -s workspace-write --output-schema /tmp/review-schema.json \
-  -o /tmp/review-structured.json - > /tmp/schema.stdout 2> /tmp/schema.stderr
-pipe_rcs=("${pipestatus[@]}")   # zsh 1-base. bash는 ("${PIPESTATUS[@]}") + 0-base
+if cat /tmp/review-prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised -s workspace-write --output-schema /tmp/review-schema.json \
+  -o /tmp/review-structured.json - > /tmp/schema.stdout 2> /tmp/schema.stderr; then
+  pipe_rcs=("${pipestatus[@]}")
+else
+  pipe_rcs=("${pipestatus[@]}")
+fi
 [ "${pipe_rcs[1]}" -eq 0 ] && [ "${pipe_rcs[2]}" -eq 0 ] \
-  && test -s /tmp/review-structured.json \
+  && test -f /tmp/review-structured.json && test -s /tmp/review-structured.json \
   && jq -e '.findings and .summary' /tmp/review-structured.json > /dev/null
 # rc가 정본이고 내용 검사는 그다음이다 — non-empty만으로는 부족하다(코드 펜스 혼입·스키마
 # 정의($schema)가 인스턴스 대신 반환된 실측). 실행 전 결과 파일 초기화까지 해야 이전 실행의
@@ -277,10 +331,20 @@ execution-contracts.md gotcha 11). 이 패턴처럼 exec 경로에서만 스키�
 
 자동화 파서와 연결하거나 실행 과정을 기록할 때 사용한다.
 
-```bash
-cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
-  -s workspace-write --json - > /tmp/events.jsonl 2> /tmp/events.stderr
+```zsh
+[ -s /tmp/prompt.md ] || { echo "missing/empty prompt" >&2; exit 1; }
+set -o pipefail
+if cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
+  -s workspace-write --json - > /tmp/events.jsonl 2> /tmp/events.stderr; then
+  pipe_rcs=("${pipestatus[@]}")
+else
+  pipe_rcs=("${pipestatus[@]}")
+fi
+[ "${pipe_rcs[1]}" -eq 0 ] && [ "${pipe_rcs[2]}" -eq 0 ] && test -s /tmp/events.jsonl
 ```
+
+stdout 리다이렉션은 매 실행마다 이벤트 파일을 초기화한다. 위 판정은 스트림 수집 성공만
+확인하며, 작업 성공은 [성공 계약](execution-contracts.md#성공-계약)에 따라 최종 결과로 판단한다.
 
 주요 이벤트 타입:
 - `thread.started` / `turn.started` / `turn.completed` / `turn.failed`
@@ -290,11 +354,19 @@ cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
 
 최종 요약문을 파일로도 보존하려면 `-o`를 별도로 함께 사용한다:
 
-```bash
-cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
+```zsh
+[ -s /tmp/prompt.md ] || { echo "missing/empty prompt" >&2; exit 1; }
+rm -f /tmp/result.md || exit 1
+set -o pipefail
+if cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   -s workspace-write --json -o /tmp/result.md - \
-  > /tmp/events.jsonl 2> /tmp/events.stderr
-test -s /tmp/result.md
+  > /tmp/events.jsonl 2> /tmp/events.stderr; then
+  pipe_rcs=("${pipestatus[@]}")
+else
+  pipe_rcs=("${pipestatus[@]}")
+fi
+[ "${pipe_rcs[1]}" -eq 0 ] && [ "${pipe_rcs[2]}" -eq 0 ] \
+  && test -f /tmp/result.md && test -s /tmp/result.md
 ```
 
 ## 패턴 8: 스모크 테스트
@@ -311,14 +383,19 @@ PROMPT
 ⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다 ([known-issues.md §11](known-issues.md) 하위 항목).
 
 ```zsh
-rm -f /tmp/smoke-result.md /tmp/smoke.stdout /tmp/smoke.stderr
+[ -s /tmp/smoke.md ] || { echo "missing/empty prompt" >&2; exit 1; }
+rm -f /tmp/smoke-result.md /tmp/smoke.stdout /tmp/smoke.stderr || exit 1
 set -o pipefail
-cat /tmp/smoke.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
+if cat /tmp/smoke.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   -s workspace-write -o /tmp/smoke-result.md - \
-  > /tmp/smoke.stdout 2> /tmp/smoke.stderr
-codex_rc=$pipestatus[2]
-test "$codex_rc" -eq 0 && test -s /tmp/smoke-result.md
-rg -q '^SMOKE_COMPLETE$' /tmp/smoke-result.md
+  > /tmp/smoke.stdout 2> /tmp/smoke.stderr; then
+  pipe_rcs=("${pipestatus[@]}")
+else
+  pipe_rcs=("${pipestatus[@]}")
+fi
+[ "${pipe_rcs[1]}" -eq 0 ] && [ "${pipe_rcs[2]}" -eq 0 ] \
+  && test -f /tmp/smoke-result.md && test -s /tmp/smoke-result.md \
+  && rg -q '^SMOKE_COMPLETE$' /tmp/smoke-result.md
 ```
 
 성공 기준:
@@ -344,15 +421,20 @@ SKIP_FLAG=
   || SKIP_FLAG=--skip-git-repo-check
 
 [ -s "$PROMPT" ] || { echo "missing/empty PROMPT=$PROMPT" >&2; exit 1; }
+rm -f -- "$OUT" || exit 1
 set -o pipefail
-cat "$PROMPT" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
+if cat "$PROMPT" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   --sandbox read-only --ignore-user-config --ignore-rules --ephemeral ${SKIP_FLAG:-} \
-  -C "$DIR" -c model_reasoning_effort="medium" -o "$OUT" -
-pipe_rcs=("${pipestatus[@]}")   # zsh 1-base. bash는 ("${PIPESTATUS[@]}") + 0-base
+  -C "$DIR" -c model_reasoning_effort="medium" -o "$OUT" - \
+  > "${OUT}.stdout" 2> "${OUT}.stderr"; then
+  pipe_rcs=("${pipestatus[@]}")
+else
+  pipe_rcs=("${pipestatus[@]}")
+fi
 rc="${pipe_rcs[2]}"
 [ -n "$rc" ] && [ -n "${pipe_rcs[1]}" ] || { echo "rc 캡처 실패 — 셸/배열 불일치" >&2; exit 1; }
 [ "${pipe_rcs[1]}" = "0" ] || rc="${pipe_rcs[1]}"   # 좌측 cat 실패도 판정에 반영
-[ "$rc" -eq 0 ] && test -s "$OUT"
+[ "$rc" -eq 0 ] && test -f "$OUT" && test -s "$OUT"
 ```
 
 - `--ignore-user-config`와 `--ignore-rules`는 항상 쌍으로 쓴다 (user config·execpolicy 격리).

@@ -622,6 +622,8 @@ run_test "version-check release body CRLF line split matches head" test_version_
 run_test "version-check release body unicode boundary not corrupted" test_version_check_release_body_unicode_boundary_not_corrupted
 run_test "version-check invalid GitHub JSON does not send false success notification" test_version_check_invalid_github_json_does_not_send_false_success_notification
 run_test "version-check function and substitution failures notify once" test_version_checks_function_and_substitution_failures_notify_once
+run_test "version-check service update guidance keeps required steps" test_version_check_service_update_guidance_preserves_required_steps
+run_test "version-check oversized guidance fails without success" test_version_check_oversized_fixed_guidance_does_not_record_success
 run_test "update function failures notify once without restart" test_update_function_failures_notify_once_without_restart
 run_test "update substitution failures keep status and recover once" test_update_substitution_failures_keep_status_and_recover_once
 run_test "update startup failure preserves recovery and single notification" test_update_startup_failure_preserves_recovery_and_single_notification

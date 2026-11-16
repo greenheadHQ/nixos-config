@@ -39,7 +39,15 @@ Claude Code에서 `agenix -e` 실패 (`/dev/stdin` 에러)
 두 레벨이 공존하며, NixOS 시스템 레벨은 `flake.nix`에서 `inputs.agenix.nixosModules.default`로 활성화.
 서비스 모듈에서는 하드코딩 대신 `config.age.secrets.<name>.path`를 참조해 실제 경로를 사용한다.
 
-Secret 형식은 shell 변수 (`KEY=value`)로, 사용처에서 `source`로 로드한다.
+Secret 형식과 읽는 방법은 소비자가 정한다. 생성·수정 전에 아래 inventory의 소비처에서 파일 형식과 파싱 방법을 확인한다.
+
+| 형식 | 예시 | 읽는 방법 |
+|------|------|----------|
+| `KEY=value` | Pushover credentials, Shottr 라이센스 | Pushover는 `source`, Shottr는 필요한 키의 값만 파싱 |
+| raw token/password | 1Password SA token, Copyparty 비밀번호 | 파일 내용 자체를 값으로 읽음 (`KEY=`를 붙이지 않음) |
+| OpenSSH 개인키 | `minipc-headless` | SSH `IdentityFile`로 사용 |
+| JSON | `anki-mcp-cloudflared` | cloudflared 실행 credential로 사용 |
+
 배포 권한은 기본 `0400` mode이며, agenix가 복호화하여 지정 경로에 배치한다 (예외: opnix SA token `.age`는 `root:onepassword-secrets` `0640` — inventory 참조).
 
 ### Routing Matrix (사용주체 × Storage × Vault × Tag)
@@ -68,7 +76,7 @@ agenix `.age` 22개(디스크 실측 — 재검증: `ls secrets/*.age | wc -l`) 
 
 | Name | Storage | Vault | 배포경로·위치 | 소비처 | recipient |
 |------|---------|-------|---------------|--------|-----------|
-| `pushover-share.age` | agenix | — | `~/.config/pushover/share` (Mac+MiniPC home) | sharing-text 수동 push; opnix-health-mac SA 조회 상태 알림 `PUSHOVER_FILE` source | allHosts |
+| `pushover-share.age` | agenix | — | `~/.config/pushover/share` (Mac+MiniPC home) | sharing-text 수동 push; opnix-health-mac SA 조회 상태 알림 (공유 `pushover_send` helper) | allHosts |
 | `immich-db-password.age` | agenix | — | `/run/agenix/immich-db-password` (MiniPC) | immich.nix dbPasswordPath → PostgreSQL | minipcOnly |
 | `immich-api-key.age` | agenix | — | Mac `~/.config/immich/api-key` / MiniPC `/run/agenix/immich-api-key` | immich-update·immich-cleanup FolderAction upload | allHosts |
 | `pushover-immich.age` | agenix | — | Mac `~/.config/pushover/immich` / MiniPC `/run/agenix/pushover-immich` | immich-update·cleanup·backup 알림 | allHosts |
@@ -89,7 +97,7 @@ agenix `.age` 22개(디스크 실측 — 재검증: `ls secrets/*.age | wc -l`) 
 | `anki-mcp-cloudflared.age` | agenix | — | `/run/agenix/anki-mcp-cloudflared` (root, 0400, MiniPC) → native cloudflared 유닛의 `LoadCredential` | 개인 `anki-mcp.greenhead.dev` 터널의 실행 credential JSON. 계정 관리 cert 미배포 | minipcOnly |
 | `opnix-service-account-token.age` | agenix → 1Password SA | Automation (SA 접근 vault) | `/run/agenix/opnix-service-account-token` (`root:onepassword-secrets`, 0640, MiniPC) | opnix tokenFile → 부팅 oneshot이 `op://Automation/github-pat/token`을 `/run/opnix/<user>/github-pat` tmpfs로 materialize → nixos.nix gh wrapper가 GH_TOKEN 소비 | minipcHostOnly (host key 복호화) |
 | `opnix-service-account-token-mac.age` | agenix → 1Password SA | Automation (SA 접근 vault) | `~/.config/op/sa-token-mac` (agenix home-manager, 0400, `isDarwin && hostType==personal`) | darwin.nix gh-pat-mac이 `OP_SERVICE_ACCOUNT_TOKEN`으로 `op read op://Automation/github-pat/token` → temp 캐시 → gh-auth/c/codex 런처가 GH_TOKEN 주입. MiniPC host-key SA와 별개 격리 SA | macbook (Mac user 로그인 키 단독, work role 미배포) |
-| `minipc-headless.age` | agenix | — | `~/.ssh/minipc-headless` (agenix home-manager, 0400, `isDarwin && hostType==personal`) | Mac `ssh minipc-headless` alias의 IdentityFile — 원격/LLM 세션이 1Password를 거치지 않고 MiniPC에 접속하는 무인 자동화 전용 신원(#1094). `mac-ssh`·`emergency-ssh`와 별개 신원 | macbook (Mac user 로그인 키 단독, work role 미배포) |
+| `minipc-headless.age` | agenix | — | `~/.ssh/minipc-headless` (agenix home-manager, 0400, `isDarwin && hostType==personal`) | Mac SSH dispatcher·조건부 `Match`·`minipc-headless` 별칭의 IdentityFile — 원격/LLM 세션이 1Password를 거치지 않고 MiniPC에 접속하는 무인 자동화 전용 신원(#1094). `mac-ssh`·`emergency-ssh`와 별개 신원 | macbook (Mac user 로그인 키 단독, work role 미배포) |
 | `github-pat` (1Password 항목) | 1Password | Automation | `op://Automation/github-pat/token` | Mac: gh-pat-mac이 SA token으로 `op read` → temp 캐시. MiniPC: opnix가 tmpfs로 materialize. SA token이 읽는 실제 PAT 항목 | — |
 | `mac-ssh` (1Password 항목) | 1Password | SSH | SSH vault item (comment `mac-ssh`, `constants.sshDeviceKeys.macSsh`) | Mac SSH agent(agent.toml이 SSH vault 노출) + MiniPC authorized_keys 등록. Automation→SSH vault 격리 | — |
 | `mobile-ssh` (디바이스 키) | Termius keychain | — | Termius keychain 보관 (iPhone·iPad 동기화 공유); 공개키만 `constants.sshDeviceKeys.mobile` | iPhone/iPad Termius 공유 단일 키(디바이스별 격리 불성립). MiniPC + personal Mac authorized_keys 등록용(work Mac 미배포). 1Password 미보관 | — |

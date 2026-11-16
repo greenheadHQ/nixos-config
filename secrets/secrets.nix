@@ -57,7 +57,7 @@ in
   "karakeep-openai-key.age".publicKeys = allHosts;
   "pushover-karakeep.age".publicKeys = allHosts;
 
-  # 시스템 하드웨어 모니터링용 Pushover credentials (smartd, 향후 온도 경고 등)
+  # 시스템 모니터링용 Pushover credentials (smartd·temp-monitor·smoke-test·opnix-health-check)
   "pushover-system-monitor.age".publicKeys = minipcOnly;
 
   # headless Anki (#1306) — 값은 운영자가 생성한다. 저장소의 초기 파일은 빈 값 placeholder이며
@@ -70,11 +70,11 @@ in
   # 단일 Anki MCP Cloudflare Tunnel의 실행 credential JSON — 계정 관리 cert는 배포하지 않는다
   "anki-mcp-cloudflared.age".publicKeys = minipcOnly;
 
-  # 1Password Service Account token (opnix가 systemd EnvironmentFile로 주입)
+  # 1Password Service Account token (raw token 파일을 opnix tokenFile로 전달)
   # host key 전용(minipcHostOnly)으로 user 로그인 키 노출 표면과 격리 (host key 복호화 계약).
   # 부팅 시 minipc root가 /etc/ssh/ssh_host_ed25519_key로 복호화.
   # 토큰 실제 암호화는 1Password SA 발급 후 agenix -e로 수행 (host key recipient)
-  # 실 소비(opnix module) + 90일 rotation timer 포함
+  # opnix가 PAT를 별도 파일로 배치하며, opnix-health-check가 매시간 실제 조회 가능 여부를 검사한다.
   "opnix-service-account-token.age".publicKeys = minipcHostOnly;
 
   # Mac 전용 1Password Service Account token

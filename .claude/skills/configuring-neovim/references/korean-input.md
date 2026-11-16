@@ -7,7 +7,7 @@
 | 1차 | FocusGained autocmd | `autocmds.lua` | 외부 앱 복귀 시 영문 IM 전환 → 내장/플러그인 명령 정상 동작 |
 | 2차 | im-select.nvim | `editor.lua` | Insert↔Normal 전환 시 영문/한글 자동 전환 |
 
-- macOS 전용: `vim.fn.executable("macism") == 1`로 NixOS/SSH 환경에서 자동 비활성화
+- FocusGained 전환은 `vim.fn.executable("macism") == 1`일 때만 등록하고, im-select는 macism이 없으면 조용히 건너뛴다. Mac에 SSH로 접속해 macism을 사용할 수 있으면 SSH 여부와 관계없이 전환을 시도한다.
 - macism 설치: `modules/darwin/programs/homebrew.nix`에서 선언적 관리 (`nrs` 시 자동 설치). nixpkgs는 Swift 빌드 실패로 Homebrew 전용
 - langmap/langmapper 미사용: 한글 IME 조합(자음+모음→음절) 특성상 extra keystroke 문제 발생. 러시아어(키릴)처럼 1:1 매핑이 되지 않아 실용성 없음
 

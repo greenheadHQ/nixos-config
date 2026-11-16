@@ -59,7 +59,8 @@ in
   #   - 3개 토글(taskComplete/inputNeeded/agentPush)은 ZI에 없으므로 삭제되지 않음.
   #   - 락 메커니즘: mkdir 기반 lock과 Claude Code의 내부 lock이 동일 경로 사용.
   #     activation이 ms 단위로 완료되므로 실질적 race condition 위험은 극소.
-  #   - 스키마 변경 시: jq empty 검증으로 안전 실패 (원본 보존, 패치 skip).
+  #   - JSON 파싱·패치 또는 jq empty 구문 검증 실패 시 원본 보존, 패치 skip.
+  #     필드 타입·의미에 대한 스키마 검증은 하지 않는다.
   home.activation.patchClaudeJson = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     cfg="$HOME/.claude.json"
     lockdir="''${cfg}.lock"

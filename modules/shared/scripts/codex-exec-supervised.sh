@@ -9,7 +9,7 @@
 #
 # 역사 각주: 도입 당시(2026-05, PR #636)는 npm wrapper(@openai/codex) 패키징의 detach/process
 # group 부재로 "timeout이 wrapper PID만 죽이고 native가 잔존"하는 축이 있어 setsid를 채택했다.
-# 현행 패키징(modules/shared/programs/codex/ — upstream tarball의 native binary 직핀)에는 중간
+# 현행 공식 native installer 실행본(modules/shared/programs/codex/의 최초 설치 배선)에는 중간
 # npm 프로세스가 없어 그 실패 모드는 소멸했고, 2026-08 mac+Linux 분리 실측에서 process group은
 # GNU timeout 자신이 생성하며(비-foreground 모드) SIGTERM 무시 hang의 유일한 구제는
 # --kill-after(SIGKILL 승급)임이 확인됐다. setsid 의존 제거는 후속 PR에서 real-codex Linux

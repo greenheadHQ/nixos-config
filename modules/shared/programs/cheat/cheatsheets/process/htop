@@ -4,11 +4,12 @@ tags: [ htop, process, monitor, tui, personal ]
 htop — TUI 프로세스 모니터 (트리뷰/SSH 친화). macOS BSD top의 컬럼 잘림/순서 흔들림을 대체.
 
 [기본 단축키]
-  ↑/↓ k/j         프로세스 선택 이동
+  ↑ / Alt+k       이전 프로세스 선택
+  ↓ / Alt+j       다음 프로세스 선택
   Space           선택 토글 (멀티 선택)
   U               선택 해제 전체
   /               증분 검색 (프로세스명)
-  \               필터 (matching만 표시, ESC 해제)
+  \               프로세스 필터 (다시 필터에 들어가 Esc로 해제)
 
 [정렬]
   P               %CPU 정렬
@@ -21,13 +22,14 @@ htop — TUI 프로세스 모니터 (트리뷰/SSH 친화). macOS BSD top의 컬
   t / F5          트리 뷰 토글 (부모-자식 관계)
   H               유저 thread 숨김 토글
   K               커널 thread 숨김 토글
-  Space (헤더에)  실시간 일시정지
+  Z               프로세스 목록 갱신 일시정지/재개
 
 [프로세스 조작]
-  k / F9          시그널 보내기 (kill 메뉴)
+  k / F9          시그널 선택 메뉴 (Enter로 전송)
+                  Space로 태그한 항목이 있으면 모두 대상, 없으면 현재 선택만 대상
   Renice (F7/F8)  우선순위 - / +
   s               strace attach (Linux 전용)
-  l               열린 파일 보기 (lsof, Linux 전용)
+  l               열린 파일 보기 (lsof 설치 필요)
 
 [설정]
   F2              Setup (컬럼/색 변경, 영구 저장)

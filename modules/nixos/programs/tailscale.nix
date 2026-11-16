@@ -84,7 +84,7 @@ in
 {
   services.tailscale = {
     enable = true;
-    useRoutingFeatures = "server"; # subnet router만 허용 (exit node 비활성화)
+    useRoutingFeatures = "server"; # 서버 측 IP forwarding 활성화. subnet/exit node 광고는 별도 설정
   };
 
   networking.firewall = {

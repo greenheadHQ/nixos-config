@@ -20,8 +20,9 @@ ps — 프로세스 스냅샷. top/htop과 달리 정적 출력이라 순서 안
                              $ ps -Ao pid,user,%cpu,%mem,comm
                              $ ps -Ao pid,user,command
 
-  comm vs command            comm = 짧은 이름 (잘림 가능)
-                             command = 풀 argv (잘림 없음, top COMMAND 잘림 우회용)
+  comm vs command            comm = 실행명, command = 명령과 인자(argv)
+                             터미널 폭에 따라 잘릴 수 있으므로 전체 argv 확인은 -ww 추가
+                             $ ps -ww -Ao pid,command
 
 [macOS BSD]
   ps -r                      CPU% 내림차순 정렬
@@ -40,7 +41,9 @@ ps — 프로세스 스냅샷. top/htop과 달리 정적 출력이라 순서 안
   ps --sort -rss             메모리 RSS 내림차순
                              $ ps -Ao pid,rss,command --sort -rss | head -10
 
-  ps --sort -size            VSZ 기준 (rss vs size 의미 다름)
+  ps --sort -vsz             가상메모리 크기(VSZ) 내림차순
+  ps --sort -size            모든 writable page가 dirty일 때 필요한 swap 크기 추정치
+                             size와 vsz는 서로 다른 필드
 
   ps -U greenhead                특정 사용자 (양 플랫폼 동일)
   ps -t tty1                 특정 tty (양 플랫폼 동일)
@@ -52,7 +55,7 @@ ps — 프로세스 스냅샷. top/htop과 달리 정적 출력이라 순서 안
   ps axjf                                              # macOS/BSD 트리 비슷한 효과
 
 Tip
-- top의 COMMAND 컬럼 잘림 우회: ps -Ao pid,%cpu,command -r | head
+- top의 COMMAND 컬럼 잘림 우회: ps -ww -Ao pid,%cpu,command -r | head
 - BSD/SysV 스타일 옵션을 섞어도 인식됨 (`ps aux` BSD, `ps -ef` SysV).
 - 정적 스냅샷이라 매 실행 결과가 다름. `watch -n 2 'ps ...'` 로 갱신 가능 (Linux watch).
 - macOS는 `man ps` 의 "KEYWORDS" 섹션에서 사용 가능한 -o 필드 전체 목록 확인.

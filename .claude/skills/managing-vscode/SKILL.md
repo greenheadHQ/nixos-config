@@ -47,7 +47,7 @@ modules/darwin/programs/vscode/
 ### Nix LSP (nixd)
 
 VSCode에서 `.nix` 파일 편집 시 nixd LSP가 자동완성/포맷팅을 제공합니다.
-nixd와 nixfmt는 VSCode 모듈의 `home.packages`에 co-locate되어 macOS에서만 설치됩니다.
+VSCode 모듈의 `home.packages`가 nixd와 nixfmt를 설치합니다. nixd는 이 macOS 모듈에서 관리하고, nixfmt는 공유 Neovim 모듈과 양 플랫폼 devShell에도 선언되어 있습니다.
 
 ## 자주 발생하는 문제
 

@@ -49,7 +49,7 @@ fileSystems."/mnt/data" = { device = "by-uuid/..."; };          # HDD UUID 종�
 ### NixOS 전용 nrs 옵션
 
 ```bash
-nrs --force               # 소스 빌드 경고 무시하고 진행
+nrs --force               # NO_CHANGES 스킵·worktree symlink guard 우회, 소스 빌드 경고 무시
 nrs --force --cores 2     # 코어 제한으로 진행 (과열 방지)
 ```
 
@@ -88,7 +88,7 @@ Platform이 `linux`이면 이미 MiniPC — SSH 금지. 명령어를 직접 실�
 
 ## 원격 복원력
 
-커널 패닉 자동 재부팅(10초), systemd watchdog(30초 hang 감지 → 10분 후 강제 재부팅), WoL(같은 LAN 전용).
+커널 패닉 자동 재부팅(10초), 런타임 하드웨어 watchdog 접촉 기한(30초), 재부팅 종료 두 번째 단계의 watchdog 기한(10분), WoL(같은 LAN 전용). 두 watchdog 기한은 연속된 대기 시간이 아니며, 실제 동작은 하드웨어 watchdog 지원에 달려 있다.
 상세 내용: [references/features.md](references/features.md)
 
 ## 하드웨어 모니터링
@@ -133,7 +133,7 @@ ls -la /var/lib/temp-monitor/                  # 상태 파일 (쿨다운 기록
 
 ## 자주 발생하는 문제
 
-1. nixos-install 시 flake 캐시 문제: `--refresh` 옵션 사용
+1. nixos-install 시 flake 캐시 문제: 최신 로컬 checkout의 flake 경로 사용 (`nixos-install`은 `--refresh` 미지원). [상세 절차](references/troubleshooting.md#nixos-install-시-github-flake-캐시-문제) 참조
 2. hardware-configuration.nix 충돌: disko와 fileSystems 중복 확인
 3. 부팅 불가: systemd-boot에서 이전 세대 선택 후 롤백
 

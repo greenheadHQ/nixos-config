@@ -80,17 +80,22 @@ fi
 # ─── 5. 새 버전 발견 → 알림 전송 ────────────────────────────────
 echo "New version available: $CURRENT → $LATEST"
 
-# 릴리즈 노트 추출: 줄 수(20)·문자 수(1024, Pushover 메시지 제한) 제한을 jq 안에서 처리한다.
-# jq 출력을 head로 끊으면 큰 본문에서 jq가 SIGPIPE로 죽어 pipefail로 스크립트가 실패한다(#1385).
-# jq 문자열 슬라이스는 코드포인트 단위라 로케일과 무관하다. tostring은 문자열이 아닌 body도 그대로 낸다.
-RELEASE_BODY=$(echo "$GITHUB_RESPONSE" | jq -r '(.body // "릴리즈 노트 없음") | tostring | split("\n")[0:20] | join("\n") | .[0:1024]')
+MESSAGE_HEADER="현재: v${CURRENT} → 최신: v${LATEST}"
+UPDATE_GUIDANCE="새 버전은 DB 백업과 릴리스 노트를 확인한 뒤 modules/nixos/programs/docker/immich.nix의 서버·ML 고정 태그를 함께 수정하고 nrs로 적용하세요.
+현재 태그 재갱신: sudo immich-update"
 
-# 알림 메시지 구성
-MESSAGE="현재: v${CURRENT} → 최신: v${LATEST}
-
-${RELEASE_BODY}
-
-업데이트: sudo immich-update"
+# Pushover의 1024자 한도에서 헤더·안내·구분 개행 4자를 먼저 확보하고 본문만 줄인다.
+# jq 안에서 20줄·코드포인트 제한을 함께 처리해 큰 본문의 SIGPIPE와 로케일 영향을 피한다(#1385).
+MESSAGE=$(echo "$GITHUB_RESPONSE" | jq -r \
+  --arg header "$MESSAGE_HEADER" --arg guidance "$UPDATE_GUIDANCE" '
+  (($header | length) + ($guidance | length) + 4) as $fixed_length
+  | if $fixed_length > 1024 then
+      error("notification header and guidance exceed 1024 characters")
+    else
+      (.body // "릴리즈 노트 없음") | tostring | split("\n")[0:20] | join("\n")
+      | .[0:(1024 - $fixed_length)]
+      | $header + "\n\n" + . + "\n\n" + $guidance
+    end')
 
 send_notification "Immich 업데이트 알림" "$MESSAGE" 0
 

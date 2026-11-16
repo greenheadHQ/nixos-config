@@ -17,6 +17,12 @@ top — 시스템 표준 프로세스 모니터. macOS BSD와 Linux procps-ng는
                              $ top -o pid
                              $ top -o -cpu              # + 또는 - 로 방향 명시
 
+  top -stats KEYS            표시할 통계 항목 선택 (쉼표 구분)
+                             $ top -stats pid,command,cpu,mem
+
+  top -ncols NCOLS           logging 모드의 출력 폭 지정
+                             $ top -l 1 -ncols 120
+
   top -n NPROCS              상위 N개 프로세스만
                              $ top -l 1 -o cpu -n 20
 
@@ -65,5 +71,5 @@ Tip
     "the first sample displayed will have an invalid %CPU"
   스냅샷이 필요하면 -l 2로 두 번 찍고 두 번째 결과만 사용.
 - COMMAND 컬럼이 잘려서 보여도 매칭/종료는 풀 이름 기준:
-  pgrep -f "<풀 이름>" 또는 ps -Ao command 로 확인.
-- 컬럼 폭/표시 항목 조절은 BSD top에 없음 → htop/btop이 더 편함 (cheat process/comparison).
+  pgrep -f "<풀 이름>" 또는 ps -ww -Ao command 로 확인.
+- macOS top은 -stats로 표시 항목을 선택하고, logging 모드는 -ncols로 출력 폭을 정한다. 대화형 컬럼 구성은 htop/btop 도움말도 참고 (cheat process/comparison).

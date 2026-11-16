@@ -14,4 +14,5 @@ import ../../lib/mk-update-module.nix {
   pushoverSecretFile = ../../../../secrets/pushover-copyparty.age;
 
   updateScriptFile = ./files/update-script.sh;
+  updatePreparation = "새 버전은 modules/nixos/programs/docker/copyparty.nix의 고정 태그를 수정하고 nrs로 적용해야 합니다. 아래 명령은 적용된 태그만 갱신합니다.";
 }

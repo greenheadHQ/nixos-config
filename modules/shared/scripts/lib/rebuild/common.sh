@@ -106,7 +106,8 @@ _print_rebuild_usage() {
     else
         synopsis="[--offline] [--force] [--cores N]"
         desc="${REBUILD_CMD} wrapper (preview 포함)"
-        option_lines+=('  --force      NO_CHANGES 스킵 우회 (darwin) / 소스 빌드 경고 무시 (nixos)')
+        option_lines+=('  --force      NO_CHANGES 스킵 및 worktree symlink guard 우회 (공통)'
+                       '               소스 빌드 경고 무시 (nixos), cask 충돌 제거 확인 생략 (darwin)')
     fi
     option_lines+=('  --cores N    빌드 코어 수 제한' '  -h, --help   이 도움말 출력 후 종료')
     printf 'Usage: %s %s\n\n%s\n\nOptions:\n' "${0##*/}" "$synopsis" "$desc"

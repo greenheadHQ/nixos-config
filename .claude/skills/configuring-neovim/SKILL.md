@@ -59,7 +59,7 @@ Nix `extraPackages`로 관리하는 도구 카테고리:
 - 빌드: tree-sitter, gcc (Linux 전용), nodejs
 - DAP: vscode-js-debug + js-debug-adapter wrapper (Linux 전용 — JS/TS 디버거)
 
-> `ripgrep`, `fd`, `fzf`는 `libraries/packages.nix`에서, `lazygit`은 Home Manager (`programs.lazygit.enable = true`)로 설치됨 — 중복 추가 금지
+> `ripgrep`, `fd`는 `libraries/packages.nix`에서 설치한다. `fzf`는 `modules/shared/programs/shell/default.nix`의 `programs.fzf`, `lazygit`은 `modules/shared/programs/lazygit/default.nix`의 `programs.lazygit`으로 설치한다 — 중복 추가 금지
 
 ## 핵심 절차
 

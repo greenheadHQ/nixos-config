@@ -14,6 +14,7 @@ import ../../lib/mk-update-module.nix {
   pushoverSecretFile = ../../../../secrets/pushover-uptime-kuma.age;
 
   updateScriptFile = ./files/update-script.sh;
+  updatePreparation = "백업과 릴리스 노트를 확인한 뒤 modules/nixos/programs/docker/uptime-kuma.nix의 고정 태그를 수정하고 nrs로 적용하세요. 아래 명령은 적용된 태그만 갱신합니다.";
 
   updateScriptInputs =
     pkgs: with pkgs; [

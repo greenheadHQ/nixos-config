@@ -4,7 +4,10 @@
 
 `homeserver.immichUpdate.enable = true`로 활성화되는 자동화 시스템:
 - 매일 03:00 GitHub Releases API로 최신 버전 체크 → 새 버전 시 Pushover 알림
-- `sudo immich-update` 명령으로 안전한 수동 업데이트
+- 새 버전은 DB 백업과 릴리스 노트를 확인한 뒤 `modules/nixos/programs/docker/immich.nix`의 서버·ML 고정 태그를 함께 수정하고 `nrs`로 적용
+- `sudo immich-update`는 현재 설정된 고정 태그를 다시 pull하고 DB 백업·재시작·헬스체크를 수행하며, 새 버전 태그를 선택하지 않음
+
+`nrs` 자체가 새 이미지로 앱을 재시작할 수 있으므로, 태그 적용 전 [DB 백업/복원](#db-백업복원) 절의 백업·복구 조건을 먼저 확인한다. 적용 뒤에 실행한 `immich-update`의 백업은 적용 전 복구점을 대신하지 않는다.
 
 ## 파일 구조
 

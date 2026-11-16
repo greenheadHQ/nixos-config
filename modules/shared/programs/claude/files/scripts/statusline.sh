@@ -33,7 +33,7 @@ set -u
 # === 입력 검증 helper SSOT ===
 # 8 개 helper 모두 사용부 활성화. cwd v2 (validate_cwd_syntax /
 # canonicalize_dir / tilde_shorten) 는 L2 cwd 라인 및 cwd IDE URL 생성 입력으로
-# 사용한다. cwd IDE URL 의 scheme 선택 (env override / macOS 자동 감지 / vscode
+# 사용한다. cwd IDE URL 의 scheme 선택 (env override / 설정 파일 / macOS 자동 감지 / vscode
 # fallback) 은 tilde_shorten 직후의 IDE URL template SSOT 블록을 본다.
 
 # OSC 8 URL에 control char가 있으면 거부 (escape injection 차단). 빈 문자열은
@@ -146,6 +146,7 @@ tilde_shorten() {
 # `scheme://file%s`, JetBrains 계열은 `scheme://open?file=%s` 형태가 모두
 # leading slash 포함 절대경로를 그대로 받는다. 우선순위:
 #   (A) CLAUDE_STATUSLINE_IDE_URL_TEMPLATE env override (사용자 명시)
+#   (B) ~/.claude/statusline-ide-template 설정 파일
 #   (C) macOS LaunchServices 자동 감지 (HEAVY 캐시)
 #   (fallback) vscode://file%s/?windowId=_blank (현행 보존, backward compat)
 # issue #293. 매핑/우선순위는 본 파일의 ide_url_template_for_bundle_id 가 SSOT 다.
@@ -253,7 +254,7 @@ EOF
 # 옵션 A — env override template 검증. (a) 비어있지 않음 (b) control char 없음
 # (OSC 8 escape injection 차단) (c) `%s` placeholder 포함 (d) scheme:// 형식 일
 # 때만 template 출력 + return 0. 미통과 시 빈 출력 + return 1 → caller 가 다음
-# 우선순위 (LS query / vscode default) 로 fallthrough. control char 검사는 tr
+# 우선순위 (설정 파일 / LS query / vscode default) 로 fallthrough. control char 검사는 tr
 # 라운드트립 — sanitize_osc8_url 과 동일한 이유 (grep 의 LF 누락 회피).
 validate_ide_url_template() {
   local tmpl=${1:-} stripped
@@ -458,7 +459,7 @@ fi
 # --- stdin 통합 추출 (jq 1회 호출) ---
 # 기존 .session_id, .transcript_path, .rate_limits.* 의 3~4 회 fork 를 단일
 # 호출로 통합. .terminal.columns 는 width fallback chain 의 한 슬롯으로 추출되어
-# resolve_raw_terminal_cols 에서 COLUMNS env 다음 우선순위로 사용된다.
+# resolve_raw_terminal_cols 에서 명시 override 다음, COLUMNS env 앞의 우선순위로 사용된다.
 TRANSCRIPT="" STDIN_SESSION_ID="" CWD="" STDIN_COLS=""
 RATE_5H="" RATE_5H_RESET=""
 RATE_7D="" RATE_7D_RESET=""
@@ -793,9 +794,9 @@ if ! $HEAVY_CACHE_HIT; then
 
   # --- IDE URL 자동 감지 (옵션 C, HEAVY) ---
   # macOS LaunchServices 의 source-code default handler → IDE URL template.
-  # env override 와 무관하게 산출/캐시하고, 최종 우선순위 결정 (env > detected >
-  # vscode default) 은 cwd URL 생성부 (build_cwd_url 호출 직전) 에서 한다 — 그래야
-  # 사용자가 env 를 켜고 끄더라도 캐시된 detected 값이 그대로 재사용된다.
+  # env override·설정 파일과 무관하게 산출/캐시하고, 최종 우선순위 결정
+  # (env > 설정 파일 > detected > vscode default) 은 cwd URL 생성부에서 한다.
+  # env 나 설정 파일을 바꾸더라도 캐시된 detected 값은 다시 사용할 수 있다.
   IDE_TEMPLATE_DETECTED=$(detect_macos_ide_template)
 
   # --- HEAVY 캐시 persist ---
@@ -825,9 +826,10 @@ fi
 #
 # IDE URL scheme 우선순위 (issue #293):
 #   (A) CLAUDE_STATUSLINE_IDE_URL_TEMPLATE env override — validate 통과 시 최우선.
+#   (B) ~/.claude/statusline-ide-template — 유효한 설정 파일 값.
 #   (C) IDE_TEMPLATE_DETECTED — macOS LaunchServices 자동 감지 (HEAVY 캐시 복원).
 #   (fallback) vscode://file%s/?windowId=_blank — 현행 보존 (backward compat).
-# env 는 캐시 독립적으로 즉시 반영되도록 여기서 매 호출 재평가한다.
+# env 와 설정 파일은 캐시와 독립적으로 즉시 반영되도록 매 호출 재평가한다.
 IDE_URL_TEMPLATE="vscode://file%s/?windowId=_blank"
 _ide_env_tmpl=$(validate_ide_url_template "${CLAUDE_STATUSLINE_IDE_URL_TEMPLATE:-}") || _ide_env_tmpl=""
 if [ -n "$_ide_env_tmpl" ]; then
@@ -1163,7 +1165,7 @@ fi
 
 # --- L2: cwd + branch (worktree·비-worktree 공통, 단일 라인) ---
 # cwd 가 있을 때 📁 cyan 으로 출력. CWD_URL (IDE URL template — env override /
-# macOS 자동 감지 / vscode default) 로 OSC 8 hyperlink → 사용자 IDE 진입 가능.
+# 설정 파일 / macOS 자동 감지 / vscode default) 로 OSC 8 hyperlink → 사용자 IDE 진입 가능.
 # SSH 환경에서는 CWD_URL 이 빈 문자열이라 print_icon 자동으로 URL-less 분기로
 # fallback (텍스트만). branch 가 있으면 같은 줄에 🌿 green 으로 병기하고 그 뒤에
 # render_branch_sync 로 동기화 표기를 잇는다.

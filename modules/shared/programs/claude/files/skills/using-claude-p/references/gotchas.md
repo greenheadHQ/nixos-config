@@ -427,7 +427,7 @@ echo "현재 디렉토리의 파일 목록을 보여줘" | claude -p --tools ""
 
 ⚠️ `--mcp-servers ""` / `--no-mcp` 플래그는 v2.1.206 help에도 존재하지 않음. `--mcp-config`와 `--strict-mcp-config`는 help에 있으나, 빈 MCP 구성으로 전체 비활성화하는 패턴은 별도 재검증 필요.
 
-⚠️ 역방향도 성립: `--allowed-tools "mcp__server__tool"`에 MCP 도구명을 명시해도 해당 MCP 서버가 세션에서 초기화되지 않으면 사용 불가. `--allowed-tools`는 허용 목록이지, 서버 활성화 지시가 아니다. MCP 서버 초기화는 `.mcp.json` 또는 `settings.json`의 MCP 설정에 의존한다 (`.mcp.json`에 미등록이거나 서버 프로세스가 init 단계에서 연결 실패한 경우 "미활성"). `--strict-mcp-config`로 특정 MCP 설정만 로드하는 surface는 v2.1.206 help에서 확인했다. MCP 초기화 동작은 재검증 미수행 (v2.1.202 기준 서술 유지).
+⚠️ 역방향도 성립: `--allowed-tools "mcp__server__tool"`에 MCP 도구명을 명시해도 해당 MCP 서버가 세션에서 초기화되지 않으면 사용 불가. `--allowed-tools`는 허용 목록이지, 서버 활성화 지시가 아니다. 수동 등록 서버의 설정 원본은 user/local 범위의 `~/.claude.json`, project 범위의 프로젝트 루트 `.mcp.json`이며, `--mcp-config`로 별도 설정을 전달할 수도 있다 ([공식 설정 범위](https://code.claude.com/docs/en/mcp#MCP-installation-scopes)). 선언이 로드되지 않았거나 서버 프로세스가 init 단계에서 연결에 실패하면 사용할 수 없다. `--strict-mcp-config`로 특정 MCP 설정만 로드하는 surface는 v2.1.206 help에서 확인했다. MCP 초기화 동작은 재검증 미수행 (v2.1.202 기준 서술 유지).
 
 ### #13. `--disable-slash-commands`로 스킬 비활성화 시 "Unknown skill"
 

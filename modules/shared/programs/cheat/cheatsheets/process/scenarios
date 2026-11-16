@@ -61,7 +61,7 @@ process 운영 시나리오 — "지금 이 상황에서 뭘 치지?" 모음.
 [5. 부모 기준 자식 일괄 종료]
   $ pgrep -P <PPID> -l                       # 자식 PID 확인
   $ pkill -P <PPID>                          # 자식 일괄 SIGTERM
-  $ pkill -P <PPID> -9                       # 안 죽으면 SIGKILL
+  $ pkill -9 -P <PPID>                       # 안 죽으면 SIGKILL
 
 [6. top COMMAND가 잘려서 정확한 이름을 모를 때]
   # top 화면: "Slay the Spi" 처럼 잘림 → 풀 이름 모름
@@ -70,9 +70,9 @@ process 운영 시나리오 — "지금 이 상황에서 뭘 치지?" 모음.
   $ pkill -f "Slay the Spire"                # 풀 이름으로 종료
 
 [7. 특정 사용자 소유 프로세스 전부 정리 (logout 전)]
-  $ pgrep -U greenhead -l                        # 확인 먼저
-  $ pkill -U greenhead                           # 정상 종료
-  $ pkill -U greenhead -9                        # 안 죽는 것만 강제
+  $ pgrep -U <user> -l                        # 확인 먼저
+  $ pkill -U <user>                           # 정상 종료
+  $ pkill -9 -U <user>                        # 안 죽는 것만 강제
 
 [8. 데몬 설정 reload (재시작 없이)]
   $ pkill -HUP nginx                         # nginx config reload
@@ -80,6 +80,7 @@ process 운영 시나리오 — "지금 이 상황에서 뭘 치지?" 모음.
 
 Tip
 - 죽이기 전에 항상 pgrep -fl 또는 ps -p 로 매칭 확인. 잘못 죽이면 손실 위험.
+- 시그널 옵션은 첫 인자에 둔다 (macOS 필수): pkill -9 -P <PPID>.
 - -15 (SIGTERM) → 안 죽으면 -9 (SIGKILL) 순서. -9 먼저 쓰면 DB/파일 lock dirty.
 - lsof -i :PORT 는 매우 자주 쓰는 패턴 — alias 등록 고려 (process 도구는 alias 안 만들기로 합의했지만 본인 환경 자유).
 - 더 세밀한 옵션: cheat process/{pgrep,pkill,kill,ps,lsof,top,htop,btop}

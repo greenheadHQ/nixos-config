@@ -22,7 +22,7 @@
 | DAP | `vscode-js-debug` | JS/TS 디버거 (Node/Next.js 서버사이드, Linux 전용) |
 | DAP | `js-debug-adapter` (wrapper) | nixpkgs `js-debug`를 LazyVim 기대 이름 `js-debug-adapter`로 노출 (Linux 전용) |
 
-> `ripgrep`, `fd`, `fzf`, `lazygit`은 `libraries/packages.nix`에서 이미 설치됨 — 중복 추가 금지
+> `ripgrep`, `fd`는 `libraries/packages.nix`에서 설치한다. `fzf`는 `modules/shared/programs/shell/default.nix`의 `programs.fzf`, `lazygit`은 `modules/shared/programs/lazygit/default.nix`의 `programs.lazygit`으로 설치한다 — 중복 추가 금지
 
 ### 플랫폼 주의사항
 

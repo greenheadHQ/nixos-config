@@ -1,26 +1,15 @@
 # Neovim 상세 설정
 
-## Mason 비활성화 주의사항
+## 비활성화할 플러그인의 저장소 이름
 
-Mason 프로젝트가 `williamboman`에서 `mason-org`로 마이그레이션됨:
+Mason과 mini.surround는 현재 upstream의 조직 이름을 사용한다:
 ```lua
--- 올바른 방법 (mason-org/)
 { "mason-org/mason.nvim", enabled = false }
-
--- 잘못된 방법 (매칭 실패)
-{ "williamboman/mason.nvim", enabled = false }
-```
-
-## mini.nvim 조직 이전 주의사항
-
-mini.nvim 0.17.0 (2025-12)에서 `echasnovski` → `nvim-mini` 조직으로 이전됨:
-```lua
--- 올바른 방법 (nvim-mini/)
+{ "mason-org/mason-lspconfig.nvim", enabled = false }
 { "nvim-mini/mini.surround", enabled = false }
-
--- 잘못된 방법 (매칭 실패 → 경고 발생)
-{ "echasnovski/mini.surround", enabled = false }
 ```
+
+lazy.nvim의 기본 식별자는 `owner/repo` 전체가 아니라 repo 이름이다. 따라서 owner만 바뀐 spec은 같은 이름으로 병합되며, 옛 조직 이름이라는 이유만으로 비활성화가 실패하지는 않는다. 조직 이전 경고가 있으면 주소를 갱신하고, 플러그인이 계속 활성화된다면 최종 spec의 `name`과 `enabled` 설정 및 로드된 설정 경로를 확인한다.
 
 ## 모바일 최적화 (iPad Termius)
 

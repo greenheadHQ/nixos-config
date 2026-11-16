@@ -69,7 +69,7 @@ codex 0.106+에서 default (code) collaboration mode에서도 `request_user_inpu
 - `modules/shared/programs/codex/default.nix` — 설정, shared skill 노출 정책 SoT, project 스킬 투영 activation 배선
 - `modules/shared/programs/codex/files/project-codex-skills.sh` — project 스킬 투영과 고아 링크 정리 본체
 - `modules/shared/programs/codex/files/config.toml` — 실행 정책/모델 설정 (NixOS)
-- `modules/shared/programs/codex/files/config.darwin.toml` — macOS 전용 설정 (user-scope MCP 포함)
+- `modules/shared/programs/codex/files/config.darwin.toml` — macOS 전용 실행 정책·훅·메모리 모델 설정 (MCP는 앱 소유)
 - `modules/shared/programs/codex/files/retired-config-keys.txt` — 배포본에서 회수할 퇴역 키 목록 SoT (activation·nrs 복구·verify가 공유)
 - `scripts/ai/verify-ai-compat.sh` — 노출 정책 및 directory projection 독립 감사 oracle
 - `modules/shared/programs/claude/files/CLAUDE.md` — 글로벌 라우팅/지침

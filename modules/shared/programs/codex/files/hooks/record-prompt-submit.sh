@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Codex-only divergence from Claude hook: skip programmatic/nested codex sessions
-# to avoid duplicate notifications + statusline TTL contamination.
+# Programmatic/nested Codex 세션은 상위 세션의 마커를 덮어쓰지 않도록 제외한다.
 # Codex 전용 hook — Claude 쪽 동일 hook 은 statusline Cache TTL 기능 제거로 삭제됨 (issue #585).
 if [ "${CLAUDECODE:-}" = "1" ] || [ "${CODEX_PROGRAMMATIC:-}" = "1" ]; then
   exit 0
 fi
-# record-prompt-submit.sh — 프롬프트 전송 시 캐시 TTL을 "in-flight" 상태로 전환
-# "0"을 기록하면 statusline.sh가 mtime 기준 카운트다운 표시 (Stop 미기록 상태)
+# record-prompt-submit.sh — 프롬프트 전송 시 세션별 last-stop 마커에 0을 기록한다.
+# 현재 저장소의 statusline.sh는 이 마커를 읽지 않는다. 외부 소비 여부를 확인하기 전까지
+# 0(응답 진행 중), 타임스탬프(Stop)의 기존 마커 형식과 배선은 유지한다.
 # 공통 helper SSOT: modules/shared/programs/claude/files/lib/hook-runtime.sh.
 # 정책: hook-runtime.sh 미발견 시 inline fallback 자체 로직 실행 (자체 동작 보존).
 

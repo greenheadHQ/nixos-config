@@ -11,7 +11,7 @@ pkill — 이름/속성 매칭으로 시그널 전송. pgrep과 동일 매처 + 
   pkill -x EXACT             이름 정확히 일치만
                              $ pkill -x ssh
 
-  pkill -f PATTERN           풀 커맨드라인 매칭 (안전한 정밀 종료)
+  pkill -f PATTERN           풀 커맨드라인에 정규식 매칭
                              $ pkill -f "Slay the Spire"
 
 [시그널 지정]
@@ -32,9 +32,10 @@ pkill — 이름/속성 매칭으로 시그널 전송. pgrep과 동일 매처 + 
   pkill -0 PATTERN           시그널 안 보내고 존재 확인만 (exit code)
 
 Tip
+- 시그널 옵션은 첫 인자에 둔다 (macOS 필수): pkill -9 -P 1234.
 - 먼저 -15 (SIGTERM)로 정상 종료 시도, 그래도 안 죽으면 -9 (SIGKILL).
 - -9는 시그널 trap 무시 — DB/파일 lock이 dirty 상태로 남을 수 있음.
 - top 화면의 COMMAND가 잘렸으면 pkill -f "<풀 이름>" 으로 정밀 종료.
-- -f 패턴은 자기 자신(pkill 프로세스)도 매칭할 수 있으니 주의.
+- 실행 중인 pgrep/pkill 자신은 매칭에서 제외된다. -f의 넓은 패턴은 다른 셸·부모·형제 프로세스도 잡을 수 있으므로 먼저 pgrep으로 확인한다.
 - 시그널 종류는 cheat process/kill 참고.
 - 시나리오 예시는 cheat process/scenarios 참고.

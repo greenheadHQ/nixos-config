@@ -180,9 +180,9 @@ ENTRYPOINT 오버라이드 필수
 - `copyparty-config` oneshot 서비스가 quoted heredoc + `printf '%s'`로 안전 주입
 - 비밀번호에 `$`, `` ` ``, `\` 등 특수문자가 있어도 안전
 
-ConditionPathExists 안전장치
-- 설정 파일이 없으면 컨테이너 시작 방지
-- Podman이 존재하지 않는 파일을 마운트 시 디렉토리로 생성하는 문제 예방
+ConditionPathExists 기동 조건
+- 입력 비밀번호 파일(`config.age.secrets.copyparty-password.path`)이 없으면 컨테이너 시작을 건너뜀
+- 생성된 설정 파일을 검사하는 조건은 아니다. `copyparty-config`의 성공 여부와 생성된 conf는 별도로 확인
 
 리버스 프록시 (Caddy) 뒤에서 CORS 403
 - Caddy 리버스 프록시를 통해 접근 시 `rejected by cors-check` 에러 발생

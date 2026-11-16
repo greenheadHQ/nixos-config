@@ -4,8 +4,34 @@
 
 `claude-rc` 관리 밖에서 띄운 `claude remote-control` 서버가 같은 디렉토리에서 아직 떠 있으면
 `claude-rc-maint`는 `unmanaged-server-present`로 기동을 거부한다. 같은 디렉토리에 두 번째 서버를
-띄우면 삭제 불가능한 유령 환경이 생기므로, 이 거부가 정상 안전장치다. 아래 확인은 코드
-(`modules/nixos/scripts/claude-rc-lib.sh`의 `find_bridge_pids_for_path`)와 같은 기준을 따른다.
+띄우면 중복 환경과 비활성 목록 항목이 생길 수 있으므로, 이 거부는 유지한다.
+`find_bridge_pids_for_path`는 모호한 후보도 새 기동을 막는 쪽으로 판정한다. 그 후보 판정만으로
+종료 대상을 확정하지 않고, 아래에서 실제 argv 경계·cwd·실행 파일·관리 상태를 확인한다.
+
+아래 명령은 이 저장소 루트에서 `nix develop --command bash`로 연 Bash 셸에서 실행한다. argv는 배포된
+래퍼가 사용하는 `claude-rc-pid-argv` helper로 읽는다. 이 helper는 일반 PATH에 노출되지 않을 수
+있으므로, 현재 launcher 패키지의 전이 의존성에서 실행 파일 하나를 찾는다. 개인 Mac의 바깥
+SSH launcher가 참조하는 내부 래퍼까지 조회한다. 조회 실패·0개·여러 개면
+진행하지 않는다. `ps args` 문자열로 대체하지 않는다.
+
+```bash
+CLAUDE_RC_PID_ARGV_HELPER="$(
+  set -euo pipefail
+  wrapper="$(type -P claude-rc)" || exit 1
+  wrapper="$(readlink -f "$wrapper")" || exit 1
+  case "$wrapper" in /nix/store/*/bin/claude-rc) ;; *) exit 1 ;; esac
+  references="$(nix-store --query --requisites "$(dirname "$(dirname "$wrapper")")")" || exit 1
+  helpers=()
+  while IFS= read -r reference; do
+    helper="$reference/bin/claude-rc-pid-argv"
+    [ ! -x "$helper" ] || helpers+=("$helper")
+  done <<<"$references"
+  [ "${#helpers[@]}" -eq 1 ] || exit 1
+  printf '%s\n' "${helpers[0]}"
+)"
+```
+
+위 명령이 성공하고 `CLAUDE_RC_PID_ARGV_HELPER`가 비어 있지 않을 때만 다음으로 진행한다.
 
 1. 후보를 모은다. 패턴은 코드의 `BRIDGE_PROCESS_PATTERN`과 같아서 `remote-control`과 공식 별칭
    `rc`를 모두 잡는다. 결과는 후보 목록일 뿐 종료 대상이 아니다.
@@ -14,9 +40,34 @@
    pgrep -u "$(id -u)" -fl 'remote-control|[[:space:]]rc([[:space:]]|$)'
    ```
 
-2. 후보마다 아래를 모두 확인하고, 하나라도 맞지 않으면 대상에서 뺀다.
-   - argv: `ps -ww -o args= -p <PID>`에서 CLI 명령 자리에 `remote-control` 또는 `rc`가 있다.
-     `-p`·`--print`·`--` 뒤에 나오는 같은 글자는 명령이 아니라 데이터다.
+2. 후보의 argv를 NUL 구분 그대로 임시 파일에 저장하고, 인자마다 따로 표시한다. `%q` 표시는
+   인자 안의 공백·개행과 인자 경계를 구분하기 위한 것이다. helper 실패나 빈 출력이면 진행하지
+   않는다. 아래 PID 값은 확인할 후보로 채운다.
+
+   ```bash
+   : "${CLAUDE_RC_PID_ARGV_HELPER:?배포된 argv helper를 먼저 확인하세요}"
+   CLAUDE_RC_UNMANAGED_PID=
+   : "${CLAUDE_RC_UNMANAGED_PID:?확인할 후보 PID를 입력하세요}"
+   CLAUDE_RC_UNMANAGED_ARGV_FILE="$(mktemp)"
+   if "$CLAUDE_RC_PID_ARGV_HELPER" "$CLAUDE_RC_UNMANAGED_PID" >"$CLAUDE_RC_UNMANAGED_ARGV_FILE" &&
+     [ -s "$CLAUDE_RC_UNMANAGED_ARGV_FILE" ]; then
+     argv_index=0
+     while IFS= read -r -d '' arg; do
+       printf 'argv[%d]=%q\n' "$argv_index" "$arg"
+       argv_index=$((argv_index + 1))
+     done <"$CLAUDE_RC_UNMANAGED_ARGV_FILE"
+   else
+     rm -f "$CLAUDE_RC_UNMANAGED_ARGV_FILE"
+     unset CLAUDE_RC_UNMANAGED_ARGV_FILE
+     echo "argv를 읽지 못했으니 종료 대상으로 삼지 않는다" >&2
+     false
+   fi
+   ```
+
+   다음 조건을 모두 확인하고, 하나라도 확인할 수 없으면 대상에서 뺀다.
+   - argv: `remote-control` 또는 `rc`가 독립된 CLI 명령 인자다. `-p`·`--print`·`--` 뒤의
+     같은 글자나 다른 옵션 값에 포함된 글자는 명령이 아니다. 현재 CLI 문법에서 명령 위치를
+     확정하지 못하면 종료하지 않는다.
    - cwd: 심링크를 푼 인스턴스 디렉토리 경로(`pwd -P`)와 같다.
      - NixOS: `readlink /proc/<PID>/cwd`
      - macOS: `lsof -a -p <PID> -d cwd -Fn`의 `n` 행
@@ -31,40 +82,49 @@
 
    프로세스 이름, 세션 이름, 표시용 command/path만으로 대상을 확정하지 않는다. 대상은 서버 PID
    하나이며, 그 서버를 띄운 터미널·셸·부모 프로세스는 다른 작업이 있을 수 있으므로 종료하지 않는다.
-
-   대상으로 확정한 PID의 시작 시각과 argv를 기록한다. 3단계는 이 기록과 같은 셸에서 실행한다.
+   대상으로 확정한 PID의 시작 시각을 기록한다. 3단계는 argv 파일을 보존한 같은 셸에서 실행한다.
 
    ```bash
-   CLAUDE_RC_UNMANAGED_PID=<확인한 PID>
    CLAUDE_RC_UNMANAGED_LSTART="$(ps -o lstart= -p "$CLAUDE_RC_UNMANAGED_PID")"
-   CLAUDE_RC_UNMANAGED_ARGS="$(ps -ww -o args= -p "$CLAUDE_RC_UNMANAGED_PID")"
+   : "${CLAUDE_RC_UNMANAGED_LSTART:?시작 시각을 읽지 못했으니 다시 확인하세요}"
    ```
 
-3. 그 대상에 대한 작업 직전 승인을 받은 뒤 아래를 실행한다. 서버를 식별할 수 없으면 종료하지
-   않는다.
+3. 그 대상에 대한 작업 직전 승인을 받은 뒤, 2단계의 cwd·실행 파일·관리 상태를 다시 확인한다.
+   어느 하나라도 바뀌었거나 확인할 수 없으면 종료하지 않는다. 아래 명령은 시작 시각과 NUL argv
+   전체도 다시 비교하고, 일치할 때만 해당 서버 PID에 신호를 보낸다.
 
    ```bash
    : "${CLAUDE_RC_UNMANAGED_PID:?2단계에서 확인하고 승인받은 PID를 설정하세요}"
    : "${CLAUDE_RC_UNMANAGED_LSTART:?2단계에서 기록한 시작 시각을 설정하세요}"
-   : "${CLAUDE_RC_UNMANAGED_ARGS:?2단계에서 기록한 argv를 설정하세요}"
-   # 승인을 기다리는 사이 서버가 끝나고 OS가 PID를 재사용했을 수 있다. 신호 직전에 시작 시각과
-   # argv를 다시 읽어 기록과 같을 때만 kill한다. 재사용된 PID가 같은 초에 시작하고 argv까지 같을
-   # 수는 사실상 없으므로, 2단계에서 확인한 cwd·실행 파일은 다시 보지 않는다.
-   if [ "$(ps -o lstart= -p "$CLAUDE_RC_UNMANAGED_PID" 2>/dev/null)" = "$CLAUDE_RC_UNMANAGED_LSTART" ] &&
-     [ "$(ps -ww -o args= -p "$CLAUDE_RC_UNMANAGED_PID" 2>/dev/null)" = "$CLAUDE_RC_UNMANAGED_ARGS" ]; then
-     kill "$CLAUDE_RC_UNMANAGED_PID"
+   : "${CLAUDE_RC_UNMANAGED_ARGV_FILE:?2단계에서 저장한 argv 파일을 설정하세요}"
+   signal_status=1
+   if CLAUDE_RC_UNMANAGED_CURRENT_ARGV_FILE="$(mktemp)" &&
+     "$CLAUDE_RC_PID_ARGV_HELPER" "$CLAUDE_RC_UNMANAGED_PID" >"$CLAUDE_RC_UNMANAGED_CURRENT_ARGV_FILE" &&
+     [ -s "$CLAUDE_RC_UNMANAGED_CURRENT_ARGV_FILE" ] &&
+     [ "$(ps -o lstart= -p "$CLAUDE_RC_UNMANAGED_PID" 2>/dev/null)" = "$CLAUDE_RC_UNMANAGED_LSTART" ] &&
+     cmp -s "$CLAUDE_RC_UNMANAGED_ARGV_FILE" "$CLAUDE_RC_UNMANAGED_CURRENT_ARGV_FILE"; then
+     kill "$CLAUDE_RC_UNMANAGED_PID" && signal_status=0
    else
-     echo "대상이 바뀌었으니 2단계부터 다시 확인한다" >&2
+     echo "대상을 재확인할 수 없으니 2단계부터 다시 확인한다" >&2
    fi
+   [ -z "${CLAUDE_RC_UNMANAGED_CURRENT_ARGV_FILE:-}" ] || rm -f "$CLAUDE_RC_UNMANAGED_CURRENT_ARGV_FILE"
+   [ "$signal_status" -eq 0 ]
    ```
 
-   kill이 실패하거나(권한 없음, 이미 종료됨 등) 대상이 바뀌었다는 안내가 나오면 4단계로 넘어가지
-   말고 2단계부터 다시 확인한다.
+   kill이 실패하거나(권한 없음, 이미 종료됨 등) 재확인 안내가 나오면 4단계로 넘어가지 말고
+   2단계부터 다시 확인한다. 사용을 마친 argv 임시 파일은 지운다.
 
 4. `ps -p "$CLAUDE_RC_UNMANAGED_PID"`로 종료를 확인한 뒤 해당 Git 디렉토리에서 `claude-rc start`를
    실행한다. 서버가 아직 떠 있으면 `claude-rc start`는 같은 이유로 다시 거부한다. 선언 인스턴스는
-   수동 `claude-rc start` 대신 다음 ensure 주기에 자동 기동시켜도 된다. 같은 디렉토리 경로이므로
-   기존 claude.ai 환경을 회수한다.
+   수동 `claude-rc start` 대신 다음 ensure 주기에 자동 기동시켜도 된다.
+   [환경 회수 조건](lifecycle.md#환경과-세션-수명주기)에 따르면 같은 경로라도 보존 세션이 있어야
+   기존 claude.ai 환경을 회수하며, 세션이 없으면 새 환경과 비활성 항목이 생길 수 있다.
+   이 조건은 문서의 실측 범위를 따르며, upstream 버전·launcher가 바뀌면 다시 확인한다.
+
+   ```bash
+   rm -f "$CLAUDE_RC_UNMANAGED_ARGV_FILE"
+   unset CLAUDE_RC_UNMANAGED_ARGV_FILE
+   ```
 
 ## 트러블슈팅
 

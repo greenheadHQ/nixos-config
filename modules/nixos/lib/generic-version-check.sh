@@ -72,30 +72,38 @@ fi
 # ─── 5. 새 버전 발견 → 알림 전송 ────────────────────────────────
 echo "New version available: v$LATEST"
 
-# 릴리즈 노트 추출: 줄 수(20)·문자 수(1024) 제한을 jq 안에서 처리한다.
-# jq 출력을 head로 끊으면 큰 본문에서 jq가 SIGPIPE로 죽어 pipefail로 스크립트가 실패한다(#1385).
-# jq 문자열 슬라이스는 코드포인트 단위라 로케일과 무관하다. tostring은 문자열이 아닌 body도 그대로 낸다.
-RELEASE_BODY=$(echo "$GITHUB_RESPONSE" | jq -r '(.body // "릴리즈 노트 없음") | tostring | split("\n")[0:20] | join("\n") | .[0:1024]')
-
-# 업데이트 명령 (서비스명 기반)
-UPDATE_CMD="sudo ${CONTAINER_NAME}-update"
+# 서비스 모듈이 소유한 실행 명령과 선행 절차를 안내한다. 문자열을 실행하지 않는다.
+UPDATE_CMD="${UPDATE_COMMAND:-sudo ${CONTAINER_NAME}-update}"
+UPDATE_GUIDANCE="업데이트: ${UPDATE_CMD}"
+if $MAJOR_MISMATCH; then
+  UPDATE_GUIDANCE="이미지 태그를 변경하고 nrs로 적용한 뒤: ${UPDATE_CMD}"
+fi
+if [ -n "${UPDATE_PREPARATION:-}" ]; then
+  UPDATE_GUIDANCE="${UPDATE_PREPARATION}
+확인 후: ${UPDATE_CMD}"
+fi
 
 # 메이저 버전 불일치 시 추가 안내
 if $MAJOR_MISMATCH; then
   IMAGE_TAG="${CONTAINER_IMAGE##*:}"
   IMAGE_MAJOR="${IMAGE_TAG%%.*}"
-  MESSAGE="v${LATEST} 출시됨 (현재 이미지 태그 :${IMAGE_TAG}은 ${IMAGE_MAJOR}.x만 지원)
-
-${RELEASE_BODY}
-
-이미지 태그 변경 후: ${UPDATE_CMD}"
+  MESSAGE_HEADER="v${LATEST} 출시됨 (현재 이미지 태그 :${IMAGE_TAG}은 ${IMAGE_MAJOR}.x만 지원)"
 else
-  MESSAGE="v${LATEST} 출시됨
-
-${RELEASE_BODY}
-
-업데이트: ${UPDATE_CMD}"
+  MESSAGE_HEADER="v${LATEST} 출시됨"
 fi
+
+# Pushover의 1024자 한도에서 헤더·안내·구분 개행 4자를 먼저 확보하고 본문만 줄인다.
+# jq 안에서 20줄·코드포인트 제한을 함께 처리해 큰 본문의 SIGPIPE와 로케일 영향을 피한다(#1385).
+MESSAGE=$(echo "$GITHUB_RESPONSE" | jq -r \
+  --arg header "$MESSAGE_HEADER" --arg guidance "$UPDATE_GUIDANCE" '
+  (($header | length) + ($guidance | length) + 4) as $fixed_length
+  | if $fixed_length > 1024 then
+      error("notification header and guidance exceed 1024 characters")
+    else
+      (.body // "릴리즈 노트 없음") | tostring | split("\n")[0:20] | join("\n")
+      | .[0:(1024 - $fixed_length)]
+      | $header + "\n\n" + . + "\n\n" + $guidance
+    end')
 
 send_notification "$SERVICE_DISPLAY_NAME 업데이트 알림" "$MESSAGE" 0
 

@@ -74,7 +74,7 @@ PATH, 환경변수 등 자동 설정
 nix-direnv 캐싱:
 
 - devShell 평가 결과를 `.direnv/` 디렉토리에 캐싱
-- flake.lock 변경 시에만 재평가 (평소에는 즉시 로드)
+- `flake.nix`, `flake.lock`, `devshell.toml`, 사용자 direnvrc 등 감시 대상이 캐시보다 새롭거나 profile이 없으면 재평가 (평소에는 캐시 로드)
 - 첫 로드: ~수 초 / 이후 로드: ~100ms
 
 Pre-commit Hooks와의 관계:
@@ -82,7 +82,7 @@ Pre-commit Hooks와의 관계:
 | 환경 | 상태 |
 |------|------|
 | direnv 환경 내 | gitleaks, lefthook 등 devShell 도구 사용 가능 |
-| direnv 환경 외 | devShell 도구 접근 불가 → hook 실패 |
+| direnv 환경 외 | 도구별 경로 사용: gitleaks는 PATH 또는 Nix bootstrap, pre-push는 검증된 runtime profile. 각 경로의 준비 상태에 따라 성공 여부가 달라짐 |
 
 > 참고: nixos-config 프로젝트의 `.envrc`는 Git에 커밋되어 있으므로 `direnv allow`만 실행하면 됩니다.
 
@@ -189,8 +189,8 @@ lefthook run pre-commit
 
 주의사항:
 
-- direnv 환경이 활성화되지 않은 상태에서 커밋 시 hook이 실패함
-  - 해결: `direnv allow` 실행 또는 `nix develop` 진입
+- hook 실패 시 해당 도구의 PATH·bootstrap·runtime profile 오류를 먼저 확인한다. direnv 미활성 자체는 모든 hook의 실패 조건이 아니다.
+  - 표준 도구 환경 준비: `direnv allow` 후 활성화 또는 `nix develop` 진입
 - 새 스크립트 추가 시 `shellcheck -S warning`으로 사전 검사 권장
 - eval-tests 직접 실행은 working tree를 평가하고, pre-commit 경로는 staged index snapshot을 평가한다.
 
@@ -286,7 +286,7 @@ macOS에서는 에이전트 목록을 하드코딩하지 않고 `launchctl list 
 
 ```bash
 # 평소 (설정만 변경, flake.lock 동기화된 상태)
-nrs --offline  # ~10초 완료!
+nrs --offline  # 필요한 Nix store 경로가 이미 있을 때 사용
 
 # 새 패키지 추가 또는 flake update 후
 nrs            # 일반 모드 (다운로드 필요)
@@ -294,19 +294,20 @@ nrs            # 일반 모드 (다운로드 필요)
 
 `--offline` 플래그의 의미:
 
-- 네트워크 요청을 하지 않고 로컬 캐시(`/nix/store`)만 사용
-- flake input 버전 확인, substituter 확인 등을 스킵
-- 속도 향상: 일반 모드 ~3분 → 오프라인 모드 ~10초 (약 18배 빠름)
+- build/switch의 Nix 명령에 `--offline`을 전달하여 substituter를 사용하지 않는다. 필요한 Nix store 경로는 미리 준비되어 있어야 한다.
+- activation의 외부 동작에는 이 플래그가 적용되지 않는다. 예를 들어 native CLI 최초 설치의 installer 다운로드나 Homebrew 조회·설치는 별도 네트워크 접근이 가능하다.
+- 과거 관측에서는 일반 모드 약 3분, 오프라인 모드 약 10초였지만 캐시·activation 상태에 따라 달라지며 현재 실행 시간을 보장하지 않는다.
 
-소스 참조 방식 (로컬 vs Remote):
+소스 참조 방식:
 
-> 중요: `nrs`와 `nrs --offline` 모두 `flake.lock`에 잠긴 Remote Git URL에서 소스를 참조합니다.
+`nrs`와 `nrs --offline`은 같은 로컬 root flake를 사용한다. 외부 input의 고정 revision과 로컬 구성 소스를 구분한다.
 
 | 항목 | 설명 |
 |------|------|
-| 소스 위치 | `flake.lock`에 기록된 remote Git URL (SSH) |
-| 로컬 경로 | 사용하지 않음 (`path:...` 형태 아님) |
-| `--offline` 역할 | 다운로드 스킵 + Nix store 캐시 사용 (로컬 경로 전환이 아님) |
+| root flake | 선언된 main checkout 경로. 같은 Git 저장소의 worktree에서 실행하면 감지된 worktree 경로로 전환 |
+| 로컬 변경 | 선택된 checkout의 Git 추적 파일을 평가하므로 아직 push하지 않은 변경도 빌드에 반영 |
+| 외부 inputs | `flake.lock`에 고정된 revision을 사용 |
+| `--offline` 역할 | Nix substituter 미사용. 선택된 로컬 checkout/worktree를 바꾸지는 않음 |
 
 자동 예방 조치:
 
@@ -317,7 +318,7 @@ nrs            # 일반 모드 (다운로드 필요)
 
 주의사항:
 
-- `nrs --offline`은 캐시에 모든 패키지가 있어야 동작
+- `nrs --offline`의 Nix 빌드는 필요한 store 경로가 로컬에 있어야 한다. activation에 외부 설치가 필요하면 별도 네트워크 조건도 충족해야 한다
 - 새 패키지 추가 시에는 `nrs` 사용 필요
 - `flake.lock`이 갱신된 직후에는 보통 `--offline`을 쓸 수 없다. 새 rev의 store path가 로컬에
   없으면 `--offline`은 substituter도 건너뛰므로 실패한다. 필요한 경로가 이미 로컬 store에

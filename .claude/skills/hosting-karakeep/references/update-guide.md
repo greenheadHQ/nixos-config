@@ -2,8 +2,11 @@
 
 ## 기본 업데이트
 
-- 업데이트: `sudo karakeep-update --ack-bridge-risk` (수동), `karakeep-version-check` (매일 06:00 자동)
-- `--ack-bridge-risk` 없이는 업데이트 스크립트가 중단된다 (브릿지/로그 의존성 인지 강제).
+- `karakeep-version-check`는 매일 06:00에 새 릴리스를 알린다.
+- 새 버전 태그를 적용하기 전에 릴리스 노트와 아래 로그·환경 변수·브리지 의존성을 확인하고, 현재 DB 백업과 복구 경로를 확인한다. 백업 위치·수동 명령은 [호스트 스킬](../SKILL.md)의 빠른 참조와 Data Path를 따른다. 적용 후 아래 검증을 수행할 수 있는 상태에서 진행한다.
+- 확인을 마친 뒤 `modules/nixos/programs/docker/karakeep.nix`의 고정 태그를 수정하고 `nrs`로 적용한다. `nrs` 자체가 새 이미지로 컨테이너를 재시작할 수 있다. 나중에 `--ack-bridge-risk`를 붙이는 것으로 이 앞단의 영향 확인을 대신하지 않는다.
+- 현재 설정된 태그를 다시 pull할 때는 `sudo karakeep-update --ack-bridge-risk`를 사용한다. 이 명령은 새 버전 태그를 선택하지 않는다.
+- `--ack-bridge-risk` 없이는 업데이트 스크립트가 중단된다 (브릿지/로그 의존성 인지 강제). 태그 적용 또는 스크립트 실행 후에는 아래 브리지·로그·환경 변수 검증을 완료한다.
 
 ## 로그 모니터 패턴 검증 (필수)
 

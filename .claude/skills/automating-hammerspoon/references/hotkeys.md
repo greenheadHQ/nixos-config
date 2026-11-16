@@ -55,7 +55,7 @@ grep -n "terminalOptKeys" modules/darwin/programs/hammerspoon/files/init.lua
 
 > Ghostty 외 앱에서는 Ctrl+V/Z/S 등 확장된 처리 키도 원래 앱 동작으로 재전달됩니다.
 
-### 모든 터미널 앱 (Opt 키)
+### 등록된 터미널 앱 (Opt 키)
 
 | 단축키  | 기능             |
 | ------- | ---------------- |
@@ -63,7 +63,7 @@ grep -n "terminalOptKeys" modules/darwin/programs/hammerspoon/files/init.lua
 | `Opt+F` | 단어 앞으로 이동 |
 | `Opt+D` | 단어 삭제        |
 
-> 터미널 앱: Ghostty, Terminal.app, Warp, iTerm2
+> 터미널 앱: Ghostty, Rex, Terminal.app, Warp, iTerm2 (`init.lua`의 `terminalBundleIDs`)
 
 ### 전역 (모든 앱)
 
@@ -83,8 +83,8 @@ grep -n "terminalOptKeys" modules/darwin/programs/hammerspoon/files/init.lua
 
 | 상황                     | 동작                                |
 | ------------------------ | ----------------------------------- |
-| Finder에서 실행          | 현재 폴더 경로로 Ghostty 새 창 열기 |
-| Finder 바탕화면에서 실행 | Desktop 경로로 Ghostty 새 창 열기   |
+| Finder 창 경로 조회 성공 | 해당 폴더 경로로 Ghostty 새 창 열기 |
+| Finder 창이 없거나 창 경로 조회 중 내부 오류 | Desktop 경로로 Ghostty 새 창 열기 |
 | 다른 앱에서 실행         | Ghostty 새 창 열기 (기본 경로)      |
 | Ghostty 미실행 시        | `open -a Ghostty`로 시작            |
 | Ghostty 실행 중          | AppleScript 새 창의 초기 작업 폴더로 경로 전달 |
@@ -93,7 +93,7 @@ grep -n "terminalOptKeys" modules/darwin/programs/hammerspoon/files/init.lua
 
 - AppleScript로 Finder 현재 경로 가져오기
 - 한글·공백·특수문자 경로를 `hs.task`의 인자 배열로 전달하며, 셸 명령이나 AppleScript 코드에 보간하지 않음
-- 개행·NUL 경로와 Finder 경로 조회 실패는 새 창 요청 전에 알리고 중단
+- 개행·NUL 경로 또는 Finder AppleScript 호출 자체의 실패·비문자열·빈 결과는 새 창 요청 전에 알리고 중단. AppleScript 내부의 창 경로 조회 오류는 위 표처럼 Desktop으로 fallback
 - 키 입력·클립보드 읽기/쓰기·복원 타이머를 사용하지 않으므로 이미지·파일 참조·복합 표현과 사용자의 새 복사를 덮어쓰지 않음
 - 각 AppleScript 요청이 만든 창만 활성화하며, 포커스 이동이나 연속 호출의 완료 순서가 다른 창의 입력에 영향을 주지 않음
 - Ghostty의 AppleScript 지원과 macOS 자동화 권한이 필요할 수 있음. 생성 실패 시 알림만 남기며 전역 입력 fallback은 없음

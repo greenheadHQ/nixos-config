@@ -22,16 +22,20 @@ PROMPT
 
 ⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다 ([§11](known-issues.md) 하위 항목).
 
-```bash
+```zsh
 # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
-rm -f /tmp/result.md   # 이전 실행의 non-empty 잔존 결과로 인한 오판 방지
+[ -s /tmp/prompt.md ] || { echo "missing/empty prompt" >&2; exit 1; }
+rm -f /tmp/result.md || exit 1   # 이전 실행의 non-empty 잔존 결과로 인한 오판 방지
 set -o pipefail
-cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 CODEX_EXEC_REQUIRE_NONEMPTY=/tmp/result.md codex-exec-supervised \
+if cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 CODEX_EXEC_REQUIRE_NONEMPTY=/tmp/result.md codex-exec-supervised \
   -s workspace-write -o /tmp/result.md - \
-  > /tmp/stdout.log 2> /tmp/stderr.log
-# PIPESTATUS는 다음 명령에서 리셋되므로 배열을 먼저 스냅샷한다. cat 실패(프롬프트 파일 부재)도 판정에 포함.
-pipe_rcs=("${PIPESTATUS[@]}")   # zsh는 ("${pipestatus[@]}") — 인덱스가 1부터
-[ "${pipe_rcs[0]}" -eq 0 ] && [ "${pipe_rcs[1]}" -eq 0 ]
+  > /tmp/stdout.log 2> /tmp/stderr.log; then
+  pipe_rcs=("${pipestatus[@]}")
+else
+  pipe_rcs=("${pipestatus[@]}")
+fi
+# zsh 1-base. Bash로 옮길 때는 PIPESTATUS와 0-base를 함께 사용한다. cat 실패도 판정에 포함.
+[ "${pipe_rcs[1]}" -eq 0 ] && [ "${pipe_rcs[2]}" -eq 0 ]
 # wrapper rc에는 결과 파일 검증이 포함된다. 위가 실패했을 때만 /tmp/stderr.log를 원인 분류에 사용한다
 # (성공 계약 조건 3; ANSI·프롬프트 에코 함정과 분류 절차는 known-issues.md §0-1).
 ```
@@ -81,15 +85,15 @@ env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write "git diff 기준으로 �
 선택한 하나만 실행하고, 실행 전 결과 파일을 초기화하며, 종료 후 성공 계약을 검증한다:
 
 ```bash
-rm -f /tmp/review.md   # 이전 실행의 잔존 결과로 인한 오판 방지
+rm -f /tmp/review.md || exit 1   # 이전 실행의 잔존 결과로 인한 오판 방지
+review_rc=0
 
 # 셋 중 하나를 선택:
 env CODEX_PROGRAMMATIC=1 CODEX_EXEC_REQUIRE_NONEMPTY=/tmp/review.md codex-exec-supervised review --base main \
-  -o /tmp/review.md > /tmp/review-stdout.log 2> /tmp/review-stderr.log
+  -o /tmp/review.md > /tmp/review-stdout.log 2> /tmp/review-stderr.log || review_rc=$?
 # env CODEX_PROGRAMMATIC=1 CODEX_EXEC_REQUIRE_NONEMPTY=/tmp/review.md codex-exec-supervised review --uncommitted ... (동일 형태)
 # env CODEX_PROGRAMMATIC=1 CODEX_EXEC_REQUIRE_NONEMPTY=/tmp/review.md codex-exec-supervised review --commit <sha> ... (동일 형태)
 
-review_rc=$?
 [ "$review_rc" -eq 0 ]
 # 실패 시에만 /tmp/review-stderr.log로 원인을 분류한다 (성공 계약 조건 3, known-issues.md §0-1).
 ```
@@ -134,10 +138,10 @@ Claude Code/headless의 programmatic 재개는 supervised 경로를 사용한다
 
 ```bash
 SESSION="<session-id>"   # 재개할 세션 id
-rm -f /tmp/resume-result.md
+rm -f /tmp/resume-result.md || exit 1
+resume_rc=0
 env CODEX_PROGRAMMATIC=1 CODEX_EXEC_REQUIRE_NONEMPTY=/tmp/resume-result.md codex-exec-supervised resume "$SESSION" \
-  -o /tmp/resume-result.md > /tmp/resume-stdout.log 2> /tmp/resume-stderr.log
-resume_rc=$?
+  -o /tmp/resume-result.md > /tmp/resume-stdout.log 2> /tmp/resume-stderr.log || resume_rc=$?
 
 # silent fallback 검증: 반환된 session id가 요청한 세션과 일치해야 하며, 최종 판정에 연결한다.
 # 배너의 "session id:"에는 ANSI escape가 낄 수 있다(하네스가 FORCE_COLOR를 주입하는 환경 실측 —

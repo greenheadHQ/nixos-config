@@ -11,8 +11,8 @@
 #      prePushRuntime runner가 hermetic PATH를 이미 제공했거나, 자체
 #      스크립트가 이전에 self-wrap으로 재진입한 경우다.
 #   2) current worktree profile이 있으면 그 PATH를 활성화한다. profile은 flake.lock + runtime
-#      정의 content stamp까지 일치해야 하며, staged snapshot은 네 runtime 입력이 source root와
-#      byte-identical할 때만 검증된 source profile을 재사용한다.
+#      정의 content stamp까지 일치해야 하며, staged snapshot은 test_runtime_profile_fingerprint_inputs의
+#      모든 입력이 source root와 byte-identical할 때만 검증된 source profile을 재사용한다.
 #   3) profile이 없거나 stale이면 ambient 도구 유무와 무관하게 선택한 flake의
 #      `nix shell .#prePushRuntime --command bash "$0" ...`로 재실행한다. 패키지 목록은
 #      flake의 정본만 사용하여 profile 경로와 fallback 경로의 도구 구성이 같게 한다.
@@ -55,7 +55,7 @@ tomlkit_bootstrap_require() {
   # 경로다. 그대로 `nix shell <snapshot>#prePushRuntime` 하면 snapshot 트리 전체가 nix
   # store 로 복사·평가된다 (E2E 실측 ~42s). run-staged-snapshot.sh 가 STAGED_SNAPSHOT_SOURCE_ROOT
   # 로 실제 repo 경로를 넘기면 그 flake 를 쓴다.
-  # source profile fast path는 snapshot의 runtime 입력 4개가 source와 같을 때만 안전하다.
+  # source profile fast path는 snapshot의 정본 fingerprint 입력이 source와 모두 같을 때만 안전하다.
   # 부분 staging으로 입력이 달라지면 snapshot flake를 사용해 커밋될 내용과 실행 runtime을 맞춘다.
   # override 는 staged-snapshot consumer 안에서 실행될 때만 적용한다. run-staged-snapshot.sh 는
   # cwd 를 공유 캐시 worktree 로 바꾸면서 STAGED_SNAPSHOT_ROOT(worktree)와 STAGED_SNAPSHOT_SOURCE_ROOT

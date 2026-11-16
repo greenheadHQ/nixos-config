@@ -121,7 +121,7 @@ Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 �
 | `pushover-copyparty` | `copyparty-update/default.nix` | Copyparty 업데이트 알림 |
 | `pushover-karakeep` | `karakeep-update/default.nix` | Karakeep 업데이트 알림 |
 
-`age.identityPaths`는 `immich.nix`에서 이미 정의. 새 모듈에서 중복 정의 금지.
+`age.identityPaths`는 `modules/nixos/configuration.nix`에서 시스템 공통으로 정의한다. 새 서비스 모듈에서 중복 정의하지 않는다.
 
 ## 트러블슈팅
 
@@ -153,8 +153,9 @@ cat /var/lib/<서비스>-update/last-notified-version
 
 ### 이미지 digest 변경 감지 안 됨
 
-`sudo <서비스>-update`에서 "Image unchanged" 출력 → 레지스트리에 새 이미지가 없는 것.
-GitHub에 새 릴리즈가 있더라도 이미지 빌드에 시간 소요.
+`sudo <서비스>-update`에서 "Image unchanged"가 나오면 현재 고정 태그의 이미지 digest가 같다는 뜻이다.
+GitHub의 새 버전을 적용하려면 해당 서비스 모듈의 image 태그를 수정하고 `nrs`로 반영한다.
+같은 태그의 재빌드를 기다리는 경우에만 해당 태그의 이미지 빌드·게시 상태를 확인한다.
 
 ### 새 서비스 추가 시
 

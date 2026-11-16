@@ -36,12 +36,22 @@
 
 비용: ~$0.07 | 위치: 로컬
 
+T4까지 검사하려면 먼저 `HARNESS_MCP_CONFIG`를 연결해도 되는 테스트 서버만 담은 MCP JSON
+파일의 절대경로로 export한다. T1은 이 파일을 `--strict-mcp-config --mcp-config`로 전달한다.
+미지정이면 기존 환경의 인벤토리를 확인하고 T4는 검사 대상 미지정으로 건너뛴다.
+
 ```bash
 #!/usr/bin/env bash
 # T1: Harness Inventory Check
+MCP_ARGS=()
+if [ -n "${HARNESS_MCP_CONFIG:-}" ]; then
+  test -f "$HARNESS_MCP_CONFIG" || { echo "T1: FAIL (MCP config file missing)"; exit 1; }
+  MCP_ARGS=(--strict-mcp-config --mcp-config "$HARNESS_MCP_CONFIG")
+fi
 set -o pipefail
-echo "ok" | claude -p --output-format json > /tmp/harness-init.json 2> /tmp/harness-init.stderr
-CLAUDE_RC=${PIPESTATUS[1]}
+CLAUDE_RC=0
+echo "ok" | claude -p --output-format json "${MCP_ARGS[@]}" \
+  > /tmp/harness-init.json 2> /tmp/harness-init.stderr || CLAUDE_RC=$?
 test "$CLAUDE_RC" -eq 0 && test -s /tmp/harness-init.json || exit 1
 
 # 파싱은 한 번으로 통합한다. system 이벤트 부재/JSON 오류 시 python이 non-zero로 죽고
@@ -190,67 +200,79 @@ $PASS && echo "T3: PASS" || echo "T3: FAIL"
 
 ## T4: MCP 서버 검증
 
-목적: mcp.json에 등록된 MCP 서버가 init 이벤트에 나타나는지 확인
+목적: T1에 명시한 테스트 config의 서버 이름이 같은 실행의 init 이벤트에 나타나는지 확인한다.
 
 비용: ~$0.07 (T1과 동일 init 이벤트 재사용 가능) | 위치: 로컬
 
+T1부터 T4까지 `HARNESS_MCP_CONFIG`와 파일 내용을 유지한다. 설정을 바꾸면 T1을 다시 실행한다.
+수동 등록 서버의 원본은 user/local 범위의 `~/.claude.json`, project 범위의 `.mcp.json`이다
+([공식 설정 범위](https://code.claude.com/docs/en/mcp#MCP-installation-scopes)). 이 테스트는 원본을
+직접 병합하지 않고 T1에 전달한 명시적 설정만 검사한다. config 미지정은 실제 서버가 없다는 뜻이 아니다.
+
 ```bash
 #!/usr/bin/env bash
-# T4: MCP Server Verification
-MCP_CONFIG="$HOME/.claude/mcp.json"
-if [ ! -f "$MCP_CONFIG" ]; then
-  # 이 저장소는 관리 MCP 서버를 두지 않으므로 ~/.claude/mcp.json 부재가 정상이다.
-  # 사용자가 수동으로 MCP를 등록한 경우에만 의미가 있는 테스트다.
-  # (부재 시 claude 호출 없이 즉시 SKIP — 불필요한 비용/지연 회피)
-  echo "T4: SKIP (관리 MCP 없음 — ~/.claude/mcp.json 부재)"
+# T4: Explicit MCP Config Verification
+MCP_CONFIG="${HARNESS_MCP_CONFIG:-}"
+if [ -z "$MCP_CONFIG" ]; then
+  echo "T4: SKIP (검사할 MCP config 미지정)"
   exit 0
 fi
 
-test -s /tmp/harness-init.json || { echo "T4: FAIL (run T1 first)"; exit 1; }
-RESULT=$(< /tmp/harness-init.json)
+test -f "$MCP_CONFIG" || { echo "T4: FAIL (MCP config file missing)"; exit 1; }
+test -s /tmp/harness-init.json || { echo "T4: FAIL (run T1 with this MCP config first)"; exit 1; }
 
-MCP_SERVERS=$(echo "$RESULT" | python3 -c "
-import sys, json
-data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())  # 후행 비-JSON 라인 내성
-items = data if isinstance(data, list) else [data]
-init = next(d for d in items if isinstance(d, dict)
-            and d.get('type')=='system' and d.get('subtype')=='init')
-for s in init.get('mcp_servers', []):
-    print(s)")
-
-# 이름 대조만으로는 config validation 스킵을 탐지하지 못한다 — 에러 배열이 정본 게이트다.
-MCP_ERRS=$(echo "$RESULT" | python3 -c "
-import sys, json
-data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())
-items = data if isinstance(data, list) else [data]
-init = next(d for d in items if isinstance(d, dict)
-            and d.get('type')=='system' and d.get('subtype')=='init')
-print(len(init.get('mcp_server_errors', [])))")
-
-EXPECTED_SERVERS=$(python3 -c "
+python3 - "$MCP_CONFIG" /tmp/harness-init.json <<'PY'
 import json
-with open('$MCP_CONFIG') as f:
-    data = json.load(f)
-for name in data.get('mcpServers', {}).keys():
-    print(name)")
+import sys
 
-PASS=true
-while IFS= read -r server; do
-  [ -z "$server" ] && continue
-  if echo "$MCP_SERVERS" | grep -q "$server"; then
-    echo "  ✓ $server"
-  else
-    echo "  ✗ $server MISSING from init"
-    PASS=false
-  fi
-done <<< "$EXPECTED_SERVERS"
+def fail(message):
+    print(f"T4: FAIL ({message})")
+    raise SystemExit(1)
 
-[ "$MCP_ERRS" -gt 0 ] && echo "  ✗ mcp_server_errors non-empty ($MCP_ERRS)" && PASS=false
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        config = json.load(source)
+    if not isinstance(config, dict) or not isinstance(config.get("mcpServers"), dict):
+        fail("config must contain an mcpServers object")
+    expected = set(config["mcpServers"])
 
-if $PASS; then echo "T4: PASS"; else echo "T4: FAIL"; exit 1; fi
+    with open(sys.argv[2], encoding="utf-8") as source:
+        data, _ = json.JSONDecoder().raw_decode(source.read().lstrip())
+    items = data if isinstance(data, list) else [data]
+    init = next(item for item in items if isinstance(item, dict)
+                and item.get("type") == "system" and item.get("subtype") == "init")
+    results = [item for item in items if isinstance(item, dict) and item.get("type") == "result"]
+    result = results[-1] if results else {}
+    if not (results and result.get("subtype") == "success" and not result.get("is_error", False)
+            and result.get("terminal_reason", "completed") == "completed"
+            and not result.get("permission_denials")):
+        fail("result event is not successful")
+
+    servers = init.get("mcp_servers")
+    errors = init.get("mcp_server_errors", [])
+    if not isinstance(servers, list) or not isinstance(errors, list):
+        fail("unexpected MCP event shape")
+    if any(not isinstance(server, dict) or not isinstance(server.get("name"), str)
+           for server in servers):
+        fail("mcp_servers entries must have a name")
+    if errors:
+        fail(f"mcp_server_errors non-empty ({len(errors)})")
+    present = {server["name"] for server in servers}
+    missing = sorted(expected - present)
+    if missing:
+        fail("missing servers: " + ", ".join(missing))
+except (OSError, ValueError, TypeError, StopIteration):
+    fail("invalid config/output JSON or missing init event")
+
+print(f"T4: PASS (expected servers: {len(expected)})")
+PY
 ```
 
-판정 로직: ~/.claude/mcp.json이 없으면 SKIP(관리 MCP 없음이 정상). 있으면 mcp.json의 모든 서버 이름이 init mcp_servers에 존재하면 PASS. 추가로 init의 `mcp_server_errors` 배열이 비어 있지 않으면 FAIL (config validation 스킵 항목 — v2.1.219+). 단 서버 `status:"pending"`은 캐시된 tool list를 가진 원격 서버의 정상 상태이므로 (공식 문서) status 기반 판정은 넣지 않는다 — 거짓 양성이 난다.
+판정 로직: 명시적 config가 없으면 SKIP한다. 지정했다면 성공한 T1 결과의 init에 모든 기대 서버
+이름이 정확히 존재하고 `mcp_server_errors`가 비어 있어야 PASS다. `mcpServers: {}`를 명시하면
+기대 서버 0개로 표시한다. 서버 등록과 config validation 오류만 검사하며 연결·도구 실행 성공은
+판정하지 않는다. `status:"pending"`은 캐시된 tool list가 있는 원격 서버의 정상 상태일 수 있으므로
+status만으로 실패 처리하지 않는다 ([공식 headless 출력](https://code.claude.com/docs/en/headless)).
 
 ## T5: 권한 모델 검증
 
@@ -469,22 +491,18 @@ $PASS && echo "T8: PASS" || echo "T8: FAIL"
 
 | 테스트 | 비용 | 실행 조건 | 비고 |
 |--------|------|-----------|------|
-| T1 | ~$0.07 | `nrs` 후 자동 실행 권장 | init 이벤트 1회로 T1+T2a 커버 (T4는 관리 MCP 있을 때만) |
+| T1 | ~$0.07 | `nrs` 후 자동 실행 권장 | init 이벤트 1회로 T1+T2a 커버 (T4는 테스트 MCP config를 지정했을 때) |
 | T2a | ~$0 | T1의 init 재사용 | 추가 API 호출 불필요 |
 | T3 | $0 | 파일 시스템 검사만 | API 호출 없음 |
-| T4 | ~$0 | 관리 MCP 있을 때만 (없으면 즉시 SKIP) | mcp.json 존재 시 T1의 init 재사용 |
+| T4 | ~$0 | `HARNESS_MCP_CONFIG`를 지정한 T1 실행 후 | 같은 config와 init 재사용; 미지정이면 SKIP |
 | T5 | ~$0.14 | 권한 설정 변경 시 | 2회 호출 |
 | T6 | ~$0.07 | SSH 설정 변경 시 | 크로스머신 필요 |
 | T7 | ~$0.14 | 세션 관련 변경 시 | 2회 호출 |
 | T8 | ~$0.14 | CI/자동화 도입 시 | 2회 동시 호출 |
 
-최적화: T1, T2a(그리고 관리 MCP가 있는 경우 T4)는 동일한 init 이벤트를 재사용하므로, 한 번의 `claude -p --output-format json` 호출 결과를 파일에 저장하고 공유한다:
-
-```bash
-echo "ok" | claude -p --output-format json \
-  > /tmp/harness-init.json 2> /tmp/harness-init.stderr
-# T1, T2a(그리고 mcp.json이 있으면 T4)에서 /tmp/harness-init.json을 읽어서 판정
-```
+최적화: T1의 캡처 절차로 `/tmp/harness-init.json`을 만든 뒤 T2a와 T4가 재사용한다.
+T4를 포함하려면 캡처 전에 `HARNESS_MCP_CONFIG`를 지정한다. 별도의 옵션 없는 호출로 파일을
+덮어쓰거나, config를 바꾼 뒤 이전 init을 재사용하지 않는다.
 
 ## 검증 규율 (프로브·재검증 공통)
 

@@ -31,16 +31,13 @@ GitHub 이슈의 라벨 체계 정의.
 - 소문자, 하이픈 구분 (예: `area:frontend`, `area:ci-cd`, `area:auth`)
 - 색상: 파스텔 계열 톤 통일 (#c5def5 ~ #f9d0c4 범위)
 
-### 첫 사용 시 area 정의
+### 첫 사용 시 area 선택
 
 새 레포에서 처음 이슈를 관리할 때:
 
 1. `gh label list`로 기존 라벨 확인
-2. `area:` 접두사 라벨이 없으면, 레포의 주요 도메인을 식별하여 2-5개 area 생성
-3. 예시:
-   - 웹앱: `area:frontend`, `area:backend`, `area:api`, `area:infra`
-   - 인프라: `area:networking`, `area:security`, `area:monitoring`
-   - 라이브러리: `area:core`, `area:docs`, `area:testing`
+2. 이슈와 맞는 기존 area가 있으면 선택한다. 없으면 area 없이 등록하고 사용자에게 알린다.
+3. 새 area 체계 생성은 별도로 요청된 경우에만 수행한다. 이슈 등록만으로 라벨을 자동 생성하지 않는다.
 
 ## 라벨 관리 명령어
 

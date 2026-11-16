@@ -74,9 +74,9 @@ pre-commit:
         - "tests/run-eval-tests.sh"
       run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./tests/run-eval-tests.sh
     codex-hook-fixtures:
-      # deterministic 모드 (live fixture 미실행). runner 자체가 scripts/ai/lib/tomlkit-bootstrap.sh를
-      # source하여 repo-pinned pythonWithTomlkit으로 self-wrap하므로 lefthook에서 추가 nix shell
-      # wrap이 불필요하다. live propagation 검증은 manual/scheduled에 위임.
+      # deterministic 모드 (live fixture 미실행). runner의 공통 bootstrap이 검증된 prePushRuntime
+      # profile을 우선 재사용하고 필요 시 선택한 flake의 같은 runtime으로 self-wrap하므로
+      # 추가 nix shell wrap은 불필요하다. live propagation 검증은 manual/scheduled에 위임.
       # glob: runner 가 source/cp 하는 의존 경로 집합과 동기화 필수. 새 의존 경로가 생기면 여기와
       # scripts/ai/check-lefthook-staged-config.sh 의 expected 블록을 함께 갱신한다 (누락 시 해당
       # 커밋에서 이 검사가 silent skip 된다; main의 required `check` CI가 전체 fixture를 재검증한다).

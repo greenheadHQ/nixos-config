@@ -14,7 +14,7 @@ nix-darwin 및 macOS 시스템 설정 가이드입니다.
 ### macOS 전용 nrs 옵션
 
 ```bash
-nrs --force               # activation scripts 강제 재실행 (NO_CHANGES 스킵 우회)
+nrs --force               # NO_CHANGES·worktree 누락 엔트리 차단 우회, cask 충돌 제거 확인 생략
 ```
 
 > nrs/nrp 소스: `modules/shared/scripts/rebuild-common.sh`, `modules/darwin/scripts/{nrs,nrp}.sh`
@@ -80,7 +80,8 @@ homebrew.casks = [
 ];
 homebrew.brews = [ "laishulu/homebrew/macism" "sox" ]; # Neovim 한영 전환, 오디오 처리
 # shottr → Nix 패키지로 관리 (libraries/packages.nix darwinOnly)
-# codex → Nix 관리로 전환 (nix overlay, modules/shared/programs/codex)
+# codex → 공식 native installer로 최초 설치 (modules/shared/programs/codex)
+# Nix는 설정·연동을 관리하며, 반복 nrs는 설치된 CLI release를 갱신하지 않음
 # figma → Homebrew에서 제거 (자체 업데이터가 버전을 변경하여 adopt 시 버전 충돌)
 # slack → Homebrew에서 제거 (수동 설치 선호, 자체 업데이터에 위임)
 ```

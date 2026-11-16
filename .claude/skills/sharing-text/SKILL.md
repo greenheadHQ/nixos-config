@@ -94,7 +94,7 @@ heredoc content는 stdin으로 전달되어 zsh 해석을 거치지 않는다. �
 
 | 제한 | 설명 |
 |------|------|
-| Pushover 메시지 제한 | 1,024자 (초과 시 잘림) |
+| Pushover 메시지 제한 | 최대 [1,024 UTF-8 문자](https://pushover.net/api#limits). 로컬 함수는 자동 절단·분할하지 않으므로 초과 입력은 길이를 줄여 전송 |
 | 네트워크 | 인터넷 연결 필요 |
 | Pushover credentials | `$HOME/.config/pushover/share` 필요 (agenix 관리). 부재 시 함수가 `Error: Pushover credentials not found`을 stderr로 출력하고 `return 1` (non-zero) |
 | zsh 함수 의존 | `push`는 `.zshrc`의 셸 함수. `zsh -c` (non-interactive) 호출은 `push not found`로 실패. canonical 호출은 `zsh -ic` |
