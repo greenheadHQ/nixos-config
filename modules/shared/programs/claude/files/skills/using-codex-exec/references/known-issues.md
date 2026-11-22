@@ -825,7 +825,6 @@ output이 기록된다. 이름은 세 층위로 다르다: 모델-facing tool �
 ```zsh
 set -o pipefail
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/codex-spawn-probe-XXXXXX")   # 공유 /tmp symlink 회피
-command codex features list | grep -E '^multi_agent[[:space:]]'   # 예: "multi_agent  stable  true" 한 줄이 나와야 전제 성립
 printf 'Spawn two subagents in parallel: agent1 replies ALPHA, agent2 replies BRAVO. Report both.\n' > "$TMP/prompt.md"
 for eff in ultra high; do   # 두 effort 모두 같은 관측성 한계를 보이는지 확인
   cat "$TMP/prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec -s read-only --json \
@@ -843,9 +842,9 @@ done
 
 기대: 각 effort에서 `rc=0`, `public_receiver`는 빈 배열 `[]`, `roll`은 실제 경로,
 `persisted_spawn_agent_calls`가 1 이상 — 공개 필드가 비어도 persisted에 `spawn_agent` 호출이 있으면 이 한계가
-재현된 것이다. 진단: `features list`에 `multi_agent`가 `stable`/`true`로 나오지 않으면 probe 전제가 깨진 것이고,
-`roll=notfound`면 `tid` 추출/`find` 경로 문제(probe 인프라 실패)이며, `roll`은 있는데 `spawns=0`이면 이 한계가
-아닌 별개 실패이므로 `$TMP/$eff.err`를 확인한다.
+재현된 것이다. `roll=notfound`면 `tid` 추출과 `find` 경로를 확인한다. `roll`은 있는데
+`persisted_spawn_agent_calls=0`이면 해당 세션에 `spawn_agent` 도구가 제공됐는지 확인한다.
+그 결과 행이 `ultra`이면 `$TMP/ultra.err`를, `high`이면 `$TMP/high.err`를 읽는다.
 
 대안: 비대화형에서 spawn 진행을 프로그램적으로 관측·판정해야 하면 공개 `--json`에 의존하지 말고 persisted
 rollout을 파싱한다. 별도 프로세스 실행이 필요하면 현재 세션의 위임·권한 경계에 따라

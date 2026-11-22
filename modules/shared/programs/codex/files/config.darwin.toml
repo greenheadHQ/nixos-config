@@ -39,9 +39,6 @@ consolidation_model = "gpt-6.1-terra"
 # 아래 값은 "upstream 기본이 뒤집혀도 이 값을 강제한다"는 의도의 명시 핀이다 — 현행 기본과
 # 같은 값이어도 유지한다. 재검증(현행 기본값): CODEX_HOME=$(mktemp -d) codex features list
 [features]
-# multi_agent: 승인된 작업에서 native subagent를 사용할 수 있도록 활성화한다.
-# 0.153.4 기준 upstream 기본도 true지만, 기본이 뒤집히면 fan-out이 조용히 4슬롯으로 퇴화하므로 명시 고정.
-multi_agent = true
 # apps: 0.153.4 기준 upstream 기본도 true — darwin에서는 커넥터 표면을 항상 켜두려고 명시 고정.
 apps = true
 prevent_idle_sleep = true
@@ -72,6 +69,8 @@ context_management = true
 #           | grep -Eo 'There are [0-9]+ available concurrency slots'
 #         → "There are 17 available concurrency slots"면 반영된 것이다.
 [agents]
+# 서브에이전트를 활성화하고 버전 선택은 Codex에 맡긴다.
+enabled = true
 max_concurrent_threads_per_session = 16
 
 # Codex 0.124+ stable hooks (issue #585 / epic #584).
