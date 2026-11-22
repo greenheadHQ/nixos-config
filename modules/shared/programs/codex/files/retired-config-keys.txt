@@ -41,3 +41,6 @@ features.voice_transcription
 # template 미선언 키 보존 정책 때문에 남아 unknown configuration field 경고를 낸다.
 # 이 경로만 회수하고 두 template이 선언한 정상 최상위 값은 유지한다.
 notice.suppress_unstable_features_warning
+
+# 서브에이전트 활성화는 agents.enabled가 관리한다. 기존 설치의 V1 fallback 키를 회수한다.
+features.multi_agent
