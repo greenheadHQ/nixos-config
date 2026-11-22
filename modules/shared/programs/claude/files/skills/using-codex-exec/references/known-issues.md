@@ -842,8 +842,9 @@ done
 
 기대: 각 effort에서 `rc=0`, `public_receiver`는 빈 배열 `[]`, `roll`은 실제 경로,
 `persisted_spawn_agent_calls`가 1 이상 — 공개 필드가 비어도 persisted에 `spawn_agent` 호출이 있으면 이 한계가
-재현된 것이다. `roll=notfound`면 `tid` 추출과 `find` 경로를 확인한다. `roll`은 있는데 `spawns=0`이면
-해당 세션에 `spawn_agent` 도구가 제공됐는지와 `$TMP/$eff.err`를 확인한다.
+재현된 것이다. `roll=notfound`면 `tid` 추출과 `find` 경로를 확인한다. `roll`은 있는데
+`persisted_spawn_agent_calls=0`이면 해당 세션에 `spawn_agent` 도구가 제공됐는지 확인한다.
+그 결과 행이 `ultra`이면 `$TMP/ultra.err`를, `high`이면 `$TMP/high.err`를 읽는다.
 
 대안: 비대화형에서 spawn 진행을 프로그램적으로 관측·판정해야 하면 공개 `--json`에 의존하지 말고 persisted
 rollout을 파싱한다. 별도 프로세스 실행이 필요하면 현재 세션의 위임·권한 경계에 따라
