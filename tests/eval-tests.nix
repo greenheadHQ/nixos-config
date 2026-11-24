@@ -295,30 +295,25 @@ let
   # 모든 TCP 접근은 trustedInterfaces(tailscale0)를 통해서만 허용
   noTcpPortsOpen = fw.allowedTCPPorts == [ ];
 
-  # Codex 피드백: 인터페이스별 포트 허용 체크
-  # networking.firewall.interfaces.*.allowed{TCP,UDP}Ports 가 비어야 함
-  # 예외: podman0 (컨테이너 브릿지) — DNS(53/udp)는 컨테이너 이름 해석에 필요
-  # Opus 피드백: NixOS 옵션이 항상 존재하므로 or {} 불필요 (or [] 제거와 일관)
+  # Podman 6부터 nixpkgs는 iptables의 podman+ 패턴에 DNS를 허용한다.
+  # 기본 브릿지와 자동 이름을 쓰는 Immich·Karakeep 브릿지의 컨테이너 DNS에 필요하다.
   fwInterfaces = fw.interfaces;
   fwInterfaceNames = builtins.attrNames fwInterfaces;
-  # 안전한 인터페이스별 포트 예외 (인터페이스명 → 허용 UDP 포트)
-  safeInterfaceUdpPorts = {
-    podman0 = [ 53 ]; # DNS for container name resolution
+  allowedInterfaceDnsPorts = {
+    "podman+" = [ 53 ];
   };
-  # Opus 피드백: allowlist 정확성 — safeInterfaceUdpPorts의 모든 키가 실제 인터페이스에 존재해야 함
-  # (hostNetworkAllowlist의 allAllowlistUsed 패턴과 동일)
   allSafeInterfaceKeysExist = builtins.all (ifName: builtins.elem ifName fwInterfaceNames) (
-    builtins.attrNames safeInterfaceUdpPorts
+    builtins.attrNames allowedInterfaceDnsPorts
   );
-  noInterfacePortsOpen = builtins.all (
+  interfacePortsMatchAllowlist = builtins.all (
     ifName:
     let
       iface = fwInterfaces.${ifName};
-      allowedUdp = safeInterfaceUdpPorts.${ifName} or [ ];
+      allowedPorts = allowedInterfaceDnsPorts.${ifName} or [ ];
     in
-    (iface.allowedTCPPorts or [ ]) == [ ]
+    (iface.allowedTCPPorts or [ ]) == allowedPorts
     && (iface.allowedTCPPortRanges or [ ]) == [ ]
-    && (iface.allowedUDPPorts or [ ]) == allowedUdp
+    && (iface.allowedUDPPorts or [ ]) == allowedPorts
     && (iface.allowedUDPPortRanges or [ ]) == [ ]
   ) fwInterfaceNames;
 
@@ -1741,12 +1736,11 @@ let
       cond = fw.allowedUDPPortRanges == [ ];
     }
     {
-      name = "Test 6g: 인터페이스별 포트 허용 없음 (networking.firewall.interfaces.*.allowed* 모두 비어야 함)";
-      cond = noInterfacePortsOpen;
+      name = "Test 6g: 인터페이스별 포트는 Podman 브리지의 DNS(53/tcp, 53/udp)만 허용";
+      cond = interfacePortsMatchAllowlist;
     }
     {
-      # Opus 피드백: safeInterfaceUdpPorts allowlist 정확성 (allAllowlistUsed 패턴과 동일)
-      name = "Test 6g-2: safeInterfaceUdpPorts의 모든 키가 실제 방화벽 인터페이스에 존재해야 함";
+      name = "Test 6g-2: Podman DNS 예외에 지정한 인터페이스 패턴이 방화벽 설정에 존재해야 함";
       cond = allSafeInterfaceKeysExist;
     }
     {
