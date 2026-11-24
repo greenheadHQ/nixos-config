@@ -40,10 +40,11 @@ let
   oauthCredPath = config.age.secrets.anki-mcp-oauth.path;
 
   # 핀된 nixpkgs의 mcp SDK와 그 의존만 쓴다 — overlay 없음(PR #183 캐시 사고 재발 방지).
+  # 서버는 SDK 1.x의 FastMCP API를 쓰므로 nixpkgs의 mcp_1을 선택한다.
   # 버전 정본은 anki-host/README.md의 "소스 핀"이다 (여기에 숫자를 복제하지 않는다).
   python = pkgs.python3.withPackages (
     ps: with ps; [
-      mcp
+      mcp_1
       httpx
       uvicorn
       starlette

@@ -332,13 +332,13 @@
               import ./modules/shared/programs/anki-addons/packages.nix { inherit pkgs; }
             )
           );
-          # anki-mcp 오프라인 단위 테스트 런타임 (tests/run-anki-mcp-tests.sh) — 서비스와 같은 핀된 mcp SDK
+          # anki-mcp 오프라인 단위 테스트 런타임 — 서비스와 같은 MCP SDK 1.x
           ankiMcpTestEnv = pkgs.buildEnv {
             name = "anki-mcp-test-env";
             paths = [
               (pkgs.python3.withPackages (
                 ps: with ps; [
-                  mcp
+                  mcp_1
                   httpx
                   pytest
                   anyio
